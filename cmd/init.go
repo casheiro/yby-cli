@@ -294,10 +294,7 @@ func isEmptyDir(name string) bool {
 	defer f.Close()
 
 	_, err = f.Readdirnames(1) // Or f.Readdir(1)
-	if err == nil {
-		return false
-	}
-	return true
+	return err != nil
 }
 
 func runCmd(name string, args ...string) error {
