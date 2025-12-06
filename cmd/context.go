@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/casheiro/yby/cli/pkg/config"
-	"github.com/casheiro/yby/cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/config"
+	"github.com/casheiro/yby-cli/pkg/context"
 	"github.com/spf13/cobra"
 )
 

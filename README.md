@@ -13,7 +13,7 @@ Acesse a página de [Releases](https://github.com/casheiro/yby-cli/releases) e b
 Se você tem o Go instalado:
 
 ```bash
-go install github.com/casheiro/yby/cli@latest
+go install github.com/casheiro/yby-cli@latest
 ```
 
 ## Uso Básico

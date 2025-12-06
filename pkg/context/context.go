@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casheiro/yby/cli/pkg/config"
+	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/joho/godotenv"
 )
 

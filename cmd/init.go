@@ -28,7 +28,7 @@ import (
 	"text/template"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/casheiro/yby/cli/pkg/config"
+	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/spf13/cobra"
 )
 
