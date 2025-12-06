@@ -1,4 +1,4 @@
-name: Release
+name: "🚀 Deploy Release (GoReleaser)"
 
 on:
   push:
