@@ -42,7 +42,7 @@ Equivalente ao antigo 'make bootstrap'.`,
 		runCommand("helm", "upgrade", "--install", "argocd", "argo/argo-cd",
 			"--namespace", "argocd",
 			"--version", "5.51.6",
-			"-f", "config/argocd-values.yaml",
+			"-f", "config/cluster-values.yaml",
 			"--wait", "--timeout", "300s")
 
 		// Argo Workflows & Events (Manifests)

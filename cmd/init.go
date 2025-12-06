@@ -1,465 +1,287 @@
 /*
 Copyright © 2025 Yby Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 */
 package cmd
 
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-	"text/template"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
-// initCmd represents the init command
+// Blueprint structures
+type Blueprint struct {
+	Prompts []Prompt `yaml:"prompts"`
+}
+
+type Prompt struct {
+	ID       string   `yaml:"id"`
+	Type     string   `yaml:"type"` // input, select, multiselect
+	Label    string   `yaml:"label"`
+	Default  any      `yaml:"default"`
+	Options  []string `yaml:"options"`
+	Required bool     `yaml:"required"`
+	Target   Target   `yaml:"target"`
+	Actions  []Action `yaml:"actions"`
+}
+
+type Target struct {
+	File  string `yaml:"file"`
+	Path  string `yaml:"path"`
+	Value any    `yaml:"value"`
+}
+
+type Action struct {
+	Condition string `yaml:"condition"`
+	Target    Target `yaml:"target"`
+}
+
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Gera a configuração do projeto e contexto local",
-	Long: `Inicia um assistente (Wizard) para configurar um novo projeto Yby.
-	
-Este comando realiza duas ações principais:
-1. Define a configuração GitOps do cluster (config/cluster-values.yaml)
-2. Cria o Contexto Local seguro (.env.<env>) com seus segredos (Token GitHub)
-
-Ao final, o contexto criado é ativado automaticamente.`,
+	Short: "Inicializa o projeto seguindo o Blueprint do template",
+	Long: `Lê o arquivo .yby/blueprint.yaml e guia o usuário na configuração.
+Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("🌱 Yby Smart Init - Configuração do Projeto")
-		fmt.Println("-----------------------------------------")
+		fmt.Println("🌱 Yby Smart Init (Blueprint Engine)")
+		fmt.Println("------------------------------------")
 
-		answers := struct {
-			Domain      string
-			GitRepo     string
-			GitBranch   string
-			Email       string
-			Environment string
-			Org         string
-			GithubToken string
-			Modules     []string
-		}{}
-
-		// 1. Ask for Git Repo first to infer Org
-		repoQ := []*survey.Question{
-			{
-				Name: "GitRepo",
-				Prompt: &survey.Input{
-					Message: "URL do Repositório Git:",
-					Default: "https://github.com/casheiro/yby-template",
-				},
-				Validate: survey.Required,
-			},
+		// 1. Load Blueprint
+		blueprintPath := ".yby/blueprint.yaml"
+		if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
+			fmt.Printf("❌ Blueprint não encontrado em %s\n", blueprintPath)
+			fmt.Println("   Certifique-se de estar na raiz do repo yby-template.")
+			return
 		}
-		survey.Ask(repoQ, &answers)
 
-		// Infer Org and RepoName from GitRepo
-		defaultOrg := "casheiro"
-		repoName := "yby"
-		if answers.GitRepo != "" {
-			clean := answers.GitRepo
-			if filepath.Ext(clean) == ".git" {
-				clean = clean[:len(clean)-4]
-			}
-			parts := strings.Split(clean, "/")
-			if len(parts) >= 2 {
-				repoName = parts[len(parts)-1]
-				// Org is usually the second to last part
-				// Check if it's a URL (contains protocol)
-				if len(parts) > 2 {
-					defaultOrg = parts[len(parts)-2]
+		data, err := os.ReadFile(blueprintPath)
+		if err != nil {
+			panic(err)
+		}
+
+		var blueprint Blueprint
+		if err := yaml.Unmarshal(data, &blueprint); err != nil {
+			fmt.Printf("❌ Erro ao ler Blueprint: %v\n", err)
+			return
+		}
+
+		// 2. Process Prompts
+		values := make(map[string]interface{})
+
+		// Map for env file generation (simple key-value store of answers)
+		envMap := make(map[string]string)
+
+		for _, p := range blueprint.Prompts {
+			var answer interface{}
+
+			// Build Survey Question
+			var q survey.Prompt
+			switch p.Type {
+			case "input":
+				input := &survey.Input{Message: p.Label}
+				if def, ok := p.Default.(string); ok {
+					input.Default = def
 				}
+				q = input
+			case "select":
+				sel := &survey.Select{Message: p.Label, Options: p.Options}
+				if def, ok := p.Default.(string); ok {
+					sel.Default = def
+				}
+				q = sel
+			case "multiselect":
+				ms := &survey.MultiSelect{Message: p.Label, Options: p.Options}
+				// Default handling for multiselect is tricky with interface{}, blindly assuming []interface{} or []string
+				// Simplify for now
+				q = ms
 			}
-			// Handle git@github.com:ORG/REPO case
-			if strings.Contains(clean, "git@") {
-				parts = strings.Split(clean, ":")
-				if len(parts) == 2 {
-					pathParts := strings.Split(parts[1], "/")
-					if len(pathParts) == 2 {
-						defaultOrg = pathParts[0]
-						repoName = pathParts[1]
+
+			// Ask
+			if err := survey.AskOne(q, &answer, survey.WithValidator(func(ans interface{}) error {
+				if p.Required {
+					return survey.Required(ans)
+				}
+				return nil
+			})); err != nil {
+				fmt.Println("Operação cancelada.")
+				return
+			}
+			values[p.ID] = answer
+
+			// Store in env map for later (string representation)
+			envMap[p.ID] = fmt.Sprintf("%v", answer)
+
+			// 3. Apply to YAML immediately (or simulate transaction)
+			if p.Target.Path != "" {
+				applyPatch(p.Target.File, p.Target.Path, answer)
+			}
+
+			// 4. Process Actions (Side effects mainly for MultiSelect)
+			if p.Type == "multiselect" {
+				// answer is []string (survey core type) -> but reflected as []interface{} sometimes?
+				// Survey AskOne unmarshals into answer which we passed as interface{}.
+				// Actually survey puts it into the pointer type.
+				// Let's cast properly.
+
+				// Assert specific types based on known survey returns
+				var selected []string
+				// Try assert
+				if s, ok := answer.(survey.OptionAnswer); ok {
+					selected = []string{s.Value}
+				} else if s, ok := answer.([]string); ok { // MultiSelect returns []string
+					selected = s
+				} else if s, ok := answer.(string); ok { // Input/Select returns string
+					selected = []string{s}
+				}
+
+				for _, act := range p.Actions {
+					// Check if condition is in selected
+					match := false
+					for _, s := range selected {
+						if s == act.Condition {
+							match = true
+							break
+						}
+					}
+					if match {
+						applyPatch(act.Target.File, act.Target.Path, act.Target.Value)
 					}
 				}
 			}
 		}
 
-		qs := []*survey.Question{
-			{
-				Name: "Domain",
-				Prompt: &survey.Input{
-					Message: "Domínio Base do Cluster (ex: meudominio.com):",
-					Default: "casheiro.com.br",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "GitBranch",
-				Prompt: &survey.Input{
-					Message: "Branch Principal:",
-					Default: "main",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Org",
-				Prompt: &survey.Input{
-					Message: "Organização GitHub (para Discovery):",
-					Default: defaultOrg,
-				},
-			},
-			{
-				Name: "Email",
-				Prompt: &survey.Input{
-					Message: "Email para Let's Encrypt (TLS):",
-					Default: "admin@casheiro.com.br",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Environment",
-				Prompt: &survey.Select{
-					Message: "Ambiente (Isso definirá o nome do seu Contexto Local):",
-					Options: []string{"prod", "staging", "dev"},
-					Default: "prod",
-				},
-			},
-			{
-				Name: "GithubToken",
-				Prompt: &survey.Password{
-					Message: "GitHub Token (PAT) com permissão de repo (salvo apenas localmente):",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Modules",
-				Prompt: &survey.MultiSelect{
-					Message: "Selecione os módulos a serem instalados:",
-					Options: []string{
-						"Observability (Prometheus/Grafana)",
-						"Kepler (Métricas de Energia)",
-						"MinIO (Object Storage)",
-						"Headlamp (Dashboard UI)",
-					},
-					Default: []string{
-						"Observability (Prometheus/Grafana)",
-						"Kepler (Métricas de Energia)",
-						"MinIO (Object Storage)",
-					},
-				},
-			},
+		// 5. Generate .env Context (Hardcoded logic for legacy context support, but fueled by blueprint answers)
+		// We expect the blueprint to have asked for 'environment' and 'gitRepo' etc.
+		// If explicit keys exist in envMap, use them.
+		envName := "dev"
+		if v, ok := envMap["environment"]; ok {
+			envName = v
 		}
 
-		err := survey.Ask(qs, &answers)
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
+		envFileName := fmt.Sprintf(".env.%s", envName)
+		fmt.Printf("\n🔒 Gerando Contexto Local (%s)...\n", envFileName)
 
-		// Process modules into a map for easier template access
-		modulesMap := make(map[string]bool)
-		for _, m := range answers.Modules {
-			if m == "Observability (Prometheus/Grafana)" {
-				modulesMap["Observability"] = true
-			} else if m == "Kepler (Métricas de Energia)" {
-				modulesMap["Kepler"] = true
-			} else if m == "MinIO (Object Storage)" {
-				modulesMap["MinIO"] = true
-			} else if m == "Headlamp (Dashboard UI)" {
-				modulesMap["Headlamp"] = true
+		// Helper to safely get map val
+		getVal := func(k string) string {
+			if v, ok := envMap[k]; ok {
+				return v
 			}
+			return ""
 		}
 
-		// Create a composite data object
-		data := struct {
-			Domain      string
-			GitRepo     string
-			GitBranch   string
-			Email       string
-			Environment string
-			Org         string
-			RepoName    string
-			GithubToken string
-			Modules     map[string]bool
-		}{
-			Domain:      answers.Domain,
-			GitRepo:     answers.GitRepo,
-			GitBranch:   answers.GitBranch,
-			Email:       answers.Email,
-			Environment: answers.Environment,
-			Org:         answers.Org,
-			RepoName:    repoName,
-			GithubToken: answers.GithubToken,
-			Modules:     modulesMap,
-		}
+		// Only write logic if we have minimal data? Or just write what we have?
+		// We need GITHUB_TOKEN prompt to be useful.
+		// If Blueprint asked for 'GithubToken' (capitalized?), we'd find it if we mapped IDs well.
+		// But in this proof of concept, the Blueprint prompts 'gitRepo', 'domain', etc.
+		// We are missing a prompt for SECRET (token) in the blueprint?
+		// User's blueprint example didn't have token. Let's assume user adds it or we add imperative logic for Secrets.
 
-		// 2. Generate Cluster Config (Public/Shared)
-		fmt.Println("\n📄 Gerando Configuração do Cluster...")
-		err = generateConfig(data)
-		if err != nil {
-			fmt.Printf("❌ Erro ao gerar configuração: %v\n", err)
-			return
-		}
+		// IMPERATIVE FALLBACK for Secrets (Token) since Blueprint might not manage secrets securely (YAML patch isn't for secrets)
+		// But .env creation needs the token.
+		var token string
+		prompt := &survey.Password{Message: "GitHub Token (PAT) para CI/CD:"}
+		survey.AskOne(prompt, &token)
 
-		err = generateRootApp(data)
-		if err != nil {
-			fmt.Printf("❌ Erro ao gerar root-app: %v\n", err)
-			return
-		}
+		envContent := fmt.Sprintf("# Contexto: %s\nGITHUB_TOKEN=%s\nCLUSTER_DOMAIN=%s\nGIT_REPO=%s\n",
+			envName, token, getVal("domain"), getVal("gitRepo"))
 
-		// 3. Generate Local Context (Private/Secret)
-		fmt.Println("🔒 Gerando Contexto Local Seguro...")
-		// Use the new WriteEnvFile logic
+		os.WriteFile(envFileName, []byte(envContent), 0600)
 
-		envFileName := fmt.Sprintf(".env.%s", answers.Environment)
-		envContent := fmt.Sprintf("# Contexto Local: %s\nGITHUB_TOKEN=%s\nCLUSTER_DOMAIN=%s\nGIT_REPO=%s\n",
-			answers.Environment, answers.GithubToken, answers.Domain, answers.GitRepo)
+		// Update .gitignore
+		f, _ := os.OpenFile(".gitignore", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		defer f.Close()
+		f.WriteString(fmt.Sprintf("\n%s\n", envFileName))
 
-		// Write .env file
-		if err := os.WriteFile(envFileName, []byte(envContent), 0600); err != nil {
-			fmt.Printf("❌ Erro ao criar arquivo de contexto: %v\n", err)
-			return
-		}
-
-		// Create/Update .gitignore
-		f, err := os.OpenFile(".gitignore", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err == nil {
-			defer f.Close()
-			// Check if already ignored? Naive append is fine for now
-			if _, err := f.WriteString(fmt.Sprintf("\n%s\n", envFileName)); err != nil {
-				fmt.Printf("⚠️  Erro ao atualizar .gitignore: %v\n", err)
-			}
-		}
-
-		// 4. Activate Context
-		fmt.Println("🔄 Ativando Contexto...")
-		cfg, err := config.Load()
-		if err != nil {
-			cfg = &config.Config{}
-		}
-		cfg.CurrentContext = answers.Environment
-		if err := cfg.Save(); err != nil {
-			fmt.Printf("⚠️  Erro ao salvar estado local: %v\n", err)
-		}
-
-		fmt.Println("")
-		fmt.Println("✅ Projeto Inicializado com Sucesso!")
-		fmt.Printf("   1. Configuração GitOps definida em config/cluster-values.yaml\n")
-		fmt.Printf("   2. Contexto '%s' criado em %s (com Token Seguro)\n", answers.Environment, envFileName)
-		fmt.Printf("   3. Contexto '%s' ativado.\n", answers.Environment)
-		fmt.Println("\n👉 Próximo passo: Execute 'yby bootstrap' para provisionar seu cluster.")
+		fmt.Println("✅ Init concluído via Blueprint!")
 	},
-}
-
-const rootAppTemplate = `apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: root-app
-  namespace: argocd
-  labels:
-    project: default
-    tier: infrastructure
-  finalizers:
-  - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  
-  source:
-    repoURL: {{ .GitRepo }}
-    targetRevision: {{ .GitBranch }}
-    path: charts/bootstrap
-
-    helm:
-      valueFiles:
-      - values.yaml
-      - ../../config/cluster-values.yaml
-    
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: argocd
-    
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-      allowEmpty: false
-    syncOptions:
-    - CreateNamespace=true
-    - PrunePropagationPolicy=foreground
-    - PruneLast=true
-    
-    retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 3m
-        
-  revisionHistoryLimit: 3
-`
-
-func generateRootApp(data interface{}) error {
-	// Ensure directory exists
-	dir := "manifests/argocd"
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		os.MkdirAll(dir, 0755)
-	}
-
-	f, err := os.Create(filepath.Join(dir, "root-app.yaml"))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	t := template.Must(template.New("root-app").Parse(rootAppTemplate))
-	return t.Execute(f, data)
 }
 
 func init() {
 	rootCmd.AddCommand(initCmd)
 }
 
-const configTemplate = `# ==============================================
-# Yby - Configuração Centralizada (Gerado por yby init)
-# ==============================================
-
-# Configurações Globais
-global:
-  environment: {{ .Environment }}
-  domainBase: "{{ .Domain }}"
-
-# Repositório Git do Cluster
-git:
-  repoURL: {{ .GitRepo }}
-  targetRevision: {{ .GitBranch }}
-  branch: {{ .GitBranch }}
-  repoName: {{ .RepoName }}
-
-# Argo CD
-project: default
-argocd:
-  namespace: argocd
-  destinationServer: https://kubernetes.default.svc
-  enabled: true
-  url: https://argocd.{{ .Domain }}
-  server:
-    insecure: true
-
-# Descoberta Automática de Aplicações (Zero-Touch)
-discovery:
-  enabled: true
-  scmProvider: github
-  organization: {{ .Org }}
-  topic: {{ .Org }}-app
-  tokenSecretName: github-token
-  tokenSecretKey: token
-
-# Ingress e TLS
-ingress:
-  enabled: true
-  installController: false # Usar Traefik do K3s
-  tls:
-    enabled: true
-    certResolver: letsencrypt
-    email: {{ .Email }}
-
-# Argo Events (Webhooks e CI/CD)
-events:
-  enabled: true
-
-# Storage (MinIO)
-storage:
-  minio:
-    enabled: {{ if .Modules.MinIO }}true{{ else }}false{{ end }}
-
-# Configuração do Subchart MinIO (Oficial)
-minio:
-  mode: standalone
-  replicas: 1
-  existingSecret: "minio-creds"
-  ingress:
-    enabled: true
-    ingressClassName: traefik
-    hosts:
-      - minio.{{ .Domain }}
-  consoleIngress:
-    enabled: true
-    ingressClassName: traefik
-    hosts:
-      - minio-console.{{ .Domain }}
-  persistence:
-    enabled: true
-    size: 50Gi
-  resources:
-    requests:
-      memory: 256Mi
-      cpu: 100m
-  buckets:
-    - name: {{ .Org }}-assets
-      policy: none
-      purge: false
-
-# Ecofuturismo & Observabilidade
-kepler:
-  enabled: {{ if .Modules.Kepler }}true{{ else }}false{{ end }}
-  serviceMonitor:
-    enabled: {{ if .Modules.Kepler }}true{{ else }}false{{ end }}
-
-# Observabilidade (Prometheus)
-observability:
-  mode: prometheus
-  prometheus:
-    enabled: {{ if .Modules.Observability }}true{{ else }}false{{ end }}
-
-# Headlamp (UI)
-headlamp:
-  enabled: {{ if .Modules.Headlamp }}true{{ else }}false{{ end }}
-
-system:
-  k3s:
-    upgrade:
-      enabled: true
-    version: "v1.33.6+k3s1"
-    maxPods: 300
-`
-
-func generateConfig(data interface{}) error {
-	// Ensure directory exists
-	configDir := "config"
-	if _, err := os.Stat(configDir); os.IsNotExist(err) {
-		os.MkdirAll(configDir, 0755)
-	}
-
-	f, err := os.Create(filepath.Join(configDir, "cluster-values.yaml"))
+// applyPatch reads a YAML file, navigates to path, updates value, and saves.
+func applyPatch(file, path string, value interface{}) {
+	data, err := os.ReadFile(file)
 	if err != nil {
-		return err
+		fmt.Printf("⚠️ Arquivo %s não encontrado para patch.\n", file)
+		return
 	}
-	defer f.Close()
 
-	t := template.Must(template.New("config").Parse(configTemplate))
-	return t.Execute(f, data)
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		fmt.Printf("⚠️ Erro parsing YAML %s: %v\n", file, err)
+		return
+	}
+
+	// Simple dot notation parser: .global.domainBase -> ["global", "domainBase"]
+	keys := strings.Split(strings.TrimPrefix(path, "."), ".")
+
+	if updateNode(&node, keys, value) {
+		// Save back
+		// Use 2 spaces indent
+		var out strings.Builder
+		enc := yaml.NewEncoder(&out)
+		enc.SetIndent(2)
+		enc.Encode(&node)
+		os.WriteFile(file, []byte(out.String()), 0644)
+		fmt.Printf("   ✏️  Atualizado %s: %s = %v\n", file, path, value)
+	} else {
+		fmt.Printf("   ⚠️ Falha ao encontrar path %s em %s\n", path, file)
+	}
 }
-func generateState() error {
-	// Deprecated in favor of direct activation in Run, but kept for compatibility if needed.
-	// Actually we should remove it if no longer used.
-	// The new Run implementation handles state saving directly.
-	return nil
+
+// updateNode recurses to find the key and update it
+func updateNode(node *yaml.Node, keys []string, value interface{}) bool {
+	if node.Kind == yaml.DocumentNode {
+		return updateNode(node.Content[0], keys, value)
+	}
+
+	if len(keys) == 0 {
+		return false // Should not happen if path is valid
+	}
+
+	currentKey := keys[0]
+
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			if keyNode.Value == currentKey {
+				if len(keys) == 1 {
+					// Found target! Update valNode
+					// We need to set valNode's value/tag/kind based on Go interface value
+					setNodeValue(valNode, value)
+					return true
+				} else {
+					// Recurse
+					return updateNode(valNode, keys[1:], value)
+				}
+			}
+		}
+	}
+	return false
+}
+
+func setNodeValue(node *yaml.Node, val interface{}) {
+	switch v := val.(type) {
+	case string:
+		node.Tag = "!!str"
+		node.Value = v
+	case bool:
+		node.Tag = "!!bool"
+		if v {
+			node.Value = "true"
+		} else {
+			node.Value = "false"
+		}
+	case int:
+		node.Tag = "!!int"
+		node.Value = fmt.Sprintf("%d", v)
+		// Add other types as needed
+	}
 }

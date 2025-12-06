@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestGenerateConfig(t *testing.T) {
+func TestApplyPatch(t *testing.T) {
 	// Setup temp dir
 	tmpDir, err := os.MkdirTemp("", "yby-test")
 	if err != nil {
@@ -19,140 +19,69 @@ func TestGenerateConfig(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(wd)
 
+	// Create dummy config
+	initialConfig := `
+global:
+  domainBase: "old.com"
+  environment: "dev"
+git:
+  repoURL: "old-repo"
+deep:
+  nested:
+    value: false
+`
+	configFile := "cluster-values.yaml"
+	err = os.WriteFile(configFile, []byte(initialConfig), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name     string
-		data     interface{}
-		checks   map[string]string // Content check: "string_to_find": "expected_result_description"
-		unchecks []string          // Strings that should NOT be present
+		path     string
+		value    interface{}
+		expected string
 	}{
 		{
-			name: "All Features Enabled",
-			data: struct {
-				Domain      string
-				GitRepo     string
-				GitBranch   string
-				Email       string
-				Environment string
-				Org         string
-				GithubToken string
-				Modules     map[string]bool
-			}{
-				Domain:      "test.com",
-				GitRepo:     "https://github.com/org/repo",
-				GitBranch:   "main",
-				Email:       "admin@test.com",
-				Environment: "prod",
-				Org:         "org",
-				Modules: map[string]bool{
-					"MinIO":         true,
-					"Kepler":        true,
-					"Observability": true,
-					"Headlamp":      true,
-				},
-			},
-			checks: map[string]string{
-				"minio:\n    enabled: true":      "MinIO enabled",
-				"kepler:\n  enabled: true":       "Kepler enabled",
-				"prometheus:\n    enabled: true": "Prometheus enabled",
-				"headlamp:\n  enabled: true":     "Headlamp enabled",
-			},
+			name:     "Update String",
+			path:     ".global.domainBase",
+			value:    "new.com",
+			expected: `domainBase: "new.com"`,
 		},
 		{
-			name: "All Features Disabled",
-			data: struct {
-				Domain      string
-				GitRepo     string
-				GitBranch   string
-				Email       string
-				Environment string
-				Org         string
-				GithubToken string
-				Modules     map[string]bool
-			}{
-				Domain:      "test.com",
-				GitRepo:     "https://github.com/org/repo",
-				GitBranch:   "main",
-				Email:       "admin@test.com",
-				Environment: "prod",
-				Org:         "org",
-				Modules:     map[string]bool{}, // Empty
-			},
-			checks: map[string]string{
-				"minio:\n    enabled: false":      "MinIO disabled",
-				"kepler:\n  enabled: false":       "Kepler disabled",
-				"prometheus:\n    enabled: false": "Prometheus disabled",
-				"headlamp:\n  enabled: false":     "Headlamp disabled",
-			},
+			name:     "Update Int (Environment as string for now)",
+			path:     ".global.environment",
+			value:    "prod",
+			expected: `environment: "prod"`,
+		},
+		{
+			name:     "Update Bool",
+			path:     ".deep.nested.value",
+			value:    true,
+			expected: `value: true`, // Custom yaml logic writes "true" string for bools currently in setNodeValue
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := generateConfig(tt.data)
-			if err != nil {
-				t.Errorf("generateConfig() error = %v", err)
-				return
-			}
+			applyPatch(configFile, tt.path, tt.value)
 
-			// Read generated file
-			content, err := os.ReadFile("config/cluster-values.yaml")
+			// Read back
+			content, err := os.ReadFile(configFile)
 			if err != nil {
-				t.Fatalf("failed to read config file: %v", err)
+				t.Fatalf("failed to read file: %v", err)
 			}
 			sContent := string(content)
 
-			for checkStr, desc := range tt.checks {
-				if !strings.Contains(sContent, checkStr) {
-					t.Errorf("Expected %s, but string not found: %s", desc, checkStr)
-				}
+			if !strings.Contains(sContent, tt.expected) {
+				t.Errorf("Expected %s to contain %s", sContent, tt.expected)
 			}
-
-			// Cleanup for next test
-			os.RemoveAll("config")
 		})
 	}
 }
 
-func TestGenerateRootApp(t *testing.T) {
-	// Setup temp dir
-	tmpDir, err := os.MkdirTemp("", "yby-test-app")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	os.Chdir(tmpDir)
-
-	data := struct {
-		GitRepo   string
-		GitBranch string
-	}{
-		GitRepo:   "https://github.com/test/repo",
-		GitBranch: "dev",
-	}
-
-	err = generateRootApp(data)
-	if err != nil {
-		t.Errorf("generateRootApp() error = %v", err)
-	}
-
-	content, err := os.ReadFile("manifests/argocd/root-app.yaml")
-	if err != nil {
-		t.Fatalf("failed to read root-app file: %v", err)
-	}
-
-	sContent := string(content)
-	if !strings.Contains(sContent, "repoURL: https://github.com/test/repo") {
-		t.Error("root-app does not contain correct repoURL")
-	}
-	if !strings.Contains(sContent, "targetRevision: dev") {
-		t.Error("root-app does not contain correct targetRevision")
-	}
-}
-
-func TestEnvFileHelper(t *testing.T) {
-	// Simple inline check of the logic we put in init.go for env file writing
-	// Since we duplicated logic in init.go instead of using the helper (to avoid import cycle refactor),
-	// we will verify strict isolation logic here if possible,
-	// but mostly this confirms the templates are correct.
+func TestBlueprintLogic(t *testing.T) {
+	// Future: Mock Survey and test the full Run command if possible,
+	// but Survey is hard to mock without a pty.
+	// For now, unit testing applyPatch covers the critical logic.
 }
