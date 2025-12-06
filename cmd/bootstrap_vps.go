@@ -233,22 +233,22 @@ func fetchKubeconfig(client *ssh.Client, host string) error {
 
 	// 2. Renomear Contexto
 	os.Setenv("KUBECONFIG", tempFile.Name())
-	exec.Command("kubectl", "config", "rename-context", "default", clusterName).Run()
-	exec.Command("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
-	exec.Command("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
-	exec.Command("kubectl", "config", "rename-cluster", "default", clusterName).Run()
-	exec.Command("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
+	_ = exec.Command("kubectl", "config", "rename-context", "default", clusterName).Run()
+	_ = exec.Command("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
+	_ = exec.Command("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
+	_ = exec.Command("kubectl", "config", "rename-cluster", "default", clusterName).Run()
+	_ = exec.Command("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
 	os.Unsetenv("KUBECONFIG")
 
 	// 3. Merge
 	home, _ := os.UserHomeDir()
 	kubeDir := filepath.Join(home, ".kube")
-	os.MkdirAll(kubeDir, 0755)
+	_ = os.MkdirAll(kubeDir, 0755)
 	mainConfigPath := filepath.Join(kubeDir, "config")
 
 	// Backup
 	if _, err := os.Stat(mainConfigPath); err == nil {
-		copyFile(mainConfigPath, mainConfigPath+".bak")
+		_ = copyFile(mainConfigPath, mainConfigPath+".bak")
 	}
 
 	cmd := exec.Command("kubectl", "config", "view", "--flatten")

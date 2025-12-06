@@ -112,7 +112,7 @@ var bootstrapClusterCmd = &cobra.Command{
 
 		fmt.Println(stepStyle.Render("🔄 Forçando Sync inicial..."))
 		time.Sleep(5 * time.Second)
-		exec.Command("kubectl", "patch", "application", "root-app", "-n", "argocd", "--type", "merge", "-p", "{\"operation\": {\"sync\": {\"prune\": true}}}").Run()
+		_ = exec.Command("kubectl", "patch", "application", "root-app", "-n", "argocd", "--type", "merge", "-p", "{\"operation\": {\"sync\": {\"prune\": true}}}").Run()
 
 		fmt.Println("\n" + checkStyle.Render("🎉 Bootstrap do Cluster concluído!"))
 		fmt.Println("👉 Execute 'yby access' para acessar os dashboards.")
@@ -150,12 +150,12 @@ func ensureToolsInstalled() {
 }
 
 func executeHelmRepoAdd(name, url string) {
-	exec.Command("helm", "repo", "add", name, url).Run()
-	exec.Command("helm", "repo", "update", name).Run()
+	_ = exec.Command("helm", "repo", "add", name, url).Run()
+	_ = exec.Command("helm", "repo", "update", name).Run()
 }
 
 func createNamespace(ns string) {
-	exec.Command("kubectl", "create", "namespace", ns).Run()
+	_ = exec.Command("kubectl", "create", "namespace", ns).Run()
 }
 
 func runCommand(name string, args ...string) {
@@ -198,11 +198,11 @@ func configureSeconds() {
 
 	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
 	applyCmd.Stdin, _ = cmd.StdoutPipe()
-	cmd.Start()
-	applyCmd.Run()
-	cmd.Wait()
+	_ = cmd.Start()
+	_ = applyCmd.Run()
+	_ = cmd.Wait()
 
-	exec.Command("kubectl", "label", "secret", "argocd-repo-creds", "-n", "argocd", "argocd.argoproj.io/secret-type=repository", "--overwrite").Run()
+	_ = exec.Command("kubectl", "label", "secret", "argocd-repo-creds", "-n", "argocd", "argocd.argoproj.io/secret-type=repository", "--overwrite").Run()
 
 	// Github Token for AppSet
 	fmt.Println(itemStyle.Render("Configurando Github Token Secret..."))
@@ -212,9 +212,9 @@ func configureSeconds() {
 
 	applyCmdToken := exec.Command("kubectl", "apply", "-f", "-")
 	applyCmdToken.Stdin, _ = cmdToken.StdoutPipe()
-	cmdToken.Start()
-	applyCmdToken.Run()
-	cmdToken.Wait()
+	_ = cmdToken.Start()
+	_ = applyCmdToken.Run()
+	_ = cmdToken.Wait()
 
 	// Restore Sealed Secrets Keys
 	fmt.Println(itemStyle.Render("Verificando backup de chaves Sealed Secrets..."))

@@ -178,7 +178,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml`,
 		fmt.Printf("Chave encontrada: %s\n", keyName)
 
 		outputFile := "bootstrap/sealed-secrets-backup.yaml"
-		os.MkdirAll(filepath.Dir(outputFile), 0755)
+		_ = os.MkdirAll(filepath.Dir(outputFile), 0755)
 
 		file, err := os.Create(outputFile)
 		if err != nil {
@@ -220,7 +220,7 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 		fmt.Printf("Restaurando de: %s\n", inputFile)
 
 		// Create ns if not exists
-		exec.Command("kubectl", "create", "ns", "sealed-secrets").Run()
+		_ = exec.Command("kubectl", "create", "ns", "sealed-secrets").Run()
 
 		// Apply
 		if err := exec.Command("kubectl", "apply", "-f", inputFile).Run(); err != nil {
@@ -230,7 +230,7 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 
 		// Delete pods to reload
 		fmt.Println("Reiniciando controller...")
-		exec.Command("kubectl", "delete", "pod", "-n", "sealed-secrets", "-l", "app.kubernetes.io/name=sealed-secrets").Run()
+		_ = exec.Command("kubectl", "delete", "pod", "-n", "sealed-secrets", "-l", "app.kubernetes.io/name=sealed-secrets").Run()
 
 		fmt.Println(checkStyle.Render("✅ Chave restaurada."))
 	},

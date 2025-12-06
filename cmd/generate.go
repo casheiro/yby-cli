@@ -14,7 +14,7 @@ var generateCmd = &cobra.Command{
 	Aliases: []string{"gen"},
 	Long:    `Utilitário para gerar manifestos Kubernetes e outros recursos.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 
