@@ -28,7 +28,7 @@ yby --help
 
 ## Funcionalidades
 
-- **Init**: Configura novos projetos com defaults inteligentes.
+- **Smart Init (Blueprint Engine)**: Configura projetos lendo dinamicamente `.yby/blueprint.yaml`. Zero hardcoding.
 - **GitOps**: Integração nativa com arquitetura GitOps.
 - **Contextos**: Gerenciamento seguro de múltiplos ambientes (dev, prod).
 
