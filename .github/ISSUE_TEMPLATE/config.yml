@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Yby Support
+    url: https://github.com/casheiro/yby-cli/discussions
+    about: Dúvidas gerais ou discussões que não são issues de código

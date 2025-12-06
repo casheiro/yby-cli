@@ -15,14 +15,22 @@ func TestDetectContexts(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create .env (default)
-	os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("FOO=default"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("FOO=default"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create .env.staging
-	os.WriteFile(filepath.Join(tmpDir, ".env.staging"), []byte("FOO=staging"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env.staging"), []byte("FOO=staging"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create local/k3d-config.yaml
-	os.Mkdir(filepath.Join(tmpDir, "local"), 0755)
-	os.WriteFile(filepath.Join(tmpDir, "local/k3d-config.yaml"), []byte(""), 0644)
+	if err := os.Mkdir(filepath.Join(tmpDir, "local"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "local/k3d-config.yaml"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	manager := NewManager(tmpDir)
 	contexts, err := manager.DetectContexts()
@@ -56,10 +64,14 @@ func TestStrictIsolation(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// .env has SENSITIVE_PROD_VAR
-	os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("SENSITIVE_PROD_VAR=exposed"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("SENSITIVE_PROD_VAR=exposed"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// .env.staging has SAFE_VAR
-	os.WriteFile(filepath.Join(tmpDir, ".env.staging"), []byte("SAFE_VAR=ok"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env.staging"), []byte("SAFE_VAR=ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	manager := NewManager(tmpDir)
 

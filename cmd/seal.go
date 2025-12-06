@@ -136,10 +136,10 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 			Default: filepath.Join(targetDir, filename),
 		}
 		var finalPath string
-		survey.AskOne(pathPrompt, &finalPath)
+		_ = survey.AskOne(pathPrompt, &finalPath)
 
 		// Garantir diretório
-		os.MkdirAll(filepath.Dir(finalPath), 0755)
+		_ = os.MkdirAll(filepath.Dir(finalPath), 0755)
 
 		if err := os.WriteFile(finalPath, sealedYaml.Bytes(), 0644); err != nil {
 			fmt.Printf("❌ Erro ao salvar arquivo: %v\n", err)

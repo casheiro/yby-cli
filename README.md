@@ -40,4 +40,4 @@ Quer ajudar? Leia nosso [Guia de Contribuição](CONTRIBUTING.md) para começar.
 
 ## Licença
 
-Distribuído sob a licença MIT. Veja `LICENSE` para mais informações.
+Distribuído sob a licença MIT. Veja `LICENSE` para mais informações.  

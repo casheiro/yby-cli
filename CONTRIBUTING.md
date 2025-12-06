@@ -1,19 +1,52 @@
 # Contribuindo para o Yby CLI
 
-Obrigado por considerar contribuir para o Yby!
+Obrigado pelo interesse em contribuir para o Yby! Este documento define o processo de desenvolvimento e release para garantir qualidade e automação.
 
-## Como começar
+## 🚀 Fluxo de Desenvolvimento (Git-Flow)
 
-1.  Faça um **Fork** do projeto.
-2.  Crie uma **Branch** para sua feature (`git checkout -b feature/MinhaFeature`).
-3.  Implemente suas mudanças.
-4.  Faça o **Commit** das suas mudanças (`git commit -m 'feat: Adiciona MinhaFeature'`).
-5.  Faça o **Push** para a Branch (`git push origin feature/MinhaFeature`).
-6.  Abra um **Pull Request**.
+Adotamos um modelo **Git-Flow** adaptado.
 
-## Desenvolvimento Local
+- **`main`**: 🛡️ Produção. Contém apenas versões estáveis e "taggeadas". **Não abra PRs diretos para cá**, exceto hotfixes críticos.
+- **`develop`**: 🧪 Integração. **Esta é a branch base para seus Pull Requests.** Todas as novas features e preparações para release acontecem aqui.
 
-Você precisará do [Go](https://go.dev/doc/install) instalado (versão 1.22+).
+## 📝 Como Contribuir
+
+1.  **Fork** o projeto.
+2.  Clone seu fork e configure o original como remote `upstream`.
+3.  Crie uma **Branch** a partir de `develop`:
+    ```bash
+    git checkout develop
+    git pull upstream develop
+    git checkout -b feature/minha-nova-feature
+    ```
+4.  Implemente suas mudanças.
+5.  **Commit** suas mudanças usando **Conventional Commits** (Veja abaixo).
+6.  Abra um **Pull Request** apontando para a branch **`develop`** do repositório original.
+
+## 🤖 Padrões de Commit e Automação
+
+Utilizamos **automação total de releases** baseada no [Conventional Commits](https://www.conventionalcommits.org/).
+
+> [!IMPORTANT]
+> O título do seu PR e suas mensagens de commit determinam a versão do software automaticamente.
+>
+> - `feat: ...` -> Gera versão **Minor** (v1.1.0 -> v1.2.0)
+> - `fix: ...` -> Gera versão **Patch** (v1.1.0 -> v1.1.1)
+> - `BREAKING CHANGE: ...` -> Gera versão **Major** (v1.0.0 -> v2.0.0)
+
+### Tipos Aceitos
+- `feat`: Nova funcionalidade.
+- `fix`: Correção de bug.
+- `docs`: Documentação.
+- `style`: Formatação, linting.
+- `refactor`: Refatoração de código.
+- `perf`: Melhoria de performance.
+- `test`: Adição ou correção de testes.
+- `chore`: Atualização de build, dependências, ferramentas.
+
+## 🧪 Validando Localmente
+
+Pré-requisitos: [Go 1.22+](https://go.dev/doc/install).
 
 ```bash
 # Clone o repositório
@@ -23,18 +56,9 @@ cd yby-cli
 # Instale dependências
 go mod tidy
 
-# Rode o projeto
-go run main.go
+# Rodar testes
+go test ./... -v
+
+# Rodar linter (se tiver golangci-lint instalado)
+golangci-lint run
 ```
-
-## Padrões de Commit
-
-Seguimos a convenção do [Conventional Commits](https://www.conventionalcommits.org/).
-
-- `feat`: Uma nova funcionalidade.
-- `fix`: Correção de bug.
-- `docs`: Apenas documentação.
-- `style`: Formatação, ponto e vírgula faltando, etc.
-- `refactor`: Refatoração de código em produção.
-
-Exemplo: `feat: adiciona suporte a login via token`
