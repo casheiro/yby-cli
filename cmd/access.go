@@ -1,45 +1,28 @@
 /*
 Copyright © 2025 Yby Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 */
 package cmd
 
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 // accessCmd represents the access command
-// accessCmd represents the access command
 var accessCmd = &cobra.Command{
 	Use:   "access",
 	Short: "Abre túneis de acesso aos serviços do cluster",
-	Long: `Estabelece conexões seguras (port-forward) para os serviços administrativos:
-- Argo CD (http://localhost:8085)
-- Grafana Local (http://localhost:3001)
-- Gera token para Headlamp
+	Long: `Estabelece conexões seguras (port-forward) para os serviços disponíveis:
+- Argo CD
+- MinIO (se detectado)
+- Prometheus (para alimentar Grafana)
+- Grafana Local (via Docker)
+- Headlamp (Token)
 
 Você pode especificar um contexto (local/prod) com --context.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -58,29 +41,65 @@ Você pode especificar um contexto (local/prod) com --context.`,
 			fmt.Printf("📍 Contexto: %s (definido via flag)\n", targetContext)
 		}
 
-		// 2. Obter Senha Argo CD
+		// 1. Argo CD (Default)
 		argoPwd, err := getArgoPassword(targetContext)
 		if err != nil {
-			fmt.Printf("⚠️  Não foi possível obter senha do Argo CD: %v\n", err)
-			argoPwd = "Erro ao recuperar"
+			fmt.Printf("⚠️  Argo CD: Não foi possível obter senha (talvez não instalado?): %v\n", err)
+		} else {
+			fmt.Println("🔌 Conectando Argo CD...")
+			killPortForward("8085")
+			go runPortForward(targetContext, "argocd", "svc/argocd-server", "8085:80")
+			fmt.Printf("   -> Argo CD: http://localhost:8085 (admin / %s)\n", argoPwd)
 		}
 
-		// 3. Iniciar Port-Forwards
-		fmt.Println("🔌 Estabelecendo túneis...")
+		// 2. MinIO (Dynamic)
+		minioSvc, minioNs := findMinioService(targetContext)
+		if minioSvc != "" {
+			fmt.Printf("🔌 Detectado MinIO (%s/%s)! Conectando...\n", minioNs, minioSvc)
+			killPortForward("9000")
+			killPortForward("9001")
+			go runPortForward(targetContext, minioNs, "svc/"+minioSvc, "9000:9000") // API
+			go runPortForward(targetContext, minioNs, "svc/"+minioSvc, "9001:9001") // Console
 
-		// Argo CD
-		killPortForward("8085")
-		go runPortForward(targetContext, "argocd", "svc/argocd-server", "8085:80")
-		fmt.Println("   - Argo CD: http://localhost:8085")
+			// Try to get creds (check default candidates first)
+			user, pass := getSecretKeys(targetContext, "storage", "minio-secret", "rootUser", "rootPassword")
+			if user == "" {
+				user, pass = getSecretKeys(targetContext, "default", "minio-creds", "rootUser", "rootPassword")
+			}
 
-		// Grafana Local (Docker)
-		startLocalGrafana()
+			// Fallbacks for display
+			if user == "" {
+				user = "admin (verifique secrets)"
+			}
+			if pass == "" {
+				pass = "***"
+			}
 
-		fmt.Println("✅ Serviços iniciados em background (goroutines)")
-		fmt.Println("")
-		fmt.Println("📊 Credenciais:")
-		fmt.Printf("   - Argo CD: admin / %s\n", argoPwd)
-		fmt.Println("   - Grafana: admin / admin")
+			fmt.Printf("   -> MinIO API: http://localhost:9000\n")
+			fmt.Printf("   -> MinIO Console: http://localhost:9001 (%s / %s)\n", user, pass)
+		} else {
+			fmt.Println("ℹ️  MinIO não detectado (ou não instalado).")
+		}
+
+		// 3. Prometheus & Grafana (Local First)
+		// Check for Prometheus service to feed local Grafana
+		promSvc, promNs := findPrometheusService(targetContext)
+		if promSvc != "" {
+			fmt.Printf("🔌 Detectado Prometheus (%s/%s)! Conectando para Grafana...\n", promNs, promSvc)
+			killPortForward("9090")
+			go runPortForward(targetContext, promNs, "svc/"+promSvc, "9090:9090")
+
+			// Start Local Grafana
+			fmt.Println("🐳 Iniciando Grafana Local (Docker)...")
+			if err := startLocalGrafanaContainer(); err != nil {
+				fmt.Printf("⚠️  Falha ao iniciar Grafana Docker: %v\n", err)
+			} else {
+				fmt.Println("   -> Grafana: http://localhost:3001 (admin/admin)")
+				fmt.Println("      (Dados persistidos no volume 'yby-grafana-data')")
+			}
+		} else {
+			fmt.Println("⚠️  Prometheus não encontrado. Grafana local não será iniciado.")
+		}
 
 		// 4. Token Headlamp
 		token, err := getHeadlampToken(targetContext)
@@ -88,31 +107,75 @@ Você pode especificar um contexto (local/prod) com --context.`,
 			fmt.Println("")
 			fmt.Println("🔑 Token Headlamp (copie abaixo):")
 			fmt.Println(token)
-		} else {
-			fmt.Printf("⚠️  Erro ao gerar token Headlamp: %v\n", err)
 		}
 
 		fmt.Println("")
 		fmt.Println("ℹ️  Pressione Ctrl+C para encerrar os túneis...")
-
-		// Manter rodando até Ctrl+C
 		select {}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(accessCmd)
-	accessCmd.Flags().StringP("context", "c", "", "Nome do contexto Kubernetes (ex: yby-prod, k3d-yby-local)")
+	accessCmd.Flags().StringP("context", "c", "", "Nome do contexto Kubernetes")
 }
+
+// Helpers
 
 func getKubectlContext() (string, error) {
 	out, err := exec.Command("kubectl", "config", "current-context").Output()
 	return strings.TrimSpace(string(out)), err
 }
 
+func hasService(context, namespace, service string) bool {
+	// kubectl get svc minio -n storage
+	err := exec.Command("kubectl", "--context", context, "-n", namespace, "get", "svc", service).Run()
+	return err == nil
+}
+
+func findService(context string, candidates []struct{ ns, svc string }) (string, string) {
+	for _, c := range candidates {
+		if hasService(context, c.ns, c.svc) {
+			return c.svc, c.ns
+		}
+	}
+	return "", ""
+}
+
+func findMinioService(context string) (string, string) {
+	candidates := []struct{ ns, svc string }{
+		{"storage", "minio"},
+		{"default", "minio"},
+		{"default", "cluster-config-minio"},
+		{"minio", "minio"},
+	}
+	return findService(context, candidates)
+}
+
+func findPrometheusService(context string) (string, string) {
+	candidates := []struct{ ns, svc string }{
+		{"kube-system", "system-kube-prometheus-sta-prometheus"},   // Truncated name often seen
+		{"kube-system", "system-kube-prometheus-stack-prometheus"}, // Full name
+		{"monitoring", "prometheus-kube-prometheus-prometheus"},
+		{"monitoring", "prometheus-server"},
+		{"default", "prometheus-operated"},
+	}
+	return findService(context, candidates)
+}
+
 func getArgoPassword(context string) (string, error) {
-	// kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}"
-	cmd := exec.Command("kubectl", "--context", context, "--insecure-skip-tls-verify", "-n", "argocd", "get", "secret", "argocd-initial-admin-secret", "-o", "jsonpath={.data.password}")
+	return getSecretValue(context, "argocd", "argocd-initial-admin-secret", "password")
+}
+
+func getSecretKeys(context, ns, secret, keyUser, keyPass string) (string, string) {
+	user, _ := getSecretValue(context, ns, secret, keyUser)
+	pass, _ := getSecretValue(context, ns, secret, keyPass)
+	return user, pass
+}
+
+func getSecretValue(context, ns, secret, jsonPathKey string) (string, error) {
+	// jsonpath={.data.key}
+	cmd := exec.Command("kubectl", "--context", context, "--insecure-skip-tls-verify", "-n", ns, "get", "secret", secret, fmt.Sprintf("-o=jsonpath={.data.%s}", jsonPathKey))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -122,12 +185,18 @@ func getArgoPassword(context string) (string, error) {
 }
 
 func runPortForward(context, namespace, resource, ports string) {
-	// kubectl -n argocd port-forward svc/argocd-server 8085:80
-	cmd := exec.Command("kubectl", "--context", context, "--insecure-skip-tls-verify", "-n", namespace, "port-forward", resource, ports)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("❌ Falha no port-forward %s: %v\n", resource, err)
+	// Retry loop for stability
+	for {
+		cmd := exec.Command("kubectl", "--context", context, "--insecure-skip-tls-verify", "-n", namespace, "port-forward", resource, ports)
+		cmd.Stdout = nil // Silence stdout
+		cmd.Stderr = nil // Silence stderr usually
+		if err := cmd.Run(); err != nil {
+			// fmt.Printf("debug: port-forward died for %s, restarting...\n", resource)
+			time.Sleep(2 * time.Second)
+		} else {
+			// clean exit
+			return
+		}
 	}
 }
 
@@ -136,22 +205,37 @@ func killPortForward(port string) {
 }
 
 func getHeadlampToken(context string) (string, error) {
-	// kubectl create token admin-user -n kube-system --duration=24h
 	cmd := exec.Command("kubectl", "--context", context, "--insecure-skip-tls-verify", "create", "token", "admin-user", "-n", "kube-system", "--duration=24h")
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }
 
-func startLocalGrafana() {
-	// Tenta rodar o script existente. Assumindo execução da raiz do projeto.
-	cmd := exec.Command("./scripts/start-local-grafana.sh")
-	if _, err := os.Stat("./scripts/start-local-grafana.sh"); os.IsNotExist(err) {
-		cmd = exec.Command("../scripts/start-local-grafana.sh")
+func startLocalGrafanaContainer() error {
+	// Check if docker is available
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("docker não encontrado no PATH")
 	}
 
-	if err := cmd.Start(); err != nil {
-		fmt.Println("   - Grafana: Falha ao iniciar (verifique se o Docker está rodando)")
-	} else {
-		fmt.Println("   - Grafana: http://localhost:3001 (Iniciando container...)")
+	// host.docker.internal handling for Linux
+	// On Linux, we need --add-host=host.docker.internal:host-gateway
+	addHost := "--add-host=host.docker.internal:host-gateway"
+
+	// Create volume if not exists
+	exec.Command("docker", "volume", "create", "yby-grafana-data").Run()
+
+	// Stop existing
+	exec.Command("docker", "rm", "-f", "yby-grafana").Run()
+
+	// Run
+	cmd := exec.Command("docker", "run", "-d",
+		"--name", "yby-grafana",
+		"-p", "3001:3000",
+		"-v", "yby-grafana-data:/var/lib/grafana",
+		addHost,
+		"grafana/grafana:latest")
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s", string(out))
 	}
+	return nil
 }
