@@ -1,0 +1,55 @@
+name: 🐛 Reportar Bug
+description: Reporte erros ou comportamentos inesperados no CLI.
+title: "[BUG]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar um problema! Isso nos ajuda a melhorar o Yby CLI.
+        Por favor, preencha os campos abaixo com o máximo de detalhes possível.
+
+  - type: input
+    id: version
+    attributes:
+      label: Versão do Yby CLI
+      description: "Qual a saída de `yby version`?"
+      placeholder: "v0.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Sistema Operacional
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Outro
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Qual comando você executou?
+      description: O comando exato que causou o erro.
+      placeholder: yby init --repo ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrição do Problema
+      description: O que aconteceu versus o que deveria ter acontecido.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs e Saída de Erro
+      description: Cole aqui a saída completa do erro. Use blocos de código (```) para facilitar a leitura.
+      render: shell

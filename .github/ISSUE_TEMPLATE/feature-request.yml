@@ -1,0 +1,33 @@
+name: 💡 Sugerir Funcionalidade
+description: Sugira novas features ou melhorias para o CLI.
+title: "[FEAT]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por contribuir com ideias para o ecossistema Yby!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: O problema ou necessidade
+      description: "Qual problema essa funcionalidade resolveria? Ex: 'Eu sempre fico frustrado quando...'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solução Proposta
+      description: Descreva como você imagina que o CLI deveria funcionar. Se aplicável, proponha a sintaxe do comando.
+      placeholder: |
+        Eu gostaria de um comando `yby novo-comando` que fizesse X...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas Consideradas
+      description: Você considerou alguma outra forma de resolver isso?
