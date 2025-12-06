@@ -24,6 +24,7 @@ jobs:
           # Checkout the base branch of the PR, which is the release branch
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: 🏷️ Create Final Tag
         id: tag
