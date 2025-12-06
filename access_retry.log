@@ -1,0 +1,16 @@
+🚀 Iniciando Acesso Unificado ao Cluster...
+📍 Contexto Atual: k3d-yby-local
+🔌 Estabelecendo túneis...
+   - Argo CD: http://localhost:8085
+   - Grafana: http://localhost:3001 (Iniciando container...)
+✅ Serviços iniciados em background (goroutines)
+
+📊 Credenciais:
+   - Argo CD: admin / OROx4AUwZpkCKA4a
+   - Grafana: admin / admin
+
+🔑 Token Headlamp (copie abaixo):
+eyJhbGciOiJSUzI1NiIsImtpZCI6Inl2WnFiRVFFblBqQjg0Yk9rMTdvZDlnSlRoQmZBb0hDUkxoQUZ2RDFOamsifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiLCJrM3MiXSwiZXhwIjoxNzY1MDI1Mzg0LCJpYXQiOjE3NjQ5Mzg5ODQsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwianRpIjoiOThkMmNmN2UtOWRjMi00NDVmLWFhNTctMzVjYWE4NDNjOTM2Iiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsInNlcnZpY2VhY2NvdW50Ijp7Im5hbWUiOiJhZG1pbi11c2VyIiwidWlkIjoiMzRhMGRkNGMtMWI2ZS00NzkzLWJhMzUtNTljOTRkNTlhNWM4In19LCJuYmYiOjE3NjQ5Mzg5ODQsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDprdWJlLXN5c3RlbTphZG1pbi11c2VyIn0.n-St3UfyEdnZwiBBRnEts6-1eLTvETV51uuJ3rsMtJUdMgjaqzr-GZ8u5Xjyz-o-VU-BYxXhbTBk4YiLOCpV1lXIN-3Db5sxeXHamWfTO95wDKdY-LclLWWgo4StsF7IV-p2OGX8ZSb3mMc2Ozt-HRcdACYtJibgsh2AL7P5A9v0hcdaQcQHhGstEoz-1Ur4ZkeYmCGPQ5IptxuBblXRufvzbGjEB-5UuULbLyDDF-JaaM6Twh4hACuTCc36cpGmqPwIppTgx4Z08VkiHKJYyHQZGiCDy1Vvsg3Ok5mjtz9qsYX5wcVwc37AYAJIl9LXT3_r_b-Nh7N--EQXBYFBxw
+
+ℹ️  Pressione Ctrl+C para encerrar os túneis...
+❌ Falha no port-forward svc/argocd-server: signal: terminated
