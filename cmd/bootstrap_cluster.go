@@ -216,33 +216,20 @@ func configureSeconds() {
 	applyCmdToken.Run()
 	cmdToken.Wait()
 
-	// Restore Sealed Secrets Keys if script exists
-	if _, err := os.Stat("scripts/restore-sealed-secrets.sh"); err == nil {
-		fmt.Println(itemStyle.Render("Restaurando chaves do Sealed Secrets..."))
-		exec.Command("scripts/restore-sealed-secrets.sh").Run()
-	}
+	// Restore Sealed Secrets Keys
+	fmt.Println(itemStyle.Render("Verificando backup de chaves Sealed Secrets..."))
+	// We call the restore command internally. It checks for the file itself.
+	restoreKeysCmd.Run(restoreKeysCmd, []string{})
 
 	// Webhook Secret
 	fmt.Println(itemStyle.Render("Verificando Webhook Secret..."))
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
-	if webhookSecret == "" {
-		// Generate random if missing? Or allow generate-webhook-sealed-secret script to handle it?
-		// For now, let's keep it simple: if script exists, run it
-		if _, err := os.Stat("scripts/create-webhook-sealed-secret.sh"); err == nil {
-			// Check if we need to generate one
-			// Probably better to warn user
-			fmt.Println(warningStyle.Render("WEBHOOK_SECRET não definido. Rodando script de geração..."))
-			// Here we would implement the logic or call the script.
-			// Calling the script requires arguments.
-			// Let's assume the user handles webhook secret separately or use the Makefile logic "generate random"
-			// Implementing Makefile logic:
-			// GENERATED_SECRET=$$(openssl rand -hex 20); \
-			// ./scripts/create-webhook-sealed-secret.sh github $$GENERATED_SECRET; \
-			// Skipping for now to avoid complexity in this step.
-		}
-	} else {
-		if _, err := os.Stat("scripts/create-webhook-sealed-secret.sh"); err == nil {
-			exec.Command("scripts/create-webhook-sealed-secret.sh", "github", webhookSecret).Run()
-		}
-	}
+
+	// If env var is set, or if we want to auto-generate (the command handles auto-generation if empty arg provided?
+	// The command expects [provider] [secret]. If secret is empty/missing, it generates from env?
+	// Let's check secrets.go again.
+	// secrets.go: "if secretVal == "" { secretVal = os.Getenv("WEBHOOK_SECRET") } ... if "" -> generate random"
+	// So we can just call it with "github".
+
+	webhookSecretCmd.Run(webhookSecretCmd, []string{"github", webhookSecret})
 }
