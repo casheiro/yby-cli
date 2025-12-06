@@ -64,7 +64,7 @@ Ao final, o contexto criado é ativado automaticamente.`,
 				Name: "GitRepo",
 				Prompt: &survey.Input{
 					Message: "URL do Repositório Git:",
-					Default: "https://github.com/casheiro/yby",
+					Default: "https://github.com/casheiro/yby-template",
 				},
 				Validate: survey.Required,
 			},

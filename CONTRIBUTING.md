@@ -17,7 +17,7 @@ Você precisará do [Go](https://go.dev/doc/install) instalado (versão 1.22+).
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/yby-cli.git
+git clone https://github.com/casheiro/yby-cli.git
 cd yby-cli
 
 # Instale dependências
