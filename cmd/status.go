@@ -57,6 +57,34 @@ Equivalente ao antigo 'make status'.`,
 				fmt.Println("Nenhum ingress encontrado.")
 			}
 		}
+
+		// KEDA ScaledObjects
+		fmt.Println("")
+		fmt.Println(headerStyle.Render("⚡ Autoscaling (KEDA)"))
+		out, err = exec.Command("kubectl", "get", "scaledobjects", "-A").CombinedOutput()
+		if err == nil {
+			if len(out) > 0 {
+				fmt.Println(strings.TrimSpace(string(out)))
+			} else {
+				fmt.Println("Nenhum ScaledObject encontrado (KEDA ativo mas sem regras).")
+			}
+		} else {
+			fmt.Println(warningStyle.Render("KEDA não detectado (CRDs ausentes?)"))
+		}
+
+		// Kepler Stats
+		fmt.Println("")
+		fmt.Println(headerStyle.Render("🍃 Eficiência Energética (Kepler)"))
+		out, err = exec.Command("kubectl", "get", "pods", "-n", "kepler", "-l", "app.kubernetes.io/name=kepler").CombinedOutput()
+		if err == nil && len(out) > 0 {
+			if strings.Contains(string(out), "Running") {
+				fmt.Println(checkStyle.Render("Sensor Kepler ATIVO e monitorando o cluster."))
+			} else {
+				fmt.Println(warningStyle.Render("Sensor Kepler instalado mas não está 'Running'."))
+			}
+		} else {
+			fmt.Println(crossStyle.Render("Sensor Kepler não encontrado no namespace 'kepler'."))
+		}
 	},
 }
 

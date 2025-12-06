@@ -30,6 +30,11 @@ e se há conexão com o cluster Kubernetes configurado.`,
 
 		fmt.Println(headerStyle.Render("🌐 Conectividade"))
 		checkClusterConnection()
+
+		fmt.Println(headerStyle.Render("🏥 Integridade da Plataforma (CRDs)"))
+		checkCRD("servicemonitors.monitoring.coreos.com", "Prometheus Operator")
+		checkCRD("clusterissuers.cert-manager.io", "Cert-Manager")
+		checkCRD("scaledobjects.keda.sh", "KEDA")
 	},
 }
 
@@ -54,5 +59,14 @@ func checkClusterConnection() {
 		fmt.Println(warningStyle.Render("   Dica: Verifique seu KUBECONFIG ou se o cluster está rodando."))
 	} else {
 		fmt.Printf("%s\n", checkStyle.String())
+	}
+}
+
+func checkCRD(crdName, readableName string) {
+	err := exec.Command("kubectl", "get", "crd", crdName).Run()
+	if err != nil {
+		fmt.Printf("%s %-25s: %s\n", crossStyle.String(), readableName, warningStyle.Render("Ausente (CRD não instalado)"))
+	} else {
+		fmt.Printf("%s %-25s: %s\n", checkStyle.String(), readableName, grayStyle.Render("Instalado"))
 	}
 }
