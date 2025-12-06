@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"gopkg.in/yaml.v3"
 )
 
 // bootstrapVpsCmd represents the bootstrap vps command
@@ -102,6 +103,26 @@ configura firewall, instala K3s e configura o kubeconfig local.`,
 		if k3sToken == "" {
 			k3sToken = fmt.Sprintf("yby-%d", time.Now().Unix())
 		}
+
+		// 6. K3s Version Resolution
+		// Priority: Flag > cluster-values.yaml > Default
+		if !cmd.Flags().Changed("k3s-version") {
+			if data, err := os.ReadFile("config/cluster-values.yaml"); err == nil {
+				var config struct {
+					System struct {
+						K3s struct {
+							Version string `yaml:"version"`
+						} `yaml:"k3s"`
+					} `yaml:"system"`
+				}
+				if err := yaml.Unmarshal(data, &config); err == nil && config.System.K3s.Version != "" {
+					k3sVersion = config.System.K3s.Version
+					fmt.Printf("📄 Usando versão K3s do cluster-values.yaml: %s\n", k3sVersion)
+				}
+			}
+		}
+
+		// 7. K3s Installation
 
 		// Use flag value
 		fmt.Printf("📦 Versão K3s alvo: %s\n", k3sVersion)
