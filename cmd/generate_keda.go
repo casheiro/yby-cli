@@ -23,29 +23,6 @@ var kedaOpts struct {
 }
 
 // Template for ScaledObject
-const kedaTemplate = `apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: {{ .Name }}
-  namespace: {{ .Namespace }}
-spec:
-  scaleTargetRef:
-    name: {{ .Deployment }}
-  minReplicaCount: 0
-  maxReplicaCount: {{ .Replicas }}
-  triggers:
-  - type: cron
-    metadata:
-      timezone: {{ .Timezone }}
-      # Cron format: Minute Hour Day Month DayOfWeek
-      # Logic: DesiredReplicas 0 during the defined window (start -> end).
-      # Note: This simple template assumes a fixed window for simplicity or custom cron.
-      # Ideally user inputs start/end, but we are using raw cron for flexibility in this MVP.
-      # Wait, standard cron scaler uses start/end. Let's stick to the docs example structure for scale-to-zero.
-      start: {{ .Schedule }}
-      end: "0 8 * * *" # Default wake up, or we might need another prompt.
-      desiredReplicas: "0"
-`
 
 // Re-thinking template to match docs/GUIA-KEDA.md exactly
 const kedaCronTemplate = `apiVersion: keda.sh/v1alpha1

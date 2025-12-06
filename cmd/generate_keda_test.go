@@ -32,7 +32,7 @@ func TestGenerateKedaCmd(t *testing.T) {
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	expected := `apiVersion: keda.sh/v1alpha1

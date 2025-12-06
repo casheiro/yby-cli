@@ -178,7 +178,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml`,
 		fmt.Printf("Chave encontrada: %s\n", keyName)
 
 		outputFile := "bootstrap/sealed-secrets-backup.yaml"
-		os.MkdirAll(filepath.Dir(outputFile), 0755)
+		_ = os.MkdirAll(filepath.Dir(outputFile), 0755)
 
 		file, err := os.Create(outputFile)
 		if err != nil {

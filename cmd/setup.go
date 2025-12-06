@@ -69,7 +69,7 @@ Exemplo:
 			Message: "Deseja tentar instalar as dependências automaticamente (via brew/apt)?",
 			Default: true,
 		}
-		survey.AskOne(prompt, &install)
+		_ = survey.AskOne(prompt, &install)
 
 		if install {
 			attemptInstall(missing)

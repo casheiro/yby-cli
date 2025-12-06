@@ -46,6 +46,10 @@ type Action struct {
 	Target    Target `yaml:"target"`
 }
 
+func init() {
+	rootCmd.AddCommand(initCmd)
+}
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Inicializa o projeto seguindo o Blueprint do template",
@@ -152,8 +156,9 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 			}
 
 			// 4. Process Actions (Side effects mainly for MultiSelect)
+			// 4. Process Actions (Side effects mainly for MultiSelect)
 			if p.Type == "multiselect" {
-				// ... (rest of multiselect logic)
+				// TODO: Implement specific logic for multiselect side-effects if needed in the future
 			}
 		}
 
