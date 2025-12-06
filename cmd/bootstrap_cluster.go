@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var bootstrapClusterCmd = &cobra.Command{
@@ -21,8 +22,7 @@ var bootstrapClusterCmd = &cobra.Command{
 2. System Charts (CRDs, Cert-Manager, Monitoring)
 3. Configuração de Secrets (Git Credentials, Tokens)
 4. Aplicação Root (App of Apps) para início do GitOps
-
-Equivalente ao antigo 'make bootstrap'.`,
+5. Versions são lidas de .yby/blueprint.yaml se disponível.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Cluster GitOps"))
 		fmt.Println("---------------------------------------")
@@ -30,6 +30,31 @@ Equivalente ao antigo 'make bootstrap'.`,
 		// 0. Pre-checks
 		checkEnvVars()
 		ensureToolsInstalled()
+
+		// Load Version Config from Blueprint (Infra as Data)
+		argoVersion := "5.51.6" // Default fallback
+		argoChart := "argo/argo-cd"
+
+		blueprintPath := ".yby/blueprint.yaml"
+		if data, err := os.ReadFile(blueprintPath); err == nil {
+			var bp struct {
+				Infrastructure struct {
+					Argocd struct {
+						Version string `yaml:"version"`
+						Chart   string `yaml:"chart"`
+					} `yaml:"argocd"`
+				} `yaml:"infrastructure"`
+			}
+			if err := yaml.Unmarshal(data, &bp); err == nil {
+				if bp.Infrastructure.Argocd.Version != "" {
+					argoVersion = bp.Infrastructure.Argocd.Version
+					fmt.Printf("📋 Versão ArgoCD definida no Blueprint: %s\n", argoVersion)
+				}
+				if bp.Infrastructure.Argocd.Chart != "" {
+					argoChart = bp.Infrastructure.Argocd.Chart
+				}
+			}
+		}
 
 		// 1. Bootstrap Argo CD & System
 		fmt.Println(headerStyle.Render("🌱 Fase 1: Bootstrap do Sistema"))
@@ -39,9 +64,9 @@ Equivalente ao antigo 'make bootstrap'.`,
 		createNamespace("argocd")
 
 		// Helm Upgrade ArgoCD
-		runCommand("helm", "upgrade", "--install", "argocd", "argo/argo-cd",
+		runCommand("helm", "upgrade", "--install", "argocd", argoChart,
 			"--namespace", "argocd",
-			"--version", "5.51.6",
+			"--version", argoVersion,
 			"-f", "config/cluster-values.yaml",
 			"--wait", "--timeout", "300s")
 
@@ -213,7 +238,6 @@ func configureSeconds() {
 			// Implementing Makefile logic:
 			// GENERATED_SECRET=$$(openssl rand -hex 20); \
 			// ./scripts/create-webhook-sealed-secret.sh github $$GENERATED_SECRET; \
-
 			// Skipping for now to avoid complexity in this step.
 		}
 	} else {
