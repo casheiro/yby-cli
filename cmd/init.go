@@ -157,9 +157,7 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 
 			// 4. Process Actions (Side effects mainly for MultiSelect)
 			// 4. Process Actions (Side effects mainly for MultiSelect)
-			if p.Type == "multiselect" {
-				// TODO: Implement specific logic for multiselect side-effects if needed in the future
-			}
+
 		}
 
 		// ... (rest of function) ...
@@ -189,8 +187,8 @@ func applyPatch(file, path string, value interface{}) {
 		var out strings.Builder
 		enc := yaml.NewEncoder(&out)
 		enc.SetIndent(2)
-		enc.Encode(&node)
-		os.WriteFile(file, []byte(out.String()), 0644)
+		_ = enc.Encode(&node)
+		_ = os.WriteFile(file, []byte(out.String()), 0644)
 		fmt.Printf("   ✏️  Atualizado %s: %s = %v\n", file, path, value)
 	} else {
 		fmt.Printf("   ⚠️ Falha ao encontrar path %s em %s\n", path, file)

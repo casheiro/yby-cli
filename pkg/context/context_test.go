@@ -64,10 +64,14 @@ func TestStrictIsolation(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// .env has SENSITIVE_PROD_VAR
-	os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("SENSITIVE_PROD_VAR=exposed"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), []byte("SENSITIVE_PROD_VAR=exposed"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// .env.staging has SAFE_VAR
-	os.WriteFile(filepath.Join(tmpDir, ".env.staging"), []byte("SAFE_VAR=ok"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, ".env.staging"), []byte("SAFE_VAR=ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	manager := NewManager(tmpDir)
 
