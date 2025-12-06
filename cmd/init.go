@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -62,9 +63,37 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 		// 1. Load Blueprint
 		blueprintPath := ".yby/blueprint.yaml"
 		if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
-			fmt.Printf("❌ Blueprint não encontrado em %s\n", blueprintPath)
-			fmt.Println("   Certifique-se de estar na raiz do repo yby-template.")
-			return
+			// Check if directory is empty to offer scaffolding
+			if isEmptyDir(".") {
+				startScaffold := false
+				prompt := &survey.Confirm{
+					Message: "Diretório vazio. Deseja inicializar um novo projeto a partir do template?",
+					Default: true,
+				}
+				_ = survey.AskOne(prompt, &startScaffold)
+
+				if startScaffold {
+					fmt.Println("📥 Baixando template oficial (casheiro/yby-template)...")
+					// Naive git clone implementation
+					// In a real scenario, might want to use go-git or download zip to avoid git history
+					if err := runCmd("git", "clone", "--depth", "1", "https://github.com/casheiro/yby-template.git", "."); err != nil {
+						fmt.Printf("❌ Erro ao clonar template: %v\n", err)
+						return
+					}
+					// Remove .git to start fresh
+					_ = os.RemoveAll(".git")
+
+					fmt.Println("✅ Template baixado com sucesso!")
+					fmt.Println("------------------------------------")
+				} else {
+					fmt.Println("Operação cancelada.")
+					return
+				}
+			} else {
+				fmt.Printf("❌ Blueprint não encontrado em %s\n", blueprintPath)
+				fmt.Println("   Certifique-se de estar na raiz do repo yby-template ou em um diretório vazio.")
+				return
+			}
 		}
 
 		data, err := os.ReadFile(blueprintPath)
@@ -255,4 +284,25 @@ func setNodeValue(node *yaml.Node, val interface{}) {
 			})
 		}
 	}
+}
+
+func isEmptyDir(name string) bool {
+	f, err := os.Open(name)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	_, err = f.Readdirnames(1) // Or f.Readdir(1)
+	if err == nil {
+		return false
+	}
+	return true
+}
+
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
