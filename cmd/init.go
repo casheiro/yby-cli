@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -71,44 +72,32 @@ Ao final, o contexto criado é ativado automaticamente.`,
 		}
 		survey.Ask(repoQ, &answers)
 
-		// Infer Org from GitRepo
+		// Infer Org and RepoName from GitRepo
 		defaultOrg := "casheiro"
-		// Simple logic to extract org from https://github.com/ORG/REPO or git@github.com:ORG/REPO
+		repoName := "yby"
 		if answers.GitRepo != "" {
-			// Very basic parsing
-			// remove protocol
 			clean := answers.GitRepo
 			if filepath.Ext(clean) == ".git" {
 				clean = clean[:len(clean)-4]
 			}
-			// parts := filepath.SplitList(clean) // splitlist is for paths, let's use string split
-			// try to find the part before repo name
-			// ex: github.com/casheiro/yby -> casheiro
-			// ex: github.com/casheiro -> casheiro ?
-			// let's retry with specific splitting
-			// Assume standard github url structure for now
-			// Finding last slash
-			lastSlash := -1
-			msg := clean
-			for i := len(msg) - 1; i >= 0; i-- {
-				if msg[i] == '/' {
-					lastSlash = i
-					break
+			parts := strings.Split(clean, "/")
+			if len(parts) >= 2 {
+				repoName = parts[len(parts)-1]
+				// Org is usually the second to last part
+				// Check if it's a URL (contains protocol)
+				if len(parts) > 2 {
+					defaultOrg = parts[len(parts)-2]
 				}
 			}
-			if lastSlash > 0 {
-				// We found repo name at msg[lastSlash+1:]
-				// Org is usually before that
-				// Search for slash before that
-				secondLastSlash := -1
-				for i := lastSlash - 1; i >= 0; i-- {
-					if msg[i] == '/' || msg[i] == ':' { // handle git@github.com:ORG
-						secondLastSlash = i
-						break
+			// Handle git@github.com:ORG/REPO case
+			if strings.Contains(clean, "git@") {
+				parts = strings.Split(clean, ":")
+				if len(parts) == 2 {
+					pathParts := strings.Split(parts[1], "/")
+					if len(pathParts) == 2 {
+						defaultOrg = pathParts[0]
+						repoName = pathParts[1]
 					}
-				}
-				if secondLastSlash >= 0 {
-					defaultOrg = msg[secondLastSlash+1 : lastSlash]
 				}
 			}
 		}
@@ -207,6 +196,7 @@ Ao final, o contexto criado é ativado automaticamente.`,
 			Email       string
 			Environment string
 			Org         string
+			RepoName    string
 			GithubToken string
 			Modules     map[string]bool
 		}{
@@ -216,6 +206,7 @@ Ao final, o contexto criado é ativado automaticamente.`,
 			Email:       answers.Email,
 			Environment: answers.Environment,
 			Org:         answers.Org,
+			RepoName:    repoName,
 			GithubToken: answers.GithubToken,
 			Modules:     modulesMap,
 		}
@@ -360,7 +351,7 @@ git:
   repoURL: {{ .GitRepo }}
   targetRevision: {{ .GitBranch }}
   branch: {{ .GitBranch }}
-  repoName: yby
+  repoName: {{ .RepoName }}
 
 # Argo CD
 project: default
