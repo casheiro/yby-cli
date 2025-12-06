@@ -98,11 +98,13 @@ configura firewall, instala K3s e configura o kubeconfig local.`,
 		`)
 
 		// 6. K3s
-		k3sVersion := "v1.33.6+k3s1" // Default
 		k3sToken := os.Getenv("K3S_TOKEN")
 		if k3sToken == "" {
 			k3sToken = fmt.Sprintf("yby-%d", time.Now().Unix())
 		}
+
+		// Use flag value
+		fmt.Printf("📦 Versão K3s alvo: %s\n", k3sVersion)
 
 		runStep(client, "Instalando K3s", fmt.Sprintf(`
 			if ! command -v k3s >/dev/null 2>&1; then
@@ -124,8 +126,11 @@ configura firewall, instala K3s e configura o kubeconfig local.`,
 	},
 }
 
+var k3sVersion string
+
 func init() {
 	bootstrapCmd.AddCommand(bootstrapVpsCmd)
+	bootstrapVpsCmd.Flags().StringVar(&k3sVersion, "k3s-version", "v1.31.2+k3s1", "Versão do K3s a ser instalada")
 }
 
 func connectSSH(user, host, port string) (*ssh.Client, error) {
