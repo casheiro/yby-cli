@@ -201,7 +201,7 @@ func runPortForward(context, namespace, resource, ports string) {
 }
 
 func killPortForward(port string) {
-	exec.Command("pkill", "-f", fmt.Sprintf("port-forward.*%s", port)).Run()
+	_ = exec.Command("pkill", "-f", fmt.Sprintf("port-forward.*%s", port)).Run()
 }
 
 func getHeadlampToken(context string) (string, error) {
@@ -221,10 +221,10 @@ func startLocalGrafanaContainer() error {
 	addHost := "--add-host=host.docker.internal:host-gateway"
 
 	// Create volume if not exists
-	exec.Command("docker", "volume", "create", "yby-grafana-data").Run()
+	_ = exec.Command("docker", "volume", "create", "yby-grafana-data").Run()
 
 	// Stop existing
-	exec.Command("docker", "rm", "-f", "yby-grafana").Run()
+	_ = exec.Command("docker", "rm", "-f", "yby-grafana").Run()
 
 	// Run
 	cmd := exec.Command("docker", "run", "-d",

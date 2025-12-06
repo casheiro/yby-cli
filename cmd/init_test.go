@@ -16,8 +16,12 @@ func TestApplyPatch(t *testing.T) {
 
 	// Change wd to tmp for file generation
 	wd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(wd)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chdir(wd)
+	}()
 
 	// Create dummy config
 	initialConfig := `

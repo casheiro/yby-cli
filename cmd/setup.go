@@ -69,7 +69,7 @@ Exemplo:
 			Message: "Deseja tentar instalar as dependências automaticamente (via brew/apt)?",
 			Default: true,
 		}
-		survey.AskOne(prompt, &install)
+		_ = survey.AskOne(prompt, &install)
 
 		if install {
 			attemptInstall(missing)
@@ -134,10 +134,10 @@ func configureDirenv() {
 	// Create .envrc if not exists
 	if _, err := os.Stat(".envrc"); os.IsNotExist(err) {
 		content := "export KUBECONFIG=$(pwd)/.kube/config\necho \"☸️  Ambiente configurado: KUBECONFIG=./.kube/config\""
-		os.WriteFile(".envrc", []byte(content), 0644)
+		_ = os.WriteFile(".envrc", []byte(content), 0644)
 		fmt.Println(checkStyle.Render(".envrc criado."))
 	}
 
-	exec.Command("direnv", "allow").Run()
+	_ = exec.Command("direnv", "allow").Run()
 	fmt.Println(checkStyle.Render("direnv allow executado."))
 }

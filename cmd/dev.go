@@ -62,7 +62,7 @@ Equivalente ao antigo 'make dev'.`,
 			// Ensure it's running (start is idempotent-ish, returns error if already running usually, or just works)
 			// k3d cluster start returns 0 if already running? Let's check.
 			fmt.Print(stepStyle.Render("🔄 Garantindo que cluster está rodando... "))
-			exec.Command("k3d", "cluster", "start", clusterName).Run()
+			_ = exec.Command("k3d", "cluster", "start", clusterName).Run()
 			fmt.Println(checkStyle.String())
 		}
 

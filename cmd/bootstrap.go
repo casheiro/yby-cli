@@ -18,7 +18,7 @@ Disponível:
   yby bootstrap cluster  - Instala a stack GitOps (ArgoCD, Workflows) no cluster conectado
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

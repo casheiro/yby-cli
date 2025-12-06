@@ -48,10 +48,3 @@ var (
 	grayStyle = lipgloss.NewStyle().
 			Foreground(grayColor)
 )
-
-func icon(ok bool) string {
-	if ok {
-		return checkStyle.String()
-	}
-	return crossStyle.String()
-}
