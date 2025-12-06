@@ -155,7 +155,7 @@ func executeHelmRepoAdd(name, url string) {
 }
 
 func createNamespace(ns string) {
-	exec.Command("kubectl", "create", "namespace", ns).Run()
+	_ = exec.Command("kubectl", "create", "namespace", ns).Run()
 }
 
 func runCommand(name string, args ...string) {
