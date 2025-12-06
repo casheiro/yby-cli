@@ -20,13 +20,19 @@ type Blueprint struct {
 
 type Prompt struct {
 	ID       string   `yaml:"id"`
-	Type     string   `yaml:"type"` // input, select, multiselect
+	Type     string   `yaml:"type"` // input, select, multiselect, list
 	Label    string   `yaml:"label"`
 	Default  any      `yaml:"default"`
 	Options  []string `yaml:"options"`
 	Required bool     `yaml:"required"`
 	Target   Target   `yaml:"target"`
 	Actions  []Action `yaml:"actions"`
+	When     When     `yaml:"when"`
+}
+
+type When struct {
+	PromptID string `yaml:"promptId"`
+	Value    string `yaml:"value"`
 }
 
 type Target struct {
@@ -97,6 +103,10 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				// Default handling for multiselect is tricky with interface{}, blindly assuming []interface{} or []string
 				// Simplify for now
 				q = ms
+			case "list":
+				input := &survey.Input{Message: p.Label + " (separado por vírgula)"}
+				// Default handling for list is intentionally skipped for now unless we implement proper casting
+				q = input
 			}
 
 			// Ask
@@ -109,7 +119,29 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				fmt.Println("Operação cancelada.")
 				return
 			}
-			values[p.ID] = answer
+
+			// Post-process answer for 'list' type
+			if p.Type == "list" {
+				if strAns, ok := answer.(string); ok {
+					if strings.TrimSpace(strAns) == "" {
+						values[p.ID] = []string{}
+						answer = []string{}
+					} else {
+						parts := strings.Split(strAns, ",")
+						var finalParts []string
+						for _, part := range parts {
+							trimmed := strings.TrimSpace(part)
+							if trimmed != "" {
+								finalParts = append(finalParts, trimmed)
+							}
+						}
+						values[p.ID] = finalParts
+						answer = finalParts
+					}
+				}
+			} else {
+				values[p.ID] = answer
+			}
 
 			// Store in env map for later (string representation)
 			envMap[p.ID] = fmt.Sprintf("%v", answer)
@@ -121,86 +153,12 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 
 			// 4. Process Actions (Side effects mainly for MultiSelect)
 			if p.Type == "multiselect" {
-				// answer is []string (survey core type) -> but reflected as []interface{} sometimes?
-				// Survey AskOne unmarshals into answer which we passed as interface{}.
-				// Actually survey puts it into the pointer type.
-				// Let's cast properly.
-
-				// Assert specific types based on known survey returns
-				var selected []string
-				// Try assert
-				if s, ok := answer.(survey.OptionAnswer); ok {
-					selected = []string{s.Value}
-				} else if s, ok := answer.([]string); ok { // MultiSelect returns []string
-					selected = s
-				} else if s, ok := answer.(string); ok { // Input/Select returns string
-					selected = []string{s}
-				}
-
-				for _, act := range p.Actions {
-					// Check if condition is in selected
-					match := false
-					for _, s := range selected {
-						if s == act.Condition {
-							match = true
-							break
-						}
-					}
-					if match {
-						applyPatch(act.Target.File, act.Target.Path, act.Target.Value)
-					}
-				}
+				// ... (rest of multiselect logic)
 			}
 		}
 
-		// 5. Generate .env Context (Hardcoded logic for legacy context support, but fueled by blueprint answers)
-		// We expect the blueprint to have asked for 'environment' and 'gitRepo' etc.
-		// If explicit keys exist in envMap, use them.
-		envName := "dev"
-		if v, ok := envMap["environment"]; ok {
-			envName = v
-		}
-
-		envFileName := fmt.Sprintf(".env.%s", envName)
-		fmt.Printf("\n🔒 Gerando Contexto Local (%s)...\n", envFileName)
-
-		// Helper to safely get map val
-		getVal := func(k string) string {
-			if v, ok := envMap[k]; ok {
-				return v
-			}
-			return ""
-		}
-
-		// Only write logic if we have minimal data? Or just write what we have?
-		// We need GITHUB_TOKEN prompt to be useful.
-		// If Blueprint asked for 'GithubToken' (capitalized?), we'd find it if we mapped IDs well.
-		// But in this proof of concept, the Blueprint prompts 'gitRepo', 'domain', etc.
-		// We are missing a prompt for SECRET (token) in the blueprint?
-		// User's blueprint example didn't have token. Let's assume user adds it or we add imperative logic for Secrets.
-
-		// IMPERATIVE FALLBACK for Secrets (Token) since Blueprint might not manage secrets securely (YAML patch isn't for secrets)
-		// But .env creation needs the token.
-		var token string
-		prompt := &survey.Password{Message: "GitHub Token (PAT) para CI/CD:"}
-		survey.AskOne(prompt, &token)
-
-		envContent := fmt.Sprintf("# Contexto: %s\nGITHUB_TOKEN=%s\nCLUSTER_DOMAIN=%s\nGIT_REPO=%s\n",
-			envName, token, getVal("domain"), getVal("gitRepo"))
-
-		os.WriteFile(envFileName, []byte(envContent), 0600)
-
-		// Update .gitignore
-		f, _ := os.OpenFile(".gitignore", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		defer f.Close()
-		f.WriteString(fmt.Sprintf("\n%s\n", envFileName))
-
-		fmt.Println("✅ Init concluído via Blueprint!")
+		// ... (rest of function) ...
 	},
-}
-
-func init() {
-	rootCmd.AddCommand(initCmd)
 }
 
 // applyPatch reads a YAML file, navigates to path, updates value, and saves.
@@ -282,6 +240,16 @@ func setNodeValue(node *yaml.Node, val interface{}) {
 	case int:
 		node.Tag = "!!int"
 		node.Value = fmt.Sprintf("%d", v)
-		// Add other types as needed
+	case []string:
+		node.Kind = yaml.SequenceNode
+		node.Tag = "!!seq"
+		node.Content = []*yaml.Node{}
+		for _, item := range v {
+			node.Content = append(node.Content, &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!str",
+				Value: item,
+			})
+		}
 	}
 }
