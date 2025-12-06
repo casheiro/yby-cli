@@ -41,7 +41,7 @@ jobs:
 
       - name: ↪️ Create Pull Request (Feature -> Develop)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.ref_name }}
         run: |
           # Extrai um título limpo a partir do nome da branch
