@@ -29,6 +29,8 @@ yby --help
 ## Funcionalidades
 
 - **Smart Init (Blueprint Engine)**: Configura projetos lendo dinamicamente `.yby/blueprint.yaml`. Zero hardcoding.
+- **Ecofuturismo Tangível**: `yby status` exibe métricas de autoscale (KEDA) e status de sensores de energia (Kepler).
+- **Diagnóstico Profundo**: `yby doctor` verifica a integridade da plataforma (CRDs) além de binários locais.
 - **GitOps**: Integração nativa com arquitetura GitOps.
 - **Contextos**: Gerenciamento seguro de múltiplos ambientes (dev, prod).
 
