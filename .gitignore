@@ -24,6 +24,8 @@ dist/
 yby
 yby-cli
 
+!yby/
+
 # Logs
 *.log
 *.log.*
