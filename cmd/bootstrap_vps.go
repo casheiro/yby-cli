@@ -6,17 +6,15 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/executor"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,55 +22,75 @@ import (
 var bootstrapVpsCmd = &cobra.Command{
 	Use:   "vps",
 	Short: "Provisiona um VPS com K3s e prepara para GitOps",
-	Long: `Conecta via SSH a um servidor VPS (definido no .env), instala dependências,
-configura firewall, instala K3s e configura o kubeconfig local.`,
+	Long: `Conecta via SSH a um servidor VPS (definido no .env) ou executa localmente.
+Instala dependências, configura firewall, instala K3s e configura o kubeconfig local.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Provisionamento de VPS"))
 		fmt.Println("---------------------------------------")
 
-		// 1. Carregar .env
-		if err := godotenv.Load("../.env"); err != nil {
-			fmt.Println(warningStyle.Render("⚠️  Arquivo .env não encontrado ou erro ao carregar. Usando variáveis de ambiente."))
-		}
+		// 0. Detect Mode
+		isLocal, _ := cmd.Flags().GetBool("local")
+		var execClient executor.Executor
+		var host string
 
-		host := os.Getenv("VPS_HOST")
-		user := os.Getenv("VPS_USER")
-		if user == "" {
-			user = "root"
-		}
-		port := os.Getenv("VPS_PORT")
-		if port == "" {
-			port = "22"
-		}
+		if isLocal {
+			fmt.Println(stepStyle.Render("📡 Modo Local Detectado"))
+			execClient = executor.NewLocalExecutor()
+			// For kubeconfig setup later, we use "localhost" or detect public IP?
+			// For now, let's assume if local, we want kubeconfig to point to localhost or internal IP?
+			// K3s writes to /etc/rancher/k3s/k3s.yaml.
+			// The fetchKubeconfig logic assumes we want to MERGE with ~/.kube/config.
+			host = "127.0.0.1"
+		} else {
+			// 1. Carregar .env
+			if err := godotenv.Load("../.env"); err != nil {
+				fmt.Println(warningStyle.Render("⚠️  Arquivo .env não encontrado ou erro ao carregar. Usando variáveis de ambiente."))
+			}
 
-		if host == "" {
-			fmt.Println(crossStyle.Render("❌ Erro: VPS_HOST não definido no .env"))
-			return
-		}
+			host = os.Getenv("VPS_HOST")
+			user := os.Getenv("VPS_USER")
+			if user == "" {
+				user = "root"
+			}
+			port := os.Getenv("VPS_PORT")
+			if port == "" {
+				port = "22"
+			}
 
-		fmt.Printf("%s Conectando a %s@%s:%s...\n", stepStyle.Render("📡"), user, host, port)
+			if host == "" {
+				fmt.Println(crossStyle.Render("❌ Erro: VPS_HOST não definido no .env"))
+				return
+			}
 
-		// 2. Conexão SSH
-		client, err := connectSSH(user, host, port)
-		if err != nil {
-			fmt.Printf("%s Erro na conexão SSH: %v\n", crossStyle.String(), err)
-			return
+			fmt.Printf("%s Conectando a %s@%s:%s...\n", stepStyle.Render("📡"), user, host, port)
+
+			// 2. Conexão SSH
+			var err error
+			execClient, err = executor.NewSSHExecutor(user, host, port)
+			if err != nil {
+				fmt.Printf("%s Erro na conexão SSH: %v\n", crossStyle.String(), err)
+				return
+			}
 		}
-		defer client.Close()
-		fmt.Println(checkStyle.Render("✅ Conexão SSH estabelecida!"))
+		defer execClient.Close()
+
+		if !isLocal {
+			fmt.Println(checkStyle.Render("✅ Conexão SSH estabelecida!"))
+		}
 
 		// 3. Preparar Servidor
-		runStep(client, "Atualizando sistema e instalando dependências", `
+		runEx(execClient, "Atualizando sistema e instalando dependências", `
 			export DEBIAN_FRONTEND=noninteractive
 			apt-get update -qq
-			apt-get install -y -qq curl wget git htop nano ca-certificates gnupg lsb-release ufw iptables-persistent
+			if ! command -v curl >/dev/null; then apt-get install -y -qq curl; fi
+			apt-get install -y -qq wget git htop nano ca-certificates gnupg lsb-release ufw iptables-persistent
 			timedatectl set-timezone America/Sao_Paulo
 			swapoff -a
 			sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
 		`)
 
 		// 4. Firewall
-		runStep(client, "Configurando Firewall (UFW)", `
+		runEx(execClient, "Configurando Firewall (UFW)", `
 			ufw --force reset
 			ufw default deny incoming
 			ufw default allow outgoing
@@ -87,7 +105,7 @@ configura firewall, instala K3s e configura o kubeconfig local.`,
 		`)
 
 		// 5. Docker
-		runStep(client, "Instalando Docker", `
+		runEx(execClient, "Instalando Docker", `
 			if ! command -v docker >/dev/null 2>&1; then
 				curl -fsSL https://get.docker.com -o get-docker.sh
 				sh get-docker.sh
@@ -123,11 +141,13 @@ configura firewall, instala K3s e configura o kubeconfig local.`,
 		}
 
 		// 7. K3s Installation
+		// Logic adjustment: for local mode, "host" for tls-san should ideally be the public IP or hostname.
+		// Since we default host to 127.0.0.1 for local, we might want to also add the machine's hostname.
+		// For MVP, lets keep 127.0.0.1 and maybe detected hostname if we can (via hostname command in script?)
 
-		// Use flag value
 		fmt.Printf("📦 Versão K3s alvo: %s\n", k3sVersion)
 
-		runStep(client, "Instalando K3s", fmt.Sprintf(`
+		runEx(execClient, "Instalando K3s", fmt.Sprintf(`
 			if ! command -v k3s >/dev/null 2>&1; then
 				curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="%s" K3S_TOKEN="%s" sh -s - server --cluster-init --write-kubeconfig-mode=644 --tls-san %s
 			else
@@ -137,7 +157,7 @@ configura firewall, instala K3s e configura o kubeconfig local.`,
 
 		// 7. Fetch Kubeconfig
 		fmt.Println(stepStyle.Render("🔄 Configurando acesso local (kubeconfig)..."))
-		if err := fetchKubeconfig(client, host); err != nil {
+		if err := fetchKubeconfig(execClient, host); err != nil {
 			fmt.Printf("%s Erro ao configurar kubeconfig: %v\n", crossStyle.String(), err)
 			return
 		}
@@ -152,64 +172,23 @@ var k3sVersion string
 func init() {
 	bootstrapCmd.AddCommand(bootstrapVpsCmd)
 	bootstrapVpsCmd.Flags().StringVar(&k3sVersion, "k3s-version", "v1.31.2+k3s1", "Versão do K3s a ser instalada")
+	bootstrapVpsCmd.Flags().Bool("local", false, "Executa o bootstrap na máquina local (auto-provisionamento)")
 }
 
-func connectSSH(user, host, port string) (*ssh.Client, error) {
-	// Tenta usar SSH Agent primeiro
-	socket := os.Getenv("SSH_AUTH_SOCK")
-	conn, err := net.Dial("unix", socket)
-	if err != nil {
-		return nil, fmt.Errorf("falha ao conectar ao SSH Agent: %w", err)
-	}
-	agentClient := agent.NewClient(conn)
-
-	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeysCallback(agentClient.Signers),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Simplificação MVP
-		Timeout:         10 * time.Second,
-	}
-
-	return ssh.Dial("tcp", net.JoinHostPort(host, port), config)
-}
-
-func runStep(client *ssh.Client, name, script string) {
-	fmt.Printf("%s %s... ", stepStyle.Render("⚙️"), name)
-	session, err := client.NewSession()
-	if err != nil {
-		fmt.Printf("\n%s Erro ao criar sessão: %v\n", crossStyle.String(), err)
+func runEx(e executor.Executor, name, script string) {
+	if err := e.Run(name, script); err != nil {
 		os.Exit(1)
 	}
-	defer session.Close()
-
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
-
-	if err := session.Run(script); err != nil {
-		fmt.Printf("\n%s Falha!\n%s\n", crossStyle.String(), stderr.String())
-		os.Exit(1)
-	}
-	fmt.Printf("%s\n", checkStyle.String())
 }
 
-func fetchKubeconfig(client *ssh.Client, host string) error {
-	session, err := client.NewSession()
+func fetchKubeconfig(e executor.Executor, host string) error {
+	contentBytes, err := e.FetchFile("/etc/rancher/k3s/k3s.yaml")
 	if err != nil {
-		return err
-	}
-	defer session.Close()
-
-	var b bytes.Buffer
-	session.Stdout = &b
-	if err := session.Run("cat /etc/rancher/k3s/k3s.yaml"); err != nil {
 		return err
 	}
 
 	// 1. Preparar conteúdo
-	content := b.String()
+	content := string(contentBytes)
 	content = strings.ReplaceAll(content, "127.0.0.1", host)
 	content = strings.ReplaceAll(content, "localhost", host)
 
