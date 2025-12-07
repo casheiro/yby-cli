@@ -4,16 +4,22 @@ O **Yby CLI** é a ferramenta oficial de linha de comando para interagir com o e
 
 ## Instalação
 
-### Download da Última Versão
-
-Acesse a página de [Releases](https://github.com/casheiro/yby-cli/releases) e baixe o binário compatível com o seu sistema operacional.
+### Instalação Rápida (Linux/macOS)
+```bash
+curl -sfL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | sh -
+```
 
 ### via Go Install
-
 Se você tem o Go instalado:
-
 ```bash
-go install github.com/casheiro/yby-cli@latest
+go install github.com/casheiro/yby-cli/cmd/yby@latest
+```
+
+## Desinstalação
+
+Para remover a CLI do sistema:
+```bash
+yby uninstall
 ```
 
 ## Uso Básico
