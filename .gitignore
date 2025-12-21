@@ -25,6 +25,7 @@ yby
 yby-cli
 
 !yby/
+!.agent/
 
 # Logs
 *.log
