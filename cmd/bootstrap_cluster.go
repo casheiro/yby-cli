@@ -5,8 +5,11 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -71,9 +74,11 @@ var bootstrapClusterCmd = &cobra.Command{
 			"--wait", "--timeout", "300s")
 
 		// Argo Workflows & Events (Manifests)
+		downloadManifest("https://raw.githubusercontent.com/casheiro/yby-template/main/manifests/upstream/argo-workflows.yaml", "manifests/upstream/argo-workflows.yaml")
 		createNamespace("argo")
 		runCommand("kubectl", "apply", "-n", "argo", "-f", "manifests/upstream/argo-workflows.yaml")
 
+		downloadManifest("https://raw.githubusercontent.com/casheiro/yby-template/main/manifests/upstream/argo-events.yaml", "manifests/upstream/argo-events.yaml")
 		createNamespace("argo-events")
 		runCommand("kubectl", "apply", "-f", "manifests/upstream/argo-events.yaml")
 
@@ -232,4 +237,47 @@ func configureSeconds() {
 	// So we can just call it with "github".
 
 	webhookSecretCmd.Run(webhookSecretCmd, []string{"github", webhookSecret})
+}
+
+func downloadManifest(url, destPath string) {
+	if _, err := os.Stat(destPath); err == nil {
+		return // File exists
+	}
+
+	fmt.Printf("%s Baixando %s...\n", stepStyle.Render("⬇️"), destPath)
+
+	// Ensure directory exists
+	dir := filepath.Dir(destPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Printf("%s Erro ao criar diretório %s: %v\n", crossStyle.String(), dir, err)
+		os.Exit(1)
+	}
+
+	// Download
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("%s Erro ao baixar %s: %v\n", crossStyle.String(), url, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("%s Erro ao baixar %s: Status %s\n", crossStyle.String(), url, resp.Status)
+		os.Exit(1)
+	}
+
+	// Create file
+	out, err := os.Create(destPath)
+	if err != nil {
+		fmt.Printf("%s Erro ao criar arquivo %s: %v\n", crossStyle.String(), destPath, err)
+		os.Exit(1)
+	}
+	defer out.Close()
+
+	// Write content
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		fmt.Printf("%s Erro ao salvar arquivo %s: %v\n", crossStyle.String(), destPath, err)
+		os.Exit(1)
+	}
 }
