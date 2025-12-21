@@ -203,13 +203,32 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				q = input
 			}
 
+			// Prepare concrete types for survey result
+			var strResult string
+			var sliceResult []string
+
 			// Ask
-			if err := survey.AskOne(q, &answer, survey.WithValidator(func(ans interface{}) error {
-				if p.Required {
-					return survey.Required(ans)
-				}
-				return nil
-			})); err != nil {
+			var err error
+			if p.Type == "multiselect" {
+				err = survey.AskOne(q, &sliceResult, survey.WithValidator(func(ans interface{}) error {
+					if p.Required {
+						return survey.Required(ans)
+					}
+					return nil
+				}))
+				answer = sliceResult
+			} else {
+				// input, select, list -> all return string initially
+				err = survey.AskOne(q, &strResult, survey.WithValidator(func(ans interface{}) error {
+					if p.Required {
+						return survey.Required(ans)
+					}
+					return nil
+				}))
+				answer = strResult
+			}
+
+			if err != nil {
 				fmt.Printf("Operação cancelada (Erro: %v).\n", err)
 				return
 			}
