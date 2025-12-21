@@ -16,7 +16,9 @@ export default {
                 'revert',
                 'style',
                 'test',
-                'release'
+                'release',
+                'config', // Allow config updates
+                'infra'   // Allow infrastructure changes
             ]
         ],
         'subject-case': [0], // Disable case check (allow Sentence case, etc)
