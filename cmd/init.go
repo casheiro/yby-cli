@@ -93,7 +93,10 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 						Default: "infra",
 					}
 					_ = survey.AskOne(prompt, &targetDir)
-					scaffoldFromZip(targetDir)
+					if err := scaffoldFromZip(targetDir); err != nil {
+						fmt.Printf(crossStyle.Render("❌ Erro ao reparar template: %v\n"), err)
+						return
+					}
 				} else {
 					fmt.Println(warningStyle.Render("Continuando com inicialização parcial. Isso pode causar erros..."))
 				}
