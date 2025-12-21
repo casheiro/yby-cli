@@ -94,6 +94,15 @@ Ao restaurar arquivos, a CLI não apenas copia — ela **configura**.
 - O `root-app.yaml` é injetado com a URL do **seu** repositório GitHub.
 - Isso garante que o GitOps funcione imediatamente, sem edição manual de arquivos YAML.
 
+### 🔌 Integration Mode (Modo de Integração)
+Você tem um monorepo ou quer organizar a infraestrutura em uma pasta separada (ex: `infra/`)?
+- O `yby init` detecta a estrutura do projeto.
+- Se você escolher instalar em um subdiretório, a CLI **reescreve automaticamente** os caminhos:
+    - No ArgoCD (`root-app.yaml`).
+    - No Argo Events (`sensor.yaml`).
+    - Nos Workflows do GitHub (`.github/workflows`).
+- Resultado: GitOps funcionando perfeitamente, não importa a estrutura de pastas.
+
 ---
 
 ## 🩺 Troubleshooting
