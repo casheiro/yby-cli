@@ -210,7 +210,7 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				}
 				return nil
 			})); err != nil {
-				fmt.Println("Operação cancelada.")
+				fmt.Printf("Operação cancelada (Erro: %v).\n", err)
 				return
 			}
 
