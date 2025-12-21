@@ -1,11 +1,8 @@
 name: 🛡️ Release Pipeline (Validate & Finalize)
 
 on:
-  push:
-    branches:
-      - "release/**"
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
     branches:
       - "release/**"
 
@@ -17,10 +14,8 @@ jobs:
   validate:
     name: 🧪 Validate Release Branch
     runs-on: ubuntu-latest
-    # Run on PUSH (working on the branch) OR when PR closes (just to be safe, though usually redundant if push ran)
-    # Actually, for Finalize logic, we don't strictly need to re-validate if we assume the PR checks passed.
-    # But let's run it on PUSH specificly to catch errors early.
-    if: github.event_name == 'push'
+    # Run on PR Open/Sync (Validate code before merging)
+    if: github.event.action != 'closed'
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
