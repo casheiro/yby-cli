@@ -75,6 +75,27 @@ jobs:
               --body "Final release PR for **$RELEASE_VERSION**. Merging this brings the release into main."
           fi
 
+      - name: 🔄 Create Back-Merge PR (Release -> Develop)
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.event.pull_request.base.ref }} # e.g., 'release/v0.1.0'
+          RELEASE_VERSION: ${{ steps.tag.outputs.release_version }}
+        run: |
+          PR_TITLE="chore: Back-merge Release $RELEASE_VERSION to Develop"
+
+          # Check if PR exists
+          EXISTING_PR=$(gh pr list --head "$HEAD_REF" --base "develop" --state open --json number -q '.[0].number')
+          if [ -n "$EXISTING_PR" ]; then
+             echo "PR de Back-Merge #${EXISTING_PR} já existe."
+          else
+             echo "Creating Back-Merge PR from $HEAD_REF to develop..."
+             gh pr create \
+               --head "$HEAD_REF" \
+               --base "develop" \
+               --title "$PR_TITLE" \
+               --body "Synchronize release **$RELEASE_VERSION** back to develop to keep history aligned."
+          fi
+
   notify-failure:
     name: 🚨 Notify on Failure
     runs-on: ubuntu-latest
