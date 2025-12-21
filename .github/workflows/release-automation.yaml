@@ -75,26 +75,31 @@ jobs:
               --body "Final release PR for **$RELEASE_VERSION**. Merging this brings the release into main."
           fi
 
-      - name: 🔄 Create Back-Merge PR (Release -> Develop)
+      - name: 🔄 Automated Back-Merge (Release -> Develop)
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          HEAD_REF: ${{ github.event.pull_request.base.ref }} # e.g., 'release/v0.1.0'
+          RELEASE_BRANCH: ${{ github.event.pull_request.base.ref }}
           RELEASE_VERSION: ${{ steps.tag.outputs.release_version }}
         run: |
-          PR_TITLE="chore: Back-merge Release $RELEASE_VERSION to Develop"
+          echo "🚀 Syncing $RELEASE_BRANCH ($RELEASE_VERSION) back to develop..."
 
-          # Check if PR exists
-          EXISTING_PR=$(gh pr list --head "$HEAD_REF" --base "develop" --state open --json number -q '.[0].number')
-          if [ -n "$EXISTING_PR" ]; then
-             echo "PR de Back-Merge #${EXISTING_PR} já existe."
-          else
-             echo "Creating Back-Merge PR from $HEAD_REF to develop..."
-             gh pr create \
-               --head "$HEAD_REF" \
-               --base "develop" \
-               --title "$PR_TITLE" \
-               --body "Synchronize release **$RELEASE_VERSION** back to develop to keep history aligned."
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Ensure we have the latest develop
+          git fetch origin develop
+
+          # Checkout develop
+          # Try simple checkout, if fails (first time), track remote
+          git checkout develop || git checkout -b develop origin/develop
+
+          # Merge the release branch
+          echo "Merging origin/$RELEASE_BRANCH into develop..."
+          git merge "origin/$RELEASE_BRANCH" --no-ff -m "chore: Back-merge Release $RELEASE_VERSION to Develop"
+
+          # Push back to develop
+          echo "Pushing to develop..."
+          git push origin develop
 
   notify-failure:
     name: 🚨 Notify on Failure
