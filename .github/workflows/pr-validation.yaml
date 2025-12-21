@@ -1,0 +1,30 @@
+name: 🛡️ PR Validation (Test & Lint)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - develop
+      - main
+      - "release/**"
+
+jobs:
+  validate:
+    name: 🧪 Validate Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: 🏃 Run Tests
+        run: go test ./... -v
+
+      - name: 🔍 Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
