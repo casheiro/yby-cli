@@ -17,11 +17,11 @@ builds:
       - -X github.com/casheiro/yby-cli/cmd.commit={{.Commit}}
       - -X github.com/casheiro/yby-cli/cmd.date={{.Date}}
 archives:
-  - format: tar.gz
+  - formats: ["tar.gz"]
     # use zip for windows
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]
 checksum:
   name_template: "checksums.txt"
 snapshot:
