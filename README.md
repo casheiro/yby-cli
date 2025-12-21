@@ -5,6 +5,8 @@
 
 O **Yby CLI** abstrai a complexidade de ferramentas como Helm, Argo CD e Kubernetes, oferecendo uma experiência de desenvolvedor (DX) fluida para iniciar projetos e gerenciar clusters.
 
+> 📚 **Documentação Completa:** Para guias detalhados, arquitetura e referência avançada, visite nossa [Wiki Oficial](https://github.com/casheiro/yby-cli/wiki).
+
 ---
 
 ## ⚡ Quick Start

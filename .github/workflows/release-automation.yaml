@@ -75,6 +75,32 @@ jobs:
               --body "Final release PR for **$RELEASE_VERSION**. Merging this brings the release into main."
           fi
 
+      - name: 🔄 Automated Back-Merge (Release -> Develop)
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          RELEASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.release_version }}
+        run: |
+          echo "🚀 Syncing $RELEASE_BRANCH ($RELEASE_VERSION) back to develop..."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Ensure we have the latest develop
+          git fetch origin develop
+
+          # Checkout develop
+          # Try simple checkout, if fails (first time), track remote
+          git checkout develop || git checkout -b develop origin/develop
+
+          # Merge the release branch
+          echo "Merging origin/$RELEASE_BRANCH into develop..."
+          git merge "origin/$RELEASE_BRANCH" --no-ff -m "chore: Back-merge Release $RELEASE_VERSION to Develop"
+
+          # Push back to develop
+          echo "Pushing to develop..."
+          git push origin develop
+
   notify-failure:
     name: 🚨 Notify on Failure
     runs-on: ubuntu-latest
