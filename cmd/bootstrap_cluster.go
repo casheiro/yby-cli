@@ -260,6 +260,12 @@ func ensureTemplateAssets() {
 		Replacements map[string]string
 	}
 
+	// 0. Detect Git Prefix for Monorepo/Subdir Support (infra/ integration)
+	gitPrefix := getGitPrefix()
+	if gitPrefix != "" {
+		fmt.Printf("📂 Detectado subdiretório Git: %s. Ajustando paths do ArgoCD...\n", gitPrefix)
+	}
+
 	manifests := []Manifest{
 		{
 			Url:  baseUrl + "/manifests/upstream/argo-workflows.yaml",
@@ -274,6 +280,7 @@ func ensureTemplateAssets() {
 			Path: "manifests/argocd/root-app.yaml",
 			Replacements: map[string]string{
 				"https://github.com/my-user/yby-template": repoURL,
+				"path: charts/bootstrap":                  fmt.Sprintf("path: %scharts/bootstrap", gitPrefix),
 			},
 		},
 		{
@@ -418,4 +425,13 @@ func copyDir(src, dst string) error {
 		_, err = io.Copy(dstFile, srcFile)
 		return err
 	})
+}
+
+func getGitPrefix() string {
+	cmd := exec.Command("git", "rev-parse", "--show-prefix")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "" // Not a git repo or error, assume root
+	}
+	return strings.TrimSpace(string(out))
 }
