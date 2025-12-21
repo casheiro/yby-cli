@@ -116,11 +116,11 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				}
 				_ = survey.AskOne(prompt, &shouldClone)
 			} else {
-				// Scenario B2: Dirty Directory
-				fmt.Println(warningStyle.Render("⚠️  Diretório não está vazio e nenhum Blueprint foi encontrado."))
+				// Scenario B2: Dirty Directory (Integration Mode)
+				fmt.Println(stepStyle.Render("🌱 Projeto existente detectado."))
 				prompt := &survey.Confirm{
-					Message: "Deseja baixar o template mesmo assim? (Arquivos existentes podem ser sobrescritos)",
-					Default: false,
+					Message: "Deseja integrar a infraestrutura do Yby neste projeto?",
+					Default: true,
 				}
 				_ = survey.AskOne(prompt, &shouldClone)
 			}
@@ -129,12 +129,12 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				// Initialize Safe Scaffold
 				targetDir := "."
 
-				// If strictly in integration mode (dirty dir), ask for target
+				// If strictly in integration mode (dirty dir), ask for target, defaulting to 'infra'
 				if !isEmptyDir(".") {
 					prompt := &survey.Input{
 						Message: "Diretório de destino para a infraestrutura Yby:",
 						Default: "infra",
-						Help:    "Os arquivos de infraestrutura (charts, config, manifests) serão instalados aqui.",
+						Help:    "Os arquivos de infraestrutura (charts, config, manifests) serão instalados aqui para não poluir a raiz.",
 					}
 					_ = survey.AskOne(prompt, &targetDir)
 				}
