@@ -18,6 +18,8 @@ export default {
                 'test',
                 'release'
             ]
-        ]
+        ],
+        'subject-case': [0], // Disable case check (allow Sentence case, etc)
+        'subject-full-stop': [0] // Disable full-stop check (allow periods at end)
     }
 };
