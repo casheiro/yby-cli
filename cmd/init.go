@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -87,7 +86,14 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				_ = survey.AskOne(prompt, &repair)
 
 				if repair {
-					restoreFromTemplate()
+					// Repair Logic: Ask for target directory
+					targetDir := "."
+					prompt := &survey.Input{
+						Message: "Para reparar, informe o diretório onde a infraestrutura deve estar (ex: infra ou .):",
+						Default: "infra",
+					}
+					_ = survey.AskOne(prompt, &targetDir)
+					scaffoldFromZip(targetDir)
 				} else {
 					fmt.Println(warningStyle.Render("Continuando com inicialização parcial. Isso pode causar erros..."))
 				}
@@ -117,9 +123,33 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 			}
 
 			if shouldClone {
-				restoreFromTemplate() // Use safe restore
+				// Initialize Safe Scaffold
+				targetDir := "."
 
-				// Read newly downloaded blueprint
+				// If strictly in integration mode (dirty dir), ask for target
+				if !isEmptyDir(".") {
+					prompt := &survey.Input{
+						Message: "Diretório de destino para a infraestrutura Yby:",
+						Default: "infra",
+						Help:    "Os arquivos de infraestrutura (charts, config, manifests) serão instalados aqui.",
+					}
+					_ = survey.AskOne(prompt, &targetDir)
+				}
+
+				if err := scaffoldFromZip(targetDir); err != nil {
+					fmt.Printf(crossStyle.Render("❌ Erro ao inicializar scaffold: %v\n"), err)
+					return
+				}
+
+				// Patch blueprint only if we moved things to a subfolder
+				if targetDir != "." && targetDir != "" {
+					fmt.Println(stepStyle.Render("🔧 Ajustando caminhos do Blueprint..."))
+					if err := patchBlueprint(blueprintPath, targetDir); err != nil {
+						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar blueprint: %v\n"), err)
+					}
+				}
+
+				// Refresh blueprint
 				data, err := os.ReadFile(blueprintPath)
 				if err != nil {
 					fmt.Printf(crossStyle.Render("❌ Erro ao ler Blueprint após download: %v\n"), err)
@@ -131,16 +161,10 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				}
 			} else {
 				fmt.Println(crossStyle.Render("❌ Blueprint obrigatório para a inicialização. Abortando."))
-				return
 			}
 		}
 
 		fmt.Println("------------------------------------")
-		// If we reached here without blueprint variable loaded (e.g. Scenaio B success), load it?
-		// In Scenario A we loaded it. In Scenario B (clone success) we loaded it.
-		// If Scenario B failed, we returned.
-		// So blueprint is populated.
-
 		// 3. Process Prompts
 		values := make(map[string]interface{})
 
@@ -217,13 +241,7 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 			if p.Target.Path != "" {
 				applyPatch(p.Target.File, p.Target.Path, answer)
 			}
-
-			// 4. Process Actions (Side effects mainly for MultiSelect)
-			// 4. Process Actions (Side effects mainly for MultiSelect)
-
 		}
-
-		// ... (rest of function) ...
 	},
 }
 
@@ -329,39 +347,6 @@ func isEmptyDir(name string) bool {
 
 	_, err = f.Readdirnames(1) // Or f.Readdir(1)
 	return err != nil
-}
-
-func runCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func restoreFromTemplate() {
-	fmt.Println(stepStyle.Render("📥 Restaurando arquivos do template oficial..."))
-
-	// 1. Clone to temp dir
-	tempDir, err := os.MkdirTemp("", "yby-template-clone")
-	if err != nil {
-		fmt.Printf(crossStyle.Render("❌ Erro ao criar diretório temporário: %v\n"), err)
-		return
-	}
-	defer os.RemoveAll(tempDir)
-
-	if err := runCmd("git", "clone", "--depth", "1", "https://github.com/casheiro/yby-template.git", tempDir); err != nil {
-		fmt.Printf(crossStyle.Render("❌ Erro ao clonar template: %v\n"), err)
-		return
-	}
-
-	// 2. Copy files to current dir
-	if err := copyDir(tempDir, "."); err != nil {
-		fmt.Printf(crossStyle.Render("❌ Erro ao restaurar arquivos: %v\n"), err)
-		return
-	}
-
-	_ = os.RemoveAll(".git")
-	fmt.Println(checkStyle.Render("✅ Template restaurado com sucesso!"))
 }
 
 func validateBlueprintTargets(bp Blueprint) error {

@@ -11,6 +11,11 @@ builds:
       - windows
       - darwin
     main: ./cmd/yby
+    ldflags:
+      - -s -w
+      - -X github.com/casheiro/yby-cli/cmd.version={{.Version}}
+      - -X github.com/casheiro/yby-cli/cmd.commit={{.Commit}}
+      - -X github.com/casheiro/yby-cli/cmd.date={{.Date}}
 archives:
   - format: tar.gz
     # use zip for windows
