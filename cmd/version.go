@@ -23,14 +23,19 @@ var versionCmd = &cobra.Command{
 	Short: "Exibe informações de versão do Yby CLI",
 	Long:  `Mostra a versão atual, hash do commit, data de build e informações do sistema.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(titleStyle.Render("🚀 Yby CLI - Version Info"))
-		fmt.Println("---------------------------------------")
+		info := fmt.Sprintf("yby version %s", version)
 
-		fmt.Printf("%s: %s\n", headerStyle.Render("Versão"), grayStyle.Render(version))
-		fmt.Printf("%s: %s\n", headerStyle.Render("Commit"), grayStyle.Render(commit))
-		fmt.Printf("%s: %s\n", headerStyle.Render("Data"), grayStyle.Render(date))
-		fmt.Printf("%s: %s/%s\n", headerStyle.Render("OS/Arch"), grayStyle.Render(runtime.GOOS), grayStyle.Render(runtime.GOARCH))
-		fmt.Println("---------------------------------------")
+		if commit != "none" {
+			info += fmt.Sprintf(" (%s)", commit)
+		}
+
+		if date != "unknown" {
+			info += fmt.Sprintf(" built at %s", date)
+		}
+
+		info += fmt.Sprintf(" [%s/%s]", runtime.GOOS, runtime.GOARCH)
+
+		fmt.Println(info)
 	},
 }
 
