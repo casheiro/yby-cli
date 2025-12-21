@@ -57,57 +57,91 @@ var initCmd = &cobra.Command{
 	Long: `Lê o arquivo .yby/blueprint.yaml e guia o usuário na configuração.
 Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("🌱 Yby Smart Init (Blueprint Engine)")
-		fmt.Println("------------------------------------")
+		fmt.Println(headerStyle.Render("🌱 Yby Smart Init (Blueprint Engine)"))
 
-		// 1. Load Blueprint
 		blueprintPath := ".yby/blueprint.yaml"
-		if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
-			// Check if directory is empty to offer scaffolding
+		var blueprint Blueprint
+
+		// 1. Check Environment State
+		if _, err := os.Stat(blueprintPath); err == nil {
+			// Scenario A: Blueprint exists - Load and Validate
+			data, err := os.ReadFile(blueprintPath)
+			if err != nil {
+				fmt.Printf(crossStyle.Render("❌ Erro ao ler Blueprint: %v\n"), err)
+				return
+			}
+			if err := yaml.Unmarshal(data, &blueprint); err != nil {
+				fmt.Printf(crossStyle.Render("❌ Blueprint inválido: %v\n"), err)
+				return
+			}
+
+			// Validate Targets
+			if err := validateBlueprintTargets(blueprint); err != nil {
+				fmt.Println(warningStyle.Render(fmt.Sprintf("⚠️  Blueprint encontrado, mas arquivos de configuração estão faltando:\n%v", err)))
+
+				repair := false
+				prompt := &survey.Confirm{
+					Message: "Deseja reparar o projeto baixando os arquivos faltantes do template?",
+					Default: true,
+				}
+				_ = survey.AskOne(prompt, &repair)
+
+				if repair {
+					restoreFromTemplate()
+				} else {
+					fmt.Println(warningStyle.Render("Continuando com inicialização parcial. Isso pode causar erros..."))
+				}
+			} else {
+				fmt.Println(checkStyle.Render("ℹ️  Projeto existente validado. Configuração íntegra."))
+			}
+
+		} else {
+			// Scenario B: Blueprint missing
+			shouldClone := false
+
 			if isEmptyDir(".") {
-				startScaffold := false
+				// Scenario B1: Empty Directory
 				prompt := &survey.Confirm{
 					Message: "Diretório vazio. Deseja inicializar um novo projeto a partir do template?",
 					Default: true,
 				}
-				_ = survey.AskOne(prompt, &startScaffold)
+				_ = survey.AskOne(prompt, &shouldClone)
+			} else {
+				// Scenario B2: Dirty Directory
+				fmt.Println(warningStyle.Render("⚠️  Diretório não está vazio e nenhum Blueprint foi encontrado."))
+				prompt := &survey.Confirm{
+					Message: "Deseja baixar o template mesmo assim? (Arquivos existentes podem ser sobrescritos)",
+					Default: false,
+				}
+				_ = survey.AskOne(prompt, &shouldClone)
+			}
 
-				if startScaffold {
-					fmt.Println("📥 Baixando template oficial (casheiro/yby-template)...")
-					// Naive git clone implementation
-					// In a real scenario, might want to use go-git or download zip to avoid git history
-					if err := runCmd("git", "clone", "--depth", "1", "https://github.com/casheiro/yby-template.git", "."); err != nil {
-						fmt.Printf("❌ Erro ao clonar template: %v\n", err)
-						return
-					}
-					// Remove .git to start fresh
-					_ = os.RemoveAll(".git")
+			if shouldClone {
+				restoreFromTemplate() // Use safe restore
 
-					fmt.Println("✅ Template baixado com sucesso!")
-					fmt.Println("------------------------------------")
-				} else {
-					fmt.Println("Operação cancelada.")
+				// Read newly downloaded blueprint
+				data, err := os.ReadFile(blueprintPath)
+				if err != nil {
+					fmt.Printf(crossStyle.Render("❌ Erro ao ler Blueprint após download: %v\n"), err)
+					return
+				}
+				if err := yaml.Unmarshal(data, &blueprint); err != nil {
+					fmt.Printf(crossStyle.Render("❌ Blueprint baixado inválido: %v\n"), err)
 					return
 				}
 			} else {
-				fmt.Printf("❌ Blueprint não encontrado em %s\n", blueprintPath)
-				fmt.Println("   Certifique-se de estar na raiz do repo yby-template ou em um diretório vazio.")
+				fmt.Println(crossStyle.Render("❌ Blueprint obrigatório para a inicialização. Abortando."))
 				return
 			}
 		}
 
-		data, err := os.ReadFile(blueprintPath)
-		if err != nil {
-			panic(err)
-		}
+		fmt.Println("------------------------------------")
+		// If we reached here without blueprint variable loaded (e.g. Scenaio B success), load it?
+		// In Scenario A we loaded it. In Scenario B (clone success) we loaded it.
+		// If Scenario B failed, we returned.
+		// So blueprint is populated.
 
-		var blueprint Blueprint
-		if err := yaml.Unmarshal(data, &blueprint); err != nil {
-			fmt.Printf("❌ Erro ao ler Blueprint: %v\n", err)
-			return
-		}
-
-		// 2. Process Prompts
+		// 3. Process Prompts
 		values := make(map[string]interface{})
 
 		// Map for env file generation (simple key-value store of answers)
@@ -302,4 +336,57 @@ func runCmd(name string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func restoreFromTemplate() {
+	fmt.Println(stepStyle.Render("📥 Restaurando arquivos do template oficial..."))
+
+	// 1. Clone to temp dir
+	tempDir, err := os.MkdirTemp("", "yby-template-clone")
+	if err != nil {
+		fmt.Printf(crossStyle.Render("❌ Erro ao criar diretório temporário: %v\n"), err)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	if err := runCmd("git", "clone", "--depth", "1", "https://github.com/casheiro/yby-template.git", tempDir); err != nil {
+		fmt.Printf(crossStyle.Render("❌ Erro ao clonar template: %v\n"), err)
+		return
+	}
+
+	// 2. Copy files to current dir
+	if err := copyDir(tempDir, "."); err != nil {
+		fmt.Printf(crossStyle.Render("❌ Erro ao restaurar arquivos: %v\n"), err)
+		return
+	}
+
+	_ = os.RemoveAll(".git")
+	fmt.Println(checkStyle.Render("✅ Template restaurado com sucesso!"))
+}
+
+func validateBlueprintTargets(bp Blueprint) error {
+	var missingFiles []string
+
+	for _, p := range bp.Prompts {
+		if p.Target.File != "" {
+			if _, err := os.Stat(p.Target.File); os.IsNotExist(err) {
+				// Avoid duplicates
+				found := false
+				for _, f := range missingFiles {
+					if f == p.Target.File {
+						found = true
+						break
+					}
+				}
+				if !found {
+					missingFiles = append(missingFiles, p.Target.File)
+				}
+			}
+		}
+	}
+
+	if len(missingFiles) > 0 {
+		return fmt.Errorf("arquivos não encontrados: %s", strings.Join(missingFiles, ", "))
+	}
+	return nil
 }
