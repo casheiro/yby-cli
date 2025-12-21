@@ -86,6 +86,7 @@ var bootstrapClusterCmd = &cobra.Command{
 		createNamespace("argo")
 		runCommand("kubectl", "apply", "-n", "argo", "-f", "manifests/upstream/argo-workflows.yaml")
 
+		createNamespace("argo-events")
 		runCommand("kubectl", "apply", "-f", "manifests/upstream/argo-events.yaml")
 
 		fmt.Println(stepStyle.Render("⏳ Aguardando controladores..."))
