@@ -38,7 +38,16 @@ var bootstrapClusterCmd = &cobra.Command{
 		argoVersion := "5.51.6" // Default fallback
 		argoChart := "argo/argo-cd"
 
-		blueprintPath := ".yby/blueprint.yaml"
+		// 1. Ensure Template Assets (Self-Repair)
+		// This must happen before reading blueprint or applying manifests
+		// because the blueprint or manifests might be missing themselves.
+		ensureTemplateAssets()
+
+		blueprintPath := "infra/.yby/blueprint.yaml" // adjusted default? actually cli assumes we are in root often, but dev.sh cd's into infra.
+		// Context: dev.sh does `(cd infra && yby dev)`. So CWD is infra/.
+		// Existing code used ".yby/blueprint.yaml". If we are in infra/, that works if .yby is in infra/.
+		// Let's verify ensuring assets are relative to CWD.
+
 		if data, err := os.ReadFile(blueprintPath); err == nil {
 			var bp struct {
 				Infrastructure struct {
@@ -74,12 +83,9 @@ var bootstrapClusterCmd = &cobra.Command{
 			"--wait", "--timeout", "300s")
 
 		// Argo Workflows & Events (Manifests)
-		downloadManifest("https://raw.githubusercontent.com/casheiro/yby-template/main/manifests/upstream/argo-workflows.yaml", "manifests/upstream/argo-workflows.yaml")
 		createNamespace("argo")
 		runCommand("kubectl", "apply", "-n", "argo", "-f", "manifests/upstream/argo-workflows.yaml")
 
-		downloadManifest("https://raw.githubusercontent.com/casheiro/yby-template/main/manifests/upstream/argo-events.yaml", "manifests/upstream/argo-events.yaml")
-		createNamespace("argo-events")
 		runCommand("kubectl", "apply", "-f", "manifests/upstream/argo-events.yaml")
 
 		fmt.Println(stepStyle.Render("⏳ Aguardando controladores..."))
@@ -239,11 +245,48 @@ func configureSeconds() {
 	webhookSecretCmd.Run(webhookSecretCmd, []string{"github", webhookSecret})
 }
 
-func downloadManifest(url, destPath string) {
-	if _, err := os.Stat(destPath); err == nil {
-		return // File exists
+// ensureTemplateAssets checks and restores critical files and directories
+func ensureTemplateAssets() {
+	fmt.Println(headerStyle.Render("🛠️  Auto-Repair: Verificando integridade do projeto..."))
+
+	baseUrl := "https://raw.githubusercontent.com/casheiro/yby-template/main"
+
+	// 1. Critical Files (Download Individual)
+	files := map[string]string{
+		"manifests/upstream/argo-workflows.yaml": baseUrl + "/manifests/upstream/argo-workflows.yaml",
+		"manifests/upstream/argo-events.yaml":    baseUrl + "/manifests/upstream/argo-events.yaml",
+		"manifests/argocd/root-app.yaml":         baseUrl + "/manifests/argocd/root-app.yaml",
+		"manifests/projects/yby-project.yaml":    baseUrl + "/manifests/projects/yby-project.yaml",
 	}
 
+	for path, url := range files {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			downloadFile(url, path)
+		}
+	}
+
+	// 2. Critical Directories (Clone & Restore)
+	dirs := []string{
+		"charts/system",
+		"templates/workflows",
+	}
+
+	missingDirs := []string{}
+	for _, d := range dirs {
+		if _, err := os.Stat(d); os.IsNotExist(err) {
+			missingDirs = append(missingDirs, d)
+		}
+	}
+
+	if len(missingDirs) > 0 {
+		fmt.Printf("%s Diretórios críticos faltando: %s. Iniciando restauração via clone...\n", warningStyle.Render("⚠️"), strings.Join(missingDirs, ", "))
+		restoreAssetsFromClone(missingDirs)
+	} else {
+		fmt.Println(checkStyle.Render("✅ Integridade verificada."))
+	}
+}
+
+func downloadFile(url, destPath string) {
 	fmt.Printf("%s Baixando %s...\n", stepStyle.Render("⬇️"), destPath)
 
 	// Ensure directory exists
@@ -280,4 +323,68 @@ func downloadManifest(url, destPath string) {
 		fmt.Printf("%s Erro ao salvar arquivo %s: %v\n", crossStyle.String(), destPath, err)
 		os.Exit(1)
 	}
+}
+
+func restoreAssetsFromClone(targets []string) {
+	tempDir, err := os.MkdirTemp("", "yby-restore")
+	if err != nil {
+		fmt.Printf("%s Erro ao criar temp dir: %v\n", crossStyle.String(), err)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	fmt.Printf("%s Clonando template para recuperação (pode levar alguns segundos)...\n", stepStyle.Render("⏳"))
+
+	// Clone depth 1
+	cmd := exec.Command("git", "clone", "--depth", "1", "https://github.com/casheiro/yby-template.git", tempDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("%s Erro ao clonar template: %v\nOutput: %s\n", crossStyle.String(), err, string(out))
+		return
+	}
+
+	for _, target := range targets {
+		srcPath := filepath.Join(tempDir, target)
+		// Check if it exists in repo
+		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+			fmt.Printf("%s Aviso: %s não encontrado no repo de template.\n", warningStyle.String(), target)
+			continue
+		}
+
+		fmt.Printf("%s Restaurando %s...\n", stepStyle.Render("♻️"), target)
+		// Copy dir
+		if err := copyDir(srcPath, target); err != nil {
+			fmt.Printf("%s Erro ao copiar %s: %v\n", crossStyle.String(), target, err)
+		}
+	}
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, _ := filepath.Rel(src, path)
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		// Copy file
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.Create(dstPath)
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+	})
 }
