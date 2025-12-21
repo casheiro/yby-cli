@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -81,6 +82,24 @@ func extractZip(zipData []byte, mapping map[string]string) error {
 }
 
 func extractFile(f *zip.File, destPath string) error {
+	// Check if file exists
+	if _, err := os.Stat(destPath); err == nil {
+		// File exists, ask for confirmation
+		overwrite := false
+		prompt := &survey.Confirm{
+			Message: fmt.Sprintf("Arquivo %s já existe. Deseja sobrescrever?", destPath),
+			Default: false,
+		}
+		if err := survey.AskOne(prompt, &overwrite); err != nil {
+			return err
+		}
+
+		if !overwrite {
+			fmt.Printf("   ⏩ Pulado: %s\n", destPath)
+			return nil
+		}
+	}
+
 	rc, err := f.Open()
 	if err != nil {
 		return err
@@ -129,14 +148,12 @@ func patchBlueprint(blueprintFile string, targetDir string) error {
 }
 
 func updateFilePaths(node *yaml.Node, prefix string) {
-	if node.Kind == yaml.DocumentNode {
+	switch node.Kind {
+	case yaml.DocumentNode:
 		for _, c := range node.Content {
 			updateFilePaths(c, prefix)
 		}
-		return
-	}
-
-	if node.Kind == yaml.MappingNode {
+	case yaml.MappingNode:
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
 			valNode := node.Content[i+1]
@@ -158,7 +175,7 @@ func updateFilePaths(node *yaml.Node, prefix string) {
 				updateFilePaths(valNode, prefix)
 			}
 		}
-	} else if node.Kind == yaml.SequenceNode {
+	case yaml.SequenceNode:
 		for _, c := range node.Content {
 			updateFilePaths(c, prefix)
 		}
@@ -186,10 +203,19 @@ func scaffoldFromZip(targetDir string) error {
 
 	// Core Config (Always Root)
 	mapping[".yby/"] = ".yby/"
+	mapping[".github/workflows/"] = ".github/workflows/"
 
 	// Infrastructure Components
 	// "charts/" -> "targetDir/charts/"
-	infraComponents := []string{"charts/", "config/", "manifests/", "local/", ".synapstor/", ".agent/", ".trae/"}
+	infraComponents := []string{
+		"charts/",
+		"config/",
+		"manifests/",
+		"local/",
+		".synapstor/",
+		".agent/",
+		".trae/",
+	}
 
 	destPrefix := ""
 	if targetDir != "." && targetDir != "" {
