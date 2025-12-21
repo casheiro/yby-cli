@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -149,6 +150,16 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 					fmt.Println(stepStyle.Render("🔧 Ajustando caminhos do Blueprint..."))
 					if err := patchBlueprint(blueprintPath, targetDir); err != nil {
 						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar blueprint: %v\n"), err)
+					}
+
+					fmt.Println(stepStyle.Render("🔧 Ajustando caminhos dos Workflows..."))
+					if err := patchWorkflows(targetDir); err != nil {
+						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar workflows: %v\n"), err)
+					}
+
+					fmt.Println(stepStyle.Render("🔧 Ajustando caminhos do Sensor (Argo Events)..."))
+					if err := patchSensor(targetDir); err != nil {
+						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar sensor: %v\n"), err)
 					}
 				}
 
@@ -408,6 +419,105 @@ func validateBlueprintTargets(bp Blueprint) error {
 
 	if len(missingFiles) > 0 {
 		return fmt.Errorf("arquivos não encontrados: %s", strings.Join(missingFiles, ", "))
+	}
+	return nil
+}
+
+// patchWorkflows iterates over .github/workflows and replaces specific paths with targetDir/path
+func patchWorkflows(targetDir string) error {
+	workflowsDir := ".github/workflows"
+	files, err := os.ReadDir(workflowsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	// Paths to look for and replace
+	// We want to be careful not to match substrings incorrectly, but standard yby paths are quite specific in usage.
+	// Common refs: "config/cluster-values.yaml", "manifests/", "charts/"
+	replacements := map[string]string{
+		"config/cluster-values.yaml": filepath.Join(targetDir, "config/cluster-values.yaml"),
+		"charts/":                    filepath.Join(targetDir, "charts") + "/", // ensure trailing slash if used as dir
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".yaml") && !strings.HasSuffix(file.Name(), ".yml") {
+			continue
+		}
+
+		path := filepath.Join(workflowsDir, file.Name())
+		contentBytes, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		content := string(contentBytes)
+		changed := false
+		for old, newRef := range replacements {
+			if strings.Contains(content, old) {
+				content = strings.ReplaceAll(content, old, newRef)
+				changed = true
+			}
+		}
+
+		if changed {
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				return err
+			}
+			fmt.Printf("   ✏️  Workflow %s atualizado.\n", file.Name())
+		}
+	}
+	return nil
+}
+
+// patchSensor updates the Argo Events Sensor to look for files in the correct subdirectory
+func patchSensor(targetDir string) error {
+	// Path to sensor.yaml in the extracted structure
+	// targetDir/charts/bootstrap/templates/events/sensor.yaml
+	sensorPath := filepath.Join(targetDir, "charts", "bootstrap", "templates", "events", "sensor.yaml")
+
+	if _, err := os.Stat(sensorPath); os.IsNotExist(err) {
+		// Might not exist if chart structure changed, warn but don't fail hard
+		return fmt.Errorf("arquivo sensor.yaml não encontrado em %s", sensorPath)
+	}
+
+	contentBytes, err := os.ReadFile(sensorPath)
+	if err != nil {
+		return err
+	}
+
+	content := string(contentBytes)
+
+	// We need to replace "cluster-config/" with "targetDir/charts/cluster-config/"
+	// Note: yby-template has "charts/cluster-config" which maps to "targetDir/charts/cluster-config"
+	// But the sensor script hardcodes "grep 'cluster-config/'".
+	// If we change it to "grep 'infra/charts/cluster-config/'", it relies on the internal structure of the clone.
+	// The clone in the sensor script is: git clone ... /tmp/repo.
+	// So the files are at /tmp/repo/infra/charts/cluster-config/...
+
+	// Construct the new path relative to repo root
+	// If targetDir is "infra", new path is "infra/charts/cluster-config/"
+	newPath := filepath.Join(targetDir, "charts", "cluster-config") + "/"
+
+	replacements := map[string]string{
+		"cluster-config/": newPath,
+	}
+
+	changed := false
+	for old, newRef := range replacements {
+		if strings.Contains(content, old) {
+			content = strings.ReplaceAll(content, old, newRef)
+			changed = true
+		}
+	}
+
+	if changed {
+		if err := os.WriteFile(sensorPath, []byte(content), 0644); err != nil {
+			return err
+		}
+		fmt.Printf("   ✏️  Sensor atualizado: cluster-config/ -> %s\n", newPath)
 	}
 	return nil
 }
