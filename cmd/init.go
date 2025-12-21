@@ -177,6 +177,20 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 		for _, p := range blueprint.Prompts {
 			var answer interface{}
 
+			// Check 'When' condition
+			if p.When.PromptID != "" {
+				// We rely on string comparison from envMap
+				storedVal, exists := envMap[p.When.PromptID]
+				if !exists {
+					// Dependency not found (yet?), skip or strictly fail?
+					// Skipping is safer for flexible blueprints
+					continue
+				}
+				if storedVal != p.When.Value {
+					continue
+				}
+			}
+
 			// Build Survey Question
 			var q survey.Prompt
 			switch p.Type {
@@ -203,13 +217,32 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				q = input
 			}
 
+			// Prepare concrete types for survey result
+			var strResult string
+			var sliceResult []string
+
 			// Ask
-			if err := survey.AskOne(q, &answer, survey.WithValidator(func(ans interface{}) error {
-				if p.Required {
-					return survey.Required(ans)
-				}
-				return nil
-			})); err != nil {
+			var err error
+			if p.Type == "multiselect" {
+				err = survey.AskOne(q, &sliceResult, survey.WithValidator(func(ans interface{}) error {
+					if p.Required {
+						return survey.Required(ans)
+					}
+					return nil
+				}))
+				answer = sliceResult
+			} else {
+				// input, select, list -> all return string initially
+				err = survey.AskOne(q, &strResult, survey.WithValidator(func(ans interface{}) error {
+					if p.Required {
+						return survey.Required(ans)
+					}
+					return nil
+				}))
+				answer = strResult
+			}
+
+			if err != nil {
 				fmt.Printf("Operação cancelada (Erro: %v).\n", err)
 				return
 			}
