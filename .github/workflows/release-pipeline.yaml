@@ -41,7 +41,7 @@ jobs:
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6
         with:
-          configFile: commitlint.config.js
+          configFile: commitlint.config.mjs
 
       - name: 🏗️ Verify GoReleaser Config
         uses: goreleaser/goreleaser-action@v6

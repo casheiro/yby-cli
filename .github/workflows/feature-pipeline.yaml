@@ -34,7 +34,7 @@ jobs:
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6
         with:
-          configFile: commitlint.config.js
+          configFile: commitlint.config.mjs
 
   create-pr-to-develop:
     name: 🎁 Create PR to Develop

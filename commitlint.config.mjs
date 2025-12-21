@@ -1,4 +1,4 @@
-module.exports = {
+export default {
     extends: ['@commitlint/config-conventional'],
     rules: {
         'type-enum': [
@@ -16,7 +16,7 @@ module.exports = {
                 'revert',
                 'style',
                 'test',
-                'release' // Allows automatically generated release commits
+                'release'
             ]
         ]
     }
