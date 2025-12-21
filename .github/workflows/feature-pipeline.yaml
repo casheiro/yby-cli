@@ -26,10 +26,15 @@ jobs:
       - name: 🏃 Run Tests
         run: go test ./... -v
 
-      - name: 🔍 Lint
+      - name: 🔍 Lint Code
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+      - name: 📜 Lint Commits
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: commitlint.config.js
 
   create-pr-to-develop:
     name: 🎁 Create PR to Develop
