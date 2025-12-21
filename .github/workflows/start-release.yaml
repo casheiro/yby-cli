@@ -6,11 +6,10 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches:
       - develop
+      - "release/**" # Allow running status checks on release branches too
 
 jobs:
   start-release:
-    # Run on all PR events to satisfy "Required Status Check", but only execute logic conditionally
-    # if: github.event.pull_request.merged == true  <-- REMOVED to allow dry-run
     name: "🤖 AUTO: Start Release"
     runs-on: ubuntu-latest
     permissions:
@@ -51,13 +50,14 @@ jobs:
           echo "continue=true" >> $GITHUB_OUTPUT
 
       - name: 🔮 Preview Release (Dry Run)
+        # Run on open PRs to satisfy status checks
         if: github.event.pull_request.merged != true && steps.versioning.outputs.continue == 'true'
         run: |
           echo "::notice::✅ Dry Run Success: Merging this PR will trigger release process for version ${{ steps.versioning.outputs.release_version }}."
 
       - name: 🌿 Create Release Staging Environment
-        # Only run actual release logic if merged AND version/bump is valid
-        if: github.event.pull_request.merged == true && steps.versioning.outputs.continue == 'true'
+        # Only run actual release logic if merged to DEVELOP AND version/bump is valid
+        if: github.event.pull_request.merged == true && steps.versioning.outputs.continue == 'true' && github.base_ref == 'develop'
         id: create_release_pr
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
