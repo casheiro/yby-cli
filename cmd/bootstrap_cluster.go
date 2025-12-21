@@ -250,18 +250,44 @@ func ensureTemplateAssets() {
 	fmt.Println(headerStyle.Render("🛠️  Auto-Repair: Verificando integridade do projeto..."))
 
 	baseUrl := "https://raw.githubusercontent.com/casheiro/yby-template/main"
+	repoURL := os.Getenv("GITHUB_REPO")
 
-	// 1. Critical Files (Download Individual)
-	files := map[string]string{
-		"manifests/upstream/argo-workflows.yaml": baseUrl + "/manifests/upstream/argo-workflows.yaml",
-		"manifests/upstream/argo-events.yaml":    baseUrl + "/manifests/upstream/argo-events.yaml",
-		"manifests/argocd/root-app.yaml":         baseUrl + "/manifests/argocd/root-app.yaml",
-		"manifests/projects/yby-project.yaml":    baseUrl + "/manifests/projects/yby-project.yaml",
+	// 1. Critical Files (Download & Template)
+	type Manifest struct {
+		Url          string
+		Path         string
+		Replacements map[string]string
 	}
 
-	for path, url := range files {
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			downloadFile(url, path)
+	manifests := []Manifest{
+		{
+			Url:  baseUrl + "/manifests/upstream/argo-workflows.yaml",
+			Path: "manifests/upstream/argo-workflows.yaml",
+		},
+		{
+			Url:  baseUrl + "/manifests/upstream/argo-events.yaml",
+			Path: "manifests/upstream/argo-events.yaml",
+		},
+		{
+			Url:  baseUrl + "/manifests/argocd/root-app.yaml",
+			Path: "manifests/argocd/root-app.yaml",
+			Replacements: map[string]string{
+				"https://github.com/my-user/yby-template": repoURL,
+			},
+		},
+		{
+			Url:  baseUrl + "/manifests/projects/yby-project.yaml",
+			Path: "manifests/projects/yby-project.yaml",
+			Replacements: map[string]string{
+				// Add the current repo to the whitelist by appending it after the generic one
+				"  - 'https://github.com/*/yby'": fmt.Sprintf("  - 'https://github.com/*/yby'\n  - '%s'", repoURL),
+			},
+		},
+	}
+
+	for _, m := range manifests {
+		if _, err := os.Stat(m.Path); os.IsNotExist(err) {
+			downloadAndTemplate(m.Url, m.Path, m.Replacements)
 		}
 	}
 
@@ -286,8 +312,8 @@ func ensureTemplateAssets() {
 	}
 }
 
-func downloadFile(url, destPath string) {
-	fmt.Printf("%s Baixando %s...\n", stepStyle.Render("⬇️"), destPath)
+func downloadAndTemplate(url, destPath string, replacements map[string]string) {
+	fmt.Printf("%s Baixando e Configurando %s...\n", stepStyle.Render("⬇️"), destPath)
 
 	// Ensure directory exists
 	dir := filepath.Dir(destPath)
@@ -309,17 +335,21 @@ func downloadFile(url, destPath string) {
 		os.Exit(1)
 	}
 
-	// Create file
-	out, err := os.Create(destPath)
+	// Read Body
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("%s Erro ao criar arquivo %s: %v\n", crossStyle.String(), destPath, err)
+		fmt.Printf("%s Erro ao ler corpo do arquivo %s: %v\n", crossStyle.String(), destPath, err)
 		os.Exit(1)
 	}
-	defer out.Close()
+	content := string(bodyBytes)
 
-	// Write content
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
+	// Apply Replacements
+	for old, new := range replacements {
+		content = strings.ReplaceAll(content, old, new)
+	}
+
+	// Write file
+	if err := os.WriteFile(destPath, []byte(content), 0644); err != nil {
 		fmt.Printf("%s Erro ao salvar arquivo %s: %v\n", crossStyle.String(), destPath, err)
 		os.Exit(1)
 	}
