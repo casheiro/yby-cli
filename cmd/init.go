@@ -374,7 +374,9 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 					effectiveTargetDir = "infra"
 				}
 			}
-			patchRootApp(effectiveTargetDir, repoURL)
+			if err := patchRootApp(effectiveTargetDir, repoURL); err != nil {
+				fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar root-app (finalização): %v\n"), err)
+			}
 		}
 
 	},
