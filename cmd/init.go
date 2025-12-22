@@ -202,6 +202,21 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				}
 			}
 
+			// 2.a Dynamic Default Logic (Repo Name)
+			if p.ID == "git.repoName" {
+				if repoUrl, ok := envMap["git.repoURL"]; ok {
+					// repoUrl format: https://github.com/org/repo or git@github.com:org/repo.git
+					parts := strings.Split(repoUrl, "/")
+					if len(parts) > 0 {
+						last := parts[len(parts)-1]
+						last = strings.TrimSuffix(last, ".git")
+						if last != "" {
+							p.Default = last
+						}
+					}
+				}
+			}
+
 			// Build Survey Question
 			var q survey.Prompt
 			switch p.Type {
@@ -211,6 +226,12 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 					input.Default = def
 				}
 				q = input
+			case "confirm":
+				confirm := &survey.Confirm{Message: p.Label}
+				if def, ok := p.Default.(bool); ok {
+					confirm.Default = def
+				}
+				q = confirm
 			case "select":
 				sel := &survey.Select{Message: p.Label, Options: p.Options}
 				if def, ok := p.Default.(string); ok {
@@ -230,6 +251,7 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 
 			// Prepare concrete types for survey result
 			var strResult string
+			var boolResult bool
 			var sliceResult []string
 
 			// Ask
@@ -242,6 +264,9 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 					return nil
 				}))
 				answer = sliceResult
+			} else if p.Type == "confirm" {
+				err = survey.AskOne(q, &boolResult)
+				answer = boolResult
 			} else {
 				// input, select, list -> all return string initially
 				err = survey.AskOne(q, &strResult, survey.WithValidator(func(ans interface{}) error {
@@ -288,6 +313,20 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 			if p.Target.Path != "" {
 				applyPatch(p.Target.File, p.Target.Path, answer)
 			}
+
+			// 4. Process Actions (Conditional Side Effects)
+			for _, action := range p.Actions {
+				// Check condition against answer
+				// Simple string comparison for now
+				answerStr := fmt.Sprintf("%v", answer)
+				if answerStr == action.Condition {
+					fmt.Printf("   ⚡ Ação disparada (Condição: %s)\n", action.Condition)
+					if action.Target.Path != "" {
+						// Apply the value defined in the action target
+						applyPatch(action.Target.File, action.Target.Path, action.Target.Value)
+					}
+				}
+			}
 		}
 	},
 }
@@ -315,8 +354,14 @@ func applyPatch(file, path string, value interface{}) {
 		var out strings.Builder
 		enc := yaml.NewEncoder(&out)
 		enc.SetIndent(2)
-		_ = enc.Encode(&node)
-		_ = os.WriteFile(file, []byte(out.String()), 0644)
+		if err := enc.Encode(&node); err != nil {
+			fmt.Printf("⚠️ Erro ao codificar YAML %s: %v\n", file, err)
+			return
+		}
+		if err := os.WriteFile(file, []byte(out.String()), 0644); err != nil {
+			fmt.Printf("⚠️ Erro ao salvar arquivo %s: %v\n", file, err)
+			return
+		}
 		fmt.Printf("   ✏️  Atualizado %s: %s = %v\n", file, path, value)
 	} else {
 		fmt.Printf("   ⚠️ Falha ao encontrar path %s em %s\n", path, file)
@@ -324,34 +369,76 @@ func applyPatch(file, path string, value interface{}) {
 }
 
 // updateNode recurses to find the key and update it
+// updateNode recurses to find the key and update it, or create if missing (Upsert)
 func updateNode(node *yaml.Node, keys []string, value interface{}) bool {
 	if node.Kind == yaml.DocumentNode {
+		if len(node.Content) == 0 {
+			// Initialize root if empty
+			node.Content = append(node.Content, &yaml.Node{
+				Kind: yaml.MappingNode,
+				Tag:  "!!map",
+			})
+		}
 		return updateNode(node.Content[0], keys, value)
 	}
 
 	if len(keys) == 0 {
-		return false // Should not happen if path is valid
+		return false
 	}
 
 	currentKey := keys[0]
 
 	if node.Kind == yaml.MappingNode {
+		// 1. Try to find existing key
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
 			valNode := node.Content[i+1]
 
 			if keyNode.Value == currentKey {
 				if len(keys) == 1 {
-					// Found target! Update valNode
-					// We need to set valNode's value/tag/kind based on Go interface value
+					// Found target key! Update its value
 					setNodeValue(valNode, value)
 					return true
 				} else {
+					// Check if valNode is map (it should be if we are recursing)
+					// If it's null (e.g. empty key), initialize it as map
+					if valNode.Kind == yaml.ScalarNode && valNode.Tag == "!!null" {
+						valNode.Kind = yaml.MappingNode
+						valNode.Tag = "!!map"
+						valNode.Value = ""
+					}
 					// Recurse
 					return updateNode(valNode, keys[1:], value)
 				}
 			}
 		}
+
+		// 2. Not found - Create it!
+		keyNode := &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: currentKey,
+		}
+
+		var valNode *yaml.Node
+
+		if len(keys) == 1 {
+			// Reached target leaf
+			valNode = &yaml.Node{}
+			setNodeValue(valNode, value)
+		} else {
+			// Intermediate node - create new Map
+			valNode = &yaml.Node{
+				Kind:    yaml.MappingNode,
+				Tag:     "!!map",
+				Content: []*yaml.Node{}, // Explicit init
+			}
+			// Recurse to populate the child
+			updateNode(valNode, keys[1:], value)
+		}
+
+		node.Content = append(node.Content, keyNode, valNode)
+		return true
 	}
 	return false
 }
@@ -359,9 +446,11 @@ func updateNode(node *yaml.Node, keys []string, value interface{}) bool {
 func setNodeValue(node *yaml.Node, val interface{}) {
 	switch v := val.(type) {
 	case string:
+		node.Kind = yaml.ScalarNode
 		node.Tag = "!!str"
 		node.Value = v
 	case bool:
+		node.Kind = yaml.ScalarNode
 		node.Tag = "!!bool"
 		if v {
 			node.Value = "true"
@@ -369,6 +458,7 @@ func setNodeValue(node *yaml.Node, val interface{}) {
 			node.Value = "false"
 		}
 	case int:
+		node.Kind = yaml.ScalarNode
 		node.Tag = "!!int"
 		node.Value = fmt.Sprintf("%d", v)
 	case []string:
