@@ -27,7 +27,7 @@ yby dev
 
 ---
 
-## 📋 Pré-requisitos
+## 📋 Pré-requisitos e Segurança
 
 Para utilizar todas as funcionalidades (especialmente o ambiente local `dev`), certifique-se de ter instalado:
 
@@ -38,6 +38,27 @@ Para utilizar todas as funcionalidades (especialmente o ambiente local `dev`), c
 | **[k3d](https://k3d.io/)** | Criar o cluster Kubernetes |
 | **[kubectl](https://kubernetes.io/docs/tasks/tools/)** | Interagir com o Kubernetes |
 | **[Helm](https://helm.sh/docs/intro/install/)** | Gerenciar pacotes (charts) |
+
+### 🔐 Token de Acesso (Crítico)
+O Yby utiliza o padrão **GitOps**, onde o cluster lê a configuração do seu repositório GitHub. Para isso, ele precisa de autenticação.
+**Você deve exportar um PAT (Personal Access Token) válido:**
+
+```bash
+export GITHUB_TOKEN="ghp_..."
+```
+> **Nota:** O token deve ter permissão de `repo` (leitura total).
+
+---
+
+## 🔄 Ciclo de Vida de Desenvolvimento (Atenção!)
+
+Como o Yby segue o **GitOps**, o código que roda no cluster vem do **GitHub**, não da sua pasta local (temporariamente).
+
+1. **Init:** `yby init` (Gera arquivos na pasta `infra/`)
+2. **Commit & Push:** `git add . && git commit -m "init" && git push`
+   > ⚠️ **IMPORTANTE:** Se você não der push, o cluster não verá a infraestrutura criada!
+3. **Run:** `yby dev` (Sobe o cluster e sincroniza com o GitHub)
+4. **Iterate:** Edite arquivos -> Commit -> Push -> O cluster atualiza sozinho.
 
 ---
 

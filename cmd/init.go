@@ -367,7 +367,8 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 		}
 
 		// 5. Finalize: Ensure RootApp has the correct RepoURL if collected
-		if repoURL, ok := envMap["git.repoURL"]; ok {
+		// Note: The key must match the prompt ID in blueprint.yaml (gitRepo)
+		if repoURL, ok := envMap["gitRepo"]; ok {
 			effectiveTargetDir := "."
 			if !isEmptyDir(".") {
 				if _, err := os.Stat("infra/manifests/argocd/root-app.yaml"); err == nil {
