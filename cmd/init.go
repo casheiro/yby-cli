@@ -161,6 +161,28 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 					if err := patchSensor(targetDir); err != nil {
 						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar sensor: %v\n"), err)
 					}
+
+					fmt.Println(stepStyle.Render("🔧 Ajustando Root App path..."))
+					if err := patchRootApp(targetDir, ""); err != nil {
+						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar root-app: %v\n"), err)
+					}
+
+					fmt.Println(stepStyle.Render("🔧 Ajustando Root App path..."))
+					if err := patchRootApp(targetDir, ""); err != nil {
+						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar root-app: %v\n"), err)
+					}
+
+					// We don't have repoURL yet (it's asked later in prompts).
+					// But we should patch the PATH now. RepoURL will be handled by blueprint actions if defined,
+					// or we need to defer this patch until after prompts?
+					// Wait, scaffold happens BEFORE prompts.
+					// We can patch path now. RepoURL is tricky if we don't know it.
+					// BUT, usually we want this mostly for the PATH fix in Integration Mode (infra/).
+					// Let's patch path now. RepoURL is handled by Blueprint Actions normally, or we rely on 'yby dev' self-repair.
+					fmt.Println(stepStyle.Render("🔧 Ajustando Root App path..."))
+					if err := patchRootApp(targetDir, ""); err != nil {
+						fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar root-app: %v\n"), err)
+					}
 				}
 
 				// Refresh blueprint
@@ -315,11 +337,26 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 			}
 
 			// 4. Process Actions (Conditional Side Effects)
+			// 4. Process Actions (Conditional Side Effects)
 			for _, action := range p.Actions {
-				// Check condition against answer
-				// Simple string comparison for now
-				answerStr := fmt.Sprintf("%v", answer)
-				if answerStr == action.Condition {
+				match := false
+
+				switch v := answer.(type) {
+				case []string:
+					// Check if slice contains condition
+					for _, item := range v {
+						if item == action.Condition {
+							match = true
+							break
+						}
+					}
+				default:
+					// Fallback to string comparison for scalars
+					answerStr := fmt.Sprintf("%v", answer)
+					match = (answerStr == action.Condition)
+				}
+
+				if match {
 					fmt.Printf("   ⚡ Ação disparada (Condição: %s)\n", action.Condition)
 					if action.Target.Path != "" {
 						// Apply the value defined in the action target
@@ -328,6 +365,18 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				}
 			}
 		}
+
+		// 5. Finalize: Ensure RootApp has the correct RepoURL if collected
+		if repoURL, ok := envMap["git.repoURL"]; ok {
+			effectiveTargetDir := "."
+			if !isEmptyDir(".") {
+				if _, err := os.Stat("infra/manifests/argocd/root-app.yaml"); err == nil {
+					effectiveTargetDir = "infra"
+				}
+			}
+			patchRootApp(effectiveTargetDir, repoURL)
+		}
+
 	},
 }
 
@@ -608,6 +657,61 @@ func patchSensor(targetDir string) error {
 			return err
 		}
 		fmt.Printf("   ✏️  Sensor atualizado: cluster-config/ -> %s\n", newPath)
+	}
+	return nil
+}
+
+// patchRootApp updates the Root App manifest with the correct repo path in Integration Mode
+func patchRootApp(targetDir string, repoURL string) error {
+	rootAppPath := filepath.Join(targetDir, "manifests", "argocd", "root-app.yaml")
+
+	if _, err := os.Stat(rootAppPath); os.IsNotExist(err) {
+		return fmt.Errorf("arquivo root-app.yaml não encontrado em %s", rootAppPath)
+	}
+
+	contentBytes, err := os.ReadFile(rootAppPath)
+	if err != nil {
+		return err
+	}
+
+	content := string(contentBytes)
+	changed := false
+
+	// Path Prefix Patching
+	// Usually points to 'charts/bootstrap'
+	// In Integration Mode, we might need 'infra/charts/bootstrap' or similar,
+	// but strictly 'targetDir' is relative to where we run yby.
+	// If User runs from Root -> targetDir="infra" -> path should be "infra/charts/bootstrap"
+	// The repo path in ArgoCD must be relative to Git Root.
+	// Assuming yby init is run from Git Root:
+	newPath := filepath.Join(targetDir, "charts", "bootstrap")
+	// If targetDir is "." then newPath is "charts/bootstrap" (unchanged).
+
+	// The default template has "path: charts/bootstrap"
+	if targetDir != "." && targetDir != "" {
+		if strings.Contains(content, "path: charts/bootstrap") {
+			content = strings.ReplaceAll(content, "path: charts/bootstrap", "path: "+newPath)
+			changed = true
+		}
+	}
+
+	// RepoURL Patching
+	// Default template has "repoURL: https://github.com/my-user/yby-template"
+	// We want to replace it with the provided repoURL
+	if repoURL != "" {
+		// Try to match the exact placeholder if possible, or naive replace if we trust the context
+		placeholder := "https://github.com/my-user/yby-template"
+		if strings.Contains(content, placeholder) {
+			content = strings.ReplaceAll(content, placeholder, repoURL)
+			changed = true
+		}
+	}
+
+	if changed {
+		if err := os.WriteFile(rootAppPath, []byte(content), 0644); err != nil {
+			return err
+		}
+		fmt.Printf("   ✏️  Root App atualizado: path -> %s, repo -> %s\n", newPath, repoURL)
 	}
 	return nil
 }
