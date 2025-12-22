@@ -64,6 +64,12 @@ deep:
 			value:    true,
 			expected: `value: true`, // Custom yaml logic writes "true" string for bools currently in setNodeValue
 		},
+		{
+			name:     "Create New Deep Key",
+			path:     ".new.feature.enabled",
+			value:    true,
+			expected: `enabled: true`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -78,7 +84,8 @@ deep:
 			sContent := string(content)
 
 			if !strings.Contains(sContent, tt.expected) {
-				t.Errorf("Expected %s to contain %s", sContent, tt.expected)
+				t.Logf("Full File Content:\n%s", sContent)
+				t.Errorf("Expected file to contain %s", tt.expected)
 			}
 		})
 	}
