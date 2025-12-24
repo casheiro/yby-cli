@@ -132,10 +132,8 @@ func (m *Manager) LoadContext(contextName string) error {
 		if err := godotenv.Overload(envFile); err != nil {
 			return fmt.Errorf("error loading %s: %w", envFile, err)
 		}
-	} else if contextName != "default" && contextName != "local" {
-		// Strictness: If user explicitly asked for "prod" (via YBY_ENV=prod) and .env.prod is missing, we should probably warn or error?
-		// For now, allow it (maybe configured via variables only)
 	}
+	// Note: If context file is missing, we silently continue (allowing env-var only contexts)
 
 	return nil
 }
