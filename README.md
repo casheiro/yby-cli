@@ -1,11 +1,26 @@
 # 🌱 Yby CLI
 
-> **Bootstrap facilitado para o ecossistema Yby.**  
+> **Bootstrap facilitado para o ecossistema Yby.**
 > Gerencie infraestrutura Kubernetes, contextos e ambientes de desenvolvimento com "Zero Touch".
+
+![Governance](https://img.shields.io/badge/Governance-Active_(Squad_of_One)-blueviolet)
 
 O **Yby CLI** abstrai a complexidade de ferramentas como Helm, Argo CD e Kubernetes, oferecendo uma experiência de desenvolvedor (DX) fluida para iniciar projetos e gerenciar clusters.
 
 > 📚 **Documentação Completa:** Para guias detalhados, arquitetura e referência avançada, visite nossa [Wiki Oficial](https://github.com/casheiro/yby-cli/wiki).
+
+---
+
+## 🧠 Governança AI-Native (Squad of One)
+
+Este projeto opera sob um modelo de governança **"Squad of One"**, onde o Product Owner (Humano) é amplificado por Agentes de IA especializados que atuam como Tech Leads, QA e Arquitetos.
+
+*   **Verdade Semântica:** Todo conhecimento perene (Regras, Decisões) reside em [`.synapstor`](./.synapstor/).
+*   **Backlog & Roadmap:** Gerenciado em [`.synapstor/02_BACKLOG_AND_DEBT.md`](./.synapstor/02_BACKLOG_AND_DEBT.md).
+*   **Agentes Ativos:**
+    *   *Governance Steward* (Guardião do Contexto)
+    *   *DevEx Guardian* (Advogado do Usuário)
+    *   *Platform Engineer* (Garantia de Rocha)
 
 ---
 
