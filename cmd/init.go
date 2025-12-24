@@ -239,6 +239,32 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				}
 			}
 
+			// 2.b Context Injection (Env Vars override Defaults)
+			// Convention: ID "git.repoName" -> Env "YBY_GIT_REPONAME"
+			// This allows CI/CD or .env files to drive the init process.
+			envKey := "YBY_" + strings.ToUpper(strings.ReplaceAll(p.ID, ".", "_"))
+			if envVal := os.Getenv(envKey); envVal != "" {
+				// We found an override!
+				// For now, we assume string. Survey will handle casting if the Prompt Type expects something else?
+				// Actually, strictly setting Default to string might break if survey expects bool/int.
+				// Let's do best-effort casting based on p.Type.
+
+				switch p.Type {
+				case "confirm":
+					p.Default = (strings.ToLower(envVal) == "true" || envVal == "1")
+				case "multiselect":
+					// Expect comma separated
+					p.Default = strings.Split(envVal, ",")
+				default:
+					p.Default = envVal
+				}
+
+				// Optional: If we want "Zero Touch", we could skip the prompt entirely if it's required and present?
+				// For "init", we usually want confirmation. "yby bootstrap" is the zero-touch one.
+				// Let's keep it interactive but pre-filled for DX.
+				fmt.Printf("   Start (Env): %s = %v\n", envKey, p.Default)
+			}
+
 			// Build Survey Question
 			var q survey.Prompt
 			switch p.Type {
@@ -377,6 +403,40 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 			}
 			if err := patchRootApp(effectiveTargetDir, repoURL); err != nil {
 				fmt.Printf(warningStyle.Render("⚠️ Falha ao ajustar root-app (finalização): %v\n"), err)
+			}
+		}
+
+		// 6. Stateful Blueprint (Persist Choices)
+		// We iterate over the blueprint prompts and update the 'Default' field
+		// with the captured answers. This ensures next run remembers choices.
+		dirtyBlueprint := false
+		for i, p := range blueprint.Prompts {
+			// Get the raw answer from our capture map
+			if _, exists := envMap[p.ID]; exists {
+				// We need to restore the type (string, bool, []string) roughly
+				// based on prompt type to keep YAML clean.
+				// However, envMap stores string fmt.Sprintf.
+				// For 'Default' field in YAML, it's interface{}.
+				// We can try to reuse the 'values[p.ID]' which stores the interface{} result.
+
+				if val, ok := values[p.ID]; ok {
+					blueprint.Prompts[i].Default = val
+					dirtyBlueprint = true
+				}
+			}
+		}
+
+		if dirtyBlueprint {
+			fmt.Println(stepStyle.Render("💾 Salvando suas escolhas no Blueprint..."))
+			data, err := yaml.Marshal(&blueprint)
+			if err != nil {
+				fmt.Printf(warningStyle.Render("⚠️ Falha ao serializar blueprint: %v\n"), err)
+			} else {
+				if err := os.WriteFile(blueprintPath, data, 0644); err != nil {
+					fmt.Printf(warningStyle.Render("⚠️ Falha ao escrever blueprint: %v\n"), err)
+				} else {
+					fmt.Println(checkStyle.Render("✅ Blueprint atualizado com novos defaults."))
+				}
 			}
 		}
 
