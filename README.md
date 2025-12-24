@@ -1,11 +1,26 @@
 # 🌱 Yby CLI
 
-> **Bootstrap facilitado para o ecossistema Yby.**  
+> **Bootstrap facilitado para o ecossistema Yby.**
 > Gerencie infraestrutura Kubernetes, contextos e ambientes de desenvolvimento com "Zero Touch".
+
+![Governance](https://img.shields.io/badge/Governance-Active_(Squad_of_One)-blueviolet)
 
 O **Yby CLI** abstrai a complexidade de ferramentas como Helm, Argo CD e Kubernetes, oferecendo uma experiência de desenvolvedor (DX) fluida para iniciar projetos e gerenciar clusters.
 
 > 📚 **Documentação Completa:** Para guias detalhados, arquitetura e referência avançada, visite nossa [Wiki Oficial](https://github.com/casheiro/yby-cli/wiki).
+
+---
+
+## 🧠 Governança AI-Native (Squad of One)
+
+Este projeto opera sob um modelo de governança **"Squad of One"**, onde o Product Owner (Humano) é amplificado por Agentes de IA especializados que atuam como Tech Leads, QA e Arquitetos.
+
+*   **Verdade Semântica:** Todo conhecimento perene (Regras, Decisões) reside em [`.synapstor`](./.synapstor/).
+*   **Backlog & Roadmap:** Gerenciado em [`.synapstor/02_BACKLOG_AND_DEBT.md`](./.synapstor/02_BACKLOG_AND_DEBT.md).
+*   **Agentes Ativos:**
+    *   *Governance Steward* (Guardião do Contexto)
+    *   *DevEx Guardian* (Advogado do Usuário)
+    *   *Platform Engineer* (Garantia de Rocha)
 
 ---
 
@@ -27,7 +42,7 @@ yby dev
 
 ---
 
-## 📋 Pré-requisitos
+## 📋 Pré-requisitos e Segurança
 
 Para utilizar todas as funcionalidades (especialmente o ambiente local `dev`), certifique-se de ter instalado:
 
@@ -38,6 +53,27 @@ Para utilizar todas as funcionalidades (especialmente o ambiente local `dev`), c
 | **[k3d](https://k3d.io/)** | Criar o cluster Kubernetes |
 | **[kubectl](https://kubernetes.io/docs/tasks/tools/)** | Interagir com o Kubernetes |
 | **[Helm](https://helm.sh/docs/intro/install/)** | Gerenciar pacotes (charts) |
+
+### 🔐 Token de Acesso (Crítico)
+O Yby utiliza o padrão **GitOps**, onde o cluster lê a configuração do seu repositório GitHub. Para isso, ele precisa de autenticação.
+**Você deve exportar um PAT (Personal Access Token) válido:**
+
+```bash
+export GITHUB_TOKEN="ghp_..."
+```
+> **Nota:** O token deve ter permissão de `repo` (leitura total).
+
+---
+
+## 🔄 Ciclo de Vida de Desenvolvimento (Atenção!)
+
+Como o Yby segue o **GitOps**, o código que roda no cluster vem do **GitHub**, não da sua pasta local (temporariamente).
+
+1. **Init:** `yby init` (Gera arquivos na pasta `infra/`)
+2. **Commit & Push:** `git add . && git commit -m "init" && git push`
+   > ⚠️ **IMPORTANTE:** Se você não der push, o cluster não verá a infraestrutura criada!
+3. **Run:** `yby dev` (Sobe o cluster e sincroniza com o GitHub)
+4. **Iterate:** Edite arquivos -> Commit -> Push -> O cluster atualiza sozinho.
 
 ---
 
