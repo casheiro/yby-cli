@@ -82,65 +82,58 @@ func (m *Manager) DetectContexts() ([]Context, error) {
 }
 
 // ResolveActive determines which context to use based on precedence:
-// 1. Flag (passed as arg)
-// 2. Config (.ybyrc)
-// 3. Inference/Default
+// 1. Env Var YBY_ENV
+// 2. Flag (passed as arg)
+// 3. Config (.ybyrc)
+// 4. Default inference (default)
 func (m *Manager) ResolveActive(flagContext string, cfg *config.Config) (string, error) {
-	// 1. Flag
+	// 1. Env Var (Highest Priority for Automation)
+	if env := os.Getenv("YBY_ENV"); env != "" {
+		return env, nil
+	}
+
+	// 2. Flag
 	if flagContext != "" {
 		return flagContext, nil
 	}
 
-	// 2. Config
+	// 3. Config
 	if cfg != nil && cfg.CurrentContext != "" {
 		return cfg.CurrentContext, nil
 	}
 
-	// 3. Default inference
-	// If detected "default", return default.
-	// We could check if "local" is available and default to it, but "default" (.env) is safer as standard behavior.
+	// 4. Default
 	return "default", nil
 }
 
-// LoadContext applies Strict Isolation rules to load variables
+// LoadContext loads the appropriate .env file and sets up the environment environment.
+// It effectively sets the "Mode" of operation (Local Mirror vs Remote GitOps).
 func (m *Manager) LoadContext(contextName string) error {
-	// Strict Isolation: Do not load .env if loading a specific Named Context (unless it IS default)
+	var envFile string
 
 	switch contextName {
 	case "default":
-		// Load .env
-		file := filepath.Join(m.RootDir, ".env")
-		if _, err := os.Stat(file); err == nil {
-			return godotenv.Load(file)
-		}
-		// If default .env doesn't exist, it's fine, maybe just env vars
-		return nil
-
+		// Try standard .env
+		envFile = filepath.Join(m.RootDir, ".env")
 	case "local":
-		// Try local/.env
-		file := filepath.Join(m.RootDir, "local", ".env")
-		if _, err := os.Stat(file); err == nil {
-			return godotenv.Load(file)
+		// Try .env.local (Standard for local overrides)
+		envFile = filepath.Join(m.RootDir, ".env.local")
+		// If .env.local missing, try .env as fallback
+		if _, err := os.Stat(envFile); os.IsNotExist(err) {
+			envFile = filepath.Join(m.RootDir, ".env")
 		}
-		// logic for local might also imply no env file needed, just k3d calls
-		return nil
-
 	default:
-		// Remote/Named context (e.g., staging)
-		// MUST exist.
-		filename := fmt.Sprintf(".env.%s", contextName)
-		file := filepath.Join(m.RootDir, filename)
-
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			return fmt.Errorf("context '%s' not found: file %s does not exist", contextName, filename)
-		}
-
-		// Load ONLY this file. explicitly.
-		// godotenv.Overload might be meaningful if we want to overwrite existing OS vars,
-		// but Load() is safer to not break CI vars.
-		// However, we promise Isolation. existing OS vars (PROJECT_ID) might be set.
-		// Yby philosophy: .env defines the state. Overload ensures the file wins?
-		// Usually .env is for missing vars. Let's stick to Load, but ensure we don't load .env beforehand.
-		return godotenv.Load(file)
+		// Named contexts (staging, prod) -> .env.<name>
+		envFile = filepath.Join(m.RootDir, fmt.Sprintf(".env.%s", contextName))
 	}
+
+	// Load valid file
+	if _, err := os.Stat(envFile); err == nil {
+		if err := godotenv.Overload(envFile); err != nil {
+			return fmt.Errorf("error loading %s: %w", envFile, err)
+		}
+	}
+	// Note: If context file is missing, we silently continue (allowing env-var only contexts)
+
+	return nil
 }

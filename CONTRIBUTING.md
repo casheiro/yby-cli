@@ -9,6 +9,22 @@ Adotamos um modelo **Git-Flow** adaptado.
 - **`main`**: 🛡️ Produção. Contém apenas versões estáveis e "taggeadas". **Não abra PRs diretos para cá**, exceto hotfixes críticos.
 - **`develop`**: 🧪 Integração. **Esta é a branch base para seus Pull Requests.** Todas as novas features e preparações para release acontecem aqui.
 
+## 🤖 Trabalhando com Agentes & IA
+
+Este repositório utiliza uma governança "AI-First". Isso significa que Agentes de IA são cidadãos de primeira classe no time.
+
+### Personas Ativas
+1.  **Governance Steward**: Guardião das regras e do `.synapstor`.
+2.  **DevEx Guardian**: Focado na experiência do usuário final.
+3.  **Platform Engineer**: Focado na robustez e implementação técnica.
+
+### Workflows Recomendados
+Ao abrir uma Issue ou dialogar com os Agentes, use os comandos padrão:
+
+*   **Ideia Nova?** Use `/work-discovery` para ajudar a IA a entender o escopo.
+*   **Nova Regra ou Padrão?** Use `/uki-capture` para formalizar uma decisão.
+*   **Dúvida de Governança?** Pergunte "O que diz a UKI sobre X?".
+
 ## 📝 Como Contribuir
 
 1.  **Fork** o projeto.
