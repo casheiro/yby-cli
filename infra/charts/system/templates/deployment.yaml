@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "system.fullname" . }}
+  labels:
+    {{- include "system.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "system.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "system.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "system.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          
+          {{- /* Yby Hardened Standard: RAM-Only Secrets */}}
+          volumeMounts:
+            {{- if .Values.security.secrets.mountPath }}
+            - name: secrets-vol
+              mountPath: {{ .Values.security.secrets.mountPath }}
+              readOnly: true
+            {{- end }}
+
+      {{- /* Yby Hardened Standard: Secrets Volume Definition */}}
+      volumes:
+        {{- if .Values.security.secrets.mountPath }}
+        - name: secrets-vol
+          projected:
+            sources:
+            {{- range .Values.security.secrets.names }}
+            - secret:
+                name: {{ . }}
+            {{- end }}
+            # If no specific names, we might want to default to mounting all? 
+            # Or assume the user provides list. For strictness, better valid list.
+            # If empty list, projected volume might be empty or valid.
+            defaultMode: 420 # 0444 equivalent-ish (decimal)
+        {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

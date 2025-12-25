@@ -3,7 +3,7 @@
 > **Bootstrap facilitado para o ecossistema Yby.**
 > Gerencie infraestrutura Kubernetes, contextos e ambientes de desenvolvimento com "Zero Touch".
 
-![Governance](https://img.shields.io/badge/Governance-Active_(Squad_of_One)-blueviolet)
+![Governance](https://img.shields.io/badge/Governance-Matrix_Protocol-blueviolet)
 
 O **Yby CLI** abstrai a complexidade de ferramentas como Helm, Argo CD e Kubernetes, oferecendo uma experiência de desenvolvedor (DX) fluida para iniciar projetos e gerenciar clusters.
 
@@ -11,9 +11,9 @@ O **Yby CLI** abstrai a complexidade de ferramentas como Helm, Argo CD e Kuberne
 
 ---
 
-## 🧠 Governança AI-Native (Squad of One)
+## 🧠 Governança AI-Native (Matrix Protocol)
 
-Este projeto opera sob um modelo de governança **"Squad of One"**, onde o Product Owner (Humano) é amplificado por Agentes de IA especializados que atuam como Tech Leads, QA e Arquitetos.
+Este projeto opera sob o **[Matrix Protocol](https://matrix-protocol.org)**, onde o Product Owner (Humano) é amplificado por Agentes de IA especializados que atuam como Tech Leads, QA e Arquitetos.
 
 *   **Verdade Semântica:** Todo conhecimento perene (Regras, Decisões) reside em [`.synapstor`](./.synapstor/).
 *   **Backlog & Roadmap:** Gerenciado em [`.synapstor/02_BACKLOG_AND_DEBT.md`](./.synapstor/02_BACKLOG_AND_DEBT.md).
@@ -138,6 +138,11 @@ Você tem um monorepo ou quer organizar a infraestrutura em uma pasta separada (
     - No Argo Events (`sensor.yaml`).
     - Nos Workflows do GitHub (`.github/workflows`).
 - Resultado: GitOps funcionando perfeitamente, não importa a estrutura de pastas.
+
+### 🔒 Segurança Nativa (Hardened Standard)
+O Yby eleva o nível de segurança sem configuração extra:
+1. **Segredos em RAM:** Credenciais são montadas em memória (`/run/secrets`) por padrão, eliminando vazamentos via variáveis de ambiente.
+2. **Isolamento de Rede:** Policies padrão protegem a infraestrutura crítica (`infra`) contra acesso não autorizado, permitindo apenas tráfego legítimo das apps.
 
 ---
 
