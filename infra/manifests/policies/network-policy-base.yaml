@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress-external
+  namespace: infra
+spec:
+  podSelector: {} # Select all pods in this namespace
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: apps # Only traffic from 'apps' namespace is allowed
+      # Allow monitoring/logging if needed, or other infra components
+  # - from:
+  #   - podSelector: {} # Allow internal traffic within infra
