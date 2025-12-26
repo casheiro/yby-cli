@@ -23,7 +23,16 @@ Equivalente ao antigo 'make validate'.`,
 		fmt.Println(titleStyle.Render("🔍 Yby Validate - Validação de Charts"))
 		fmt.Println("---------------------------------------")
 
-		charts := []string{"charts/system", "charts/bootstrap", "charts/cluster-config"}
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
+		charts := []string{
+			JoinInfra(root, "charts/system"),
+			JoinInfra(root, "charts/bootstrap"),
+			JoinInfra(root, "charts/cluster-config"),
+		}
 
 		fmt.Println(headerStyle.Render("0️⃣  Resolvendo Dependências..."))
 		for _, chart := range charts {
@@ -41,7 +50,7 @@ Equivalente ao antigo 'make validate'.`,
 		}
 
 		fmt.Println("\n" + headerStyle.Render("2️⃣  Helm Template Check (Dry Run)..."))
-		valuesFile := "config/cluster-values.yaml"
+		valuesFile := JoinInfra(root, "config/cluster-values.yaml")
 		// Fallback for location (if running from cli/)
 		if _, err := os.Stat(valuesFile); os.IsNotExist(err) {
 			valuesFile = "../config/cluster-values.yaml"

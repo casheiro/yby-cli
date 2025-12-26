@@ -28,7 +28,23 @@ Equivalente ao antigo 'make dev'.`,
 		fmt.Println(titleStyle.Render("🏃 Yby Dev - Ambiente de Desenvolvimento"))
 		fmt.Println("---------------------------------------")
 
-		// 0. Context & Env Init
+		// 0. Resolve Infra Root
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
+		// 1. Enforce Local Semantics
+		if contextFlag != "" && contextFlag != "local" {
+			fmt.Println(crossStyle.Render("❌ Erro: 'yby dev' é exclusivo para ambiente local."))
+			fmt.Printf("Para contextos remotos (%s), utilize 'yby bootstrap cluster' e GitOps.\n", contextFlag)
+			os.Exit(1)
+		}
+		// Force local
+		contextFlag = "local"
+		os.Setenv("YBY_ENV", "local")
+
+		// 2. Context & Env Init
 		wd, _ := os.Getwd()
 		ctxManager := ybyctx.NewManager(wd)
 		cfg, _ := config.Load()
@@ -42,9 +58,9 @@ Equivalente ao antigo 'make dev'.`,
 			fmt.Printf("❌ Erro carregando ambiente: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("🌍 Contexto Ativo: %s\n", activeCtx)
+		fmt.Printf("🌍 Contexto Ativo: %s (Forçado)\n", activeCtx)
 
-		// 1. Check dependencies
+		// 3. Check dependencies
 		if _, err := exec.LookPath("k3d"); err != nil {
 			fmt.Println(crossStyle.Render("❌ k3d não encontrado. Rode 'yby setup' primeiro."))
 			os.Exit(1)
@@ -59,16 +75,14 @@ Equivalente ao antigo 'make dev'.`,
 			clusterName = "yby-local"
 		}
 
-		// 2. Cluster Lifecycle
+		// 4. Cluster Lifecycle
 		fmt.Printf("%s Verificando cluster '%s'...\n", stepStyle.Render("🔍"), clusterName)
 
 		// Check if cluster exists
 		out, _ := exec.Command("k3d", "cluster", "list", clusterName).CombinedOutput()
 		if strings.Contains(string(out), "No nodes found") || strings.Contains(string(out), "no cluster found") {
-			// Create logic (omitted full logic for brevity, relying on previous robust logic or simply calling create)
-			// Re-using previous logic exactly:
 			fmt.Println(stepStyle.Render("🚀 Criando cluster..."))
-			configFile := "local/k3d-config.yaml" // Default
+			configFile := JoinInfra(root, "local/k3d-config.yaml") // Default
 			if cfgVal := os.Getenv("YBY_K3D_CONFIG"); cfgVal != "" {
 				configFile = cfgVal
 			}
@@ -92,17 +106,16 @@ Equivalente ao antigo 'make dev'.`,
 			fmt.Println(checkStyle.String())
 		}
 
-		// 3. Mirror Setup (Hybrid GitOps)
+		// 5. Mirror Setup (Hybrid GitOps)
 		var mirrorMgr *mirror.MirrorManager
-		if activeCtx == "local" || os.Getenv("YBY_MODE") == "mirror" {
-			fmt.Println("🪞 Inicializando Local Mirror (Hybrid GitOps)...")
-			mirrorMgr = mirror.NewManager(".")
-			if err := mirrorMgr.EnsureGitServer(); err != nil {
-				fmt.Printf(warningStyle.Render("⚠️ Falha ao garantir Git Server: %v\n"), err)
-				mirrorMgr = nil // Disable sync if init failed
-			} else {
-				fmt.Println(checkStyle.Render("✅ Git Server Operacional."))
-			}
+		// Always run mirror in dev mode
+		fmt.Println("🪞 Inicializando Local Mirror (Hybrid GitOps)...")
+		mirrorMgr = mirror.NewManager(root)
+		if err := mirrorMgr.EnsureGitServer(); err != nil {
+			fmt.Printf(warningStyle.Render("⚠️ Falha ao garantir Git Server: %v\n"), err)
+			mirrorMgr = nil // Disable sync if init failed
+		} else {
+			fmt.Println(checkStyle.Render("✅ Git Server Operacional."))
 		}
 
 		// 4. Boostrap
