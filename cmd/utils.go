@@ -229,3 +229,43 @@ func scaffoldFromZip(targetDir string) error {
 
 	return extractZip(data, mapping)
 }
+
+// FindInfraRoot discovers the root directory containing the .yby configuration folder.
+// It searches in the following order:
+// 1. Current directory (checks for .yby/)
+// 2. "infra" subdirectory (checks for infra/.yby/)
+// 3. First-level subdirectories (checks for */.yby/)
+func FindInfraRoot() (string, error) {
+	// 1. Check Root
+	if _, err := os.Stat(".yby"); err == nil {
+		return ".", nil
+	}
+
+	// 2. Check Standard Infra
+	if _, err := os.Stat("infra/.yby"); err == nil {
+		return "infra", nil
+	}
+
+	// 3. Scan first-level subdirs
+	entries, err := os.ReadDir(".")
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() && e.Name() != ".git" && e.Name() != ".yby" && e.Name() != "infra" {
+				candidate := filepath.Join(e.Name(), ".yby")
+				if _, err := os.Stat(candidate); err == nil {
+					return e.Name(), nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("diretório de infraestrutura (.yby/) não encontrado")
+}
+
+// Helper to join paths with infra root
+func JoinInfra(root, path string) string {
+	if root == "." {
+		return path
+	}
+	return filepath.Join(root, path)
+}

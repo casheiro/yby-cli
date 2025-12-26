@@ -30,3 +30,9 @@ Este arquivo rastreia mudanças significativas e execuções de workflows neste 
   - `CONTRIBUTING.md` (Adicionado guia de interação com Agentes)
   - `docs/wiki/GOVERNANCE.md` (Draft de regras para humanos)
   - `docs/wiki/AGENTS.md` (Draft de personas para humanos)
+
+## 2025-12-25 - UKI Import
+- **Executor:** Antigravity (Agent)
+- **Resumo:** Importação de UKI técnica via reorganização organizacional.
+- **Artefatos:**
+  - `.synapstor/.uki/UKI_TECH_HYBRID_GITOPS.md` (Moved from Org Root)
