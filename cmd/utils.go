@@ -196,36 +196,44 @@ func scaffoldFromZip(targetDir string) error {
 	fmt.Println(stepStyle.Render("📦 Extraindo arquivos..."))
 
 	// Define mapping
-	// If targetDir is ".", mapping is 1:1 for everything relevant
-	// If targetDir is "infra", we map specific folders to "infra/"
-
+	// mapping[source_prefix] = dest_prefix
 	mapping := make(map[string]string)
-
-	// Core Config (Always Root)
-	mapping[".yby/"] = ".yby/"
-	mapping[".github/workflows/"] = ".github/workflows/"
-
-	// Infrastructure Components
-	// "charts/" -> "targetDir/charts/"
-	infraComponents := []string{
-		"charts/",
-		"config/",
-		"manifests/",
-		"local/",
-		".synapstor/",
-		".agent/",
-		".trae/",
-	}
 
 	destPrefix := ""
 	if targetDir != "." && targetDir != "" {
 		destPrefix = targetDir + "/"
 	}
 
+	// 1. Core Config
+	// Always mapped to destination (root or infra/)
+	// If targetDir=infra, source ".yby/" -> "infra/.yby/"
+	mapping[".yby/"] = destPrefix + ".yby/"
+
+	// Workflows -> Always root (GitHub requirement)
+	mapping[".github/workflows/"] = ".github/workflows/"
+
+	// 2. Infrastructure Components
+	// Maps to destPrefix
+	infraComponents := []string{
+		"charts/",
+		"config/",
+		"manifests/",
+		"local/",
+	}
+
 	for _, c := range infraComponents {
-		// Map source "c" to "destPrefix + c"
 		mapping[c] = destPrefix + c
 	}
+
+	// 3. Governance Files (Filtered)
+	// Only download if explicitly required or if we decide to include minimal set.
+	// User requested minimal, so we exclude .synapstor, .agent, .trae for now unless specifically asked.
+	// For now, let's include ONLY essential governance if they are critical for 'yby doctor' or similar,
+	// but user explicitly complained about them.
+	// Resolution: Exclude them from default scaffold. Users can run 'yby governance init' later if needed (feature idea).
+
+	// For now, simply DO NOT add them to the mapping.
+	// The extractZip function ONLY extracts what matches the mapping keys.
 
 	return extractZip(data, mapping)
 }
