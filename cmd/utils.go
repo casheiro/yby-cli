@@ -244,14 +244,14 @@ func scaffoldFromZip(targetDir string) error {
 // 2. "infra" subdirectory (checks for infra/.yby/)
 // 3. First-level subdirectories (checks for */.yby/)
 func FindInfraRoot() (string, error) {
-	// 1. Check Root
-	if _, err := os.Stat(".yby"); err == nil {
-		return ".", nil
-	}
-
-	// 2. Check Standard Infra
+	// 1. Check Standard Infra (Priority over root to avoid stale .yby issues)
 	if _, err := os.Stat("infra/.yby"); err == nil {
 		return "infra", nil
+	}
+
+	// 2. Check Root
+	if _, err := os.Stat(".yby"); err == nil {
+		return ".", nil
 	}
 
 	// 3. Scan first-level subdirs
