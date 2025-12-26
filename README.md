@@ -62,6 +62,7 @@ O Yby utiliza o padrão **GitOps**, onde o cluster lê a configuração do seu r
 export GITHUB_TOKEN="ghp_..."
 ```
 > **Nota:** O token deve ter permissão de `repo` (leitura total).
+> **Local Dev:** Para ambiente local (`yby dev`), o token é opcional (modo Local Mirror), mas recomendado para evitar rate-limits.
 
 ---
 
@@ -105,7 +106,7 @@ go install github.com/casheiro/yby-cli/cmd/yby@latest
 | Comando | Descrição | Exemplo de Uso |
 | :--- | :--- | :--- |
 | **`init`** | Inicializa um novo projeto Yby. Configura o blueprint e segredos iniciais. | `yby init` |
-| **`dev`** | Sobe o ambiente de desenvolvimento local completo (Cluster + Infra). | `yby dev` |
+| **`dev`** | Sobe o ambiente de desenvolvimento local completo. **(Apenas Contexto Local)** | `yby dev` |
 | **`bootstrap cluster`** | Instala a infraestrutura base (ArgoCD, Events, Workflows) em um cluster existente. | `yby bootstrap cluster` |
 | **`context set <env>`** | Alterna entre contextos (local, staging, prod). | `yby context set prod` |
 | **`context show`** | Exibe o contexto atual. | `yby context show` |

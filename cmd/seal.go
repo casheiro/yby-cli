@@ -128,7 +128,12 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 
 		// 3. Salvar Arquivo
 		filename := fmt.Sprintf("sealed-secret-%s.yaml", answers.Name)
-		targetDir := "charts/cluster-config/templates/events" // Default location suggestion
+
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+		targetDir := JoinInfra(root, "charts/cluster-config/templates/events") // Default location suggestion
 
 		// Perguntar onde salvar
 		pathPrompt := &survey.Input{

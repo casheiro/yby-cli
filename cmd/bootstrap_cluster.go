@@ -30,40 +30,57 @@ var bootstrapClusterCmd = &cobra.Command{
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Cluster GitOps"))
 		fmt.Println("---------------------------------------")
 
-		// 0. Pre-checks
-		checkEnvVars()
-		ensureToolsInstalled()
+		// 0. Resolve Infra Root
+		root, err := FindInfraRoot()
+		if err != nil {
+			fmt.Println(warningStyle.Render("⚠️  Raiz da infraestrutura não encontrada (.yby/). Assumindo diretório atual '.'"))
+			root = "."
+		} else {
+			fmt.Printf("📂 Infraestrutura detectada em: %s\n", root)
+		}
 
 		// Load Version Config from Blueprint (Infra as Data)
 		argoVersion := "5.51.6" // Default fallback
 		argoChart := "argo/argo-cd"
 
+		// 0. Resolve Config (Blueprint)
+		blueprintRepo := getRepoURLFromBlueprint()
+
+		// 1. Pre-checks
+		checkEnvVars(blueprintRepo)
+		ensureToolsInstalled()
+
 		// 1. Ensure Template Assets (Self-Repair)
 		// This must happen before reading blueprint or applying manifests
 		// because the blueprint or manifests might be missing themselves.
-		ensureTemplateAssets()
+		repoURL := os.Getenv("GITHUB_REPO")
+		if repoURL == "" {
+			repoURL = blueprintRepo
+		}
+		ensureTemplateAssets(repoURL, root)
 
-		blueprintPath := "infra/.yby/blueprint.yaml" // adjusted default? actually cli assumes we are in root often, but dev.sh cd's into infra.
-		// Context: dev.sh does `(cd infra && yby dev)`. So CWD is infra/.
+		blueprintPath := JoinInfra(root, ".yby/blueprint.yaml")
 		// Existing code used ".yby/blueprint.yaml". If we are in infra/, that works if .yby is in infra/.
 		// Let's verify ensuring assets are relative to CWD.
 
-		if data, err := os.ReadFile(blueprintPath); err == nil {
-			var bp struct {
-				Infrastructure struct {
-					Argocd struct {
-						Version string `yaml:"version"`
-						Chart   string `yaml:"chart"`
-					} `yaml:"argocd"`
-				} `yaml:"infrastructure"`
-			}
-			if err := yaml.Unmarshal(data, &bp); err == nil {
-				if bp.Infrastructure.Argocd.Version != "" {
-					argoVersion = bp.Infrastructure.Argocd.Version
-					fmt.Printf("📋 Versão ArgoCD definida no Blueprint: %s\n", argoVersion)
+		if blueprintPath != "" {
+			if data, err := os.ReadFile(blueprintPath); err == nil {
+				var bp struct {
+					Infrastructure struct {
+						Argocd struct {
+							Version string `yaml:"version"`
+							Chart   string `yaml:"chart"`
+						} `yaml:"argocd"`
+					} `yaml:"infrastructure"`
 				}
-				if bp.Infrastructure.Argocd.Chart != "" {
-					argoChart = bp.Infrastructure.Argocd.Chart
+				if err := yaml.Unmarshal(data, &bp); err == nil {
+					if bp.Infrastructure.Argocd.Version != "" {
+						argoVersion = bp.Infrastructure.Argocd.Version
+						fmt.Printf("📋 Versão ArgoCD definida no Blueprint: %s\n", argoVersion)
+					}
+					if bp.Infrastructure.Argocd.Chart != "" {
+						argoChart = bp.Infrastructure.Argocd.Chart
+					}
 				}
 			}
 		}
@@ -76,41 +93,45 @@ var bootstrapClusterCmd = &cobra.Command{
 		createNamespace("argocd")
 
 		// Helm Upgrade ArgoCD
+		// Helm Upgrade ArgoCD
 		runCommand("helm", "upgrade", "--install", "argocd", argoChart,
 			"--namespace", "argocd",
 			"--version", argoVersion,
-			"-f", "config/cluster-values.yaml",
+			"-f", JoinInfra(root, "config/cluster-values.yaml"),
 			"--wait", "--timeout", "300s")
 
 		// Argo Workflows & Events (Manifests)
 		createNamespace("argo")
-		runCommand("kubectl", "apply", "-n", "argo", "-f", "manifests/upstream/argo-workflows.yaml")
+		runCommand("kubectl", "apply", "-n", "argo", "-f", JoinInfra(root, "manifests/upstream/argo-workflows.yaml"))
 
 		createNamespace("argo-events")
-		runCommand("kubectl", "apply", "-f", "manifests/upstream/argo-events.yaml")
+		runCommand("kubectl", "apply", "-f", JoinInfra(root, "manifests/upstream/argo-events.yaml"))
 
 		fmt.Println(stepStyle.Render("⏳ Aguardando controladores..."))
 		waitPodReady("app=workflow-controller", "argo")
 		waitPodReady("controller=sensor-controller", "argo-events")
 
 		// 2. Install System Chart
+		// 2. Install System Chart
 		fmt.Println(stepStyle.Render("⚙️  Instalando Chart System (CRDs e Controllers)..."))
-		runCommand("helm", "dependency", "build", "charts/system")
+		runCommand("helm", "dependency", "build", JoinInfra(root, "charts/system"))
 
 		// Workaround CRDs
-		if _, err := os.Stat("charts/system/crds"); err == nil {
-			runCommand("kubectl", "apply", "-f", "charts/system/crds/")
+		if _, err := os.Stat(JoinInfra(root, "charts/system/crds")); err == nil {
+			runCommand("kubectl", "apply", "-f", JoinInfra(root, "charts/system/crds/"))
 		}
 
-		runCommand("helm", "upgrade", "--install", "system", "charts/system",
+		runCommand("helm", "upgrade", "--install", "system", JoinInfra(root, "charts/system"),
 			"--namespace", "argocd",
 			"--create-namespace",
-			"-f", "config/cluster-values.yaml",
+			"-f", JoinInfra(root, "config/cluster-values.yaml"),
 			"--wait", "--timeout", "600s")
 
 		// 3. Secrets
 		fmt.Println(headerStyle.Render("🔐 Fase 2: Configuração de Segredos"))
-		configureSeconds()
+		// 3. Secrets
+		fmt.Println(headerStyle.Render("🔐 Fase 2: Configuração de Segredos"))
+		configureSecrets(repoURL)
 
 		// 4. Wait for CRDs
 		fmt.Println(stepStyle.Render("⏳ Aguardando CRDs críticos..."))
@@ -118,9 +139,10 @@ var bootstrapClusterCmd = &cobra.Command{
 		waitCRD("certificates.cert-manager.io")
 
 		// 5. Bootstrap Config (Root App)
+		// 5. Bootstrap Config (Root App)
 		fmt.Println(headerStyle.Render("🚀 Fase 3: Bootstrap de Configuração"))
 		fmt.Println(stepStyle.Render("Applying Root App..."))
-		runCommand("kubectl", "apply", "-f", "manifests/argocd/root-app.yaml")
+		runCommand("kubectl", "apply", "-f", JoinInfra(root, "manifests/argocd/root-app.yaml"))
 
 		fmt.Println(stepStyle.Render("🔄 Forçando Sync inicial..."))
 		time.Sleep(5 * time.Second)
@@ -135,18 +157,33 @@ func init() {
 	bootstrapCmd.AddCommand(bootstrapClusterCmd)
 }
 
-func checkEnvVars() {
-	required := []string{"GITHUB_REPO", "GITHUB_TOKEN"}
-	missing := []string{}
-	for _, v := range required {
-		if os.Getenv(v) == "" {
-			missing = append(missing, v)
+func checkEnvVars(blueprintRepo string) {
+	// GITHUB_REPO Strategy: Env > Blueprint > Fail
+	if os.Getenv("GITHUB_REPO") == "" {
+		if blueprintRepo != "" {
+			fmt.Printf("ℹ️  Usando repo do Blueprint: %s\n", blueprintRepo)
+			os.Setenv("GITHUB_REPO", blueprintRepo)
+		} else {
+			fmt.Println(crossStyle.Render("❌ Variável GITHUB_REPO faltando e não encontrada no Blueprint."))
+			fmt.Println(warningStyle.Render("Defina no .env, exporte ou execute 'yby init' novamente."))
+			os.Exit(1)
 		}
 	}
-	if len(missing) > 0 {
-		fmt.Printf("%s Variáveis de ambiente faltando: %s\n", crossStyle.String(), strings.Join(missing, ", "))
-		fmt.Println(warningStyle.Render("Defina-as no arquivo .env ou exporte-as."))
-		os.Exit(1)
+
+	// GITHUB_TOKEN Strategy: Env > Check Context > Warn/Fail
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		// Looser check: if running locally, we tolerate missing token
+		// contextFlag is global from root.go
+		isLocal := (contextFlag == "local" || os.Getenv("YBY_ENV") == "local")
+
+		if isLocal {
+			fmt.Println(warningStyle.Render("⚠️  GITHUB_TOKEN não definido. Operando em modo Local Mirror (sem autenticação upstream)."))
+			fmt.Println("   (Se seu repositório for privado, o ArgoCD pode falhar ao sincronizar)")
+		} else {
+			fmt.Println(crossStyle.Render("❌ Variável GITHUB_TOKEN faltando."))
+			fmt.Println(warningStyle.Render("Necessário para bootstrap em ambientes remotos."))
+			os.Exit(1)
+		}
 	}
 }
 
@@ -195,14 +232,18 @@ func waitCRD(crdName string) {
 	}
 }
 
-func configureSeconds() {
+func configureSecrets(repoURL string) {
 	// Argo CD Repo Secret
-	repo := os.Getenv("GITHUB_REPO")
+	// repo := os.Getenv("GITHUB_REPO") // Already passed as arg
 	token := os.Getenv("GITHUB_TOKEN")
 
+	if token == "" {
+		fmt.Println(itemStyle.Render("Skipping Secrets Config (Token not provided)..."))
+		return
+	}
 	fmt.Println(itemStyle.Render("Configurando Argo CD Repo Secret..."))
 	cmd := exec.Command("kubectl", "create", "secret", "generic", "argocd-repo-creds", "-n", "argocd",
-		fmt.Sprintf("--from-literal=url=%s", repo),
+		fmt.Sprintf("--from-literal=url=%s", repoURL),
 		fmt.Sprintf("--from-literal=password=%s", token),
 		"--from-literal=username=git",
 		"--from-literal=type=git",
@@ -247,11 +288,12 @@ func configureSeconds() {
 }
 
 // ensureTemplateAssets checks and restores critical files and directories
-func ensureTemplateAssets() {
+// ensureTemplateAssets checks and restores critical files and directories
+func ensureTemplateAssets(repoURL, root string) {
 	fmt.Println(headerStyle.Render("🛠️  Auto-Repair: Verificando integridade do projeto..."))
 
 	baseUrl := "https://raw.githubusercontent.com/casheiro/yby-template/main"
-	repoURL := os.Getenv("GITHUB_REPO")
+	// repoURL is passed as arg now
 
 	// 1. Critical Files (Download & Template)
 	type Manifest struct {
@@ -269,15 +311,15 @@ func ensureTemplateAssets() {
 	manifests := []Manifest{
 		{
 			Url:  baseUrl + "/manifests/upstream/argo-workflows.yaml",
-			Path: "manifests/upstream/argo-workflows.yaml",
+			Path: JoinInfra(root, "manifests/upstream/argo-workflows.yaml"),
 		},
 		{
 			Url:  baseUrl + "/manifests/upstream/argo-events.yaml",
-			Path: "manifests/upstream/argo-events.yaml",
+			Path: JoinInfra(root, "manifests/upstream/argo-events.yaml"),
 		},
 		{
 			Url:  baseUrl + "/manifests/argocd/root-app.yaml",
-			Path: "manifests/argocd/root-app.yaml",
+			Path: JoinInfra(root, "manifests/argocd/root-app.yaml"),
 			Replacements: map[string]string{
 				"https://github.com/my-user/yby-template": repoURL,
 				"path: charts/bootstrap":                  fmt.Sprintf("path: %scharts/bootstrap", gitPrefix),
@@ -285,7 +327,7 @@ func ensureTemplateAssets() {
 		},
 		{
 			Url:  baseUrl + "/manifests/projects/yby-project.yaml",
-			Path: "manifests/projects/yby-project.yaml",
+			Path: JoinInfra(root, "manifests/projects/yby-project.yaml"),
 			Replacements: map[string]string{
 				// Add the current repo to the whitelist by appending it after the generic one
 				"  - 'https://github.com/*/yby'": fmt.Sprintf("  - 'https://github.com/*/yby'\n  - '%s'", repoURL),
@@ -301,8 +343,8 @@ func ensureTemplateAssets() {
 
 	// 2. Critical Directories (Clone & Restore)
 	dirs := []string{
-		"charts/system",
-		"templates/workflows",
+		JoinInfra(root, "charts/system"),
+		JoinInfra(root, "templates/workflows"),
 	}
 
 	missingDirs := []string{}
@@ -434,4 +476,25 @@ func getGitPrefix() string {
 		return "" // Not a git repo or error, assume root
 	}
 	return strings.TrimSpace(string(out))
+}
+func getRepoURLFromBlueprint() string {
+	root, err := FindInfraRoot()
+	if err != nil {
+		return ""
+	}
+	path := JoinInfra(root, ".yby/blueprint.yaml")
+
+	if data, err := os.ReadFile(path); err == nil {
+		var bp Blueprint
+		if err := yaml.Unmarshal(data, &bp); err == nil {
+			for _, prompt := range bp.Prompts {
+				if prompt.ID == "git.repoURL" {
+					if val, ok := prompt.Default.(string); ok && val != "" {
+						return val
+					}
+				}
+			}
+		}
+	}
+	return ""
 }

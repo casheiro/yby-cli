@@ -59,7 +59,14 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(headerStyle.Render("🌱 Yby Smart Init (Blueprint Engine)"))
 
-		blueprintPath := ".yby/blueprint.yaml"
+		var blueprintPath string
+		root, err := FindInfraRoot()
+		if err == nil {
+			blueprintPath = JoinInfra(root, ".yby/blueprint.yaml")
+		} else {
+			blueprintPath = ".yby/blueprint.yaml" // default for new
+		}
+
 		var blueprint Blueprint
 
 		// 1. Check Environment State
@@ -143,6 +150,12 @@ Edita o arquivo config/cluster-values.yaml existente preservando comentários.`,
 				if err := scaffoldFromZip(targetDir); err != nil {
 					fmt.Printf(crossStyle.Render("❌ Erro ao inicializar scaffold: %v\n"), err)
 					return
+				}
+
+				// UPDATE BLUEPRINT PATH
+				// If we scaffolded to a subfolder, the blueprint is now there.
+				if targetDir != "." && targetDir != "" {
+					blueprintPath = filepath.Join(targetDir, ".yby/blueprint.yaml")
 				}
 
 				// Patch blueprint only if we moved things to a subfolder
