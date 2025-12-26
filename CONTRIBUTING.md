@@ -60,6 +60,10 @@ Utilizamos **automação total de releases** baseada no [Conventional Commits](h
 - `test`: Adição ou correção de testes.
 - `chore`: Atualização de build, dependências, ferramentas.
 
+> [!NOTE]
+> **Política de Release Inteligente**: Mudanças que afetam apenas **documentação** (`docs/`, `*.md`) ou **governança** (`.synapstor/`) **NÃO** disparam uma nova versão da CLI.
+> O release só será gerado se houver alteração em arquivos de código (`.go`, `go.mod`, templates, etc).
+
 ## 🧪 Validando Localmente
 
 Pré-requisitos: [Go 1.22+](https://go.dev/doc/install).

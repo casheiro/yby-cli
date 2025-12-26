@@ -32,6 +32,11 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🔐 Webhook Secret"))
 
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
 		provider := "github"
 		if len(args) > 0 {
 			provider = args[0]
@@ -56,7 +61,7 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 
 		secretName := fmt.Sprintf("%s-webhook-secret", provider)
 		namespace := "argo-events"
-		outputFile := fmt.Sprintf("charts/cluster-config/templates/events/sealed-secret-%s.yaml", provider)
+		outputFile := JoinInfra(root, fmt.Sprintf("charts/cluster-config/templates/events/sealed-secret-%s.yaml", provider))
 
 		// Create Secret (Dry Run)
 		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,
@@ -84,6 +89,11 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🔐 MinIO Secret"))
 
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
 		user := "admin" // Default minio user
 
 		// Generate Password
@@ -94,7 +104,7 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 
 		secretName := "minio-creds"
 		namespace := "argocd" // MinIO usually in argocd or system ns
-		outputFile := "charts/system/templates/secrets/sealed-secret-minio.yaml"
+		outputFile := JoinInfra(root, "charts/system/templates/secrets/sealed-secret-minio.yaml")
 
 		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,
 			"--from-literal=rootUser="+user,
@@ -161,6 +171,11 @@ Salva em: bootstrap/sealed-secrets-backup.yaml`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🔐 Backup Sealed Secrets Keys"))
 
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
 		// 1. Find Active Key Secret
 		// Try active label first
 		out, err := exec.Command("kubectl", "get", "secret", "-n", "sealed-secrets", "-l", "sealedsecrets.bitnami.com/sealed-secrets-key=active", "-o", "name").Output()
@@ -177,7 +192,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml`,
 		keyName = strings.ReplaceAll(keyName, "secret/", "") // remove prefix
 		fmt.Printf("Chave encontrada: %s\n", keyName)
 
-		outputFile := "bootstrap/sealed-secrets-backup.yaml"
+		outputFile := JoinInfra(root, "bootstrap/sealed-secrets-backup.yaml")
 		_ = os.MkdirAll(filepath.Dir(outputFile), 0755)
 
 		file, err := os.Create(outputFile)
@@ -207,7 +222,12 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🔐 Restore Sealed Secrets Keys"))
 
-		inputFile := "bootstrap/sealed-secrets-backup.yaml"
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
+		inputFile := JoinInfra(root, "bootstrap/sealed-secrets-backup.yaml")
 		if len(args) > 0 {
 			inputFile = args[0]
 		}
