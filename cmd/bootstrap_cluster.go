@@ -44,7 +44,7 @@ var bootstrapClusterCmd = &cobra.Command{
 		argoChart := "argo/argo-cd"
 
 		// 0. Resolve Config (Blueprint)
-		blueprintRepo := getRepoURLFromBlueprint()
+		blueprintRepo := getRepoURLFromBlueprint(root)
 
 		// 1. Pre-checks
 		checkEnvVars(blueprintRepo)
@@ -477,14 +477,11 @@ func getGitPrefix() string {
 	}
 	return strings.TrimSpace(string(out))
 }
-func getRepoURLFromBlueprint() string {
-	root, err := FindInfraRoot()
-	if err != nil {
-		return ""
-	}
-	path := JoinInfra(root, ".yby/blueprint.yaml")
+func getRepoURLFromBlueprint(root string) string {
+	// Check the blueprint in the discovered infra root
+	p := JoinInfra(root, ".yby/blueprint.yaml")
 
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := os.ReadFile(p); err == nil {
 		var bp Blueprint
 		if err := yaml.Unmarshal(data, &bp); err == nil {
 			for _, prompt := range bp.Prompts {
