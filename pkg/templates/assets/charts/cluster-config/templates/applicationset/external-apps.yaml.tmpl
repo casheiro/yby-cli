@@ -11,8 +11,8 @@ spec:
   goTemplate: true
   generators:
     - git:
-        repoURL: {{ .Values.repository.url }}
-        revision: {{ .Values.repository.branch }}
+        repoURL: {{ .GitRepo }}
+        revision: {{ .GitBranch }}
         files:
           - path: "charts/cluster-config/templates/applicationset/external-apps.yaml"
   template:
@@ -21,8 +21,8 @@ spec:
     spec:
       project: "default"
       source:
-        repoURL: {{ .Values.repository.url }}
-        targetRevision: {{ .Values.repository.branch }}
+        repoURL: {{ .GitRepo }}
+        targetRevision: {{ .GitBranch }}
         path: '{{ "{{" }} .path.path {{ "}}" }}'
       destination:
         server: https://kubernetes.default.svc

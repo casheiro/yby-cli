@@ -47,6 +47,16 @@ func TestInit_Headless_Complete(t *testing.T) {
 	s.AssertFileExists(t, "config/values-dev.yaml")
 	s.AssertFileExists(t, "config/values-prod.yaml")
 	s.AssertFileExists(t, "config/values-staging.yaml")
+	s.AssertFileExists(t, "config/values-staging.yaml")
+
+	// 3. Validate Templating (Crucial Check)
+	// We expect the git repo URL to be injected into cluster-values.yaml
+	s.AssertFileContains(t, "config/cluster-values.yaml", "https://github.com/test/repo")
+
+	// We expect the project name (derived from repo) to be injected into root-app.yaml
+	// repo: test/repo -> project: "repo" (or "test-repo" depending on logic, let's assume default derivation)
+	// Actually, deriveProjectName("https://github.com/test/repo") -> "repo"
+	s.AssertFileContains(t, "manifests/argocd/root-app.yaml", "project: repo")
 }
 
 func TestEnv_Commands(t *testing.T) {
