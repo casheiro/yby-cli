@@ -123,3 +123,12 @@ func (s *Sandbox) AssertFileContains(t *testing.T, path, sub string) {
 		// t.Logf("Content: %s", string(out))
 	}
 }
+
+// AssertFileNotExists checks if file does NOT exist inside container
+func (s *Sandbox) AssertFileNotExists(t *testing.T, path string) {
+	cmd := exec.Command("docker", "exec", s.ContainerID, "test", "-e", path)
+	// If it exists, exit code is 0 (nil error). We want it to fail (non-nil error).
+	if err := cmd.Run(); err == nil {
+		t.Errorf("File %s SHOULD NOT exist in container, but it does.", path)
+	}
+}
