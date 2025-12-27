@@ -79,7 +79,7 @@ func (s *Sandbox) Start(t *testing.T) {
 	s.ContainerID = strings.TrimSpace(string(out))
 
 	// Wait a bit
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 }
 
 // Stop cleans up
@@ -93,16 +93,34 @@ func (s *Sandbox) Stop() {
 // RunCLI executes a command inside the container
 func (s *Sandbox) RunCLI(t *testing.T, args ...string) string {
 	dockerArgs := append([]string{"exec", s.ContainerID, "yby"}, args...)
-	cmd := exec.Command("docker", dockerArgs...)
 
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("CLI command failed: yby %s\n%s", strings.Join(args, " "), string(out))
+	var out []byte
+	var err error
+
+	// Retry up to 3 times for "page not found" (CI flake)
+	for i := 0; i < 3; i++ {
+		cmd := exec.Command("docker", dockerArgs...)
+		out, err = cmd.CombinedOutput()
+		outputStr := string(out)
+
+		if err == nil {
+			return outputStr
+		}
+
+		// Check for specific Docker daemon flake
+		if strings.Contains(outputStr, "page not found") {
+			t.Logf("Docker exec failed with 'page not found', retrying... (%d/3)", i+1)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// Real failure
+		t.Fatalf("CLI command failed: yby %s\n%s", strings.Join(args, " "), outputStr)
 	}
-	if err != nil {
-		t.Fatalf("CLI command failed: yby %s\n%s", strings.Join(args, " "), string(out))
-	}
-	return string(out)
+
+	// If we exhausted retries
+	t.Fatalf("CLI command failed after retries: yby %s\n%s", strings.Join(args, " "), string(out))
+	return ""
 }
 
 // RunShell executes an arbitrary command inside the container (e.g. apk, ls)
