@@ -4,136 +4,98 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 )
 
-// ContextType defines the type of environment
-type ContextType string
-
-const (
-	TypeLocal   ContextType = "local"
-	TypeRemote  ContextType = "remote"
-	TypeDefault ContextType = "default"
-)
-
-// Context represents an execution environment
-type Context struct {
-	Name    string
-	Type    ContextType
-	EnvFile string
+// Environment definition in environments.yaml
+type Environment struct {
+	Type        string `yaml:"type"` // local, remote
+	Description string `yaml:"description"`
+	Values      string `yaml:"values"` // path to values file
+	URL         string `yaml:"url,omitempty"`
 }
 
-// Manager handles context operations
+// EnvironmentsManifest represents .yby/environments.yaml
+type EnvironmentsManifest struct {
+	Current      string                 `yaml:"current"`
+	Environments map[string]Environment `yaml:"environments"`
+}
+
+// Manager handles environment context operations
 type Manager struct {
 	RootDir string
 }
 
-// NewManager creates a new context manager
 func NewManager(rootDir string) *Manager {
 	return &Manager{RootDir: rootDir}
 }
 
-// DetectContexts scans the directory for available contexts
-func (m *Manager) DetectContexts() ([]Context, error) {
-	var contexts []Context
+func (m *Manager) LoadManifest() (*EnvironmentsManifest, error) {
+	path := filepath.Join(m.RootDir, ".yby", "environments.yaml")
 
-	// 1. Check for Default (.env)
-	if _, err := os.Stat(filepath.Join(m.RootDir, ".env")); err == nil {
-		contexts = append(contexts, Context{
-			Name:    "default",
-			Type:    TypeDefault,
-			EnvFile: ".env",
-		})
+	// Strict Check: No legacy .env fallback
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("arquivo de ambientes não encontrado (%s). Execute 'yby init' primeiro", path)
 	}
 
-	// 2. Check for Local (local/k3d-config.yaml or local/.env)
-	// We can assume strict "local" detection if the folder exists and likely has config
-	if _, err := os.Stat(filepath.Join(m.RootDir, "local/k3d-config.yaml")); err == nil {
-		contexts = append(contexts, Context{
-			Name:    "local",
-			Type:    TypeLocal,
-			EnvFile: "local/.env", // Optional, might not exist
-		})
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
 
-	// 3. Scan for .env.* (Remote contexts)
-	entries, err := os.ReadDir(m.RootDir)
-	if err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasPrefix(entry.Name(), ".env.") {
-				name := strings.TrimPrefix(entry.Name(), ".env.")
-				// avoid duplicates if someone names it .env.local (though typically .env.local is ignored by git, yby treats as context)
-				if name == "local" {
-					continue // Already handled or reserved
-				}
-				contexts = append(contexts, Context{
-					Name:    name,
-					Type:    TypeRemote,
-					EnvFile: entry.Name(),
-				})
-			}
-		}
+	var manifest EnvironmentsManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("erro lendo environments.yaml: %w", err)
 	}
 
-	return contexts, nil
+	return &manifest, nil
 }
 
-// ResolveActive determines which context to use based on precedence:
-// 1. Env Var YBY_ENV
-// 2. Flag (passed as arg)
-// 3. Config (.ybyrc)
-// 4. Default inference (default)
-func (m *Manager) ResolveActive(flagContext string, cfg *config.Config) (string, error) {
-	// 1. Env Var (Highest Priority for Automation)
+func (m *Manager) SaveManifest(manifest *EnvironmentsManifest) error {
+	path := filepath.Join(m.RootDir, ".yby", "environments.yaml")
+
+	data, err := yaml.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+func (m *Manager) GetCurrent() (string, *Environment, error) {
+	manifest, err := m.LoadManifest()
+	if err != nil {
+		return "", nil, err
+	}
+
+	// 1. Env Override (YBY_ENV)
 	if env := os.Getenv("YBY_ENV"); env != "" {
-		return env, nil
+		if val, ok := manifest.Environments[env]; ok {
+			return env, &val, nil
+		}
+		return "", nil, fmt.Errorf("ambiente '%s' (YBY_ENV) não definido em environments.yaml", env)
 	}
 
-	// 2. Flag
-	if flagContext != "" {
-		return flagContext, nil
+	// 2. Manifest Current
+	currentName := manifest.Current
+	if val, ok := manifest.Environments[currentName]; ok {
+		return currentName, &val, nil
 	}
 
-	// 3. Config
-	if cfg != nil && cfg.CurrentContext != "" {
-		return cfg.CurrentContext, nil
-	}
-
-	// 4. Default
-	return "default", nil
+	return "", nil, fmt.Errorf("ambiente atual '%s' inválido ou não encontrado", currentName)
 }
 
-// LoadContext loads the appropriate .env file and sets up the environment environment.
-// It effectively sets the "Mode" of operation (Local Mirror vs Remote GitOps).
-func (m *Manager) LoadContext(contextName string) error {
-	var envFile string
-
-	switch contextName {
-	case "default":
-		// Try standard .env
-		envFile = filepath.Join(m.RootDir, ".env")
-	case "local":
-		// Try .env.local (Standard for local overrides)
-		envFile = filepath.Join(m.RootDir, ".env.local")
-		// If .env.local missing, try .env as fallback
-		if _, err := os.Stat(envFile); os.IsNotExist(err) {
-			envFile = filepath.Join(m.RootDir, ".env")
-		}
-	default:
-		// Named contexts (staging, prod) -> .env.<name>
-		envFile = filepath.Join(m.RootDir, fmt.Sprintf(".env.%s", contextName))
+func (m *Manager) SetCurrent(name string) error {
+	manifest, err := m.LoadManifest()
+	if err != nil {
+		return err
 	}
 
-	// Load valid file
-	if _, err := os.Stat(envFile); err == nil {
-		if err := godotenv.Overload(envFile); err != nil {
-			return fmt.Errorf("error loading %s: %w", envFile, err)
-		}
+	if _, ok := manifest.Environments[name]; !ok {
+		return fmt.Errorf("ambiente '%s' não existe", name)
 	}
-	// Note: If context file is missing, we silently continue (allowing env-var only contexts)
 
-	return nil
+	manifest.Current = name
+	return m.SaveManifest(manifest)
 }

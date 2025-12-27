@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cluster-health-check
+  namespace: argocd
+  labels:
+    project: {{ .Values.project }}
+    component: ops
+spec:
+  schedule: "*/30 * * * *"  # A cada 30 minutos
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: argo-workflow-executor
+          restartPolicy: OnFailure
+          containers:
+          - name: health-check
+            image: bitnami/kubectl:latest
+            command: [bash, -c]
+            args:
+            - |
+              #!/bin/bash
+              set -euo pipefail
+              
+              echo "🏥 Health Check do Cluster - $(date)"
+              echo "======================================="
+              
+              # Verificar nodes
+              echo "📊 Nodes:"
+              kubectl get nodes
+              
+              # Verificar pods com problemas
+              echo ""
+              echo "🔍 Pods com problemas:"
+              FAILED=$(kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded --no-headers 2>/dev/null | wc -l)
+              if [ "$FAILED" -gt 0 ]; then
+                echo "⚠️  $FAILED pods com problemas:"
+                kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
+              else
+                echo "✅ Todos os pods saudáveis"
+              fi
+              
+              # Verificar uso de recursos
+              echo ""
+              echo "💾 Uso de recursos:"
+              kubectl top nodes || echo "⚠️  Metrics server não disponível"
+              
+              # Verificar Argo CD Applications
+              echo ""
+              echo "📦 Argo CD Applications:"
+              kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
+              
+              echo ""
+              echo "✅ Health Check completo"

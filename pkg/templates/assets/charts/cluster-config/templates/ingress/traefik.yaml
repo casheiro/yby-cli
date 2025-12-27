@@ -1,0 +1,101 @@
+{{- if and .Values.ingress.enabled .Values.global.domainBase }}
+{{- $issuer := .Values.ingress.tls.issuer -}}
+{{- $tlsEnabled := .Values.ingress.tls.enabled -}}
+{{- $whitelist := .Values.ingress.whitelist -}}
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: traefik-dashboard
+  namespace: {{ .Values.namespaces.ingress }}
+  annotations:
+    {{- if $tlsEnabled }}
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+    {{- end }}
+    {{- if and $whitelist.enabled ($whitelist.sourceRanges) }}
+    traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  {{- if $tlsEnabled }}
+  tls:
+  - hosts:
+    - {{ default (printf "traefik.%s" .Values.global.domainBase) .Values.hosts.traefik }}
+    secretName: traefik-dashboard-tls
+  {{- end }}
+  rules:
+  - host: {{ default (printf "traefik.%s" .Values.global.domainBase) .Values.hosts.traefik }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: traefik-dashboard
+            port:
+              number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: {{ .Values.namespaces.argocd }}
+  annotations:
+    {{- if $tlsEnabled }}
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+    {{- end }}
+    {{- if and $whitelist.enabled ($whitelist.sourceRanges) }}
+    traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  {{- if $tlsEnabled }}
+  tls:
+  - hosts:
+    - {{ default (printf "argocd.%s" .Values.global.domainBase) .Values.hosts.argocd }}
+    secretName: argocd-tls
+  {{- end }}
+  rules:
+  - host: {{ default (printf "argocd.%s" .Values.global.domainBase) .Values.hosts.argocd }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: argocd-server
+            port:
+              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: git-webhook
+  namespace: {{ .Values.namespaces.events }}
+  annotations:
+    {{- if $tlsEnabled }}
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+    {{- end }}
+    {{- if and $whitelist.enabled ($whitelist.sourceRanges) }}
+    traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  {{- if $tlsEnabled }}
+  tls:
+  - hosts:
+    - {{ default (printf "webhook.%s" .Values.global.domainBase) .Values.hosts.webhook }}
+    secretName: webhook-tls
+  {{- end }}
+  rules:
+  - host: {{ default (printf "webhook.%s" .Values.global.domainBase) .Values.hosts.webhook }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: git-webhook-eventsource-svc
+            port:
+              number: {{ .Values.events.webhook.port }}
+{{- end }}

@@ -1,0 +1,178 @@
+apiVersion: yby/v1alpha1
+kind: Blueprint
+metadata:
+  name: standard-init
+  description: "Standard Yby Cluster Initialization"
+
+infrastructure:
+  argocd:
+    version: "5.51.6"
+    chart: "argo/argo-cd"
+
+prompts:
+  - id: gitRepo
+    type: input
+    label: "URL do Repositório Git (seu fork):"
+    default: "{{ .GitRepo }}"
+    required: true
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".git.repoURL"
+
+  - id: gitBranch
+    type: input
+    label: "Branch Principal (GitOps Source):"
+    default: "{{ .GitBranch }}"
+    required: true
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".git.branch"
+    actions:
+      - condition: "*"
+        target:
+          file: ".github/workflows/pr-main-checks.yaml"
+          path: ".on.pull_request.branches"
+
+  - id: k3sVersion
+    type: input
+    label: "Versão do K3s (Default: Stable):"
+    default: "v1.31.2+k3s1"
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".system.k3s.version"
+
+  - id: domain
+    type: input
+    label: "Domínio Base do Cluster (ex: cluster.com):"
+    default: "{{ .Domain }}"
+    required: true
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".global.domainBase"
+
+  - id: email
+    type: input
+    label: "Email para Let's Encrypt:"
+    default: "{{ .Email }}"
+    required: true
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".ingress.tls.email"
+
+  - id: issuer
+    type: select
+    label: "Tipo de Emissor SSL (Let's Encrypt):"
+    options: ["letsencrypt-prod", "letsencrypt-staging"]
+    default: "letsencrypt-prod"
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".ingress.tls.issuer"
+
+  - id: enableDiscovery
+    type: select
+    label: "Habilitar GitHub Discovery (Sincronizar Apps via Org)?"
+    options: ["Não", "Sim"]
+    default: "Não"
+    actions:
+      - condition: "Sim"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".discovery.enabled"
+          value: true
+      - condition: "Não"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".discovery.enabled"
+          value: false
+
+  - id: org
+    type: input
+    label: "Organização GitHub:"
+    required: true
+    when:
+      promptId: enableDiscovery
+      value: "Sim"
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".discovery.organization"
+
+  - id: topic
+    type: input
+    label: "Tópico GitHub para Auto-Discovery:"
+    default: "{{ .ProjectName }}-app"
+    required: true
+    when:
+      promptId: enableDiscovery
+      value: "Sim"
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".discovery.topic"
+
+  - id: environment
+    type: select
+    label: "Ambiente:"
+    options: ["dev", "staging", "prod"]
+    default: "dev"
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".global.environment"
+
+  - id: enableWhitelist
+    type: select
+    label: "Habilitar Whitelist de IP para serviços internos?"
+    options: ["Não", "Sim"]
+    default: "Não"
+    actions:
+      - condition: "Sim"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".ingress.whitelist.enabled"
+          value: true
+
+  - id: whitelistIPs
+    type: list
+    label: "IPs/CIDRs permitidos (ex: 1.2.3.4, 10.0.0.0/8)"
+    required: true # Agora pode ser required pois só aparece se Sim
+    when:
+      promptId: enableWhitelist
+      value: "Sim"
+    target:
+      file: "config/cluster-values.yaml"
+      path: ".ingress.whitelist.sourceRanges"
+
+  - id: modules
+    type: multiselect
+    label: "Módulos Opcionais:"
+    options: ["Kepler", "MinIO", "KEDA"]
+    default: ["Kepler"]
+    actions:
+      - condition: "Kepler"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".kepler.enabled"
+          value: true
+      - condition: "!Kepler"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".kepler.enabled"
+          value: false
+      - condition: "MinIO"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".storage.minio.enabled"
+          value: true
+      - condition: "!MinIO"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".storage.minio.enabled"
+          value: false
+      - condition: "KEDA"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".keda.enabled"
+          value: true
+      - condition: "!KEDA"
+        target:
+          file: "config/cluster-values.yaml"
+          path: ".keda.enabled"
+          value: false

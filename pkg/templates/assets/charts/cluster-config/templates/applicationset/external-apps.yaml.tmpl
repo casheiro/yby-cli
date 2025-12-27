@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: external-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/instance: external-apps
+    app.kubernetes.io/managed-by: {{ .ProjectName }}
+    app.kubernetes.io/name: external-apps
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: {{ .Values.repository.url }}
+        revision: {{ .Values.repository.branch }}
+        files:
+          - path: "charts/cluster-config/templates/applicationset/external-apps.yaml"
+  template:
+    metadata:
+      name: '{{ "{{" }} .path.basename {{ "}}" }}'
+    spec:
+      project: "default"
+      source:
+        repoURL: {{ .Values.repository.url }}
+        targetRevision: {{ .Values.repository.branch }}
+        path: '{{ "{{" }} .path.path {{ "}}" }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ "{{" }} .path.basename {{ "}}" }}'

@@ -1,0 +1,71 @@
+# .github/workflows/pr-main-checks.yaml
+name: "🛡️ Main PR Checks (Conventional Commits & E2E Tests)"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - {{ .GitBranch }}
+
+permissions: 
+  contents: read
+
+jobs:
+  # This dummy job allows us to apply a single condition for all subsequent jobs
+  trigger-check:
+    name: "Trigger Check"
+    runs-on: ubuntu-latest
+    outputs:
+      is_release_pr: ${{ "{{" }} steps.check.outputs.is_release_pr {{ "}}" }}
+    steps:
+      - id: check
+        name: Check if this is a Release PR
+        run: |
+          if [[ "${{ "{{" }} github.head_ref {{ "}}" }}" == release* ]]; then
+            echo "This is a Release PR. Running all checks."
+            echo "is_release_pr=true" >> $GITHUB_OUTPUT
+          else
+            echo "This is not a Release PR. Skipping E2E tests."
+            echo "is_release_pr=false" >> $GITHUB_OUTPUT
+          fi
+
+  conventional-commits:
+    name: 📜 Check Conventional Commits
+    # This job only runs if it's a Release PR, matching the E2E test trigger
+    if: needs.trigger-check.outputs.is_release_pr == 'true'
+    runs-on: ubuntu-latest
+    needs: [trigger-check] # Run after the trigger check
+    steps:
+      - name: 🤖 Check PR Title
+        env:
+          TITLE: ${{ "{{" }} github.event.pull_request.title {{ "}}" }}
+          REGEX: "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|release)(\\([a-z0-9\\-]+\\))?: .+"
+        run: |
+          if [[ ! $TITLE =~ $REGEX ]]; then
+            echo "❌ Pull Request title \"$TITLE\" does not follow Conventional Commits format."
+            echo "   Expected format: 'type(scope): subject' (e.g., 'feat: add new feature')"
+            echo "   Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, release"
+            exit 1
+          fi
+          echo "✅ PR Title is valid."
+
+  test-e2e:
+    name: 🔬 Run E2E Tests
+    # This job only runs if it's a Release PR coming into main
+    if: needs.trigger-check.outputs.is_release_pr == 'true'
+    needs: [trigger-check]
+    uses: ./.github/workflows/reusable-e2e-test.yaml
+    secrets: inherit
+
+  notify-failure:
+    name: 🚨 Notify on Failure
+    runs-on: ubuntu-latest
+    # Run if any of the previous jobs have failed
+    needs: [conventional-commits, test-e2e]
+    if: failure()
+    steps:
+      - name: 💬 Send notification
+        run: |
+          echo "A job has failed in the '${{ "{{" }} github.workflow {{ "}}" }}' workflow."
+          echo "Run URL: ${{ "{{" }} github.server_url {{ "}}" }}/${{ "{{" }} github.repository {{ "}}" }}/actions/runs/${{ "{{" }} github.run_id {{ "}}" }}"
+          echo "Para habilitar notificações no Slack/Teams/Discord, adicione um passo aqui usando um secret (ex: secrets.SLACK_WEBHOOK_URL)."

@@ -1,0 +1,75 @@
+# ==============================================
+# Yby - Configuração do Cluster
+# ==============================================
+
+# Configuração do Argo CD (Bootstrap)
+# Estas chaves são usadas quando passamos este arquivo para o chart 'argo/argo-cd'
+server:
+  service:
+    type: ClusterIP
+  # Modo inseguro para acesso simples via port-forward
+  insecure: true
+  extraArgs:
+    - --insecure
+
+# Configuração do Sistema (Fase 0)
+system:
+  k3s:
+    version: "v1.31.2+k3s1" # Versão utilizada pelo yby bootstrap vps
+
+# Configuração Eco-Friendly (Fase 1)
+kube-prometheus-stack:
+  prometheus:
+    prometheusSpec:
+      retention: "5d" # Retenção reduzida para economizar disco
+      resources:
+        requests:
+          memory: 400Mi # Otimizado para VPS pequeno
+
+# Definição de Namespaces do Sistema
+namespaces:
+  argocd: argocd
+  ingress: ingress-system
+  events: argo-events
+
+global:
+  # Ambiente (dev, staging, prod)
+  environment: {{ .Environment }}
+  # Domínio base para Ingresses (ex: cluster.example.com)
+  domainBase: "{{ .Domain }}"
+
+git:
+  # Repositório de origem deste template (será substituído pelo seu)
+  repoURL: {{ .GitRepo }}
+  branch: {{ .GitBranch }}
+  repoName: {{ .ProjectName }}
+
+# Descoberta Automática de Aplicações
+discovery:
+  enabled: {{ .GithubDiscovery }}
+  organization: {{ .GithubOrg }}
+  topic: {{ .ProjectName }}-app
+  # Secret name para token do GitHub (não altere a menos que saiba o que está fazendo)
+  tokenSecretName: github-token
+
+ingress:
+  enabled: true
+  tls:
+    enabled: true
+    # Email para Let's Encrypt (Certificados HTTPS automáticos)
+    email: {{ .Email }}
+    # Nome do ClusterIssuer (letsencrypt-prod é o padrão para produção com limites reais)
+    # Use 'letsencrypt-staging' para testes se estiver depurando.
+    issuer: letsencrypt-prod
+
+# Stack de Observabilidade (Prometheus + Grafana + Kepler)
+observability:
+  mode: prometheus
+
+kepler:
+  enabled: {{ .EnableKepler }}
+
+# Armazenamento de Objetos (MinIO)
+storage:
+  minio:
+    enabled: {{ .EnableMinio }}

@@ -1,0 +1,95 @@
+{{- $repoURL := .Values.git.repoURL -}}
+{{- $targetRevision := .Values.git.targetRevision -}}
+{{- $project := .Values.project -}}
+{{- $destServer := .Values.argocd.destinationServer -}}
+
+{{- if .Values.legacy.enabled }}
+# Aplicação para gerenciar todas as aplicações de infraestrutura
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: namespaces
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    project: {{ $project }}
+    tier: infrastructure
+    component: namespaces
+spec:
+  project: {{ $project }}
+  source:
+    repoURL: {{ $repoURL }}
+    targetRevision: {{ $targetRevision }}
+    path: cluster-config/base/namespaces
+  destination:
+    server: {{ $destServer }}
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sealed-secrets
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    project: {{ $project }}
+    tier: infrastructure
+    component: security
+spec:
+  project: {{ $project }}
+  source:
+    repoURL: {{ $repoURL }}
+    targetRevision: {{ $targetRevision }}
+    path: cluster-config/base/sealed-secrets
+  destination:
+    server: {{ $destServer }}
+    namespace: sealed-secrets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+  # Dependência: namespaces devem existir primeiro
+  ignoreDifferences:
+  - group: apiextensions.k8s.io
+    kind: CustomResourceDefinition
+    jsonPointers:
+    - /status
+---
+{{- end }}
+
+{{- if not .Values.legacy.enabled }}
+# Aplicação para instalar Sealed Secrets via Helm chart oficial
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sealed-secrets
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    project: {{ $project }}
+    tier: infrastructure
+    component: security
+spec:
+  project: {{ $project }}
+  source:
+    repoURL: https://bitnami-labs.github.io/sealed-secrets
+    chart: sealed-secrets
+    targetRevision: 2.17.9
+    helm:
+      values: |
+        fullnameOverride: sealed-secrets
+  destination:
+    server: {{ $destServer }}
+    namespace: sealed-secrets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+{{- end }}

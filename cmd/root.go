@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	"github.com/casheiro/yby-cli/pkg/context"
 	"github.com/spf13/cobra"
 )
 
@@ -36,31 +33,9 @@ func init() {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig(cmd *cobra.Command, args []string) {
-	// Initialize managers
-	// We assume we are running from project root for now
-	wd, _ := os.Getwd()
-	ctxManager := context.NewManager(wd)
-
-	// Load config (.ybyrc)
-	cfg, err := config.Load()
-	if err != nil {
-		// Silent error on load, effectively uses defaults
-		cfg = &config.Config{}
+	// If context flag is set, we override using the standard Env Var mechanism
+	// capable of being read by pkg/context
+	if contextFlag != "" {
+		os.Setenv("YBY_ENV", contextFlag)
 	}
-
-	// Resolve Active Context
-	activeContext, err := ctxManager.ResolveActive(contextFlag, cfg)
-	if err != nil {
-		fmt.Printf("Erro resolvendo contexto: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Load Environment (Strict Isolation)
-	if err := ctxManager.LoadContext(activeContext); err != nil {
-		fmt.Printf("❌ Erro carregando contexto '%s': %v\n", activeContext, err)
-		os.Exit(1)
-	}
-
-	// Optional: Feedback to user if verbose?
-	// fmt.Printf("(Context: %s)\n", activeContext)
 }

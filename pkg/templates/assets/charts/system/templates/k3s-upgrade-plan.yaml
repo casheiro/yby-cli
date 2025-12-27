@@ -1,0 +1,26 @@
+{{- if .Values.k3s.upgrade.enabled }}
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-upgrade
+  namespace: system-upgrade
+  labels:
+    k3s-upgrade: server
+spec:
+  concurrency: 1
+  cordon: true
+  nodeSelector:
+    matchExpressions:
+      - key: node-role.kubernetes.io/master
+        operator: In
+        values:
+          - "true"
+  serviceAccountName: system-upgrade
+  upgrade:
+    image: rancher/k3s-upgrade:{{ .Values.k3s.version | default "v1.33.6+k3s1" | replace "+" "-" }}
+    {{- if .Values.k3s.maxPods }}
+    command: ["/bin/sh", "-c"]
+    args: ["run.sh --kubelet-arg=max-pods={{ .Values.k3s.maxPods }}"]
+    {{- end }}
+  channel: https://update.k3s.io/v1-release/channels/stable
+{{- end }}
