@@ -79,7 +79,14 @@ func (s *Sandbox) Start(t *testing.T) {
 	s.ContainerID = strings.TrimSpace(string(out))
 
 	// Wait a bit
-	time.Sleep(2 * time.Second)
+	// time.Sleep(2 * time.Second) // Replaced by explict check
+
+	// 3. Wait for Container to be Ready
+	if !s.IsRunning(t) {
+		logsCmd := exec.Command("docker", "logs", s.ContainerID)
+		logs, _ := logsCmd.CombinedOutput()
+		t.Fatalf("Container %s failed to start within timeout.\nLogs: %s", s.ContainerID, string(logs))
+	}
 }
 
 // Stop cleans up
@@ -88,6 +95,19 @@ func (s *Sandbox) Stop() {
 		exec.Command("docker", "rm", "-f", s.ContainerID).Run()
 	}
 	os.RemoveAll(s.WorkDir)
+}
+
+// IsRunning checks if container is in running state
+func (s *Sandbox) IsRunning(t *testing.T) bool {
+	for i := 0; i < 20; i++ { // Wait up to 10s
+		cmd := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", s.ContainerID)
+		out, err := cmd.CombinedOutput()
+		if err == nil && strings.TrimSpace(string(out)) == "true" {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
 }
 
 // RunCLI executes a command inside the container
@@ -110,6 +130,13 @@ func (s *Sandbox) RunCLI(t *testing.T, args ...string) string {
 		// Check for specific Docker daemon flake
 		if strings.Contains(outputStr, "page not found") {
 			t.Logf("Docker exec failed with 'page not found', retrying... (%d/3)", i+1)
+
+			// DEBUG: Check if container is actually alive
+			inspect := exec.Command("docker", "inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", s.ContainerID)
+			if state, err := inspect.CombinedOutput(); err == nil {
+				t.Logf("Container State: %s", strings.TrimSpace(string(state)))
+			}
+
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -119,7 +146,11 @@ func (s *Sandbox) RunCLI(t *testing.T, args ...string) string {
 	}
 
 	// If we exhausted retries
-	t.Fatalf("CLI command failed after retries: yby %s\n%s", strings.Join(args, " "), string(out))
+	// DEBUG: Fetch container logs to see if it crashed
+	logsCmd := exec.Command("docker", "logs", s.ContainerID)
+	logsOut, _ := logsCmd.CombinedOutput()
+
+	t.Fatalf("CLI command failed after retries: yby %s\nOutput: %s\nContainer Logs: %s", strings.Join(args, " "), string(out), string(logsOut))
 	return ""
 }
 
