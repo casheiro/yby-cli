@@ -99,3 +99,33 @@ func (m *Manager) SetCurrent(name string) error {
 	manifest.Current = name
 	return m.SaveManifest(manifest)
 }
+
+// AddEnvironment adds a new environment to the manifest
+func (m *Manager) AddEnvironment(name, envType, description string) error {
+	manifest, err := m.LoadManifest()
+	if err != nil {
+		return err
+	}
+
+	if _, exists := manifest.Environments[name]; exists {
+		return fmt.Errorf("environment '%s' already exists", name)
+	}
+
+	// Create values file if not exists
+	valuesFile := fmt.Sprintf("config/values-%s.yaml", name)
+	if _, err := os.Stat(filepath.Join(m.RootDir, valuesFile)); os.IsNotExist(err) {
+		// Create empty or copy from base? For now empty with comment
+		content := fmt.Sprintf("# Values for %s environment", name)
+		if err := os.WriteFile(filepath.Join(m.RootDir, valuesFile), []byte(content), 0644); err != nil {
+			return fmt.Errorf("falha ao criar arquivo de values: %w", err)
+		}
+	}
+
+	manifest.Environments[name] = Environment{
+		Type:        envType,
+		Description: description,
+		Values:      valuesFile,
+	}
+
+	return m.SaveManifest(manifest)
+}

@@ -78,10 +78,51 @@ var envShowCmd = &cobra.Command{
 	},
 }
 
+// env create
+var envCreateCmd = &cobra.Command{
+	Use:   "create [name]",
+	Short: "Cria um novo ambiente e gera values correspondente",
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := ""
+		if len(args) > 0 {
+			name = args[0]
+		}
+
+		envType, _ := cmd.Flags().GetString("type")
+		description, _ := cmd.Flags().GetString("description")
+
+		// Interactive prompts if needed
+		if name == "" {
+			fmt.Print("Nome do ambiente (ex: qa, uat): ")
+			fmt.Scanln(&name)
+		}
+		if envType == "" {
+			envType = "remote" // default
+			// Could add prompt here
+		}
+		if description == "" {
+			description = fmt.Sprintf("Environment %s", name)
+		}
+
+		mgr := context.NewManager(".")
+		if err := mgr.AddEnvironment(name, envType, description); err != nil {
+			fmt.Println("❌", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✅ Ambiente '%s' criado com sucesso!\n", name)
+		fmt.Printf("   Arquivo de configuração: config/values-%s.yaml\n", name)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(envCmd)
 	envCmd.AddCommand(envListCmd)
 	envCmd.AddCommand(envUseCmd)
 	envCmd.AddCommand(envShowCmd)
-	// TODO: Create command
+	envCmd.AddCommand(envCreateCmd)
+
+	envCreateCmd.Flags().String("type", "", "Tipo do ambiente (local/remote)")
+	envCreateCmd.Flags().String("description", "", "Descrição do ambiente")
 }

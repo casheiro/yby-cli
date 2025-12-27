@@ -25,30 +25,55 @@ yby init \
   --topology standard \
   --workflow gitflow \
   --git-repo https://github.com/my-org/my-project.git \
-  --env dev
+  --env dev \
+  --include-ci=true \
+  --include-devcontainer=true
 ```
 
-**Opções de Topologia:**
+**Opções de Topologia (`--topology`):**
 - `single`: Apenas ambiente `prod`.
 - `standard`: `local` e `prod`.
 - `complete`: `local`, `dev`, `staging`, `prod`.
 
+**Opções de Workflow (`--workflow`):**
+- `essential`: Checks básicos e validação.
+- `gitflow`: Release automatizado e pipelines de feature.
+- `trunkbased`: CD contínuo.
+
 ### 2. Gerenciar Ambientes
 
-O Yby CLI agora gerencia o contexto via `.yby/environments.yaml` (substituindo o antigo `.env`).
+O Yby CLI gerencia o contexto via `.yby/environments.yaml` (substituindo o antigo `.env`).
 
 ```bash
-# Listar ambientes disponíveis
+# Listar ambientes
 yby env list
 
-# Trocar para ambiente de produção
+# Criar novo ambiente (Remote)
+yby env create staging --type remote --description "Staging Environment"
+
+# Trocar contexto ativo
 yby env use prod
 
-# Ver detalhes do ambiente atual
+# Ver detalhes
 yby env show
 ```
 
-### 3. Desenvolvimento Local
+### 3. Garantia de Qualidade (QA)
+
+Ferramentas integradas para validar e manter a saúde do projeto.
+
+```bash
+# Validar manifestos e charts (Lint/Dry-Run)
+yby validate
+
+# Verificar saúde do ambiente e ferramentas
+yby doctor
+
+# Gerar componentes (ex: KEDA ScaledObject)
+yby generate keda --name my-scaler --deployment my-app --replicas 5
+```
+
+### 4. Desenvolvimento Local
 
 Para subir um cluster local (k3d) espelhando a infraestrutura:
 

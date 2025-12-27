@@ -99,6 +99,21 @@ func (s *Sandbox) RunCLI(t *testing.T, args ...string) string {
 	if err != nil {
 		t.Fatalf("CLI command failed: yby %s\n%s", strings.Join(args, " "), string(out))
 	}
+	if err != nil {
+		t.Fatalf("CLI command failed: yby %s\n%s", strings.Join(args, " "), string(out))
+	}
+	return string(out)
+}
+
+// RunShell executes an arbitrary command inside the container (e.g. apk, ls)
+func (s *Sandbox) RunShell(t *testing.T, args ...string) string {
+	dockerArgs := append([]string{"exec", s.ContainerID}, args...)
+	cmd := exec.Command("docker", dockerArgs...)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Shell command failed: %s\n%s", strings.Join(args, " "), string(out))
+	}
 	return string(out)
 }
 
