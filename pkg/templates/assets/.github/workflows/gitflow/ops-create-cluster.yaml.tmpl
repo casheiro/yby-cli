@@ -1,0 +1,187 @@
+name: 🏗️ Ops - Provision New Cluster
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  create-cluster-repo:
+    if: contains(github.event.issue.labels.*.name, 'ops:approved')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: 💬 Notify Start
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ "{{" }} github.event.issue.number {{ "}}" }}
+          body: |
+            ## ⏳ Provisionamento Iniciado...
+            A automação para criar o novo cluster foi iniciada.
+            - **Workflow Run:** [Acompanhe o progresso aqui](${{ "{{" }} github.server_url {{ "}}" }}/${{ "{{" }} github.repository {{ "}}" }}/actions/runs/${{ "{{" }} github.run_id {{ "}}" }})
+
+      - name: 🔍 Checkout Template
+        uses: actions/checkout@v4
+
+      - name: 📝 Parse Issue and Extract Variables
+        id: vars
+        env:
+          GH_TOKEN: ${{ "{{" }} secrets.GITHUB_TOKEN {{ "}}" }}
+        run: |
+          BODY=$(gh issue view ${{ "{{" }} github.event.issue.number {{ "}}" }} --json body --jq .body)
+
+          echo "--- DEBUG: Raw Issue Body ---"
+          echo "$BODY"
+          echo "-----------------------------"
+
+          # Função robusta: busca literal com index() + extrai próxima linha não-vazia
+          parse_value() {
+            local header="$1"
+            echo "$BODY" | awk -v h="$header" '
+              BEGIN { found=0 }
+              index($0, h) { found=1; next }
+              found && /^[^#]/ && NF { gsub(/\r$/, ""); print; exit }
+            '
+          }
+
+          CLUSTER_NAME=$(parse_value "Nome do Cluster (Slug)")
+
+          echo "--- DEBUG: Parsed Cluster Name ---"
+          echo "Value: '$CLUSTER_NAME'"
+          echo "----------------------------------"
+
+          # Validação: verifica se conseguiu extrair o valor
+          if [ -z "$CLUSTER_NAME" ]; then
+            echo "::error::Falha ao extrair CLUSTER_NAME do issue body. Verifique o formato do issue."
+            exit 1
+          fi
+
+          DOMAIN=$(parse_value "Domínio Base")
+          TLS_EMAIL=$(parse_value "Email para TLS")
+          GH_ORG=$(parse_value "GitHub Organization")
+          TOPIC=$(parse_value "Tópico de Discovery")
+          VISIBILITY_RAW=$(parse_value "Visibilidade do Repositório")
+          VISIBILITY=$(echo "$VISIBILITY_RAW" | tr '[:upper:]' '[:lower:]')
+
+          echo "--- DEBUG: All Parsed Values ---"
+          echo "CLUSTER_NAME: '$CLUSTER_NAME'"
+          echo "DOMAIN: '$DOMAIN'"
+          echo "TLS_EMAIL: '$TLS_EMAIL'"
+          echo "GH_ORG: '$GH_ORG'"
+          echo "TOPIC: '$TOPIC'"
+          echo "VISIBILITY: '$VISIBILITY'"
+          echo "--------------------------------"
+
+          # Validação de formato do nome do cluster
+          if [[ ! "$CLUSTER_NAME" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::Nome do cluster inválido ('$CLUSTER_NAME'). Use apenas letras minúsculas, números e hífens."
+            exit 1
+          fi
+
+          # Defaults para valores opcionais
+          : "${GH_ORG:=${{ "{{" }} github.repository_owner {{ "}}" }}}"
+          : "${TOPIC:={{ .ProjectName }}-app}"
+          : "${VISIBILITY:=private}"
+
+          # Export para GITHUB_OUTPUT
+          {
+            echo "CLUSTER_NAME=$CLUSTER_NAME"
+            echo "DOMAIN=$DOMAIN"
+            echo "TLS_EMAIL=$TLS_EMAIL"
+            echo "GH_ORG=$GH_ORG"
+            echo "TOPIC=$TOPIC"
+            echo "VISIBILITY=$VISIBILITY"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 🚀 Create Repository
+        env:
+          GH_TOKEN: ${{ "{{" }} secrets.GH_PAT || secrets.GITHUB_TOKEN {{ "}}" }}
+          TEMPLATE_REPO: ${{ "{{" }} github.repository {{ "}}" }}
+          NEW_REPO: ${{ "{{" }} github.repository_owner {{ "}}" }}/${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}
+        run: |
+          echo "Criando repositório $NEW_REPO a partir de $TEMPLATE_REPO..."
+
+          gh repo create "$NEW_REPO" \
+            --template "$TEMPLATE_REPO" \
+            --${{ "{{" }} steps.vars.outputs.VISIBILITY {{ "}}" }} \
+            --clone
+
+      - name: 🧰 Setup yq
+        uses: mikefarah/yq@master
+
+      - name: 🔧 Configure Cluster Values
+        working-directory: ./${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}
+        env:
+          GH_TOKEN: ${{ "{{" }} secrets.GH_PAT || secrets.GITHUB_TOKEN {{ "}}" }}
+        run: |
+          FILE="config/cluster-values.yaml"
+
+          # Atualizar valores usando yq (muito mais seguro que sed)
+          yq eval -i '.global.environment = "production"' $FILE
+
+          if [ ! -z "${{ "{{" }} steps.vars.outputs.DOMAIN {{ "}}" }}" ] && [ "${{ "{{" }} steps.vars.outputs.DOMAIN {{ "}}" }}" != "null" ]; then
+            yq eval -i ".global.domainBase = \"${{ "{{" }} steps.vars.outputs.DOMAIN {{ "}}" }}\"" $FILE
+          fi
+
+          if [ ! -z "${{ "{{" }} steps.vars.outputs.TLS_EMAIL {{ "}}" }}" ] && [ "${{ "{{" }} steps.vars.outputs.TLS_EMAIL {{ "}}" }}" != "null" ]; then
+            yq eval -i ".ingress.tls.email = \"${{ "{{" }} steps.vars.outputs.TLS_EMAIL {{ "}}" }}\"" $FILE
+          fi
+
+          yq eval -i ".discovery.organization = \"${{ "{{" }} steps.vars.outputs.GH_ORG {{ "}}" }}\"" $FILE
+          yq eval -i ".discovery.topic = \"${{ "{{" }} steps.vars.outputs.TOPIC {{ "}}" }}\"" $FILE
+
+          # Atualizar referências do Git
+          NEW_URL="https://github.com/${{ "{{" }} github.repository_owner {{ "}}" }}/${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}"
+          yq eval -i ".git.repoURL = \"$NEW_URL\"" $FILE
+          yq eval -i ".git.repoName = \"${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}\"" $FILE
+
+          # Configurar Git Identity
+          git config user.name "Yby Ops Bot"
+          git config user.email "ops-bot@{{ .Domain }}"
+
+          # Commit e Push
+          git add .
+          git commit -m "chore(init): auto-configure cluster values from issue #${{ "{{" }} github.event.issue.number {{ "}}" }}"
+
+          # Authenticate the push using the PAT
+          git push https://x-access-token:$GH_TOKEN@github.com/${{ "{{" }} github.repository_owner {{ "}}" }}/${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}.git {{ .GitBranch }}
+
+      - name: ✅ Notify Success
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ "{{" }} github.event.issue.number {{ "}}" }}
+          body: |
+            ## 🎉 Cluster Provisionado com Sucesso!
+
+            O repositório foi criado e configurado:
+
+            - **Repo:** [${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}](https://github.com/${{ "{{" }} github.repository_owner {{ "}}" }}/${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }})
+            - **Domínio:** ${{ "{{" }} steps.vars.outputs.DOMAIN {{ "}}" }}
+
+            ### Próximos Passos:
+            1. Clone o novo repositório.
+            2. Siga o `README.md` para conectar ao seu VPS.
+            3. Execute `./scripts/bootstrap-cluster.sh`.
+
+            Closing issue...
+
+      - name: 🔒 Close Issue
+        run: gh issue close ${{ "{{" }} github.event.issue.number {{ "}}" }}
+        env:
+          GH_TOKEN: ${{ "{{" }} secrets.GITHUB_TOKEN {{ "}}" }}
+
+      - name: ❌ Notify Failure
+        if: failure()
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ "{{" }} github.event.issue.number {{ "}}" }}
+          body: |
+            ## ❌ Falha no Provisionamento
+
+            Ocorreu um erro durante a criação do cluster.
+
+            - **Workflow Run:** [Ver logs completos](${{ "{{" }} github.server_url {{ "}}" }}/${{ "{{" }} github.repository {{ "}}" }}/actions/runs/${{ "{{" }} github.run_id {{ "}}" }})
+
+            Por favor, veri

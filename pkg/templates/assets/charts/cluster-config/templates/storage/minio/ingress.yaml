@@ -1,0 +1,65 @@
+{{- if and .Values.storage.minio.enabled .Values.global.domainBase }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio
+  namespace: {{ .Values.storage.minio.namespace }}
+  annotations:
+    {{- if .Values.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
+    {{- end }}
+    {{- if and .Values.ingress.whitelist.enabled (.Values.ingress.whitelist.sourceRanges) }}
+    traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," .Values.ingress.whitelist.sourceRanges | quote }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ default (printf "minio.%s" .Values.global.domainBase) .Values.hosts.minio }}
+    secretName: minio-tls
+  {{- end }}
+  rules:
+  - host: {{ default (printf "minio.%s" .Values.global.domainBase) .Values.hosts.minio }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio
+            port:
+              number: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio-console
+  namespace: {{ .Values.storage.minio.namespace }}
+  annotations:
+    {{- if .Values.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
+    {{- end }}
+    {{- if and .Values.ingress.whitelist.enabled (.Values.ingress.whitelist.sourceRanges) }}
+    traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," .Values.ingress.whitelist.sourceRanges | quote }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ default (printf "minio-console.%s" .Values.global.domainBase) .Values.hosts.minioConsole }}
+    secretName: minio-console-tls
+  {{- end }}
+  rules:
+  - host: {{ default (printf "minio-console.%s" .Values.global.domainBase) .Values.hosts.minioConsole }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio
+            port:
+              number: 9001
+{{- end }}

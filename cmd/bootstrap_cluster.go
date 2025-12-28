@@ -495,3 +495,11 @@ func getRepoURLFromBlueprint(root string) string {
 	}
 	return ""
 }
+
+// Blueprint structure for reading legacy blueprint.yaml purely for git repo url
+type Blueprint struct {
+	Prompts []struct {
+		ID      string      `yaml:"id"`
+		Default interface{} `yaml:"default"`
+	} `yaml:"prompts"`
+}

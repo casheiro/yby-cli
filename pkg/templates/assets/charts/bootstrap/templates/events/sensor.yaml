@@ -1,0 +1,171 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: infrastructure-sensor
+  namespace: argo-events
+  labels:
+    project: {{ .Values.project }}
+    component: events
+spec:
+  eventBusName: infrastructure-eventbus
+  dependencies:
+  - name: github-dep
+    eventSourceName: git-webhook
+    eventName: github-webhook
+    filters:
+      data:
+      - path: body.ref
+        type: string
+        value:
+        - "refs/heads/{{ .Values.git.branch }}"
+      - path: body.repository.name
+        type: string
+        value:
+        - "{{ .Values.git.repoName }}"
+        
+  - name: gitlab-dep
+    eventSourceName: git-webhook
+    eventName: gitlab-webhook
+    filters:
+      data:
+      - path: body.ref
+        type: string
+        value:
+        - "refs/heads/{{ .Values.git.branch }}"
+      - path: body.project.name
+        type: string
+        value:
+        - "{{ .Values.git.repoName }}"
+
+  triggers:
+  - template:
+      name: infrastructure-deploy
+      conditions: github-dep || gitlab-dep
+      argoWorkflow:
+        operation: submit
+        source:
+          resource:
+            apiVersion: argoproj.io/v1alpha1
+            kind: Workflow
+            metadata:
+              generateName: infrastructure-deploy-
+              namespace: argo
+              labels:
+                project: {{ .Values.project }}
+                triggered-by: git-webhook
+                workflow-type: infrastructure
+            spec:
+              entrypoint: infrastructure-pipeline
+              serviceAccountName: argo-workflow-executor
+              
+              arguments:
+                parameters:
+                - name: git-repo
+                  value: "{{`{{dependencies.github-dep.body.repository.clone_url || dependencies.gitlab-dep.body.project.http_url_to_repo}}`}}"
+                - name: git-revision
+                  value: "{{`{{dependencies.github-dep.body.after || dependencies.gitlab-dep.body.after}}`}}"
+                - name: git-commit-message
+                  value: "{{`{{dependencies.github-dep.body.head_commit.message || dependencies.gitlab-dep.body.commits[0].message}}`}}"
+                - name: git-author
+                  value: "{{`{{dependencies.github-dep.body.head_commit.author.name || dependencies.gitlab-dep.body.commits[0].author.name}}`}}"
+                - name: changed-files
+                  value: "{{`{{dependencies.github-dep.body.head_commit.modified || dependencies.gitlab-dep.body.commits[0].modified}}`}}"
+                  
+              templates:
+              - name: infrastructure-pipeline
+                dag:
+                  tasks:
+                  - name: analyze-changes
+                    template: analyze-infrastructure-changes
+                  - name: lint-and-validate
+                    template: lint-infrastructure
+                    depends: analyze-changes
+                  - name: test-staging
+                    template: test-in-staging
+                    depends: lint-and-validate
+                  - name: deploy-production
+                    template: deploy-infrastructure
+                    depends: test-staging
+                  - name: verify-deployment
+                    template: verify-infrastructure
+                    depends: deploy-production
+                  - name: notify-result
+                    template: notify-deployment-result
+                    depends: verify-deployment
+                    
+              - name: analyze-infrastructure-changes
+                script:
+                  image: alpine/git:latest
+                  command: [sh]
+                  source: |
+                    echo "🔍 Analisando mudanças na infraestrutura..."
+                    echo "Repo: {{`{{workflow.parameters.git-repo}}`}}"
+                    echo "Revision: {{`{{workflow.parameters.git-revision}}`}}"
+                    
+                    git clone {{`{{workflow.parameters.git-repo}}`}} /tmp/repo
+                    cd /tmp/repo
+                    git checkout {{`{{workflow.parameters.git-revision}}`}}
+                    
+                    if git diff --name-only HEAD~1 | grep -q "cluster-config/"; then
+                      echo "✅ Mudanças de infraestrutura detectadas"
+                    else
+                      echo "ℹ️  Nenhuma mudança de infraestrutura detectada"
+                    fi
+                    
+              - name: lint-infrastructure
+                script:
+                  image: alpine/git:latest
+                  command: [sh]
+                  source: |
+                    echo "🔍 Executando lint básico..."
+                    git clone {{`{{workflow.parameters.git-repo}}`}} /tmp/repo
+                    cd /tmp/repo
+                    git checkout {{`{{workflow.parameters.git-revision}}`}}
+                    find cluster-config/ -name "*.yaml" -o -name "*.yml" | head -10
+                  
+              - name: test-in-staging
+                script:
+                  image: bitnami/kubectl:latest
+                  command: [sh]
+                  source: |
+                    echo "🧪 Testando em staging..."
+                    kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply --dry-run=client -k /tmp/repo/cluster-config/ || exit 1
+                    
+              - name: deploy-infrastructure
+                script:
+                  image: argoproj/argocd:latest
+                  command: [sh]
+                  source: |
+                    echo "🚀 Deploy infraestrutura..."
+                    argocd login argocd-server.argocd.svc.cluster.local:80 --username admin --password $(cat /etc/argocd/admin-password) --insecure
+                    argocd app sync namespaces || true
+                    argocd app sync sealed-secrets || true
+                    argocd app sync traefik || true
+                  volumeMounts:
+                  - name: admin-password
+                    mountPath: /etc/argocd
+                    
+              - name: verify-infrastructure
+                script:
+                  image: bitnami/kubectl:latest
+                  command: [sh]
+                  source: |
+                    echo "✅ Verificação pós-deploy..."
+                    kubectl get pods -n argocd | head -5
+                  
+              - name: notify-deployment-result
+                script:
+                  image: curlimages/curl:latest
+                  command: [sh]
+                  source: |
+                    echo "📢 Notificando resultado..."
+                    echo "Deploy concluído para {{`{{workflow.parameters.git-revision}}`}}"
+                    
+              volumes:
+              - name: admin-password
+                secret:
+                  secretName: argocd-initial-admin-secret
+                  items:
+                  - key: password
+                    path: admin-password

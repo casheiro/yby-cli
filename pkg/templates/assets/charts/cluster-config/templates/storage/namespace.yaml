@@ -1,0 +1,8 @@
+{{- if .Values.storage.minio.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.storage.minio.namespace }}
+  labels:
+    name: {{ .Values.storage.minio.namespace }}
+{{- end }}

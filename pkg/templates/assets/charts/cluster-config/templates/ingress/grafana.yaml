@@ -1,0 +1,36 @@
+{{- if and .Values.global.domainBase (or (eq .Values.observability.mode "prometheus") (index .Values "kube-prometheus-stack" "grafana" "enabled")) }}
+{{- $issuer := .Values.ingress.tls.issuer -}}
+{{- $tlsEnabled := .Values.ingress.tls.enabled -}}
+{{- $whitelist := .Values.ingress.whitelist -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- if $tlsEnabled }}
+    cert-manager.io/cluster-issuer: {{ $issuer }}
+    {{- end }}
+    {{- if and $whitelist.enabled ($whitelist.sourceRanges) }}
+    traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  {{- if $tlsEnabled }}
+  tls:
+  - hosts:
+    - {{ default (printf "grafana.%s" .Values.global.domainBase) .Values.hosts.grafana }}
+    secretName: grafana-tls
+  {{- end }}
+  rules:
+  - host: {{ default (printf "grafana.%s" .Values.global.domainBase) .Values.hosts.grafana }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-grafana
+            port:
+              number: 80
+{{- end }}

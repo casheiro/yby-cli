@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: manual-maintenance-
+  namespace: argocd
+spec:
+  workflowTemplateRef:
+    name: cluster-maintenance
+  arguments:
+    parameters:
+    - name: maintenance-type
+      value: "{{MAINTENANCE_TYPE}}"
+    - name: schedule
+      value: "{{SCHEDULE}}"

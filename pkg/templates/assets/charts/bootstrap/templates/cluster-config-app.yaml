@@ -1,0 +1,31 @@
+{{- if .Values.clusterConfig.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-config
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    project: {{ .Values.project }}
+    tier: infrastructure
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ .Values.git.repoURL }}
+    targetRevision: {{ .Values.git.targetRevision }}
+    path: charts/cluster-config
+    helm:
+      valueFiles:
+      {{- range $f := .Values.clusterConfig.valueFiles }}
+      - {{ printf "../../%s" $f | quote }}
+      {{- end }}
+  destination:
+    server: {{ .Values.argocd.destinationServer }}
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+{{- end }}
