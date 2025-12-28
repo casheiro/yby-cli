@@ -72,9 +72,16 @@ func (s *Sandbox) Start(t *testing.T) {
 		"tail", "-f", "/dev/null", // Keep alive
 	)
 
-	out, err := cmd.CombinedOutput()
+	// Switch to Output() to capture stdout only (Container ID)
+	// Stderr will have pull logs if any, but won't pollute 'out'
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("Failed to start container: %v\n%s", err, string(out))
+		// Can't read stderr easily from err if it's just exit status,
+		// but typically ExitError has Stderr.
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("Failed to start container: %v\nStderr: %s", err, string(exitErr.Stderr))
+		}
+		t.Fatalf("Failed to start container: %v", err)
 	}
 	s.ContainerID = strings.TrimSpace(string(out))
 
