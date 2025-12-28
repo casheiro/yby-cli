@@ -1,0 +1,81 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: validate-stack
+  namespace: argocd
+  labels:
+    project: {{ .Values.project }}
+    component: validation
+spec:
+  entrypoint: validate
+  serviceAccountName: argo-workflow-executor
+  
+  templates:
+  - name: validate
+    steps:
+    - - name: validate-resources
+        template: resource-validation
+    - - name: validate-networking
+        template: network-validation
+    - - name: validate-security
+        template: security-validation
+  
+  - name: resource-validation
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "📊 Validando recursos do cluster..."
+        
+        # Verificar se namespaces essenciais existem
+        for ns in argocd argo argo-events; do
+          kubectl get namespace $ns || { echo "❌ Namespace $ns não encontrado"; exit 1; }
+        done
+        
+        # Verificar pods em estado Running
+        FAILED_PODS=$(kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded -o json | jq '.items | length')
+        if [ "$FAILED_PODS" -gt 0 ]; then
+          echo "⚠️  $FAILED_PODS pods não estão em estado saudável"
+          kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
+        else
+          echo "✅ Todos os pods estão saudáveis"
+        fi
+  
+  - name: network-validation
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🌐 Validando networking..."
+        
+        # Verificar services
+        kubectl get svc --all-namespaces | head -n 20
+        
+        # Verificar se webhook service está exposto
+        WEBHOOK_SVC=$(kubectl get svc git-webhook-eventsource-svc -n argo-events -o jsonpath='{.spec.type}' 2>/dev/null || echo '')
+        if [ "$WEBHOOK_SVC" = "NodePort" ]; then
+          echo "✅ Webhook service exposto via NodePort"
+        else
+          echo "⚠️  Webhook service não está em NodePort (não bloqueante)"
+        fi
+  
+  - name: security-validation
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🔒 Validando segurança..."
+        
+        # Verificar se Sealed Secrets está instalado
+        kubectl get pods -n sealed-secrets || echo "⚠️  Sealed Secrets não instalado"
+        
+        # Verificar ServiceAccounts
+        kubectl get sa argo-workflow-executor -n argocd || echo "⚠️  ServiceAccount argo-workflow-executor não encontrado"
+        
+        echo "✅ Validação de segurança completa"

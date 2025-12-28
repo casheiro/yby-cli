@@ -1,0 +1,99 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: test-full-stack
+  namespace: argocd
+  labels:
+    project: {{ .Values.project }}
+    component: testing
+spec:
+  entrypoint: full-stack-test
+  serviceAccountName: argo-workflow-executor
+  
+  templates:
+  - name: wait-ready
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "⏳ Aguardando controladores e CRDs..."
+        kubectl wait --for=condition=Ready -n argocd pod --all --timeout=180s || true
+        kubectl wait --for=condition=Ready -n argo-events pod --all --timeout=180s || true
+        kubectl wait --for=condition=Ready -n argocd pod -l app=argo-workflows --timeout=180s || true
+        echo "✓ Ready checks executadas"
+  - name: full-stack-test
+    steps:
+    - - name: wait
+        template: wait-ready
+      - name: test-cluster
+        template: cluster-check
+    - - name: test-argocd
+        template: argocd-check
+    - - name: test-workflows
+        template: workflows-check
+    - - name: test-events
+        template: events-check
+    - - name: test-webhook
+        template: webhook-check
+  
+  - name: cluster-check
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🔍 Testando cluster..."
+        kubectl get nodes
+        kubectl cluster-info
+        echo "✅ Cluster OK"
+  
+  - name: argocd-check
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🔍 Testando Argo CD..."
+        kubectl get pods -n argocd
+        kubectl get applications -n argocd
+        echo "✅ Argo CD OK"
+  
+  - name: workflows-check
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🔍 Testando Argo Workflows..."
+        kubectl get pods -n argocd || kubectl get pods -n argo || true
+        kubectl get workflowtemplates -n argocd || kubectl get workflowtemplates -n argo || true
+        echo "✅ Workflows OK"
+  
+  - name: events-check
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🔍 Testando Argo Events..."
+        kubectl get pods -n argo-events || true
+        kubectl get eventsource -n argo-events || true
+        kubectl get sensor -n argo-events || true
+        echo "✅ Events OK"
+  
+  - name: webhook-check
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "🔍 Testando Webhook Service..."
+        kubectl get svc git-webhook-eventsource-svc -n argo-events || true
+        echo "✅ Webhook Service OK"

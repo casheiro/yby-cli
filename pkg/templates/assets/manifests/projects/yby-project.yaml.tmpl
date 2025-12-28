@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: {{ .ProjectName }}
+  namespace: argocd
+  labels:
+    project: {{ .ProjectName }}
+spec:
+  description: "{{ .ProjectName }} - Infraestrutura Kubernetes com GitOps"
+  
+  # Repositórios permitidos
+  sourceRepos:
+  - '{{ .GitRepo }}'
+  - 'https://charts.bitnami.com/bitnami'
+  - 'https://prometheus-community.github.io/helm-charts'
+  - 'https://grafana.github.io/helm-charts'
+  - 'https://traefik.github.io/charts'
+  
+  # Clusters de destino permitidos
+  destinations:
+  - namespace: '*'
+    server: https://kubernetes.default.svc
+  
+  # Recursos permitidos
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  
+  # Recursos negados (por segurança)
+  clusterResourceBlacklist: []
+  
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+    
+  # Políticas de sincronização
+  syncWindows: []
+  
+  # RBAC específico do projeto
+  roles:
+  - name: admin
+    description: "Acesso administrativo completo ao projeto"
+    policies:
+    - p, proj:{{ .ProjectName }}:admin, applications, *, {{ .ProjectName }}/*, allow
+    - p, proj:{{ .ProjectName }}:admin, repositories, *, *, allow
+    groups:
+    - {{ .ProjectName }}:admin
+    
+  - name: developer
+    description: "Acesso de desenvolvedor às aplicações"
+    policies:
+    - p, proj:{{ .ProjectName }}:developer, applications, get, {{ .ProjectName }}/*, allow
+    - p, proj:{{ .ProjectName }}:developer, applications, sync, {{ .ProjectName }}/*, allow
+    - p, proj:{{ .ProjectName }}:developer, applications, action, {{ .ProjectName }}/*, allow
+    groups:
+    - {{ .ProjectName }}:developer
+    
+  - name: readonly
+    description: "Acesso somente leitura"
+    policies:
+    - p, proj:{{ .ProjectName }}:readonly, applications, get, {{ .ProjectName }}/*, allow
+    - p, proj:{{ .ProjectName }}:readonly, repositories, get, *, allow
+    groups:
+    - {{ .ProjectName }}:readonly

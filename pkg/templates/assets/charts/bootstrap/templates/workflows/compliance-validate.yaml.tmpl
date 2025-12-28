@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: compliance-validate
+  namespace: argocd
+  labels:
+    project: {{ .ProjectName }}
+    component: agents
+    agent: compliance
+spec:
+  serviceAccountName: argo-workflow-executor
+  entrypoint: run
+  templates:
+  - name: run
+    steps:
+    - - name: check-argocd-apps
+        template: check-argocd-apps
+  - name: check-argocd-apps
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        set -euo pipefail
+        echo "🔍 Validando Applications Argo CD (repoURL parametrizado)..."
+        apps=$(kubectl get applications.argoproj.io -n argocd -o jsonpath='{range .items[*]}{.metadata.name}:{.spec.source.repoURL}{"\n"}{end}')
+        echo "$apps"
+        violations=0
+        echo "$apps" | while read -r line; do
+          name=$(echo "$line" | cut -d: -f1)
+          url=$(echo "$line" | cut -d: -f2-)
+          if echo "$url" | grep -q "seu-usuario"; then
+            echo "❌ $name usa repoURL placeholder: $url"
+            violations=$((violations+1))
+          fi
+        done
+        if [ "$violations" -gt 0 ]; then
+          echo "✗ Falha: $violations Application(s) com repoURL inválido"
+          exit 1
+        fi
+        echo "✓ OK: Applications com repoURL parametrizado"

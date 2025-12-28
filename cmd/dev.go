@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/config"
 	ybyctx "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/mirror"
 	"github.com/spf13/cobra"
@@ -47,17 +46,20 @@ Equivalente ao antigo 'make dev'.`,
 		// 2. Context & Env Init
 		wd, _ := os.Getwd()
 		ctxManager := ybyctx.NewManager(wd)
-		cfg, _ := config.Load()
 
-		activeCtx, err := ctxManager.ResolveActive(contextFlag, cfg)
+		// Validate if 'local' exists in manifest
+		activeCtx, env, err := ctxManager.GetCurrent()
 		if err != nil {
 			fmt.Printf("❌ Erro resolvendo contexto: %v\n", err)
+			fmt.Println("Dica: Certifique-se que o environments.yaml existe (yby init) e possui um ambiente 'local'.")
 			os.Exit(1)
 		}
-		if err := ctxManager.LoadContext(activeCtx); err != nil {
-			fmt.Printf("❌ Erro carregando ambiente: %v\n", err)
+
+		if env.Type != "local" {
+			fmt.Printf("❌ Erro: Ambiente '%s' não é do tipo 'local' (tipo atual: %s)\n", activeCtx, env.Type)
 			os.Exit(1)
 		}
+
 		fmt.Printf("🌍 Contexto Ativo: %s (Forçado)\n", activeCtx)
 
 		// 3. Check dependencies
@@ -66,7 +68,9 @@ Equivalente ao antigo 'make dev'.`,
 			os.Exit(1)
 		}
 
-		// Env Vars now populated by LoadContext
+		// Env Vars now populated by explicit env mgmt? NO.
+		// pkg/context removed LoadContext which loaded .env.
+		// So we must rely on explicit config or defaults.
 		clusterName := os.Getenv("YBY_CLUSTER_NAME")
 		if clusterName == "" {
 			clusterName = os.Getenv("CLUSTER_NAME") // Backward compat

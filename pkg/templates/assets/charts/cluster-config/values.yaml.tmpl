@@ -1,0 +1,124 @@
+#
+# Fonte única de verdade para configurações dinâmicas
+# Somente referências a Secrets/SealedSecrets; nunca coloque segredos aqui
+# Todos os campos possuem defaults seguros para não quebrar ambientes existentes
+#
+
+global:
+  clusterName: "{{ .ProjectName }}"
+  environment: "{{ .Environment }}"
+  domainBase: "" # vazio -> não cria Ingress; usa NodePort/port-forward
+
+repository:
+  url: "{{ .GitRepo }}"
+  branch: "{{ .GitBranch }}"
+  organization: "{{ .GithubOrg }}"
+
+ingress:
+  enabled: false
+  tls:
+    enabled: false
+    certResolver: "letsencrypt"
+    email: "{{ .Email }}"
+  whitelist:
+    enabled: false
+    sourceRanges: [] # lista de CIDR/IPs permitidos. SE HABILITADO, aplica-se a TODOS os ingresses (ArgoCD, MinIO, Grafana, Traefik, etc)
+
+hosts:
+  argocd: ""
+  traefik: ""
+  grafana: ""
+  webhook: ""
+  minio: ""
+  minioConsole: ""
+
+argocd:
+  enabled: false
+  namespace: "argocd"
+  project: "{{ .ProjectName }}"
+  url: "" # default derivado de hosts.argocd
+  repositories: [] # ex.: [{type: git, url: https://github.com/... , name: app}]
+
+events:
+  enabled: false
+  webhook:
+    port: 12000
+    serviceType: NodePort
+    nodePort: 30012
+  sensor:
+    ref: "refs/heads/{{ .GitBranch }}"
+    repoName: "{{ .ProjectName }}"
+
+applicationset:
+  enabled: false
+  namespace: "argocd"
+  organization: "{{ .GithubOrg }}"
+  branch: ""
+  labelMatch: "{{ .ProjectName }}-app"
+  pathsExist: ["k8s"]
+  requeueAfterSeconds: 300
+
+storage:
+  minio:
+    enabled: false
+    namespace: "storage"
+    endpoints:
+      api: "" # default derivado de hosts.minio
+      console: "" # default derivado de hosts.minioConsole
+    secretName: "minio-secret"
+    autoBootstrap:
+      enabled: false
+      buckets: []
+
+validation:
+  enabled: false # hooks de validação de referências a Secrets
+
+#
+# Ecofuturismo & Observabilidade
+#
+kepler:
+  enabled: true
+  serviceMonitor:
+    enabled: false # Habilitar se usar Prometheus Operator
+
+keda:
+  enabled: true
+  # Default configuration is sufficient for basic usage
+
+kube-prometheus-stack:
+  crds:
+    enabled: false # CRDs instalados pelo chart 'system'
+  prometheusOperator:
+    enabled: false # Operator instalado pelo chart 'system'
+  grafana:
+    enabled: false # Default Ecofuturista
+
+observability:
+  mode: "prometheus" # options: none, prometheus
+
+# Configuração de Segurança
+security:
+  networkPolicy:
+    enabled: false # Habilitar com cuidado após configurar policies de allow
+
+# Configuração do Subchart MinIO
+minio:
+  mode: standalone
+  replicas: 1
+  existingSecret: "minio-creds" # Criado imperativamente pelo Makefile (bootstrap)
+  ingress:
+    enabled: false
+    ingressClassName: ""
+    hosts: []
+  consoleIngress:
+    enabled: false
+    ingressClassName: ""
+    hosts: []
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+  buckets: []

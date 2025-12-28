@@ -1,0 +1,25 @@
+# Labels de Operação (Ops Automation)
+- name: "ops:provision"
+  color: "d4c5f9"
+  description: "Trigger para provisionamento de novo cluster"
+
+- name: "ops:approved"
+  color: "0e8a16"
+  description: "Aprovação manual para execução de automações"
+
+- name: "ops:in-progress"
+  color: "fbca04"
+  description: "Automação em execução"
+
+- name: "ops:failed"
+  color: "b60205"
+  description: "Falha na execução da automação"
+
+# Labels de Tipo
+- name: "kind:cluster"
+  color: "1d76db"
+  description: "Issues relacionadas a clusters e infraestrutura"
+
+- name: "kind:app"
+  color: "5319e7"
+  description: "Issues relacionadas a aplicações"

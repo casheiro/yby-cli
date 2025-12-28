@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventBus
+metadata:
+  name: infrastructure-eventbus
+  namespace: argo-events
+  labels:
+    project: {{ .Values.project }}
+    component: events
+spec:
+  nats:
+    native:
+      replicas: {{ .Values.events.eventbus.replicas }}
+      auth: token
+      maxAge: "72h"
+      maxBytes: "1GB"
+      persistence:
+        storageClassName: {{ .Values.events.eventbus.storageClass }}
+        accessMode: ReadWriteOnce
+        volumeSize: 10Gi
+      containerTemplate:
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000

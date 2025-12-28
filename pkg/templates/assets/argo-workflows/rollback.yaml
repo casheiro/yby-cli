@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: manual-rollback-
+  namespace: argocd
+spec:
+  workflowTemplateRef:
+    name: cluster-rollback
+  arguments:
+    parameters:
+    - name: target-revision
+      value: "{{TARGET_REVISION}}"
+    - name: rollback-type
+      value: "{{ROLLBACK_TYPE}}"
+    - name: reason
+      value: "{{REASON}}"
