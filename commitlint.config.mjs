@@ -23,6 +23,7 @@ export default {
         ],
         'subject-case': [0], // Disable case check (allow Sentence case, etc)
         'subject-full-stop': [0], // Disable full-stop check (allow periods at end)
-        'header-max-length': [0, 'always', 300] // Increase max length to 300 check
+        'header-max-length': [0, 'always', 300], // Increase max length to 300 check
+        'footer-max-line-length': [0] // Disable footer line length check
     }
 };
