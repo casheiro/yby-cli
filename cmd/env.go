@@ -95,7 +95,9 @@ var envCreateCmd = &cobra.Command{
 		// Interactive prompts if needed
 		if name == "" {
 			fmt.Print("Nome do ambiente (ex: qa, uat): ")
-			fmt.Scanln(&name)
+			if _, err := fmt.Scanln(&name); err != nil {
+				return
+			}
 		}
 		if envType == "" {
 			envType = "remote" // default

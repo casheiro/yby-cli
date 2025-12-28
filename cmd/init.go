@@ -136,7 +136,10 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "single: Apenas 1 env. standard: Local+Prod. complete: Local+Dev+Staging+Prod",
 				Default: "standard",
 			}
-			survey.AskOne(prompt, &ctx.Topology)
+			if err := survey.AskOne(prompt, &ctx.Topology); err != nil {
+				fmt.Println("❌ Cancelado")
+				os.Exit(1)
+			}
 		}
 
 		// Workflow Prompt
@@ -147,7 +150,10 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "essential: Apenas checks básica. gitflow: Release automatizado. trunkbased: CD rápido.",
 				Default: "gitflow",
 			}
-			survey.AskOne(prompt, &ctx.WorkflowPattern)
+			if err := survey.AskOne(prompt, &ctx.WorkflowPattern); err != nil {
+				fmt.Println("❌ Cancelado")
+				os.Exit(1)
+			}
 		}
 
 		// Ask for Git Repo if missing
@@ -155,7 +161,10 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			prompt := &survey.Input{
 				Message: "Qual a URL do repositório Git?",
 			}
-			survey.AskOne(prompt, &ctx.GitRepoURL)
+			if err := survey.AskOne(prompt, &ctx.GitRepoURL); err != nil {
+				fmt.Println("❌ Cancelado")
+				os.Exit(1)
+			}
 		}
 
 		// Ask for DevContainer
@@ -164,14 +173,14 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Deseja incluir configuração de DevContainer (.devcontainer)?",
 				Default: true,
 			}
-			survey.AskOne(prompt, &ctx.EnableDevContainer)
+			if err := survey.AskOne(prompt, &ctx.EnableDevContainer); err != nil {
+				fmt.Println("❌ Cancelado")
+				os.Exit(1)
+			}
 		}
 	}
 
 	// Post-Validation / Defaults
-	if ctx.WorkflowPattern == "essential" {
-		// Example logic: Essential usually has CI, but simpler
-	}
 
 	// Calculate Environments list based on Topology
 	switch ctx.Topology {

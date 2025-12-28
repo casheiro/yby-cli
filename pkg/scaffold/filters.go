@@ -73,9 +73,9 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 
 	// 4. Discovery Filter
 	if !ctx.EnableDiscovery {
-		// Maybe some specific discovery manifests?
-		// Currently mostly config in values.yaml, but if there are files:
-		// if strings.Contains(path, "manifests/discovery") { return true }
+		if strings.Contains(path, "discovery") || strings.Contains(path, "crossplane") {
+			return true
+		}
 	}
 
 	return false

@@ -99,7 +99,7 @@ func (s *Sandbox) Start(t *testing.T) {
 // Stop cleans up
 func (s *Sandbox) Stop() {
 	if s.ContainerID != "" {
-		exec.Command("docker", "rm", "-f", s.ContainerID).Run()
+		_ = exec.Command("docker", "rm", "-f", s.ContainerID).Run()
 	}
 	os.RemoveAll(s.WorkDir)
 }
