@@ -1,0 +1,161 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: cluster-self-config
+  namespace: argocd
+  labels:
+    project: {{ .Values.project }}
+    component: infrastructure
+spec:
+  entrypoint: self-configure
+  serviceAccountName: argo-workflow-executor
+  
+  templates:
+  - name: self-configure
+    steps:
+    - - name: install-docker
+        template: docker-install
+    - - name: configure-firewall
+        template: firewall-config
+    - - name: system-tuning
+        template: system-tune
+    - - name: install-monitoring
+        template: monitoring-setup
+  
+  # Step 1: Instalar Docker
+  - name: docker-install
+    script:
+      image: ubuntu:22.04
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        
+        echo "📦 Instalando Docker..."
+        
+        # Atualizar apt
+        apt-get update -qq
+        apt-get install -y ca-certificates curl gnupg
+        
+        # Adicionar repo Docker
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        
+        echo \
+          "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+          "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+          tee /etc/apt/sources.list.d/docker.list > /dev/null
+        
+        # Instalar Docker
+        apt-get update -qq
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        
+        echo "✅ Docker instalado com sucesso"
+        docker --version
+      volumeMounts:
+      - name: host-docker
+        mountPath: /var/run/docker.sock
+    volumes:
+    - name: host-docker
+      hostPath:
+        path: /var/run/docker.sock
+  
+  # Step 2: Configurar Firewall
+  - name: firewall-config
+    script:
+      image: ubuntu:22.04
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        
+        echo "🔥 Configurando Firewall (UFW)..."
+        
+        apt-get update -qq
+        apt-get install -y ufw
+        
+        # Configurações básicas
+        ufw --force reset
+        ufw default deny incoming
+        ufw default allow outgoing
+        
+        # Portas essenciais
+        ufw allow 22/tcp      # SSH
+        ufw allow 6443/tcp    # K3s API
+        ufw allow 30000:32767/tcp  # NodePorts
+        ufw allow 80/tcp      # HTTP
+        ufw allow 443/tcp     # HTTPS
+        
+        # Habilitar firewall
+        ufw --force enable
+        
+        echo "✅ Firewall configurado"
+        ufw status verbose
+      securityContext:
+        privileged: true
+      volumeMounts:
+      - name: host-etc
+        mountPath: /host-etc
+    volumes:
+    - name: host-etc
+      hostPath:
+        path: /etc
+  
+  # Step 3: System Tuning
+  - name: system-tune
+    script:
+      image: ubuntu:22.04
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        
+        echo "⚙️ Aplicando tuning de sistema..."
+        
+        # Configurações de rede
+        cat <<EOF >> /etc/sysctl.conf
+        # Network tuning for K8s
+        net.ipv4.ip_forward=1
+        net.bridge.bridge-nf-call-iptables=1
+        net.bridge.bridge-nf-call-ip6tables=1
+        vm.swappiness=0
+        EOF
+        
+        sysctl -p
+        
+        # Limites de arquivo
+        cat <<EOF >> /etc/security/limits.conf
+        * soft nofile 65536
+        * hard nofile 65536
+        EOF
+        
+        echo "✅ System tuning aplicado"
+      securityContext:
+        privileged: true
+      volumeMounts:
+      - name: host-etc
+        mountPath: /etc
+    volumes:
+    - name: host-etc
+      hostPath:
+        path: /etc
+  
+  # Step 4: Setup Monitoring (Placeholder - pode ser expandido)
+  - name: monitoring-setup
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        #!/bin/bash
+        set -euo pipefail
+        
+        echo "📊 Configurando monitoring básico..."
+        
+        # Verificar se métricas estão habilitadas
+        kubectl get --raw /metrics > /dev/null 2>&1 && echo "✅ Metrics API disponível" || echo "⚠️  Metrics API indisponível"
+        
+        # Listar recursos do cluster
+        kubectl top nodes || echo "⚠️  Metrics server não instalado ainda"
+        
+        echo "✅ Monitoring check completo"

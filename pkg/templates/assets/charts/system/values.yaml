@@ -1,0 +1,33 @@
+cert-manager:
+  enabled: true
+  installCRDs: true
+
+kube-prometheus-stack:
+  enabled: true
+  crds:
+    enabled: true
+  # Desabilitar componentes que serão configurados no cluster-config se necessário,
+  # mas geralmente queremos o Operator aqui.
+  prometheusOperator:
+    enabled: true
+  # Não queremos instâncias do Prometheus/Alertmanager aqui, apenas o Operator e CRDs
+  prometheus:
+    enabled: false
+  alertmanager:
+    enabled: false
+  grafana:
+    enabled: false
+  kubeStateMetrics:
+    enabled: false
+  nodeExporter:
+    enabled: false
+
+argo-cd:
+  configs:
+    params:
+      server.insecure: true
+
+k3s:
+  version: v1.33.6+k3s1
+  upgrade:
+    enabled: true # Habilitar apenas quando quiser atualizar via GitOps

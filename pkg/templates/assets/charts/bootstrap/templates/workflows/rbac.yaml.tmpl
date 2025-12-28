@@ -1,0 +1,182 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflows-argocd-reader
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argo-workflows-argocd-reader
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflows-argocd-reader-binding
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argo-workflows-argocd-reader-binding
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-workflows-argocd-reader
+subjects:
+  - kind: ServiceAccount
+    name: argo
+    namespace: argo
+  - kind: ServiceAccount
+    name: argo-workflow-executor
+    namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflowtaskresults-writer
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argo-workflowtaskresults-writer
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch", "update", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflowtaskresults-writer-binding
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argo-workflowtaskresults-writer-binding
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-workflowtaskresults-writer
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-executor
+    namespace: argocd
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argo-workflow-executor
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argo-workflow-executor
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argo-workflow-executor-argocd-binding
+  labels:
+    app.kubernetes.io/name: argo-workflow-executor-argocd-binding
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-executor
+    namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-workflow-executor-view
+  labels:
+    app.kubernetes.io/name: argo-workflow-executor-view
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argo-workflow-executor-view-binding
+  labels:
+    app.kubernetes.io/name: argo-workflow-executor-view-binding
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-workflow-executor-view
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-executor
+    namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflows-events-reader
+  namespace: argo-events
+  labels:
+    app.kubernetes.io/name: argo-workflows-events-reader
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["eventbus", "eventsources", "sensors"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflows-events-reader-binding
+  namespace: argo-events
+  labels:
+    app.kubernetes.io/name: argo-workflows-events-reader-binding
+    app.kubernetes.io/part-of: {{ .ProjectName }}
+    component: workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-workflows-events-reader
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-executor
+    namespace: argocd

@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: webhook-info
+  namespace: argo-events
+  labels:
+    project: {{ .Values.project }}
+    component: config
+spec:
+  template:
+    spec:
+      serviceAccountName: argo-workflow-executor
+      restartPolicy: Never
+      containers:
+      - name: webhook-info
+        image: bitnami/kubectl:latest
+        command: [bash, -c]
+        args:
+        - |
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "🔗 Configuração do Webhook GitHub"
+          echo "=================================="
+          echo ""
+          
+          # Obter IP externo do node
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null || kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          
+          # Obter NodePort do webhook
+          NODE_PORT=$(kubectl get svc git-webhook-eventsource-svc -n argo-events -o jsonpath='{.spec.ports[0].nodePort}')
+          
+          # Obter secret
+          WEBHOOK_SECRET=$(kubectl get secret github-webhook-secret -n argo-events -o jsonpath='{.data.secret}' 2>/dev/null | base64 -d || echo "❌ Secret não encontrado")
+          
+          echo "📋 Configuração para GitHub:"
+          echo "  Payload URL: http://$NODE_IP:$NODE_PORT/github"
+          echo "  Content type: application/json"
+          echo "  Secret: $WEBHOOK_SECRET"
+          echo ""
+          echo "  Events:"
+          echo "    ☑ Push events"
+          echo "    ☑ Pull requests"
+          echo ""
+          echo "✅ Copie a URL e Secret acima para configurar no GitHub"

@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: git-webhook
+  namespace: argo-events
+  labels:
+    project: {{ .Values.project }}
+    component: events
+spec:
+  eventBusName: infrastructure-eventbus
+  service:
+    ports:
+    - port: {{ .Values.events.webhook.port }}
+      targetPort: {{ .Values.events.webhook.port }}
+      {{- if eq .Values.events.webhook.serviceType "NodePort" }}
+      nodePort: {{ .Values.events.webhook.nodePort }}
+      {{- end }}
+  
+  webhook:
+    github-webhook:
+      port: "{{ .Values.events.webhook.port }}"
+      endpoint: /github
+      method: POST
+      active: true
+      events:
+      - push
+      - pull_request
+      webhook:
+        secret:
+          name: github-webhook-secret
+          key: secret
+          
+    gitlab-webhook:
+      port: "{{ .Values.events.webhook.port }}"
+      endpoint: /gitlab
+      method: POST
+      active: true
+      events:
+      - push
+      - merge_request
+      webhook:
+        secret:
+          name: gitlab-webhook-secret
+          key: secret

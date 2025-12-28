@@ -1,0 +1,75 @@
+# .github/workflows/reusable-e2e-test.yaml
+name: ♻️ Reusable - E2E Tests
+
+on:
+  workflow_call:
+
+jobs:
+  e2e-test:
+    name: 🔬 Run E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history might be needed for some git commands in tests
+
+      - name: 🔧 Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+      - name: ⬇️ Download Yby CLI
+        run: |
+          gh release download --repo casheiro/yby-cli --pattern '*_linux_amd64.tar.gz' --output yby.tar.gz
+          tar -xzf yby.tar.gz yby
+          chmod +x yby
+        env:
+          GH_TOKEN: ${{ "{{" }} secrets.GITHUB_TOKEN {{ "}}" }}
+
+      - name: 🔧 Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+      - name: ⚡ Setup K3d Cluster
+        run: k3d cluster create {{ .ProjectName }}-ci-test --wait
+
+      - name: 🧰 Setup yq
+        uses: mikefarah/yq@master
+
+      - name: 📝 Mock Config (Bypass Init)
+        run: |
+          mkdir -p config
+          # Create minimal cluster-values from scratch or copy a template if exists
+          # Here we assume we can generate a valid one or use the one in repo if it's a template repo?
+          # Actually the repo IS the template, so 'config/cluster-values.yaml' might not exist or be empty until init.
+          # But for testing the charts, we might want to bootstrap using defaults.
+
+          # Let's generate a config/cluster-values.yaml manually
+          cat <<EOF > config/cluster-values.yaml
+          global:
+            environment: ci
+            domainBase: "ci.{{ .Domain }}"
+          git:
+            repoURL: "{{ .GitRepo }}"
+            branch: "{{ .GitBranch }}" 
+            repoName: "{{ .ProjectName }}"
+          argocd:
+            enabled: true
+            namespace: argocd
+            server:
+              insecure: true
+          discovery:
+            enabled: false
+          ingress:
+             enabled: true
+             installController: false
+          EOF
+
+          # Create .env.ci
+          echo "GITHUB_TOKEN=dummy" > .env.ci
+          echo "CLUSTER_DOMAIN=ci.{{ .Domain }}" >> .env.ci
+
+      - name: 🚀 Bootstrap Cluster
+        run: ./yby bootstrap --context ci
+
+      - name: 🧹 Clean up environment
+        if: always()
+        run: k3d cluster delete {{ .ProjectName }}-ci-test

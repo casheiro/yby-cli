@@ -56,7 +56,7 @@ var contextDumpCmd = &cobra.Command{
 }
 
 func init() {
-	contextCmd.AddCommand(contextDumpCmd)
+	envCmd.AddCommand(contextDumpCmd)
 	// Root command -> Context command -> Dump command?
 	// Or standard 'yby context dump'?
 	// Wait, we don't have 'yby context' root command yet in my view.

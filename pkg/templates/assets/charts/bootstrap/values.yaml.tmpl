@@ -1,0 +1,55 @@
+# Valores padrão do Chart Bootstrap
+# IMPORTANTE: Estes valores são OVERRIDDEN por config/cluster-values.yaml
+# Apenas para referência/documentação dos campos disponíveis
+
+# Repositório Git do Cluster
+git:
+  repoURL: "{{ .GitRepo }}"
+  targetRevision: HEAD
+  branch: {{ .GitBranch }}
+  repoName: "{{ .ProjectName }}"
+
+headlamp: ""
+
+project: {{ .ProjectName }}
+
+# Configurações do Argo CD
+argocd:
+  namespace: argocd
+  project: {{ .ProjectName }}
+  destinationServer: https://kubernetes.default.svc
+
+# Configurações de Eventos (Argo Events)
+events:
+  eventbus:
+    replicas: 1
+    storageClass: local-path
+  webhook:
+    port: 12000
+    serviceType: NodePort
+    nodePort: 30012
+
+# Aplicação Helm para configuração centralizada
+clusterConfig:
+  enabled: true
+  valueFiles:
+    - config/cluster-values.yaml
+
+# Observabilidade
+observability:
+  prometheus:
+    enabled: false # Controlado via values.yaml, padrão false para evitar install acidental
+
+
+# Descoberta Automática de Aplicações (Zero-Touch)
+discovery:
+  enabled: {{ .GithubDiscovery }}  # Override: discovery.enabled
+  scmProvider: github
+  organization: "{{ .GithubOrg }}"  # Override: discovery.organization
+  topic: ""  # Override: discovery.topic
+  tokenSecretName: github-token
+  tokenSecretKey: token
+
+# Controla uso de manifests legados por Kustomize
+legacy:
+  enabled: false

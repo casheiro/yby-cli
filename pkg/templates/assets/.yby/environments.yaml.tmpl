@@ -1,0 +1,8 @@
+current: {{ .Environment }}
+environments:
+{{- range .Environments }}
+  {{ . }}:
+    description: "Environment {{ . }}"
+    type: {{ if eq . "local" }}local{{ else }}remote{{ end }}
+    values: config/values-{{ . }}.yaml
+{{- end }}

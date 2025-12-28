@@ -1,0 +1,27 @@
+{{- if .Values.validation.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: config-validator
+  namespace: kube-system
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: validator
+        image: bitnami/kubectl:1.31.2
+        command: ["/bin/bash", "/scripts/validate.sh"]
+        args:
+        - |
+          echo "Validando referências a secrets...";
+          {{- if and .Values.datadog .Values.datadog.enabled }}
+          kubectl get secret {{ .Values.datadog.secretName }} -n {{ .Values.datadog.namespace }} || { echo "Datadog secret ausente"; exit 1; };
+          {{- end }}
+          {{- if and .Values.storage.minio.enabled .Values.storage.minio.secretName }}
+          kubectl get secret {{ .Values.storage.minio.secretName }} -n {{ .Values.storage.minio.namespace }} || echo "MinIO secret não encontrado (prosseguindo)";
+          {{- end }}
+{{- end }}
