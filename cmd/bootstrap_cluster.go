@@ -5,14 +5,14 @@ package cmd
 
 import (
 	"fmt"
-	"io"
-	"net/http"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -288,19 +288,9 @@ func configureSecrets(repoURL string) {
 }
 
 // ensureTemplateAssets checks and restores critical files and directories
-// ensureTemplateAssets checks and restores critical files and directories
+// ensureTemplateAssets checks and restores critical files and directories using Embedded Assets
 func ensureTemplateAssets(repoURL, root string) {
-	fmt.Println(headerStyle.Render("🛠️  Auto-Repair: Verificando integridade do projeto..."))
-
-	baseUrl := "https://raw.githubusercontent.com/casheiro/yby-template/main"
-	// repoURL is passed as arg now
-
-	// 1. Critical Files (Download & Template)
-	type Manifest struct {
-		Url          string
-		Path         string
-		Replacements map[string]string
-	}
+	fmt.Println(headerStyle.Render("🛠️  Auto-Repair: Verificando integridade do projeto (Embedded)..."))
 
 	// 0. Detect Git Prefix for Monorepo/Subdir Support (infra/ integration)
 	gitPrefix := getGitPrefix()
@@ -308,26 +298,31 @@ func ensureTemplateAssets(repoURL, root string) {
 		fmt.Printf("📂 Detectado subdiretório Git: %s. Ajustando paths do ArgoCD...\n", gitPrefix)
 	}
 
-	manifests := []Manifest{
+	// 1. Restore/Update Manifests with Replacements
+	manifests := []struct {
+		EmbedPath    string
+		DestPath     string
+		Replacements map[string]string
+	}{
 		{
-			Url:  baseUrl + "/manifests/upstream/argo-workflows.yaml",
-			Path: JoinInfra(root, "manifests/upstream/argo-workflows.yaml"),
+			EmbedPath: "assets/manifests/upstream/argo-workflows.yaml",
+			DestPath:  JoinInfra(root, "manifests/upstream/argo-workflows.yaml"),
 		},
 		{
-			Url:  baseUrl + "/manifests/upstream/argo-events.yaml",
-			Path: JoinInfra(root, "manifests/upstream/argo-events.yaml"),
+			EmbedPath: "assets/manifests/upstream/argo-events.yaml",
+			DestPath:  JoinInfra(root, "manifests/upstream/argo-events.yaml"),
 		},
 		{
-			Url:  baseUrl + "/manifests/argocd/root-app.yaml",
-			Path: JoinInfra(root, "manifests/argocd/root-app.yaml"),
+			EmbedPath: "assets/manifests/argocd/root-app.yaml.tmpl",
+			DestPath:  JoinInfra(root, "manifests/argocd/root-app.yaml"),
 			Replacements: map[string]string{
 				"https://github.com/my-user/yby-template": repoURL,
 				"path: charts/bootstrap":                  fmt.Sprintf("path: %scharts/bootstrap", gitPrefix),
 			},
 		},
 		{
-			Url:  baseUrl + "/manifests/projects/yby-project.yaml",
-			Path: JoinInfra(root, "manifests/projects/yby-project.yaml"),
+			EmbedPath: "assets/manifests/projects/yby-project.yaml.tmpl",
+			DestPath:  JoinInfra(root, "manifests/projects/yby-project.yaml"),
 			Replacements: map[string]string{
 				// Add the current repo to the whitelist by appending it after the generic one
 				"  - 'https://github.com/*/yby'": fmt.Sprintf("  - 'https://github.com/*/yby'\n  - '%s'", repoURL),
@@ -336,66 +331,53 @@ func ensureTemplateAssets(repoURL, root string) {
 	}
 
 	for _, m := range manifests {
-		if _, err := os.Stat(m.Path); os.IsNotExist(err) {
-			downloadAndTemplate(m.Url, m.Path, m.Replacements)
+		if _, err := os.Stat(m.DestPath); os.IsNotExist(err) {
+			restoreEmbedFile(m.EmbedPath, m.DestPath, m.Replacements)
 		}
 	}
 
-	// 2. Critical Directories (Clone & Restore)
-	dirs := []string{
-		JoinInfra(root, "charts/system"),
-		JoinInfra(root, "templates/workflows"),
+	// 2. Restore Critical Directories (Recursive)
+	dirs := []struct {
+		EmbedRoot string
+		DestRoot  string
+	}{
+		{"assets/charts/system", JoinInfra(root, "charts/system")},
+		{"assets/argo-workflows", JoinInfra(root, "templates/workflows")},
 	}
 
 	missingDirs := []string{}
 	for _, d := range dirs {
-		if _, err := os.Stat(d); os.IsNotExist(err) {
-			missingDirs = append(missingDirs, d)
+		if _, err := os.Stat(d.DestRoot); os.IsNotExist(err) {
+			missingDirs = append(missingDirs, d.DestRoot)
+			fmt.Printf("%s Restaurando %s...\n", stepStyle.Render("♻️"), d.DestRoot)
+			restoreEmbedDir(d.EmbedRoot, d.DestRoot)
 		}
 	}
 
-	if len(missingDirs) > 0 {
-		fmt.Printf("%s Diretórios críticos faltando: %s. Iniciando restauração via clone...\n", warningStyle.Render("⚠️"), strings.Join(missingDirs, ", "))
-		restoreAssetsFromClone(missingDirs)
-	} else {
+	if len(missingDirs) == 0 {
 		fmt.Println(checkStyle.Render("✅ Integridade verificada."))
 	}
 }
 
-func downloadAndTemplate(url, destPath string, replacements map[string]string) {
-	fmt.Printf("%s Baixando e Configurando %s...\n", stepStyle.Render("⬇️"), destPath)
+func restoreEmbedFile(embedPath, destPath string, replacements map[string]string) {
+	fmt.Printf("%s Restaurando %s...\n", stepStyle.Render("📄"), destPath)
 
-	// Ensure directory exists
-	dir := filepath.Dir(destPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Printf("%s Erro ao criar diretório %s: %v\n", crossStyle.String(), dir, err)
-		os.Exit(1)
-	}
-
-	// Download
-	resp, err := http.Get(url)
+	data, err := templates.Assets.ReadFile(embedPath)
 	if err != nil {
-		fmt.Printf("%s Erro ao baixar %s: %v\n", crossStyle.String(), url, err)
+		fmt.Printf("%s Erro ao ler asset embedado %s: %v\n", crossStyle.String(), embedPath, err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("%s Erro ao baixar %s: Status %s\n", crossStyle.String(), url, resp.Status)
-		os.Exit(1)
-	}
-
-	// Read Body
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("%s Erro ao ler corpo do arquivo %s: %v\n", crossStyle.String(), destPath, err)
-		os.Exit(1)
-	}
-	content := string(bodyBytes)
+	content := string(data)
 
 	// Apply Replacements
 	for old, new := range replacements {
 		content = strings.ReplaceAll(content, old, new)
+	}
+
+	// Ensure dir
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		fmt.Printf("%s Erro ao criar diretório %s: %v\n", crossStyle.String(), filepath.Dir(destPath), err)
+		os.Exit(1)
 	}
 
 	// Write file
@@ -405,68 +387,35 @@ func downloadAndTemplate(url, destPath string, replacements map[string]string) {
 	}
 }
 
-func restoreAssetsFromClone(targets []string) {
-	tempDir, err := os.MkdirTemp("", "yby-restore")
-	if err != nil {
-		fmt.Printf("%s Erro ao criar temp dir: %v\n", crossStyle.String(), err)
-		return
-	}
-	defer os.RemoveAll(tempDir)
-
-	fmt.Printf("%s Clonando template para recuperação (pode levar alguns segundos)...\n", stepStyle.Render("⏳"))
-
-	// Clone depth 1
-	cmd := exec.Command("git", "clone", "--depth", "1", "https://github.com/casheiro/yby-template.git", tempDir)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("%s Erro ao clonar template: %v\nOutput: %s\n", crossStyle.String(), err, string(out))
-		return
-	}
-
-	for _, target := range targets {
-		srcPath := filepath.Join(tempDir, target)
-		// Check if it exists in repo
-		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-			fmt.Printf("%s Aviso: %s não encontrado no repo de template.\n", warningStyle.String(), target)
-			continue
+func restoreEmbedDir(embedRoot, destRoot string) {
+	err := fs.WalkDir(templates.Assets, embedRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
 		}
 
-		fmt.Printf("%s Restaurando %s...\n", stepStyle.Render("♻️"), target)
-		// Copy dir
-		if err := copyDir(srcPath, target); err != nil {
-			fmt.Printf("%s Erro ao copiar %s: %v\n", crossStyle.String(), target, err)
-		}
-	}
-}
+		// Rel path from embedRoot -> e.g. "ClusterRole.yaml"
+		rel, _ := filepath.Rel(embedRoot, path)
+		destPath := filepath.Join(destRoot, rel)
 
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		// Read and Write (Direct copy, no replacements)
+		data, err := templates.Assets.ReadFile(path)
 		if err != nil {
 			return err
 		}
 
-		relPath, _ := filepath.Rel(src, path)
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
-		}
-
-		// Copy file
-		srcFile, err := os.Open(path)
-		if err != nil {
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 			return err
 		}
-		defer srcFile.Close()
 
-		dstFile, err := os.Create(dstPath)
-		if err != nil {
-			return err
-		}
-		defer dstFile.Close()
-
-		_, err = io.Copy(dstFile, srcFile)
-		return err
+		return os.WriteFile(destPath, data, 0644)
 	})
+
+	if err != nil {
+		fmt.Printf("%s Erro ao restaurar diretório %s: %v\n", crossStyle.String(), destRoot, err)
+	}
 }
 
 func getGitPrefix() string {
