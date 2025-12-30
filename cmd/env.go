@@ -12,8 +12,9 @@ import (
 )
 
 var envCmd = &cobra.Command{
-	Use:   "env",
-	Short: "Gerencia ambientes e contextos (dev, staging, prod)",
+	Use:     "env",
+	Aliases: []string{"context"},
+	Short:   "Gerencia ambientes e contextos (dev, staging, prod)",
 }
 
 // env list
