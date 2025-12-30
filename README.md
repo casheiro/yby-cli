@@ -1,105 +1,155 @@
-# Yby CLI
+# 🚀 Yby CLI - GitOps Radical
 
-Ferramenta CLI oficial para automação e gerenciamento de clusters na Casheiro Org, seguindo princípios GitOps.
+<div align="center">
 
-## Instalação
+<img src="https://i.imgur.com/2ZOMsy3.jpeg" alt="Yby Logo" width="160">
+
+</div>
+
+> **Yby (Tupi: Terra)** - O solo fértil para suas aplicações. CLI oficial para provisionamento de clusters Kubernetes **Ecofuturistas**: GitOps Radical, Eficiência Energética e Zero-Touch Discovery.
+
+---
+
+## 📋 Visão Geral
+
+A **Yby CLI** não é apenas um gerador de scaffolds; é a interface unificada para gerenciar todo o ciclo de vida da infraestrutura da Casheiro Org.
+
+- **Agnóstico**: Suporte a topologias flexíveis (`local`, `standard`, `complete`) via `blueprint.yaml`.
+- **Offline & Self-Contained**: Não depende de templates externos ou internet para bootstrap (v2.0+).
+- **Ecofuturista**: Padrões nativos para eficiência energética (Kepler) e scale-to-zero (KEDA).
+- **GitOps Puro**: Tudo é gerenciado via Argo CD. Sem comandos imperativos no cluster.
+
+---
+
+## 🚀 Instalação
 
 ```bash
+# Via Go
 go install github.com/casheiro/yby-cli@latest
+
+# Ou via binários pré-compilados (Linux/Mac/Windows) na página de Releases
 ```
 
-## Começando (Getting Started)
+Para verificar a instalação e dependências locais (Docker, Helm, Kubectl):
 
-A nova versão do Yby CLI utiliza uma **Engine de Scaffold Nativa** e gestão de ambientes explícita.
+```bash
+yby doctor
+```
 
-### 1. Inicializar Projeto
+---
 
-Use o comando `init` para gerar a estrutura base.
+## 🛠️ Começando (Getting Started)
+
+A v2 do Yby CLI utiliza uma **Engine de Scaffold Nativa** e gestão de ambientes explícita.
+
+### 1. Inicializar Projeto (`yby init`)
+
+Gera a estrutura completa de um repositório GitOps pronto para produção.
 
 ```bash
 # Modo Interativo (Wizard)
 yby init
 
-# Modo Headless (Flags - Recomendado para Scripts)
-yby init \
-  --topology standard \
-  --workflow gitflow \
-  --git-repo https://github.com/my-org/my-project.git \
-  --env dev \
-  --include-ci=true \
-  --include-devcontainer=true
+# Modo Headless (Automação)
+yby init --topology standard --workflow gitflow --git-repo https://github.com/my-org/proj.git
 ```
 
-**Opções de Topologia (`--topology`):**
-- `single`: Apenas ambiente `prod`.
-- `standard`: `local` e `prod`.
-- `complete`: `local`, `dev`, `staging`, `prod`.
+### 2. Bootstrap do Cluster (`yby bootstrap`)
 
-**Opções de Workflow (`--workflow`):**
-- `essential`: Checks básicos e validação.
-- `gitflow`: Release automatizado e pipelines de feature.
-- `trunkbased`: CD contínuo.
-
-### 2. Gerenciar Ambientes
-
-O Yby CLI gerencia o contexto via `.yby/environments.yaml` (substituindo o antigo `.env`).
+Transforme um cluster Kubernetes vazio (local ou remoto) em uma plataforma completa.
 
 ```bash
-# Listar ambientes
+# Boostrap do cluster conectado no contexto atual do kubectl
+yby bootstrap cluster
+```
+> O comando detectará automaticamente se é um cluster local ou remoto e aplicará as configurações apropriadas.
+
+---
+
+## 🔄 Fluxo de Release Automatizado
+
+Ao escolher o workflow `gitflow` no `init`, o projeto é configurado com Github Actions que implementam um pipeline de release robusto:
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant Feat as feature/*
+    participant Devp as develop
+    participant Rel as release/*
+    participant Main as main
+    participant Actions as GitHub Actions
+
+    Dev->>Feat: 1. Push na Feature
+    Note over Feat,Actions: Aciona 'feature-pipeline.yaml'
+    Actions-->>Feat: Valida código (yby validate)
+    Actions->>Devp: 2. Abre PR para 'develop'
+    
+    Dev->>Devp: 3. Merge manual do PR
+    Note over Devp, Actions: Aciona 'start-release.yaml'
+    Actions-->>Actions: Calcula versão (ex: v0.2.0)
+    Actions->>Rel: 4. Cria branch 'release/v0.2.0'
+    Actions->>Rel: 5. Abre PR de 'staging'
+    
+    Dev->>Rel: 6. Merge manual (Homologação)
+    Note over Rel, Actions: Aciona 'release-automation.yaml'
+    Actions-->>Actions: 7. Cria Tag e Release 'v0.2.0'
+    Actions->>Main: 8. Abre PR final para 'main'
+    
+    Note over Main, Actions: Aciona 'pr-main-checks.yaml'
+    Actions-->>Actions: 9. Roda Testes E2E
+    Dev->>Main: 10. Merge final (Produção)
+```
+
+---
+
+## 🌍 Gerenciamento de Contexto
+
+O Yby gerencia múltiplos ambientes (ex: local, staging, prod) com total isolamento de variáveis.
+
+```bash
+# Listar ambientes disponíveis
 yby env list
 
-# Criar novo ambiente (Remote)
-yby env create staging --type remote --description "Staging Environment"
+# Trocar contexto ativo (Carrega variáveis de .yby/environments.yaml)
+yby context use prod
 
-# Trocar contexto ativo
-yby env use prod
-
-# Ver detalhes
-yby env show
+# Ver detalhes do ambiente atual
+yby context show
 ```
 
-### 3. Garantia de Qualidade (QA)
+---
 
-Ferramentas integradas para validar e manter a saúde do projeto.
+## 🤖 Governança e IA (DevGovOps)
 
-```bash
-# Validar manifestos e charts (Lint/Dry-Run)
-yby validate
+Este projeto adota o padrão **DevGovOps**, integrando governança diretamente no fluxo de desenvolvimento assistido por IA.
 
-# Verificar saúde do ambiente e ferramentas
-yby doctor
+- **`.synapstor/`**: Fonte canônica da verdade e conhecimento (UKIs).
+- **`.agent/`**: Regras e workflows para a IDE Antigravithy.
+- **`.trae/` / `.claude/`**: Configurações para outros agentes.
 
-# Gerar componentes (ex: KEDA ScaledObject)
-yby generate keda --name my-scaler --deployment my-app --replicas 5
-```
+Consulte a [Wiki](docs/wiki/Governance.md) para detalhes sobre como capturar e evoluir o conhecimento do projeto.
 
-### 4. Desenvolvimento Local
+---
 
-Para subir um cluster local (k3d) espelhando a infraestrutura:
-
-```bash
-# Inicia cluster e mirror
-yby dev
-```
-
-## Estrutura do Projeto
+## 📂 Estrutura Criada
 
 ```
 .
-├── .github/workflows/    # Pipelines CI/CD (gerados)
+├── .github/workflows/    # Pipelines CI/CD (GitOps)
 ├── .yby/
-│   └── environments.yaml # Definição de ambientes
-├── config/
-│   ├── values-local.yaml
-│   └── values-prod.yaml
-├── infra/                # Manifestos Kubernetes (Argo CD)
+│   ├── blueprint.yaml    # Definição do projeto
+│   └── environments.yaml # Configuração de ambientes
+├── config/               # Values globais do ArgoCD
+├── infra/                # Manifestos Kubernetes
+│   ├── charts/           # Helm Charts locais (System, Bootstrap)
+│   └── manifests/        # Manifestos puros (Argo Apps)
 └── README.md
 ```
 
-## Testing E2E
+## 📚 Documentação Adicional
 
-Para rodar os testes end-to-end da CLI (requer Docker):
+A documentação completa está mantida na pasta `docs/wiki`:
 
-```bash
-go test -v ./test/e2e/...
-```
+- [Arquitetura](docs/wiki/Architecture.md)
+- [Guia de Segurança](docs/wiki/Security-Architecture.md)
+- [Solução de Problemas](docs/wiki/Troubleshooting.md)
