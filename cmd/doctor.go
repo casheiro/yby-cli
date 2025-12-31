@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -20,6 +21,9 @@ e se há conexão com o cluster Kubernetes configurado.`,
 		fmt.Println(titleStyle.Render("🩺  Yby Doctor - Verificação de Saúde"))
 		fmt.Println("----------------------------------------")
 
+		fmt.Println(headerStyle.Render("💻 Recursos do Sistema (Local)"))
+		checkSystemResources()
+
 		fmt.Println(headerStyle.Render("🛠️  Ferramentas Essenciais"))
 		checkTool("kubectl")
 		checkTool("helm")
@@ -27,6 +31,7 @@ e se há conexão com o cluster Kubernetes configurado.`,
 		checkTool("argocd")
 		checkTool("git")
 		checkTool("direnv")
+		checkDockerPermissions()
 
 		fmt.Println(headerStyle.Render("🌐 Conectividade"))
 		checkClusterConnection()
@@ -40,6 +45,29 @@ e se há conexão com o cluster Kubernetes configurado.`,
 
 func init() {
 	rootCmd.AddCommand(doctorCmd)
+}
+
+func checkSystemResources() {
+	// Simple check for Linux/Mac using common commands
+	// Memory
+	cmd := exec.Command("grep", "MemTotal", "/proc/meminfo")
+	out, err := cmd.Output()
+	if err == nil {
+		// Linux
+		fmt.Printf("%s Memória (Linux): %s", checkStyle.String(), strings.TrimSpace(strings.Replace(string(out), "MemTotal:", "", 1)))
+	} else {
+		// Mac/Other fallback
+		fmt.Printf("%s Verificação de memória detalhada ignorada (OS não Linux)\n", stepStyle.String())
+	}
+}
+
+func checkDockerPermissions() {
+	err := exec.Command("docker", "info").Run()
+	if err != nil {
+		fmt.Printf("%s %-10s: %s\n", crossStyle.String(), "docker", warningStyle.Render("Erro de permissão ou não rodando (tente 'sudo' ou adicione user ao grupo docker)"))
+	} else {
+		fmt.Printf("%s %-10s: %s\n", checkStyle.String(), "docker", grayStyle.Render("Daemon acessível"))
+	}
 }
 
 func checkTool(name string) {
