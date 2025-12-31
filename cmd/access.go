@@ -28,6 +28,7 @@ Você pode especificar um contexto (local/prod) com --context.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("🚀 Iniciando Acesso Unificado ao Cluster...")
 
+		activeTunnels := 0
 		targetContext, _ := cmd.Flags().GetString("context")
 		if targetContext == "" {
 			var err error
@@ -44,12 +45,13 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		// 1. Argo CD (Default)
 		argoPwd, err := getArgoPassword(targetContext)
 		if err != nil {
-			fmt.Printf("⚠️  Argo CD: Não foi possível obter senha (talvez não instalado?): %v\n", err)
+			fmt.Printf("⚠️  Argo CD: Não foi possível obter senha (talvez não instalado no namespace 'argocd'?): %v\n", err)
 		} else {
 			fmt.Println("🔌 Conectando Argo CD...")
 			killPortForward("8085")
 			go runPortForward(targetContext, "argocd", "svc/argocd-server", "8085:80")
 			fmt.Printf("   -> Argo CD: http://localhost:8085 (admin / %s)\n", argoPwd)
+			activeTunnels++
 		}
 
 		// 2. MinIO (Dynamic)
@@ -60,6 +62,7 @@ Você pode especificar um contexto (local/prod) com --context.`,
 			killPortForward("9001")
 			go runPortForward(targetContext, minioNs, "svc/"+minioSvc, "9000:9000") // API
 			go runPortForward(targetContext, minioNs, "svc/"+minioSvc, "9001:9001") // Console
+			activeTunnels++
 
 			// Try to get creds (check default candidates first)
 			user, pass := getSecretKeys(targetContext, "storage", "minio-secret", "rootUser", "rootPassword")
@@ -88,6 +91,7 @@ Você pode especificar um contexto (local/prod) com --context.`,
 			fmt.Printf("🔌 Detectado Prometheus (%s/%s)! Conectando para Grafana...\n", promNs, promSvc)
 			killPortForward("9090")
 			go runPortForward(targetContext, promNs, "svc/"+promSvc, "9090:9090")
+			activeTunnels++
 
 			// Start Local Grafana
 			fmt.Println("🐳 Iniciando Grafana Local (Docker)...")
@@ -110,8 +114,15 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		}
 
 		fmt.Println("")
+		if activeTunnels == 0 {
+			fmt.Println("🚫 Nenhum serviço detectado para encaminhamento. Encerrando.")
+			return
+		}
+
 		fmt.Println("ℹ️  Pressione Ctrl+C para encerrar os túneis...")
-		select {}
+		// Deadlock fix: wait indefinitely IF we have tunnels, but do not block main logic if activeTunnels > 0.
+		// Since activeTunnels > 0, we simply block forever.
+		<-make(chan struct{})
 	},
 }
 

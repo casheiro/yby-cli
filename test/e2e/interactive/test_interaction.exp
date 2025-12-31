@@ -1,0 +1,40 @@
+#!/usr/bin/expect
+
+set timeout 20
+
+spawn yby init
+
+# 1. Topology (Default: standard)
+expect "Selecione a Topologia de Ambientes:"
+send "\r"
+
+# 2. Workflow (Default: gitflow)
+expect "Selecione o Padrão de Workflow"
+send "\r"
+
+# 3. Git Repo
+expect "Qual a URL do repositório Git?"
+send "https://github.com/teste/validacao\r"
+
+# 4. Project Name (Novo Prompt)
+expect "Nome do Projeto"
+send "projeto-interativo\r"
+
+# 5. Domain (Novo Prompt)
+expect "Defina o Domínio Base"
+send "teste.local\r"
+
+# 6. Email (Novo Prompt)
+expect "Email para Admin"
+send "admin@teste.local\r"
+
+# 7. Modules (Novo Prompt)
+expect "Selecione os Módulos Adicionais"
+# Select nothing or default (just verify it appears)
+send "\r"
+
+# 8. DevContainer
+expect "Deseja incluir configuração de DevContainer"
+send "y\r"
+
+expect eof

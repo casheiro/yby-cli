@@ -21,6 +21,18 @@ A **Yby CLI** não é apenas um gerador de scaffolds; é a interface unificada p
 
 ---
 
+## 💻 Pré-requisitos
+
+Para rodar o stack completo (Argo CD, Monitoramento, K3s) localmente ou em VPS:
+
+| Componente | Requisito Mínimo | Recomendado |
+|------------|------------------|-------------|
+| **RAM**    | 4 GB             | 8 GB+       |
+| **CPU**    | 2 vCPUs          | 4 vCPUs     |
+| **Disk**   | 20 GB            | 40 GB NVMe  |
+
+> **Nota**: Para usuários Linux/Mac, certifique-se de que o **Docker** está rodando e seu usuário possui permissões (grupo `docker` ou `sudo`).
+
 ## 🚀 Instalação
 
 ```bash

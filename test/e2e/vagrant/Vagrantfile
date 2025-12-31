@@ -1,0 +1,12 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2204"
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = "kvm"
+    libvirt.memory = 4096
+    libvirt.cpus = 2
+  end
+
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  config.vm.provision "file", source: "../../../", destination: "/home/vagrant/yby-cli"
+  config.vm.provision "shell", path: "provision.sh"
+end
