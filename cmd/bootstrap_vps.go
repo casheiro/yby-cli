@@ -78,7 +78,21 @@ Instala dependências, configura firewall, instala K3s e configura o kubeconfig 
 			fmt.Println(checkStyle.Render("✅ Conexão SSH estabelecida!"))
 		}
 
-		// 3. Preparar Servidor
+		// 3. Pre-flight Checks
+		runEx(execClient, "Verificando Requisitos Mínimos", `
+			TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+			# 4GB ~ 4000000 kB. Warning if < 3.8GB to be safe
+			if [ "$TOTAL_MEM_KB" -lt 3800000 ]; then
+				echo "⚠️  AVISO: Memória disponível ("$((TOTAL_MEM_KB/1024))" MB) é inferior a 4GB."
+				echo "   A stack Yby completa requer no mínimo 4GB de RAM para estabilidade."
+				echo "   Continuando em 5 segundos... (Ctrl+C para cancelar)"
+				sleep 5
+			else
+				echo "✅ Memória OK: "$((TOTAL_MEM_KB/1024))" MB"
+			fi
+		`)
+
+		// 4. Preparar Servidor
 		runEx(execClient, "Atualizando sistema e instalando dependências", `
 			export DEBIAN_FRONTEND=noninteractive
 			apt-get update -qq
