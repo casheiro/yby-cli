@@ -23,6 +23,7 @@ type InitOptions struct {
 	// Project Details
 	GitRepo     string
 	GitBranch   string
+	ProjectName string // New Flag
 	Domain      string
 	Email       string
 	Environment string
@@ -46,6 +47,7 @@ func init() {
 
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Git Repository URL")
 	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Main git branch")
+	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Project Name/Slug (Override default derivation)")
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Cluster base domain")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Admin email")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Initial environment name")
@@ -114,7 +116,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 		// Template Data
 		GitRepo:     flags.GitRepo,
-		ProjectName: deriveProjectName(flags.GitRepo),
+		ProjectName: resolveProjectName(flags),
 	}
 
 	// If flags are missing, ask via Survey (Interactive Mode)
@@ -160,10 +162,76 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		if ctx.GitRepoURL == "" {
 			prompt := &survey.Input{
 				Message: "Qual a URL do repositório Git?",
+				Help:    "Se não tiver um ainda, deixe em branco para usar um placeholder ou gerar localmente.",
 			}
 			if err := survey.AskOne(prompt, &ctx.GitRepoURL); err != nil {
 				fmt.Println("❌ Cancelado")
 				os.Exit(1)
+			}
+		}
+
+		// Ask for Project Name (after Git Repo is resolved)
+		defaultName := ctx.ProjectName
+		if ctx.GitRepoURL != "" && defaultName == "yby-project" {
+			defaultName = deriveProjectName(ctx.GitRepoURL)
+		}
+
+		promptName := &survey.Input{
+			Message: "Nome do Projeto (Slug para K8s):",
+			Default: defaultName,
+			Help:    "Identificador único usado em namespaces e resources.",
+		}
+		_ = survey.AskOne(promptName, &ctx.ProjectName)
+
+		// Ask for Project Details (Domain / Email)
+		if ctx.Domain == "yby.local" { // Check if default
+			prompt := &survey.Input{
+				Message: "Defina o Domínio Base do Cluster:",
+				Default: "yby.local",
+			}
+			_ = survey.AskOne(prompt, &ctx.Domain)
+		}
+
+		if ctx.Email == "admin@yby.local" { // Check if default
+			prompt := &survey.Input{
+				Message: "Email para Admin/Certificados:",
+				Default: "admin@yby.local",
+			}
+			_ = survey.AskOne(prompt, &ctx.Email)
+		}
+
+		// Modules Selection (MultiSelect)
+		var selectedModules []string
+		// Pre-select based on flags if any were true, otherwise default to none or recommeded
+		defaults := []string{}
+		if ctx.EnableKepler {
+			defaults = append(defaults, "Kepler (Eficiência Energética)")
+		}
+
+		promptModules := &survey.MultiSelect{
+			Message: "Selecione os Módulos Adicionais (Add-ons):",
+			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)"},
+			Default: defaults,
+			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos.",
+		}
+		if err := survey.AskOne(promptModules, &selectedModules); err != nil {
+			fmt.Println("❌ Cancelado")
+			os.Exit(1)
+		}
+
+		// Map Selection back to Context
+		ctx.EnableKepler = false
+		ctx.EnableMinio = false
+		ctx.EnableKEDA = false
+		for _, m := range selectedModules {
+			if strings.Contains(m, "Kepler") {
+				ctx.EnableKepler = true
+			}
+			if strings.Contains(m, "MinIO") {
+				ctx.EnableMinio = true
+			}
+			if strings.Contains(m, "KEDA") {
+				ctx.EnableKEDA = true
 			}
 		}
 
@@ -195,6 +263,13 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 	}
 
 	return ctx
+}
+
+func resolveProjectName(flags *InitOptions) string {
+	if flags.ProjectName != "" {
+		return flags.ProjectName
+	}
+	return deriveProjectName(flags.GitRepo)
 }
 
 func deriveProjectName(repoURL string) string {

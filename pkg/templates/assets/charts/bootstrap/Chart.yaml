@@ -10,7 +10,7 @@ dependencies:
     repository: "https://kubernetes-sigs.github.io/headlamp/"
 
     condition: headlamp.enabled
-    condition: headlamp.enabled
+
 
 
 
