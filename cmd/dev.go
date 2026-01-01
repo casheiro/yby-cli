@@ -120,6 +120,14 @@ Equivalente ao antigo 'make dev'.`,
 			mirrorMgr = nil // Disable sync if init failed
 		} else {
 			fmt.Println(checkStyle.Render("✅ Git Server Operacional."))
+			// Initial Sync to populate the repo BEFORE bootstrap
+			fmt.Print(stepStyle.Render("🔄 Sincronizando código inicial para o Mirror... "))
+			if err := mirrorMgr.Sync(); err != nil {
+				fmt.Printf(crossStyle.Render("❌ Falha no Sync inicial: %v\n"), err)
+				// We proceed, but ArgoCD might fail to sync app
+			} else {
+				fmt.Println(checkStyle.Render("✅ Código sincronizado."))
+			}
 		}
 
 		// 4. Boostrap
