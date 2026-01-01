@@ -1,0 +1,9 @@
+nome: release
+versao: 1
+descricao: Produz notas de versao por fase, publica metricas e sinaliza atritos de dx
+responsabilidades:
+  - notas_versao
+  - metricas_publicacao
+  - sinalizar_atritos
+artefatos:
+  - metricas: .trae/metrics

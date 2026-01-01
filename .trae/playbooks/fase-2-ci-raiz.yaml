@@ -1,0 +1,9 @@
+fase: fase-2
+titulo: Github Actions na raiz
+precondicoes:
+  - repositorio_git
+passos:
+  - rotear_assets_raiz_no_engine
+validacoes:
+  - workflows_na_raiz
+  - scaffold_monorepo

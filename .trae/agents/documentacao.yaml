@@ -1,0 +1,14 @@
+nome: documentacao
+versao: 1
+descricao: Sincroniza README e wiki, verifica cobertura de CLI e links, garante ponteiro do submodulo
+responsabilidades:
+  - atualizar_readme
+  - atualizar_wiki
+  - verificar_cobertura_cli
+  - checar_links
+  - sincronizar_submodulo
+scripts:
+  - .trae/scripts/docs_verify.sh
+artefatos:
+  - wiki_submodulo: docs/wiki
+  - cli_reference: docs/wiki/CLI-Reference.md

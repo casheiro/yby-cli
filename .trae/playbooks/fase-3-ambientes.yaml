@@ -1,0 +1,9 @@
+fase: fase-3
+titulo: Ambientes coerentes
+precondicoes:
+  - scaffold_inicial
+passos:
+  - validar_current_vs_topologia
+  - garantir_values_por_env
+validacoes:
+  - bdd_ambientes

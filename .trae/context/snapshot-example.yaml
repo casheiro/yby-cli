@@ -1,0 +1,7 @@
+yby_env: local
+infra_root: infra
+arquivos_afetados:
+  - cmd/dev.go
+  - cmd/bootstrap_cluster.go
+tarefas_ativas:
+  - fase-1
