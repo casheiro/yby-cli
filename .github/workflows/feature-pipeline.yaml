@@ -26,6 +26,11 @@ jobs:
       - name: 🏃 Run Tests
         run: go test ./... -v
 
+      - name: 📚 Validate Documentation
+        run: |
+          chmod +x .trae/scripts/docs_verify.sh
+          ./.trae/scripts/docs_verify.sh
+
       - name: 🔍 Lint Code
         uses: golangci/golangci-lint-action@v6
         with:

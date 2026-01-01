@@ -30,6 +30,11 @@ Equivalente ao antigo 'make dev'.`,
 		// 0. Resolve Infra Root
 		root, err := FindInfraRoot()
 		if err != nil {
+			// If not found, try current directory if it has environments.yaml
+			// Or just assume "." if it's a new project but maybe failed check?
+			// The error usually means we are too far up or down.
+			// Let's stick to "." but warn.
+			fmt.Printf("⚠️  Infra root não detectada automaticamente: %v. Usando '.'\n", err)
 			root = "."
 		}
 

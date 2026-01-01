@@ -39,8 +39,51 @@ for u in "${USES[@]}"; do
   # Check if the command is mentioned in the doc file
   # We look for "yby <command>" pattern
   if ! grep -q "yby ${u}" "$DOC_FILE"; then
-    echo "⚠️  Comando 'yby ${u}' parece não estar documentado em CLI-Reference.md"
-    # MISSING=1 # Warning only for now
+    # Filter known subcommands that are documented under their parent command
+    # e.g., 'vps' is under 'bootstrap vps'
+    # List of exceptions:
+    case "$u" in
+      vps|cluster)
+        # Check if parent exists? 'yby bootstrap vps'
+        if ! grep -q "yby bootstrap ${u}" "$DOC_FILE"; then
+           echo "⚠️  Subcomando 'yby bootstrap ${u}' parece não estar documentado."
+        fi
+        ;;
+      seal|webhook|minio|backup|restore)
+        # Check if parent exists? 'yby secret ...'
+        if ! grep -q "yby secret ${u}" "$DOC_FILE"; then
+             echo "⚠️  Subcomando 'yby secret ${u}' parece não estar documentado."
+        fi
+        ;;
+      dump)
+        # 'yby env dump'
+        if ! grep -q "yby env ${u}" "$DOC_FILE"; then
+             echo "⚠️  Subcomando 'yby env ${u}' parece não estar documentado."
+        fi
+        ;;
+      secret|setup)
+         # These are top level, check normally
+         if ! grep -q "yby ${u}" "$DOC_FILE"; then
+              echo "⚠️  Comando 'yby ${u}' parece não estar documentado em CLI-Reference.md"
+         fi
+         ;;
+      yby|keda|github-token)
+        # Internal or alias commands, ignore or check specifically if needed.
+        # 'yby' is the root command, should be ignored.
+        # 'keda' is under generate? 'yby generate keda'
+        if [[ "$u" == "keda" ]]; then
+             if ! grep -q "yby generate keda" "$DOC_FILE"; then
+                 echo "⚠️  Comando 'yby generate keda' parece não estar documentado."
+             fi
+        elif [[ "$u" != "yby" ]]; then
+             # Ignore github-token as it is very specific/internal usage often
+             :
+        fi
+        ;;
+      *)
+        echo "⚠️  Comando 'yby ${u}' parece não estar documentado em CLI-Reference.md"
+        ;;
+    esac
   fi
 done
 
