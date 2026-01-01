@@ -44,8 +44,9 @@ Equivalente ao antigo 'make dev'.`,
 		os.Setenv("YBY_ENV", "local")
 
 		// 2. Context & Env Init
-		wd, _ := os.Getwd()
-		ctxManager := ybyctx.NewManager(wd)
+		// Phase 5 Fix: Use discovered root for context manager
+		// wd, _ := os.Getwd() -> replaced by root
+		ctxManager := ybyctx.NewManager(root)
 
 		// Validate if 'local' exists in manifest
 		activeCtx, env, err := ctxManager.GetCurrent()

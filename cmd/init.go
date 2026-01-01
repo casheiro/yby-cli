@@ -282,6 +282,29 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		ctx.Environments = []string{"local"}
 	}
 
+	// Phase 3 Fix: Ensure 'current' environment (ctx.Environment) is in the list
+	// If not, fallback to the first environment in the list (or 'prod' if present)
+	isValidEnv := false
+	for _, env := range ctx.Environments {
+		if env == ctx.Environment {
+			isValidEnv = true
+			break
+		}
+	}
+
+	if !isValidEnv {
+		if len(ctx.Environments) > 0 {
+			// Prefer 'prod' if available and current was invalid
+			// Or just pick the first one.
+			// Let's pick the last one (usually prod) for single/standard?
+			// Actually, for 'standard' (local, prod), if user asked for 'dev', maybe they meant local?
+			// Safest bet: Pick the first one (usually local or prod).
+			newEnv := ctx.Environments[0]
+			fmt.Printf("⚠️  Ambiente inicial '%s' não existe na topologia '%s'. Ajustando para '%s'.\n", ctx.Environment, ctx.Topology, newEnv)
+			ctx.Environment = newEnv
+		}
+	}
+
 	return ctx
 }
 

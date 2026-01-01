@@ -42,23 +42,32 @@ Instala dependências, configura firewall, instala K3s e configura o kubeconfig 
 			// The fetchKubeconfig logic assumes we want to MERGE with ~/.kube/config.
 			host = "127.0.0.1"
 		} else {
-			// 1. Carregar .env
-			if err := godotenv.Load("../.env"); err != nil {
-				fmt.Println(warningStyle.Render("⚠️  Arquivo .env não encontrado ou erro ao carregar. Usando variáveis de ambiente."))
-			}
+			// 1. Carregar configuração (Flag > Manifesto > Env (Legacy))
+			host = vpsHost
+			user := vpsUser
+			port := vpsPort
 
-			host = os.Getenv("VPS_HOST")
-			user := os.Getenv("VPS_USER")
-			if user == "" {
-				user = "root"
-			}
-			port := os.Getenv("VPS_PORT")
-			if port == "" {
-				port = "22"
+			// Fallback to Manifesto (.yby/environments.yaml) could be implemented here
+			// But for now, let's stick to flags as the primary interface for "infrastructure as code" inputs
+			// or assume values are passed via CI/CD.
+
+			// Legacy .env support (Deprecation Warning)
+			if host == "" {
+				// Try loading .env only if strictly necessary
+				if _, err := os.Stat("../.env"); err == nil {
+					_ = godotenv.Load("../.env")
+					if val := os.Getenv("VPS_HOST"); val != "" {
+						fmt.Println(warningStyle.Render("⚠️  Usando VPS_HOST do arquivo .env (Depreciado). Use --host ou manifesto."))
+						host = val
+					}
+					if user == "root" && os.Getenv("VPS_USER") != "" {
+						user = os.Getenv("VPS_USER")
+					}
+				}
 			}
 
 			if host == "" {
-				fmt.Println(crossStyle.Render("❌ Erro: VPS_HOST não definido no .env"))
+				fmt.Println(crossStyle.Render("❌ Erro: Host não definido. Use --host."))
 				return
 			}
 
@@ -182,10 +191,16 @@ Instala dependências, configura firewall, instala K3s e configura o kubeconfig 
 }
 
 var k3sVersion string
+var vpsHost string
+var vpsUser string
+var vpsPort string
 
 func init() {
 	bootstrapCmd.AddCommand(bootstrapVpsCmd)
 	bootstrapVpsCmd.Flags().StringVar(&k3sVersion, "k3s-version", "v1.31.2+k3s1", "Versão do K3s a ser instalada")
+	bootstrapVpsCmd.Flags().StringVar(&vpsHost, "host", "", "IP ou Hostname do VPS")
+	bootstrapVpsCmd.Flags().StringVar(&vpsUser, "user", "root", "Usuário SSH")
+	bootstrapVpsCmd.Flags().StringVar(&vpsPort, "port", "22", "Porta SSH")
 	bootstrapVpsCmd.Flags().Bool("local", false, "Executa o bootstrap na máquina local (auto-provisionamento)")
 }
 
