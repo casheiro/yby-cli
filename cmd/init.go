@@ -21,6 +21,7 @@ type InitOptions struct {
 	IncludeCI           bool
 
 	// Project Details
+	TargetDir   string // New Flag
 	GitRepo     string
 	GitBranch   string
 	ProjectName string // New Flag
@@ -45,6 +46,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Generate .devcontainer configuration")
 	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Enable CI/CD generation")
 
+	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Target directory for project initialization")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Git Repository URL")
 	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Main git branch")
 	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Project Name/Slug (Override default derivation)")
@@ -72,6 +74,9 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		fmt.Println("🚀 Gerando arquivos...")
 
 		targetDir := "."
+		if opts.TargetDir != "" {
+			targetDir = opts.TargetDir
+		}
 		if err := scaffold.Apply(targetDir, ctx); err != nil {
 			fmt.Printf("❌ Erro ao gerar scaffold: %v\n", err)
 			os.Exit(1)
@@ -130,6 +135,21 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 	if interactive {
 		fmt.Println("------------------------------------")
+		// Directory Prompt
+		if flags.TargetDir == "" {
+			prompt := &survey.Input{
+				Message: "Onde deseja inicializar o projeto? (caminho relativo ou absoluto)",
+				Default: ".",
+				Help:    "Diretório onde os arquivos serão criados. Se não existir, será criado.",
+			}
+			var dir string
+			if err := survey.AskOne(prompt, &dir); err != nil {
+				fmt.Println("❌ Cancelado")
+				os.Exit(1)
+			}
+			flags.TargetDir = dir
+		}
+
 		// Topology Prompt
 		if ctx.Topology == "" {
 			prompt := &survey.Select{
