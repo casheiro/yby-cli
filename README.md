@@ -15,7 +15,8 @@
 A **Yby CLI** não é apenas um gerador de scaffolds; é a interface unificada para gerenciar todo o ciclo de vida da infraestrutura da Casheiro Org.
 
 - **Agnóstico**: Suporte a topologias flexíveis (`local`, `standard`, `complete`) via `blueprint.yaml`.
-- **Offline & Self-Contained**: Não depende de templates externos ou internet para bootstrap (v2.0+).
+- **Offline & Self-Contained**: Dev local (`yby dev`) funciona totalmente offline com Mirror Git interno.
+- **Monorepo Ready**: Suporte nativo para infraestrutura em subdiretórios (`infra/`) com CI/CD na raiz.
 - **Ecofuturista**: Padrões nativos para eficiência energética (Kepler) e scale-to-zero (KEDA).
 - **GitOps Puro**: Tudo é gerenciado via Argo CD. Sem comandos imperativos no cluster.
 
