@@ -26,6 +26,11 @@ var bootstrapClusterCmd = &cobra.Command{
 3. Configuração de Secrets (Git Credentials, Tokens)
 4. Aplicação Root (App of Apps) para início do GitOps
 5. Versions são lidas de .yby/blueprint.yaml se disponível.`,
+	Example: `  # Bootstrap padrão (lê variáveis GITHUB_REPO e TOKEN do ambiente)
+  yby bootstrap cluster
+
+  # Forçar uso do blueprint para versões
+  yby bootstrap cluster --context prod`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Cluster GitOps"))
 		fmt.Println("---------------------------------------")
@@ -158,15 +163,25 @@ func init() {
 }
 
 func checkEnvVars(blueprintRepo string) {
-	// GITHUB_REPO Strategy: Env > Blueprint > Fail
-	if os.Getenv("GITHUB_REPO") == "" {
+	// GITHUB_REPO Strategy: Env > Blueprint > Internal Mirror (Local) > Fail
+	repo := os.Getenv("GITHUB_REPO")
+	if repo == "" {
 		if blueprintRepo != "" {
 			fmt.Printf("ℹ️  Usando repo do Blueprint: %s\n", blueprintRepo)
 			os.Setenv("GITHUB_REPO", blueprintRepo)
 		} else {
-			fmt.Println(crossStyle.Render("❌ Variável GITHUB_REPO faltando e não encontrada no Blueprint."))
-			fmt.Println(warningStyle.Render("Defina no .env, exporte ou execute 'yby init' novamente."))
-			os.Exit(1)
+			// Check if local
+			isLocal := (contextFlag == "local" || os.Getenv("YBY_ENV") == "local")
+			if isLocal {
+				// Use internal mirror URL
+				internalRepo := "git://git-server.yby-system.svc:80/repo.git"
+				fmt.Printf("ℹ️  Ambiente Local detectado sem GITHUB_REPO. Usando Mirror Interno: %s\n", internalRepo)
+				os.Setenv("GITHUB_REPO", internalRepo)
+			} else {
+				fmt.Println(crossStyle.Render("❌ Variável GITHUB_REPO faltando e não encontrada no Blueprint."))
+				fmt.Println(warningStyle.Render("Defina no .env, exporte ou execute 'yby init' novamente."))
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -316,8 +331,9 @@ func ensureTemplateAssets(repoURL, root string) {
 			EmbedPath: "assets/manifests/argocd/root-app.yaml.tmpl",
 			DestPath:  JoinInfra(root, "manifests/argocd/root-app.yaml"),
 			Replacements: map[string]string{
-				"https://github.com/my-user/yby-template": repoURL,
-				"path: charts/bootstrap":                  fmt.Sprintf("path: %scharts/bootstrap", gitPrefix),
+				"{{ .GitRepo }}":         repoURL,
+				"{{ .ProjectName }}":     "default",
+				"path: charts/bootstrap": fmt.Sprintf("path: %scharts/bootstrap", gitPrefix),
 			},
 		},
 		{

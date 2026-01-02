@@ -4,13 +4,12 @@ metadata:
   name: root-app
   namespace: argocd
   labels:
-    project: default
+    project: {{ .ProjectName }}
     tier: infrastructure
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: {{ .ProjectName }}
-
   source:
     repoURL: {{ .GitRepo }}
     targetRevision: HEAD

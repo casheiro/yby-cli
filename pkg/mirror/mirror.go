@@ -143,25 +143,6 @@ func (m *MirrorManager) Sync() error {
 		return fmt.Errorf("no git-server pod found in namespace %s", m.Namespace)
 	}
 
-	// 2. Archive Local State (infra/ folder)
-	// We want to sync the 'infra' folder to the root of the repo?
-	// The Blueprint puts manifests inside 'infra'.
-	// So we sync 'infra'.
-	// Tar command: tar cf - infra | ...
-
-	// We construct the command pipeline manually because Go exec doesn't do pipes easily without setup.
-	// Best way: run "sh -c 'tar cf - infra | kubectl exec -i ...'"
-
-	// Command inside pod:
-	// mkdir -p /tmp/workspace && tar xf - -C /tmp/workspace
-	// cd /tmp/workspace
-	// git init
-	// git config user.email "yby@local" && git config user.name "Yby Bot"
-	// git add .
-	// git commit -m "Auto-sync $(date)"
-	// git remote add origin /git/repo.git
-	// git push origin master --force
-
 	// Note: We need to handle 'incremental' updates to avoid overhead?
 	// For MVP 5s loop, full sync is fine for small repos.
 
@@ -171,7 +152,7 @@ mkdir -p /tmp/workspace
 rm -rf /tmp/workspace/*
 tar xf - -C /tmp/workspace
 cd /tmp/workspace
-if [ ! -d infra ]; then echo "Warning: infra dir not found in sync"; fi
+# if [ ! -d infra ]; then echo "Warning: infra dir not found in sync"; fi
 git init -q
 git config user.email "bot@yby"
 git config user.name "Yby Bot"
@@ -180,8 +161,8 @@ git commit -q -m "Sync" || true
 git remote add origin /git/repo.git || git remote set-url origin /git/repo.git
 git push origin master --force -q
 `
-	// We use 'infra' as the target to sync.
-	cmdStr := fmt.Sprintf("tar cf - infra | kubectl exec -i -n %s %s -- sh -c '%s'", m.Namespace, podName, remoteScript)
+	// Phase 5 Logic: Sync CONTENTS of m.LocalPath to ROOT of git-server repo.
+	cmdStr := fmt.Sprintf("tar cf - -C %s . | kubectl exec -i -n %s %s -- sh -c '%s'", m.LocalPath, m.Namespace, podName, remoteScript)
 
 	// fmt.Printf("DEBUG: Executing Sync...\n")
 	if err := exec.Command("sh", "-c", cmdStr).Run(); err != nil {
