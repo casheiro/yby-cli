@@ -22,7 +22,11 @@ var envListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Lista os ambientes disponíveis",
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr := context.NewManager(".")
+		infraRoot, err := FindInfraRoot()
+		if err != nil {
+			infraRoot = "."
+		}
+		mgr := context.NewManager(infraRoot)
 		manifest, err := mgr.LoadManifest()
 		if err != nil {
 			fmt.Println("❌", err)
@@ -47,7 +51,11 @@ var envUseCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
-		mgr := context.NewManager(".")
+		infraRoot, err := FindInfraRoot()
+		if err != nil {
+			infraRoot = "."
+		}
+		mgr := context.NewManager(infraRoot)
 
 		if err := mgr.SetCurrent(name); err != nil {
 			fmt.Println("❌", err)
@@ -63,7 +71,11 @@ var envShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Mostra detalhes do ambiente atual",
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr := context.NewManager(".")
+		infraRoot, err := FindInfraRoot()
+		if err != nil {
+			infraRoot = "."
+		}
+		mgr := context.NewManager(infraRoot)
 		name, env, err := mgr.GetCurrent()
 		if err != nil {
 			fmt.Println("❌", err)
@@ -108,7 +120,16 @@ var envCreateCmd = &cobra.Command{
 			description = fmt.Sprintf("Environment %s", name)
 		}
 
-		mgr := context.NewManager(".")
+		infraRoot, err := FindInfraRoot()
+		if err != nil {
+			// Fallback or error? For create, maybe fallback to "." is okay?
+			// But consistency suggests we should know where we are.
+			// Let's print warning and use "." or just fail if strict.
+			// The original code used ".", so let's default to "." if not found,
+			// BUT if we want P5 support, we ideally want to find it.
+			infraRoot = "."
+		}
+		mgr := context.NewManager(infraRoot)
 		if err := mgr.AddEnvironment(name, envType, description); err != nil {
 			fmt.Println("❌", err)
 			os.Exit(1)
