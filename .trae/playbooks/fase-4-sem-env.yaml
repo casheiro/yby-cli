@@ -1,0 +1,10 @@
+fase: fase-4
+titulo: Sem dependencia de env
+precondicoes:
+  - manifesto_environments
+passos:
+  - migrar_bootstrap_para_manifesto_flags
+  - atualizar_mensagens
+validacoes:
+  - execucao_sem_env
+  - migration_docs

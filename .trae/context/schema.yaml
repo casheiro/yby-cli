@@ -1,0 +1,10 @@
+versao: 1
+campos:
+  - nome: yby_env
+    tipo: string
+  - nome: infra_root
+    tipo: string
+  - nome: arquivos_afetados
+    tipo: lista
+  - nome: tarefas_ativas
+    tipo: lista

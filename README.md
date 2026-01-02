@@ -15,7 +15,8 @@
 A **Yby CLI** não é apenas um gerador de scaffolds; é a interface unificada para gerenciar todo o ciclo de vida da infraestrutura da Casheiro Org.
 
 - **Agnóstico**: Suporte a topologias flexíveis (`local`, `standard`, `complete`) via `blueprint.yaml`.
-- **Offline & Self-Contained**: Não depende de templates externos ou internet para bootstrap (v2.0+).
+- **Offline & Self-Contained**: Dev local (`yby dev`) funciona totalmente offline com Mirror Git interno.
+- **Monorepo Ready**: Suporte nativo para infraestrutura em subdiretórios (`infra/`) com CI/CD na raiz.
 - **Ecofuturista**: Padrões nativos para eficiência energética (Kepler) e scale-to-zero (KEDA).
 - **GitOps Puro**: Tudo é gerenciado via Argo CD. Sem comandos imperativos no cluster.
 
@@ -165,3 +166,17 @@ A documentação completa está mantida na pasta `docs/wiki`:
 - [Arquitetura](docs/wiki/Architecture.md)
 - [Guia de Segurança](docs/wiki/Security-Architecture.md)
 - [Solução de Problemas](docs/wiki/Troubleshooting.md)
+
+---
+
+## 🧭 Matriz Código ↔ Documentação
+
+Para garantir a consistência entre o código e a documentação, utilize a referência abaixo ao realizar alterações:
+
+| Código Fonte (Go) | Documentação (Wiki) | Descrição |
+| :--- | :--- | :--- |
+| [`cmd/*.go`](cmd/) | [CLI Reference](docs/wiki/CLI-Reference.md) | Comandos, flags e exemplos de uso. |
+| [`pkg/context/*`](pkg/context/) | [Core Concepts](docs/wiki/Core-Concepts.md) | Gestão de ambientes e manifesto. |
+| [`pkg/scaffold/*`](pkg/scaffold/) | [Getting Started](docs/wiki/Getting-Started.md) | Lógica de init, engine de templates e assets. |
+| [`pkg/templates/*`](pkg/templates/) | [README Assets](pkg/templates/assets/README.md) | Estrutura de arquivos gerados. |
+| [`docs/wiki/*`](docs/wiki/) | [Migration Guide](docs/wiki/Migration-Guide-v2.md) | Guias de versão e breaking changes. |

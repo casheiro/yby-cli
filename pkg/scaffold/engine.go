@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -51,14 +52,22 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 			}
 		}
 
+		// 4. Handle Root-Level Assets (.github, LICENSE, .devcontainer)
+		// These should always go to the Git Root, not the targetDir (which might be infra/)
 		finalPath := filepath.Join(targetDir, relPath)
+		if strings.HasPrefix(relPath, ".github") || strings.HasPrefix(relPath, "LICENSE") || strings.HasPrefix(relPath, ".devcontainer") {
+			if gitRoot, err := getGitRoot(); err == nil && gitRoot != "" {
+				// Repoint to Git Root
+				finalPath = filepath.Join(gitRoot, relPath)
+			}
+		}
 
-		// 4. Handle Directory Creation
+		// 5. Handle Directory Creation
 		if d.IsDir() {
 			return os.MkdirAll(finalPath, 0755)
 		}
 
-		// 5. Render or Copy File
+		// 6. Render or Copy File
 		return processFile(path, finalPath, ctx)
 	})
 
@@ -67,6 +76,15 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 	}
 
 	return nil
+}
+
+func getGitRoot() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func processFile(srcPath, destPath string, ctx *BlueprintContext) error {

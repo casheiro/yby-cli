@@ -17,6 +17,7 @@ var doctorCmd = &cobra.Command{
 	Short: "Verifica dependências e saúde do ambiente",
 	Long: `Verifica se as ferramentas necessárias (kubectl, helm, kubeseal) estão instaladas
 e se há conexão com o cluster Kubernetes configurado.`,
+	Example: `  yby doctor`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🩺  Yby Doctor - Verificação de Saúde"))
 		fmt.Println("----------------------------------------")
