@@ -17,6 +17,7 @@ var statusCmd = &cobra.Command{
 	Short: "Verifica status do cluster e apps",
 	Long: `Exibe informações sobre os nós do cluster, pods do Argo CD e Ingresses configurados.
 Equivalente ao antigo 'make status'.`,
+	Example: `  yby status`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("📊 Status do Cluster"))
 		fmt.Println("---------------------------------------")

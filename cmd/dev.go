@@ -23,6 +23,11 @@ var devCmd = &cobra.Command{
 Idempotente: Se o cluster já existir, apenas garante que está rodando e atualiza a stack.
 
 Equivalente ao antigo 'make dev'.`,
+	Example: `  # Iniciar ambiente local
+  yby dev
+
+  # Resetar ambiente local (deleta cluster e recria)
+  yby destroy && yby dev`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🏃 Yby Dev - Ambiente de Desenvolvimento"))
 		fmt.Println("---------------------------------------")
@@ -30,6 +35,11 @@ Equivalente ao antigo 'make dev'.`,
 		// 0. Resolve Infra Root
 		root, err := FindInfraRoot()
 		if err != nil {
+			// If not found, try current directory if it has environments.yaml
+			// Or just assume "." if it's a new project but maybe failed check?
+			// The error usually means we are too far up or down.
+			// Let's stick to "." but warn.
+			fmt.Printf("⚠️  Infra root não detectada automaticamente: %v. Usando '.'\n", err)
 			root = "."
 		}
 
@@ -44,8 +54,9 @@ Equivalente ao antigo 'make dev'.`,
 		os.Setenv("YBY_ENV", "local")
 
 		// 2. Context & Env Init
-		wd, _ := os.Getwd()
-		ctxManager := ybyctx.NewManager(wd)
+		// Phase 5 Fix: Use discovered root for context manager
+		// wd, _ := os.Getwd() -> replaced by root
+		ctxManager := ybyctx.NewManager(root)
 
 		// Validate if 'local' exists in manifest
 		activeCtx, env, err := ctxManager.GetCurrent()
@@ -120,6 +131,14 @@ Equivalente ao antigo 'make dev'.`,
 			mirrorMgr = nil // Disable sync if init failed
 		} else {
 			fmt.Println(checkStyle.Render("✅ Git Server Operacional."))
+			// Initial Sync to populate the repo BEFORE bootstrap
+			fmt.Print(stepStyle.Render("🔄 Sincronizando código inicial para o Mirror... "))
+			if err := mirrorMgr.Sync(); err != nil {
+				fmt.Printf(crossStyle.Render("❌ Falha no Sync inicial: %v\n"), err)
+				// We proceed, but ArgoCD might fail to sync app
+			} else {
+				fmt.Println(checkStyle.Render("✅ Código sincronizado."))
+			}
 		}
 
 		// 4. Boostrap
