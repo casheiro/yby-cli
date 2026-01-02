@@ -1,9 +1,0 @@
-fase: fase-5
-titulo: Suporte pleno a monorepo
-precondicoes:
-  - projeto_monorepo
-passos:
-  - usar_infra_root_no_manager
-  - ajustar_prefixos_git
-validacoes:
-  - e2e_monorepo
