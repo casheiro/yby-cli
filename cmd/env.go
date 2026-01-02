@@ -21,6 +21,10 @@ var envCmd = &cobra.Command{
 var envListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Lista os ambientes disponíveis",
+	Example: `  yby env list
+  # Saída:
+  # * local (local)
+  #   prod (remote)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		infraRoot, err := FindInfraRoot()
 		if err != nil {
@@ -48,7 +52,9 @@ var envListCmd = &cobra.Command{
 var envUseCmd = &cobra.Command{
 	Use:   "use [name]",
 	Short: "Define o ambiente ativo",
-	Args:  cobra.ExactArgs(1),
+	Example: `  yby env use prod
+  # Atualiza automaticamente o contexto do kubectl e helm`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
 		infraRoot, err := FindInfraRoot()
@@ -95,7 +101,9 @@ var envShowCmd = &cobra.Command{
 var envCreateCmd = &cobra.Command{
 	Use:   "create [name]",
 	Short: "Cria um novo ambiente e gera values correspondente",
-	Args:  cobra.MaximumNArgs(1),
+	Example: `  yby env create qa --type remote --description "Quality Assurance"
+  # Cria config/values-qa.yaml e adiciona entry em .yby/environments.yaml`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := ""
 		if len(args) > 0 {

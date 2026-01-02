@@ -68,6 +68,14 @@ var initCmd = &cobra.Command{
 	Short: "Inicializa um novo projeto Yby (Scaffold)",
 	Long: `Gera a estrutura inicial do projeto (Charts, Manifests, Workflows) baseada em padrões.
 Suporta execução interativa (Wizard) ou Headless (Flags).`,
+	Example: `  # Modo Interativo (Wizard)
+  yby init
+
+  # Modo Headless (CI/CD ou Scripts)
+  yby init --project-name meu-app --git-repo https://github.com/org/repo.git --topology standard --workflow gitflow --target-dir infra
+
+  # Inicializar em monorepo existente
+  yby init --target-dir infra`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 

@@ -26,6 +26,11 @@ var bootstrapClusterCmd = &cobra.Command{
 3. Configuração de Secrets (Git Credentials, Tokens)
 4. Aplicação Root (App of Apps) para início do GitOps
 5. Versions são lidas de .yby/blueprint.yaml se disponível.`,
+	Example: `  # Bootstrap padrão (lê variáveis GITHUB_REPO e TOKEN do ambiente)
+  yby bootstrap cluster
+
+  # Forçar uso do blueprint para versões
+  yby bootstrap cluster --context prod`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Cluster GitOps"))
 		fmt.Println("---------------------------------------")

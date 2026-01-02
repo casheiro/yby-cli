@@ -23,7 +23,17 @@ var bootstrapVpsCmd = &cobra.Command{
 	Use:   "vps",
 	Short: "Provisiona um VPS com K3s e prepara para GitOps",
 	Long: `Conecta via SSH a um servidor VPS (definido no .env) ou executa localmente.
-Instala dependências, configura firewall, instala K3s e configura o kubeconfig local.`,
+Instala dependências, configura firewall, instala K3s e configura o kubeconfig local.
+
+Pré-requisitos (verificados automaticamente):
+* Ubuntu 22.04+ (Recomendado)
+* 4GB RAM (Mínimo recomendado para stack completa)
+* Acesso root/sudo`,
+	Example: `  # Provisionar VPS remoto (requer acesso SSH por chave)
+  yby bootstrap vps --host 192.168.1.10 --user ubuntu
+
+  # Provisionar máquina local (laptop/desktop)
+  yby bootstrap vps --local`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Provisionamento de VPS"))
 		fmt.Println("---------------------------------------")

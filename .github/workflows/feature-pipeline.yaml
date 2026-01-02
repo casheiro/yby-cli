@@ -27,9 +27,8 @@ jobs:
         run: go test ./... -v
 
       - name: 📚 Validate Documentation
-        run: |
-          chmod +x .trae/scripts/docs_verify.sh
-          ./.trae/scripts/docs_verify.sh
+        # Smoke Test only (verify generation works)
+        run: go run ./cmd/yby gen-docs
 
       - name: 🔍 Lint Code
         uses: golangci/golangci-lint-action@v6

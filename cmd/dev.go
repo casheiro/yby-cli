@@ -23,6 +23,11 @@ var devCmd = &cobra.Command{
 Idempotente: Se o cluster já existir, apenas garante que está rodando e atualiza a stack.
 
 Equivalente ao antigo 'make dev'.`,
+	Example: `  # Iniciar ambiente local
+  yby dev
+
+  # Resetar ambiente local (deleta cluster e recria)
+  yby destroy && yby dev`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🏃 Yby Dev - Ambiente de Desenvolvimento"))
 		fmt.Println("---------------------------------------")
