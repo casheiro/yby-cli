@@ -6,7 +6,7 @@ import "context"
 // preferred: "ollama", "gemini", "openai"
 func GetProvider(ctx context.Context, preferred string) Provider {
 	// 1. Explicit Preference
-	if preferred != "" {
+	if preferred != "" && preferred != "auto" {
 		switch preferred {
 		case "ollama":
 			p := NewOllamaProvider()
@@ -24,11 +24,8 @@ func GetProvider(ctx context.Context, preferred string) Provider {
 				return p
 			}
 		}
-		// If preferred fails, we fall back to auto-detect (or could return nil)
-		// For CLI UX, fall back is safer but might surprise.
-		// Let's fallback but log... actually caller handles nil.
-		// Let's strict fallback: if user ASKED for gemini and it fails, returning ollama is confusing?
-		// Let's stick to "Get Best" behavior if preference misses, but maybe log warning in caller.
+		// If explicit preference is not available, return nil (Strict)
+		return nil
 	}
 
 	// 2. Auto-Detect: Prefer Local Inference (Privacy & Cost)

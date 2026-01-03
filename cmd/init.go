@@ -109,37 +109,53 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 		// Check availability
 		if aiProvider != nil {
-			fmt.Printf("🤖 AI Engine Detected: %s\n", aiProvider.Name())
+			fmt.Printf("🤖 Motor de IA Detectado: %s\n", aiProvider.Name())
 
 			description := opts.Description
-			if description == "" && !opts.Offline {
-				// Prompt if interactive and available
-				prompt := &survey.Input{
-					Message: "🤖 [AI] Describe your project to generate tailored governance (optional):",
-					Help:    "Leave empty to skip AI generation.",
-				}
-				_ = survey.AskOne(prompt, &description)
-			}
 
 			if description != "" {
-				fmt.Printf("🧠 Thinking... (Analyzing: '%s')\n", description)
+				fmt.Printf("🧠 Processando... (Analisando: '%s')\n", description)
 				blueprint, err := aiProvider.GenerateGovernance(bgCtx, description)
 				if err != nil {
-					fmt.Printf("⚠️ AI Generation failed: %v. Falling back to static templates.\n", err)
+					fmt.Printf("⚠️ Falha na geração por IA: %v. Usando templates estáticos.\n", err)
 				} else {
-					fmt.Printf("✨ Domain Inferred: %s (%s)\n", blueprint.Domain, blueprint.RiskLevel)
+					fmt.Printf("✨ Domínio Inferido: %s (%s)\n", blueprint.Domain, blueprint.RiskLevel)
 
 					// Write Generated Files
 					for _, f := range blueprint.Files {
 						fullPath := filepath.Join(targetDir, f.Path)
+
+						// FIX: Check if path is root-level to respect engine logic location?
+						// Actually, engine.go logic handles file copying from ASSETS.
+						// Here we are writing AI Generated files directly.
+						// We need to respect the same 'root' logic as engine.go for .synapstor!
+						// If path starts with .synapstor, it should go to RepoRoot, not targetDir (if targetDir is infra).
+						// Duplicating logic here is dangerous?
+						// Ideally AI provider just returns files and we use scaffold to write them?
+						// For now, let's keep it simple but maybe check path prefix.
+
+						if strings.HasPrefix(f.Path, ".synapstor") || strings.HasPrefix(f.Path, ".github") {
+							// Try to resolve git root to avoid putting .synapstor inside infra/
+							if gitRoot, err := scaffold.GetGitRoot(); err == nil && gitRoot != "" {
+								fullPath = filepath.Join(gitRoot, f.Path)
+							} else if targetDir != "." && targetDir != "" {
+								// Fallback to CWD
+								wd, _ := os.Getwd()
+								fullPath = filepath.Join(wd, f.Path)
+							}
+						}
+
 						// Ensure dirs
 						_ = os.MkdirAll(filepath.Dir(fullPath), 0755)
 						if err := os.WriteFile(fullPath, []byte(f.Content), 0644); err == nil {
-							fmt.Printf("   📝 AI Created: %s\n", f.Path)
+							fmt.Printf("   📝 Gerado por IA: %s\n", f.Path)
 						}
 					}
 				}
 			}
+		} else if opts.Description != "" {
+			fmt.Println("⚠️  AVISO: Funcionalidade de IA solicitada, mas nenhum provedor configurado ou disponível.")
+			fmt.Println("    Verifique se o Ollama está rodando ou se as chaves de API (GEMINI_API_KEY, OPENAI_API_KEY) estão definidas.")
 		}
 
 		// 3. Post-Scaffold: Generate Values Files for Environments
@@ -332,6 +348,45 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			if err := survey.AskOne(prompt, &ctx.EnableDevContainer); err != nil {
 				fmt.Println("❌ Cancelado")
 				os.Exit(1)
+			}
+		}
+
+		// ---------------------------------------------------------
+		// New: AI & Governance Section
+		// ---------------------------------------------------------
+		if !flags.Offline {
+			enableAI := false
+			promptAI := &survey.Confirm{
+				Message: "🤖 Deseja ativar o Assistente de IA (Synapstor & Governança)?",
+				Default: true,
+				Help:    "Gera documentação técnica, decisões de arquitetura e personas baseada na descrição do projeto.",
+			}
+			_ = survey.AskOne(promptAI, &enableAI)
+
+			if enableAI {
+				// Provider Selection
+				if flags.AIProvider == "" {
+					promptProvider := &survey.Select{
+						Message: "Selecione o Provedor de IA:",
+						Options: []string{"auto", "ollama", "gemini", "openai"},
+						Default: "auto",
+						Help:    "auto: Tenta Ollama local, depois chaves de API (Gemini/OpenAI).",
+					}
+					_ = survey.AskOne(promptProvider, &flags.AIProvider)
+					// If user selects "auto", we leave it empty string for factory defaults, or "auto"
+					if flags.AIProvider == "auto" {
+						flags.AIProvider = ""
+					}
+				}
+
+				// Description
+				if flags.Description == "" {
+					promptDesc := &survey.Input{
+						Message: "📝 Descreva seu projeto (em linguagem natural):",
+						Help:    "Ex: 'Um gateway de pagamento para criptoativos focado em segurança'. A IA detectará o idioma.",
+					}
+					_ = survey.AskOne(promptDesc, &flags.Description)
+				}
 			}
 		}
 	}
