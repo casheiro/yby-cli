@@ -1,0 +1,53 @@
+# 🏛️ Architecture Decision Log (ADRs)
+
+This document tracks key architectural decisions for **{{ .ProjectName }}**. It is initialized automatically by Yby based on your choices.
+
+## ADR-000: Yby Ecosystem Adoption
+- **Status**: Accepted
+- **Context**: Need for a standardized, "Zero-Touch" Kubernetes platform.
+- **Decision**: Adopt Yby CLI and Ecosystem.
+- **Consequences**: adhering to GitOps principles and standardized directory structure.
+
+## ADR-001: Environment Topology ({{ .Topology }})
+- **Status**: Accepted
+- **Context**: Project requires an infrastructure topology suitable for {{ .BusinessDomain }}.
+- **Decision**: Selected **{{ .Topology }}** topology.
+- **Consequences**:
+  {{- if eq .Topology "single" }}
+  - Simplified management (Prod only).
+  - Lower cost, but higher risk for breaking changes.
+  {{- else if eq .Topology "standard" }}
+  - Balanced approach (Local + Prod).
+  - Allows local testing before deployment.
+  {{- else }}
+  - Full enterprise lifecycle (Local -> Dev -> Staging -> Prod).
+  - High resilience and testing capability.
+  {{- end }}
+
+## ADR-002: Workflow Pattern ({{ .WorkflowPattern }})
+- **Status**: Accepted
+- **Decision**: Adopt **{{ .WorkflowPattern }}** workflow.
+- **Consequences**:
+  {{- if eq .WorkflowPattern "trunkbased" }}
+  - Focus on CI speed and frequent integration.
+  - Commits to main trigger pipelines immediately.
+  {{- else if eq .WorkflowPattern "gitflow" }}
+  - Strict release management using branches.
+  - Higher stability control for production releases.
+  {{- else }}
+  - Minimal process overhead.
+  {{- end }}
+
+{{- if .EnableKepler }}
+## ADR-003: Green Computing (Kepler)
+- **Status**: Accepted
+- **Decision**: Enable Kepler for energy monitoring.
+- **Consequences**: Observability stack will include CO2 metrics.
+{{- end }}
+
+{{- if .EnableMinio }}
+## ADR-004: Local Object Storage (MinIO)
+- **Status**: Accepted
+- **Decision**: Use MinIO for S3-compatible storage.
+- **Consequences**: Application handles object storage locally without external cloud dependencies in Dev.
+{{- end }}
