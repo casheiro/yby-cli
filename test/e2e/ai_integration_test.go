@@ -8,9 +8,16 @@ import (
 	"testing"
 )
 
+func requireIntegration(t *testing.T) {
+	if os.Getenv("YBY_AI_INTEGRATION_TESTS") != "true" {
+		t.Skip("⚠️ - Skipping Integration Test: Set YBY_AI_INTEGRATION_TESTS=true to run.")
+	}
+}
+
 // TestAIInit_Integration verifies the "yby init --description" flow.
 // It builds the CLI on the fly to ensure we test the current code.
 func TestAIInit_Integration(t *testing.T) {
+	requireIntegration(t)
 	// 1. Build the CLI Binary
 	binDir := t.TempDir()
 	binaryPath := filepath.Join(binDir, "yby")
@@ -127,6 +134,7 @@ func TestAIInit_Integration(t *testing.T) {
 
 // TestAIProviderSelection_Gemini verifies explicit provider selection.
 func TestAIProviderSelection_Gemini(t *testing.T) {
+	requireIntegration(t)
 	// 1. Build CLI (Reuse logic if possible, or rebuild)
 	binDir := t.TempDir()
 	binaryPath := filepath.Join(binDir, "yby")
