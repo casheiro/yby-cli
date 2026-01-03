@@ -124,3 +124,56 @@ func TestAIInit_Integration(t *testing.T) {
 		}
 	}
 }
+
+// TestAIProviderSelection_Gemini verifies explicit provider selection.
+func TestAIProviderSelection_Gemini(t *testing.T) {
+	// 1. Build CLI (Reuse logic if possible, or rebuild)
+	binDir := t.TempDir()
+	binaryPath := filepath.Join(binDir, "yby")
+	wd, _ := os.Getwd()
+	projectRoot := filepath.Dir(filepath.Dir(wd))
+	cmdBuild := exec.Command("go", "build", "-o", binaryPath, "./cmd/yby")
+	cmdBuild.Dir = projectRoot
+	if out, err := cmdBuild.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build yby CLI: %v\nOutput: %s", err, string(out))
+	}
+
+	// 2. Run with --ai-provider gemini and Dummy Key
+	targetDir := t.TempDir()
+	cmdInit := exec.Command(binaryPath, "init",
+		"--description", "Teste de Provider",
+		"--ai-provider", "gemini", // Explicit selection
+		"--target-dir", targetDir,
+		"--project-name", "gemini-test",
+		"--git-repo", "https://git.local",
+		"--topology", "single",
+		"--workflow", "essential",
+		"--offline=false",
+	)
+
+	// Inject Dummy Key to force "Available" state
+	//	cmdInit.Env = append(os.Environ(), "GEMINI_API_KEY=AIzaSyDummyKeyForTest")
+
+	outputBytes, err := cmdInit.CombinedOutput()
+	output := string(outputBytes)
+
+	// We expect exit code 0 (CLI succeeds even if AI fails)
+	if err != nil {
+		t.Fatalf("yby init failed unexpectedly: %v\nOutput: %s", err, output)
+	}
+
+	t.Logf("CLI Output:\n%s", output)
+
+	// 3. Assertions
+	// It should detect Gemini
+	if !strings.Contains(output, "AI Engine Detected: Google Gemini") {
+		t.Errorf("❌ Expected Gemini detection. Output:\n%s", output)
+	} else {
+		t.Log("✅ Correctly selected Google Gemini provider.")
+	}
+
+	// It should fail generation (Invalid Key) but not crash
+	if strings.Contains(output, "AI Generation failed") {
+		t.Log("✅ Correctly handled generation failure (Invalid Key).")
+	}
+}

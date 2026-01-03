@@ -29,6 +29,7 @@ type InitOptions struct {
 	GitBranch   string
 	ProjectName string // New Flag
 	Description string // AI Context Flag
+	AIProvider  string // explicit provider
 	Domain      string
 	Email       string
 	Environment string
@@ -59,6 +60,7 @@ func init() {
 	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Main git branch")
 	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Project Name/Slug (Override default derivation)")
 	initCmd.Flags().StringVar(&opts.Description, "description", "", "Natural language description of the project (Enable AI generation)")
+	initCmd.Flags().StringVar(&opts.AIProvider, "ai-provider", "", "Force specific AI provider (ollama, gemini, openai)")
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Cluster base domain")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Admin email")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Initial environment name")
@@ -103,7 +105,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		// Try to initialize AI Provider (Ollama for now)
 		// Factory: Detect Best Available Provider (Ollama -> Gemini -> OpenAI)
 		bgCtx := context.Background()
-		aiProvider := ai.GetBestProvider(bgCtx)
+		aiProvider := ai.GetProvider(bgCtx, opts.AIProvider)
 
 		// Check availability
 		if aiProvider != nil {

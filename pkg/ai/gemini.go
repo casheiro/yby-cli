@@ -21,9 +21,15 @@ func NewGeminiProvider() *GeminiProvider {
 	if apiKey == "" {
 		return nil
 	}
+
+	model := os.Getenv("GEMINI_MODEL")
+	if model == "" {
+		model = "gemini-2.5-flash" // Fallback to stable v1.0 Pro if not specified
+	}
+
 	return &GeminiProvider{
 		APIKey: apiKey,
-		Model:  "gemini-1.5-flash", // Fast and cheap
+		Model:  model,
 	}
 }
 
