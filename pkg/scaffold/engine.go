@@ -52,13 +52,40 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 			}
 		}
 
-		// 4. Handle Root-Level Assets (.github, LICENSE, .devcontainer)
-		// These should always go to the Git Root, not the targetDir (which might be infra/)
+		// 4. Handle Root-Level Assets (.github, .devcontainer, .synapstor)
+		// These should always go to the Project Root (Git Root or Parent), not the targetDir (if it is a subdir)
 		finalPath := filepath.Join(targetDir, relPath)
-		if strings.HasPrefix(relPath, ".github") || strings.HasPrefix(relPath, "LICENSE") || strings.HasPrefix(relPath, ".devcontainer") {
-			if gitRoot, err := getGitRoot(); err == nil && gitRoot != "" {
+		isRootAsset := strings.HasPrefix(relPath, ".github") ||
+			strings.HasPrefix(relPath, ".devcontainer") ||
+			strings.HasPrefix(relPath, ".synapstor")
+
+		if isRootAsset {
+			if gitRoot, err := GetGitRoot(); err == nil && gitRoot != "" {
 				// Repoint to Git Root
 				finalPath = filepath.Join(gitRoot, relPath)
+			} else {
+				// Fallback: If targetDir is explicitly "infra" or "app", assume CWD is root
+				// logic: if targetDir != "." and targetDir != "", try to use CWD
+				if targetDir != "." && targetDir != "" {
+					wd, _ := os.Getwd()
+					finalPath = filepath.Join(wd, relPath)
+				}
+			}
+		}
+
+		// 4.5 Skip creation of flattened source directories
+		// If we are flattening patterns (e.g. .github/workflows/gitflow -> .github/workflows),
+		// we should NOT create the "gitflow" directory itself in the destination.
+		// The file copy prevents "gitflow" from being part of the path, but this Dir check
+		// prevents the empty folder from being created.
+		if d.IsDir() {
+			// If this directory name matches the active Workflow Pattern, skip it
+			// because checks in step 3 hide it from the file paths
+			if ctx.WorkflowPattern != "" && d.Name() == ctx.WorkflowPattern {
+				// Double check parent
+				if strings.Contains(filepath.ToSlash(path), ".github/workflows/"+ctx.WorkflowPattern) {
+					return nil // Skip creating the empty pattern directory
+				}
 			}
 		}
 
@@ -78,7 +105,7 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 	return nil
 }
 
-func getGitRoot() (string, error) {
+func GetGitRoot() (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
