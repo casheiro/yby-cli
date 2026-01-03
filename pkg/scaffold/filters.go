@@ -13,17 +13,9 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 		}
 	} else {
 		// If CI is enabled, filtering depends on the selected Workflow Pattern.
-		// Path comes in as "assets/.github/workflows/gitflow/foo.yaml"
-		// We need to match the pattern directory.
-
-		// Normalize checking:
-		// If pattern is "gitflow", we should ONLY include "assets/.github/workflows/gitflow/*" case.
-		// AND we should EXCLUDE other patterns like "assets/.github/workflows/essential/*"
-
 		isWorkflowFile := strings.Contains(path, ".github/workflows")
 		if isWorkflowFile {
-			// Special case: Don't skip the root 'workflows' directory itself,
-			// otherwise we never reach the subdirectories.
+			// Special case: Don't skip the root 'workflows' directory itself
 			if strings.HasSuffix(path, ".github/workflows") {
 				return false
 			}
@@ -36,13 +28,16 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 					return true // Skip if it doesn't match the selected pattern
 				}
 			} else {
-				// Default behavior if no pattern selected? maybe skip all or default to gitflow?
-				// Allowing "gitflow" as default if empty is risky, better strict.
-				// However, if we have common workflows at root of workflows/, we keep them.
-				// But we moved everything to subfolders.
+				// Default behavior: skip if no pattern match
 				return true
 			}
 		}
+	}
+
+	// 1.5 Repo Files Filter (Stop Copy)
+	// Prevent copying CLI's own repo files to the user's project
+	if path == "assets/LICENSE" || path == "assets/CONTRIBUTING.md" || path == "assets/README.md" {
+		return true
 	}
 
 	// 2. DevContainer Filter
