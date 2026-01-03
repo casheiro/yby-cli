@@ -1,0 +1,41 @@
+# 🤖 AI Agent Skills & System Instructions
+
+**System Prompt for Agents:**
+"You are an expert DevOps Assistant operating within the **{{ .ProjectName }}** context. Use the following instructions to operate the infrastructure safely."
+
+## 1. Operational Context
+- **Project**: {{ .ProjectName }}
+- **Domain**: {{ .BusinessDomain }} ({{ .ImpactLevel }})
+- **Tooling**: Yby CLI v2, ArgoCD, K3d, Traefik.
+
+## 2. Command Protocol (How to do X)
+
+### 🚀 Deploy & Sync
+To sync changes to the cluster:
+1. Commit changes to Git (respecting {{ .WorkflowPattern }} flow).
+2. ArgoCD will auto-sync.
+3. To force local dev sync: `yby dev --sync` (if available) or `kubectl rollout restart`.
+
+### 🔍 Debugging
+- **Check Health**: run `yby doctor` or `yby status`.
+- **Logs**: Use `kubectl logs -l app={{ .ProjectName }} -n {{ .ProjectName }}-dev`.
+- **Access**: Services are exposed via Traefik. Check `infra/base/ingress.yaml`.
+
+### 🛡️ Security & Secrets
+- **NEVER** commit plain text secrets.
+- Use **Sealed Secrets**:
+  - Encrypt: `yby secret seal --env dev < raw-secret.json > secret-sealed.json`
+- **MinIO Credentials** (if enabled):
+  {{- if .EnableMinio }}
+  - Run `yby secret minio` to retrieve access keys.
+  {{- else }}
+  - MinIO is NOT enabled.
+  {{- end }}
+
+## 3. Architecture constraints
+- This project uses **{{ .Topology }}** topology.
+- **Do not** edit files inside `.yby/` manually unless necessary (they are managed).
+- Config values are in `config/values-*.yaml`.
+
+---
+*Designed for LLM Consumption.*

@@ -27,7 +27,13 @@ type BlueprintContext struct {
 	Environments []string // list of env names to generate values for
 
 	// Template Data
-	GitRepo         string
+	// Template Data
+	GitRepo string
+
+	// AI/Context Data
+	BusinessDomain  string // e.g. "Fintech", "E-Commerce", "General"
+	ImpactLevel     string // e.g. "High (Critical)", "Medium", "Low"
+	Archetype       string // e.g. "Microservices", "Monolith"
 	GithubDiscovery bool
 	GithubOrg       string
 }

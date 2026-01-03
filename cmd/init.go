@@ -4,11 +4,14 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/spf13/cobra"
 )
@@ -25,6 +28,7 @@ type InitOptions struct {
 	GitRepo     string
 	GitBranch   string
 	ProjectName string // New Flag
+	Description string // AI Context Flag
 	Domain      string
 	Email       string
 	Environment string
@@ -54,6 +58,7 @@ func init() {
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Git Repository URL")
 	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Main git branch")
 	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Project Name/Slug (Override default derivation)")
+	initCmd.Flags().StringVar(&opts.Description, "description", "", "Natural language description of the project (Enable AI generation)")
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Cluster base domain")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Admin email")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Initial environment name")
@@ -74,8 +79,8 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
   # Modo Headless (CI/CD ou Scripts)
   yby init --project-name meu-app --git-repo https://github.com/org/repo.git --topology standard --workflow gitflow --target-dir infra
 
-  # Inicializar em monorepo existente
-  yby init --target-dir infra`,
+  # AI-Native Initialization
+  yby init --description "A secure payment gateway for crypto assets"`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
@@ -92,6 +97,47 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		if err := scaffold.Apply(targetDir, ctx); err != nil {
 			fmt.Printf("❌ Erro ao gerar scaffold: %v\n", err)
 			os.Exit(1)
+		}
+
+		// 2.5 Generative AI Layer
+		// Try to initialize AI Provider (Ollama for now)
+		// Factory: Detect Best Available Provider (Ollama -> Gemini -> OpenAI)
+		bgCtx := context.Background()
+		aiProvider := ai.GetBestProvider(bgCtx)
+
+		// Check availability
+		if aiProvider != nil {
+			fmt.Printf("🤖 AI Engine Detected: %s\n", aiProvider.Name())
+
+			description := opts.Description
+			if description == "" && !opts.Offline {
+				// Prompt if interactive and available
+				prompt := &survey.Input{
+					Message: "🤖 [AI] Describe your project to generate tailored governance (optional):",
+					Help:    "Leave empty to skip AI generation.",
+				}
+				_ = survey.AskOne(prompt, &description)
+			}
+
+			if description != "" {
+				fmt.Printf("🧠 Thinking... (Analyzing: '%s')\n", description)
+				blueprint, err := aiProvider.GenerateGovernance(bgCtx, description)
+				if err != nil {
+					fmt.Printf("⚠️ AI Generation failed: %v. Falling back to static templates.\n", err)
+				} else {
+					fmt.Printf("✨ Domain Inferred: %s (%s)\n", blueprint.Domain, blueprint.RiskLevel)
+
+					// Write Generated Files
+					for _, f := range blueprint.Files {
+						fullPath := filepath.Join(targetDir, f.Path)
+						// Ensure dirs
+						_ = os.MkdirAll(filepath.Dir(fullPath), 0755)
+						if err := os.WriteFile(fullPath, []byte(f.Content), 0644); err == nil {
+							fmt.Printf("   📝 AI Created: %s\n", f.Path)
+						}
+					}
+				}
+			}
 		}
 
 		// 3. Post-Scaffold: Generate Values Files for Environments
@@ -135,6 +181,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		GitRepo:     flags.GitRepo,
 		ProjectName: resolveProjectName(flags),
 	}
+
+	// Enrich with AI Context
+	inferContext(ctx)
 
 	// If flags are missing, ask via Survey (Interactive Mode)
 	// We check strictly if Topology/Workflow are empty implies interaction needed.
@@ -379,4 +428,32 @@ func deriveProjectName(repoURL string) string {
 	}
 
 	return "yby-project"
+}
+
+// inferContext populates AI-related context fields based on heuristics
+func inferContext(ctx *scaffold.BlueprintContext) {
+	name := strings.ToLower(ctx.ProjectName)
+
+	// Defaults
+	ctx.BusinessDomain = "General Purpose"
+	ctx.ImpactLevel = "Medium"
+	ctx.Archetype = "Cloud-Native Application"
+
+	// Heuristics
+	if strings.Contains(name, "bank") || strings.Contains(name, "pay") || strings.Contains(name, "wallet") || strings.Contains(name, "fin") {
+		ctx.BusinessDomain = "Fintech / Financial Services"
+		ctx.ImpactLevel = "Critical (High Security Requirement)"
+	} else if strings.Contains(name, "shop") || strings.Contains(name, "store") || strings.Contains(name, "comm") || strings.Contains(name, "cart") {
+		ctx.BusinessDomain = "E-Commerce / Retail"
+		ctx.ImpactLevel = "High (Availability Requirement)"
+	} else if strings.Contains(name, "data") || strings.Contains(name, "etl") || strings.Contains(name, "flow") || strings.Contains(name, "lake") {
+		ctx.BusinessDomain = "Data Engineering"
+		ctx.Archetype = "Data Pipeline / Batch Processing"
+	} else if strings.Contains(name, "api") || strings.Contains(name, "svc") || strings.Contains(name, "gate") {
+		ctx.Archetype = "Backend Microservice"
+	}
+
+	if ctx.Topology == "complete" {
+		ctx.ImpactLevel += " (Enterprise Topology)"
+	}
 }
