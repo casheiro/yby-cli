@@ -56,8 +56,7 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 		// These should always go to the Project Root (Git Root or Parent), not the targetDir (if it is a subdir)
 		finalPath := filepath.Join(targetDir, relPath)
 		isRootAsset := strings.HasPrefix(relPath, ".github") ||
-			strings.HasPrefix(relPath, ".devcontainer") ||
-			strings.HasPrefix(relPath, ".synapstor")
+			strings.HasPrefix(relPath, ".devcontainer")
 
 		if isRootAsset {
 			if gitRoot, err := GetGitRoot(); err == nil && gitRoot != "" {
