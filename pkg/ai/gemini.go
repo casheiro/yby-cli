@@ -100,7 +100,9 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 	if resp.StatusCode != 200 {
 		// Read body for error details
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
+		if _, err := buf.ReadFrom(resp.Body); err != nil {
+			return nil, fmt.Errorf("gemini returned status: %d (failed to read body: %v)", resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("gemini returned status: %d - %s", resp.StatusCode, buf.String())
 	}
 

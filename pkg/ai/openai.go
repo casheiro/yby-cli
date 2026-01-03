@@ -84,7 +84,9 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 
 	if resp.StatusCode != 200 {
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
+		if _, err := buf.ReadFrom(resp.Body); err != nil {
+			return nil, fmt.Errorf("openai returned status: %d (failed to read body: %v)", resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("openai returned status: %d - %s", resp.StatusCode, buf.String())
 	}
 
