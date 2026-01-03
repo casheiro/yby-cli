@@ -134,8 +134,8 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 						// Ideally AI provider just returns files and we use scaffold to write them?
 						// For now, let's keep it simple but maybe check path prefix.
 
-						if strings.HasPrefix(f.Path, ".synapstor") || strings.HasPrefix(f.Path, ".github") {
-							// Try to resolve git root to avoid putting .synapstor inside infra/
+						if strings.HasPrefix(f.Path, ".github") {
+							// Try to resolve git root to avoid putting .github inside infra/
 							if gitRoot, err := scaffold.GetGitRoot(); err == nil && gitRoot != "" {
 								fullPath = filepath.Join(gitRoot, f.Path)
 							} else if targetDir != "." && targetDir != "" {
