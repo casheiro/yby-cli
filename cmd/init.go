@@ -40,7 +40,8 @@ type InitOptions struct {
 	EnableKEDA   bool
 
 	// Modes
-	Offline bool
+	Offline        bool
+	NonInteractive bool
 }
 
 var opts InitOptions
@@ -54,6 +55,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Generate .devcontainer configuration")
 	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Enable CI/CD generation")
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
+	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 
 	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Target directory for project initialization")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Git Repository URL")
@@ -208,8 +210,39 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 	// Or we can ask specifically for what's missing.
 
 	interactive := false
-	if ctx.Topology == "" || ctx.WorkflowPattern == "" {
-		interactive = true
+	// Interaction logic:
+	// If NonInteractive is TRUE -> User explicitly wants NO prompts. We must VALIDATE required flags.
+	// If NonInteractive is FALSE -> We default to interactive if critical flags are missing.
+
+	if flags.NonInteractive {
+		// VALIDATION MODE
+		missing := []string{}
+		if ctx.Topology == "" {
+			missing = append(missing, "--topology")
+		}
+		if ctx.WorkflowPattern == "" {
+			missing = append(missing, "--workflow")
+		}
+		// If NOT offline, Git Repo is usually required or at least we warn?
+		// Actually, resolveProjectName handles default if git repo is missing.
+		// So strictness depends on use case. Let's enforce ProjectName if GitRepo is missing.
+		if ctx.GitRepoURL == "" && !flags.Offline {
+			// In interactive we ask. In non-interactive, if ProjectName is also missing, we can't derive it.
+			if ctx.ProjectName == "yby-project" && flags.ProjectName == "" {
+				missing = append(missing, "--project-name OR --git-repo")
+			}
+		}
+
+		if len(missing) > 0 {
+			fmt.Printf("❌ Erro: Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s\n", strings.Join(missing, ", "))
+			os.Exit(1)
+		}
+		interactive = false
+	} else {
+		// Default behavior: specific flags missing trigger interaction
+		if ctx.Topology == "" || ctx.WorkflowPattern == "" {
+			interactive = true
+		}
 	}
 
 	if interactive {

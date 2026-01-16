@@ -27,22 +27,42 @@ Exemplo:
 		fmt.Println(titleStyle.Render("🚀 Yby Setup - Configuração de Ambiente"))
 		fmt.Println("---------------------------------------")
 
+		// 0. Detect Profile
+		profile, _ := cmd.Flags().GetString("profile")
+		if profile != "dev" && profile != "server" {
+			fmt.Println(crossStyle.Render("❌ Perfil inválido. Use 'dev' ou 'server'."))
+			os.Exit(1)
+		}
+		fmt.Printf("🔧 Perfil selecionado: %s\n", profile)
+
 		// 1. Check Tools
-		tools := []struct {
+		type Tool struct {
 			Name        string
 			Cmd         string
 			CheckCmd    []string
 			InstallHelp string
-		}{
-			{"kubectl", "kubectl", []string{"version", "--client"}, "https://kubernetes.io/docs/tasks/tools/"},
-			{"helm", "helm", []string{"version"}, "https://helm.sh/docs/intro/install/"},
-			{"k3d", "k3d", []string{"version"}, "https://k3d.io/v5.4.6/#installation"},
-			{"direnv", "direnv", []string{"version"}, "https://direnv.net/docs/installation.html"},
+		}
+
+		allTools := map[string]Tool{
+			"kubectl": {"kubectl", "kubectl", []string{"version", "--client"}, "https://kubernetes.io/docs/tasks/tools/"},
+			"helm":    {"helm", "helm", []string{"version"}, "https://helm.sh/docs/intro/install/"},
+			"k3d":     {"k3d", "k3d", []string{"version"}, "https://k3d.io/v5.4.6/#installation"},
+			"direnv":  {"direnv", "direnv", []string{"version"}, "https://direnv.net/docs/installation.html"},
+		}
+
+		var selectedTools []Tool
+
+		if profile == "server" {
+			// Server Profile: Minimal tools for operations (kubectl, helm)
+			selectedTools = []Tool{allTools["kubectl"], allTools["helm"]}
+		} else {
+			// Dev Profile: Full stack (incl. k3d, direnv)
+			selectedTools = []Tool{allTools["kubectl"], allTools["helm"], allTools["k3d"], allTools["direnv"]}
 		}
 
 		missing := []string{}
 
-		for _, t := range tools {
+		for _, t := range selectedTools {
 			fmt.Printf("%s Verificando %s... ", stepStyle.Render("🔍"), t.Name)
 			if _, err := exec.LookPath(t.Cmd); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
@@ -54,7 +74,9 @@ Exemplo:
 
 		if len(missing) == 0 {
 			fmt.Println("\n" + checkStyle.Render("✨ Todas as dependências estão instaladas!"))
-			configureDirenv()
+			if profile == "dev" {
+				configureDirenv()
+			}
 			return
 		}
 
@@ -77,15 +99,18 @@ Exemplo:
 			fmt.Println("\nPor favor, instale as ferramentas manualmente e rode 'yby setup' novamente.")
 		}
 
-		// Always try to configure direnv if present
-		if _, err := exec.LookPath("direnv"); err == nil {
-			configureDirenv()
+		// Always try to configure direnv if present and in dev mode
+		if profile == "dev" {
+			if _, err := exec.LookPath("direnv"); err == nil {
+				configureDirenv()
+			}
 		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(setupCmd)
+	setupCmd.Flags().String("profile", "dev", "Perfil de configuração: 'dev' (completo) ou 'server' (operações básicas)")
 }
 
 func attemptInstall(tools []string) {

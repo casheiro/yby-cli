@@ -59,15 +59,24 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 			strings.HasPrefix(relPath, ".devcontainer")
 
 		if isRootAsset {
-			if gitRoot, err := GetGitRoot(); err == nil && gitRoot != "" {
+			// Try to find Git Root
+			gitRoot, err := GetGitRoot()
+
+			// Logic: Use GitRoot if valid.
+			// If GetGitRoot fails (git not found, or not a repo), we fallback.
+			if err == nil && gitRoot != "" {
 				// Repoint to Git Root
 				finalPath = filepath.Join(gitRoot, relPath)
 			} else {
-				// Fallback: If targetDir is explicitly "infra" or "app", assume CWD is root
+				// Fallback:
+				// If error is "git binary not found", we assume CWD is the root we want.
+				// If targetDir is explicitly "infra" or similar, we might still want CWD as root for .github
 				// logic: if targetDir != "." and targetDir != "", try to use CWD
 				if targetDir != "." && targetDir != "" {
 					wd, _ := os.Getwd()
 					finalPath = filepath.Join(wd, relPath)
+					// Log warning only once? Or just be silent in non-verbose?
+					// fmt.Printf("⚠️  Git root not found (using CWD): %s\n", relPath)
 				}
 			}
 		}
@@ -105,6 +114,12 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 }
 
 func GetGitRoot() (string, error) {
+	// Check if git is installed
+	_, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("git binary not found")
+	}
+
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
