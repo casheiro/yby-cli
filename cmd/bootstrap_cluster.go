@@ -52,8 +52,8 @@ var bootstrapClusterCmd = &cobra.Command{
 		blueprintRepo := getRepoURLFromBlueprint(root)
 
 		// 1. Pre-checks
-		checkEnvVars(blueprintRepo)
 		ensureToolsInstalled()
+		checkEnvVars(blueprintRepo)
 
 		// 1. Ensure Template Assets (Self-Repair)
 		// This must happen before reading blueprint or applying manifests
@@ -187,16 +187,27 @@ func checkEnvVars(blueprintRepo string) {
 
 	// GITHUB_TOKEN Strategy: Env > Check Context > Warn/Fail
 	if os.Getenv("GITHUB_TOKEN") == "" {
-		// Looser check: if running locally, we tolerate missing token
-		// contextFlag is global from root.go
+		// 1. Looser check: if running locally, we tolerate missing token
 		isLocal := (contextFlag == "local" || os.Getenv("YBY_ENV") == "local")
 
-		if isLocal {
-			fmt.Println(warningStyle.Render("⚠️  GITHUB_TOKEN não definido. Operando em modo Local Mirror (sem autenticação upstream)."))
-			fmt.Println("   (Se seu repositório for privado, o ArgoCD pode falhar ao sincronizar)")
+		// 2. Secret Check: If secret already exists in cluster, we can proceed
+		// This requires kubectl to be working (ensureToolsInstalled called before)
+		secretExists := false
+		if err := exec.Command("kubectl", "get", "secret", "argocd-repo-creds", "-n", "argocd").Run(); err == nil {
+			secretExists = true
+			fmt.Println(checkStyle.Render("✅ Credenciais GitHub encontradas no cluster (Secret: argocd-repo-creds)."))
+		}
+
+		if isLocal || secretExists {
+			if !secretExists {
+				fmt.Println(warningStyle.Render("⚠️  GITHUB_TOKEN não definido. Operando em modo Local Mirror (sem autenticação upstream)."))
+				fmt.Println("   (Se seu repositório for privado, o ArgoCD pode falhar ao sincronizar)")
+			} else {
+				fmt.Println("   Ignorando verificação de token de ambiente.")
+			}
 		} else {
 			fmt.Println(crossStyle.Render("❌ Variável GITHUB_TOKEN faltando."))
-			fmt.Println(warningStyle.Render("Necessário para bootstrap em ambientes remotos."))
+			fmt.Println(warningStyle.Render("Necessário para bootstrap em ambientes remotos ou sem credenciais prévias."))
 			os.Exit(1)
 		}
 	}

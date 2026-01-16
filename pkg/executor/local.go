@@ -4,6 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+var (
+	warningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // Orange
 )
 
 type LocalExecutor struct{}
@@ -33,7 +39,19 @@ func (e *LocalExecutor) Run(name, script string) error {
 }
 
 func (e *LocalExecutor) FetchFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return data, nil
+	}
+
+	// If Permission Denied, try sudo
+	if os.IsPermission(err) {
+		fmt.Println(warningStyle.Render("⚠️  Permissão negada. Tentando leitura com sudo..."))
+		cmd := exec.Command("sudo", "cat", path)
+		return cmd.CombinedOutput()
+	}
+
+	return nil, err
 }
 
 func (e *LocalExecutor) Close() error {
