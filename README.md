@@ -16,6 +16,7 @@ A **Yby CLI** não é apenas um gerador de scaffolds; é a interface unificada p
 
 - **Agnóstico**: Suporte a topologias flexíveis (`local`, `standard`, `complete`) via `blueprint.yaml`.
 - **Offline & Self-Contained**: Dev local (`yby dev`) funciona totalmente offline com Mirror Git interno.
+- **Self-Provisioning**: Configure e opere clusters diretamente de dentro da VPS (`--local`) sem dependências externas.
 - **Monorepo Ready**: Suporte nativo para infraestrutura em subdiretórios (`infra/`) com CI/CD na raiz.
 - **Ecofuturista**: Padrões nativos para eficiência energética (Kepler) e scale-to-zero (KEDA).
 - **GitOps Puro**: Tudo é gerenciado via Argo CD. Sem comandos imperativos no cluster.
@@ -76,6 +77,22 @@ Transforme um cluster Kubernetes vazio (local ou remoto) em uma plataforma compl
 yby bootstrap cluster
 ```
 > O comando detectará automaticamente se é um cluster local ou remoto e aplicará as configurações apropriadas.
+
+### 3. Modo Server (Self-Provisioning) 🆕
+
+Configure sua VPS diretamente de dentro dela, sem SSH reverso ou máquinas de controle externas.
+
+```bash
+# 1. Prepare o ambiente (Instala apenas kubectl/helm)
+yby setup --profile=server
+
+# 2. Provisione a própria máquina (K3s/Docker)
+# (O CLI detecta o ambiente Linux e pergunta se deseja usar localhost)
+yby bootstrap vps
+
+# 3. Instale o GitOps no cluster local
+yby bootstrap cluster
+```
 
 ---
 
