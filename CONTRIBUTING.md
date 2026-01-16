@@ -81,4 +81,7 @@ go test ./... -v
 
 # Rodar linter (se tiver golangci-lint instalado)
 golangci-lint run
+
+# Validar modo Server (Self-Provisioning)
+go run main.go setup --profile=server
 ```
