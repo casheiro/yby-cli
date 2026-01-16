@@ -78,13 +78,6 @@ Pré-requisitos (verificados automaticamente):
 				}
 			}
 
-			// If still no host (and didn't switch to local), proceed to legacy checks or fail
-			if !isLocal {
-				// Fallback to Manifesto (.yby/environments.yaml) could be implemented here
-				// But for now, let's stick to flags as the primary interface for "infrastructure as code" inputs
-				// or assume values are passed via CI/CD.
-			}
-
 			// Legacy .env support (Deprecation Warning)
 			if host == "" {
 				// Try loading .env only if strictly necessary
