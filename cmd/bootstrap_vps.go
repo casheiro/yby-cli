@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/executor"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -57,9 +59,24 @@ Pré-requisitos (verificados automaticamente):
 			user := vpsUser
 			port := vpsPort
 
-			// Fallback to Manifesto (.yby/environments.yaml) could be implemented here
-			// But for now, let's stick to flags as the primary interface for "infrastructure as code" inputs
-			// or assume values are passed via CI/CD.
+			// Smart Local Detection:
+			// If no host provided, and we are on Linux, ask if user wants to provision THIS machine.
+			if host == "" && runtime.GOOS == "linux" {
+				confirmLocal := false
+				prompt := &survey.Confirm{
+					Message: "Nenhum host remoto definido. Deseja provisionar ESTA máquina como uma VPS Yby (localhost)?",
+					Default: false,
+				}
+				_ = survey.AskOne(prompt, &confirmLocal)
+
+				if confirmLocal {
+					isLocal = true
+					fmt.Println(stepStyle.Render("🔄 Alternando para modo Auto-Provisionamento (Local)"))
+					// Re-initialize as local
+					execClient = executor.NewLocalExecutor()
+					host = "127.0.0.1"
+				}
+			}
 
 			// Legacy .env support (Deprecation Warning)
 			if host == "" {
@@ -83,12 +100,14 @@ Pré-requisitos (verificados automaticamente):
 
 			fmt.Printf("%s Conectando a %s@%s:%s...\n", stepStyle.Render("📡"), user, host, port)
 
-			// 2. Conexão SSH
-			var err error
-			execClient, err = executor.NewSSHExecutor(user, host, port)
-			if err != nil {
-				fmt.Printf("%s Erro na conexão SSH: %v\n", crossStyle.String(), err)
-				return
+			// 2. Conexão SSH (Only if not swapped to local)
+			if !isLocal {
+				var err error
+				execClient, err = executor.NewSSHExecutor(user, host, port)
+				if err != nil {
+					fmt.Printf("%s Erro na conexão SSH: %v\n", crossStyle.String(), err)
+					return
+				}
 			}
 		}
 		defer execClient.Close()
