@@ -6,13 +6,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/filesystem"
+	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +93,28 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
 		// 1. Build Context (Merge Flags + Prompts)
+		// Initialize Plugin Manager
+		pm := plugin.NewManager()
+		if err := pm.Discover(); err != nil {
+			fmt.Printf("⚠️  Erro na descoberta de plugins: %v\n", err)
+		} else {
+			plugins := pm.ListPlugins()
+			if len(plugins) > 0 {
+				fmt.Printf("🔌 %d Plugins carregados: ", len(plugins))
+				names := []string{}
+				for _, p := range plugins {
+					names = append(names, p.Name)
+				}
+				fmt.Println(strings.Join(names, ", "))
+			}
+		}
+
 		ctx := buildContext(&opts)
+
+		// Hook: context (Enrich BlueprintContext)
+		if err := pm.ExecuteContextHook(ctx); err != nil {
+			fmt.Printf("⚠️  Erro no hook 'context' dos plugins: %v\n", err)
+		}
 
 		// 2. Execute Scaffold
 		fmt.Println("🚀 Gerando arquivos...")
@@ -98,7 +123,36 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		if opts.TargetDir != "" {
 			targetDir = opts.TargetDir
 		}
-		if err := scaffold.Apply(targetDir, ctx); err != nil {
+
+		// Prepare CompositeFS
+		// Layers: [Plugins Assets...] + [Core Embed Assets]
+		// LIFO: Plugin adds layer to be checked BEFORE core.
+		// CompositeFS iterates backwards. So we want Core at index 0?
+		// NewCompositeFS(layers...). Open iterates len-1 down to 0.
+		// So if we want Plugin to override Core, Plugin must be AT HIGHER INDEX.
+		// Layers: [Core, Plugin1, Plugin2]
+		// Open -> check Plugin2, then Plugin1, then Core.
+
+		layers := []fs.FS{templates.Assets} // Core at base
+
+		// Hook: assets (Get local paths)
+		assetPaths := pm.GetAssets()
+		for _, path := range assetPaths {
+			// Add as os.DirFS
+			// Note: We need to ensure the structure inside path matches "assets/..." expectation of engine?
+			// Engine walks "assets". So if plugin returns "/path/to/plugin/assets",
+			// and inside that we have "assets/file.yaml", it works.
+			// Or does plugin return root that CONTAINS assets folder?
+			// Let's assume plugin returns path that HAS "assets" subdirectory or IS the root?
+			// Standard: Plugin assets folder should probably replicate structure.
+			// If engine walks "assets", then FS.Open("assets/...") is called.
+			// So os.DirFS(path) works if path contains "assets".
+			layers = append(layers, os.DirFS(path))
+		}
+
+		compositeFS := filesystem.NewCompositeFS(layers...)
+
+		if err := scaffold.Apply(targetDir, ctx, compositeFS); err != nil {
 			fmt.Printf("❌ Erro ao gerar scaffold: %v\n", err)
 			os.Exit(1)
 		}

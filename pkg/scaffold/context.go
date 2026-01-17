@@ -36,4 +36,7 @@ type BlueprintContext struct {
 	Archetype       string // e.g. "Microservices", "Monolith"
 	GithubDiscovery bool
 	GithubOrg       string
+
+	// [NEW] Dynamic Data injected by plugins
+	Data map[string]interface{}
 }

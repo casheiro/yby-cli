@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# Plugin Manifest
+PLUGIN_NAME="hello-world-sh"
+PLUGIN_VERSION="0.1.0"
+
+# Lê o input JSON do STDIN
+input=$(cat)
+
+# Extrai o hook da requisição
+hook=$(echo "$input" | jq -r '.hook')
+
+case "$hook" in
+  "manifest")
+    # Retorna o manifesto do plugin
+    echo "{\"name\": \"$PLUGIN_NAME\", \"version\": \"$PLUGIN_VERSION\", \"hooks\": [\"context\"]}"
+    ;;
+  
+  "context")
+    # Injeta variáveis no contexto
+    context=$(echo "$input" | jq -r '.context')
+    
+    # Exemplo simples: Adiciona uma saudação
+    echo "{\"data\": {\"GREETING_FROM_SHELL\": \"Hello from Shell Plugin!\"}}"
+    ;;
+    
+  *)
+    # Hook não suportado ou erro
+    echo "{\"error\": \"Hook '$hook' not implemented\"}" >&2
+    exit 1
+    ;;
+esac
