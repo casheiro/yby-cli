@@ -60,10 +60,6 @@ func (c *CompositeFS) ReadDir(name string) ([]fs.DirEntry, error) {
 					entries[e.Name()] = e
 				}
 			}
-		} else {
-			// Fallback: This simple composite assumes layers implement ReadDirFS.
-			// Enhancing this to support pure fs.FS would require opening the dir and reading.
-			// Ignoring layers that don't support ReadDirFS for directory listing.
 		}
 	}
 

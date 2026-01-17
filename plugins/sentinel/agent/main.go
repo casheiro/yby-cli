@@ -76,7 +76,7 @@ func main() {
 		go AnalyzeEvent(watchEvent.Object)
 	}
 
-	cmd.Wait() // Should not reach here normally
+	_ = cmd.Wait() // Should not reach here normally
 }
 
 // AnalyzeEvent checks if an event is critical. Returns true if critical.

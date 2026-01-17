@@ -17,7 +17,7 @@ var pluginCmd = &cobra.Command{
 	Short: "Gerencia plugins do YBY CLI",
 	Long:  `Lista, instala e gerencia plugins que estendem as funcionalidades da CLI.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

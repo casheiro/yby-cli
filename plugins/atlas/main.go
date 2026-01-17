@@ -59,6 +59,6 @@ func respond(data interface{}) {
 
 func fail(err error) {
 	resp := plugin.PluginResponse{Error: err.Error()}
-	json.NewEncoder(os.Stdout).Encode(resp)
+	_ = json.NewEncoder(os.Stdout).Encode(resp)
 	os.Exit(1)
 }

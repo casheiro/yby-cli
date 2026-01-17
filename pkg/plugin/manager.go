@@ -178,7 +178,9 @@ func (m *Manager) ExecuteContextHook(ctx *scaffold.BlueprintContext) error {
 	// We can use JSON marshalling.
 	ctxBytes, _ := json.Marshal(ctx)
 	var ctxMap map[string]interface{}
-	json.Unmarshal(ctxBytes, &ctxMap)
+	if err := json.Unmarshal(ctxBytes, &ctxMap); err != nil {
+		return err
+	}
 
 	for _, p := range m.plugins {
 		supports := false

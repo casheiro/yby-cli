@@ -135,5 +135,5 @@ func investigate(podName, namespace string) {
 
 func respond(data interface{}) {
 	resp := plugin.PluginResponse{Data: data}
-	json.NewEncoder(os.Stdout).Encode(resp)
+	_ = json.NewEncoder(os.Stdout).Encode(resp)
 }
