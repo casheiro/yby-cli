@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -185,4 +186,84 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 	}
 
 	return &blueprint, nil
+}
+
+func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	// Auto-detect model if possible
+	if err := p.resolveModel(ctx); err != nil {
+		return "", fmt.Errorf("ollama model check failed: %w", err)
+	}
+
+	reqBody := ollamaRequest{
+		Model:  p.Model,
+		Prompt: userPrompt,
+		System: systemPrompt,
+		Stream: false,
+	}
+
+	jsonBody, _ := json.Marshal(reqBody)
+	client := http.Client{Timeout: 300 * time.Second}
+
+	resp, err := client.Post(p.BaseURL+"/api/generate", "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to call ollama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("ollama returned status: %d", resp.StatusCode)
+	}
+
+	var oResp ollamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
+		return "", fmt.Errorf("failed to decode ollama response: %w", err)
+	}
+
+	return oResp.Response, nil
+}
+
+func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
+	// Auto-detect model if possible
+	if err := p.resolveModel(ctx); err != nil {
+		return fmt.Errorf("ollama model check failed: %w", err)
+	}
+
+	reqBody := ollamaRequest{
+		Model:  p.Model,
+		Prompt: userPrompt,
+		System: systemPrompt,
+		Stream: true,
+	}
+
+	jsonBody, _ := json.Marshal(reqBody)
+	client := http.Client{Timeout: 300 * time.Second}
+
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/api/generate", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call ollama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("ollama returned status: %d", resp.StatusCode)
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		var oResp ollamaResponse
+		if err := decoder.Decode(&oResp); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		if _, err := io.WriteString(out, oResp.Response); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

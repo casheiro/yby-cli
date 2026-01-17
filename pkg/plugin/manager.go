@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,4 +226,57 @@ func (m *Manager) ListPlugins() []PluginManifest {
 		list[i] = p.Manifest
 	}
 	return list
+}
+
+// Install downloads and installs a native plugin.
+// Supports: "file:///path/to/binary" or plain "binary_name" (needs repository URL logic, unimplemented).
+// For now, we allow installing from local file path or "built-in" path relative to CWD for dev.
+func (m *Manager) Install(pluginSource, version string) error {
+	fmt.Printf("📦 Installing plugin from %s...\n", pluginSource)
+
+	// Determine source path
+	var srcPath string
+	if strings.HasPrefix(pluginSource, "file://") {
+		srcPath = strings.TrimPrefix(pluginSource, "file://")
+	} else {
+		// Assume it might be a local file if exists
+		if _, err := os.Stat(pluginSource); err == nil {
+			srcPath = pluginSource
+		} else {
+			return fmt.Errorf("plugin source not found or scheme not supported yet: %s", pluginSource)
+		}
+	}
+
+	// Determine destination
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home: %w", err)
+	}
+	pluginsDir := filepath.Join(home, ".yby", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins dir: %w", err)
+	}
+
+	pluginName := filepath.Base(srcPath)
+	destPath := filepath.Join(pluginsDir, pluginName)
+
+	// Copy
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.OpenFile(destPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return fmt.Errorf("failed to copy binary: %w", err)
+	}
+
+	fmt.Printf("✅ Plugin %s installed successfully to %s\n", pluginName, destPath)
+	return nil
 }
