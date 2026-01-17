@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -127,4 +128,56 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 	}
 
 	return &blueprint, nil
+}
+
+func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
+
+	// Context + User Prompt
+	fullPrompt := fmt.Sprintf("%s\n\nUSER PROMPT: %s", systemPrompt, userPrompt)
+
+	reqBody := geminiRequest{
+		Contents: []geminiContent{
+			{
+				Parts: []geminiPart{
+					{Text: fullPrompt},
+				},
+			},
+		},
+		// No specific response mime type force, let it be text
+	}
+
+	jsonBody, _ := json.Marshal(reqBody)
+	client := http.Client{Timeout: 60 * time.Second}
+
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to call gemini: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("gemini returned status: %d", resp.StatusCode)
+	}
+
+	var gResp geminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
+		return "", fmt.Errorf("failed to decode gemini response: %w", err)
+	}
+
+	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from gemini")
+	}
+
+	return gResp.Candidates[0].Content.Parts[0].Text, nil
+}
+
+func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
+	// Fallback to non-streaming for now to satisfy interface
+	text, err := p.Completion(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(out, text)
+	return err
 }

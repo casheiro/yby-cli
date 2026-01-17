@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -110,4 +111,123 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	}
 
 	return &blueprint, nil
+}
+
+func (p *OpenAIProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	reqBody := openAIRequest{
+		Model: p.Model,
+		Messages: []openAIMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+	}
+	// No JSON format constraint for general completion
+
+	jsonBody, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+
+	client := http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to call openai: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("openai returned status: %d", resp.StatusCode)
+	}
+
+	var oResp openAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
+		return "", fmt.Errorf("failed to decode openai response: %w", err)
+	}
+
+	if len(oResp.Choices) == 0 {
+		return "", fmt.Errorf("empty response from openai")
+	}
+
+	return oResp.Choices[0].Message.Content, nil
+}
+
+// StreamCompletion implements a simple SSE reader for OpenAI
+func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
+	type streamRequest struct {
+		Model    string          `json:"model"`
+		Messages []openAIMessage `json:"messages"`
+		Stream   bool            `json:"stream"`
+	}
+
+	reqStruct := streamRequest{
+		Model: p.Model,
+		Messages: []openAIMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+		Stream: true,
+	}
+
+	jsonBody, _ := json.Marshal(reqStruct)
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/chat/completions", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+
+	client := http.Client{} // No timeout for streaming
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call openai stream: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("openai returned status: %d", resp.StatusCode)
+	}
+
+	// Simple SSE Parser
+	// Reads line by line. Looks for "data: "
+	// "data: [DONE]" -> finish
+	// "data: {...}" -> parse choices[0].delta.content
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := string(buf[:n])
+			lines := strings.Split(chunk, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "data: ") {
+					data := strings.TrimPrefix(line, "data: ")
+					if data == "[DONE]" {
+						return nil
+					}
+					// Parse JSON
+					var steamResp struct {
+						Choices []struct {
+							Delta struct {
+								Content string `json:"content"`
+							} `json:"delta"`
+						} `json:"choices"`
+					}
+					if err := json.Unmarshal([]byte(data), &steamResp); err == nil {
+						if len(steamResp.Choices) > 0 {
+							content := steamResp.Choices[0].Delta.Content
+							if content != "" {
+								if _, err := io.WriteString(out, content); err != nil {
+									return err
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+	return nil
 }
