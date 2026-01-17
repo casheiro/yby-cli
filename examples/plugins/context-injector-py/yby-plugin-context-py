@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+import sys
+import json
+import datetime
+import os
+
+def main():
+    # Lê o input JSON do STDIN
+    try:
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        print(json.dumps({"error": "Invalid JSON input"}), file=sys.stderr)
+        sys.exit(1)
+
+    hook = input_data.get("hook")
+
+    if hook == "manifest":
+        # Retorna a identidade do plugin
+        response = {
+            "name": "context-injector-py",
+            "version": "1.0.0",
+            "hooks": ["context"]
+        }
+        print(json.dumps(response))
+
+    elif hook == "context":
+        # Injeta variáveis no contexto
+        context = input_data.get("context", {})
+        
+        # Exemplo de lógica complexa: Adicionar timestamp e usuário
+        new_data = {
+            "GENERATION_TIMESTAMP": datetime.datetime.now().isoformat(),
+            "OPERATOR_USER": os.environ.get("USER", "unknown"),
+            "PYTHON_VERSION": sys.version.split()[0]
+        }
+        
+        print(json.dumps({"data": new_data}))
+
+    else:
+        # Hook desconhecido
+        print(json.dumps({"error": f"Hook '{hook}' not implemented"}), file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

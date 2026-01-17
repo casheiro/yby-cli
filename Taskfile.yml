@@ -1,0 +1,25 @@
+version: "3"
+
+tasks:
+  default:
+    cmds:
+      - task: build
+
+  build:
+    desc: Build all binaries
+    cmds:
+      - go build -o bin/yby ./cmd/yby
+      - go build -o bin/yby-plugin-atlas ./plugins/atlas
+      - go build -o bin/yby-plugin-bard ./plugins/bard
+      - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
+      - go build -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./pkg/... ./plugins/...
+
+  clean:
+    desc: Clean bin directory
+    cmds:
+      - rm -rf bin/

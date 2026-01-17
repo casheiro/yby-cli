@@ -149,6 +149,20 @@ yby context show
 
 ---
 
+## 🔌 Extensibilidade (Plugins)
+
+O Yby CLI suporta um sistema robusto de plugins, permitindo estender suas capacidades usando qualquer linguagem de programação.
+
+- **Crie seus próprios comandos**
+- **Injete variáveis de contexto** personalizadas nos templates
+- **Compartilhe ferramentas** com sua equipe via repositório
+
+Consulte a documentação completa:
+- [Guia do Usuário](docs/wiki/Plugin-Usage.md) - Como instalar e gerenciar plugins.
+- [Guia do Desenvolvedor](docs/wiki/Plugin-Developer-Guide.md) - Como criar seus próprios plugins.
+
+---
+
 ## 🤖 Governança e IA (DevGovOps)
 
 Este projeto adota o padrão **DevGovOps**, integrando governança diretamente no fluxo de desenvolvimento assistido por IA.

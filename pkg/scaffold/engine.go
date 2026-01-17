@@ -8,14 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-
-	"github.com/casheiro/yby-cli/pkg/templates"
 )
 
-// Apply executes the scaffold process based on the provided context.
-func Apply(targetDir string, ctx *BlueprintContext) error {
-	// 1. Walk through embedded assets
-	err := fs.WalkDir(templates.Assets, "assets", func(path string, d fs.DirEntry, err error) error {
+// Apply executes the scaffold process based on the provided context and source filesystem.
+func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
+	// 1. Walk through assets in the provided filesystem
+	// Note: We assume the sourceFS root IS the assets root or contains "assets" folder?
+	// The CompositeFS will contain layers.
+	// We need to decide if we walk "." or "assets".
+	// Engine usually expected "assets" prefix in embed.FS.
+	// Let's assume sourceFS contains "assets" directory at root if it replaces templates.Assets.
+	err := fs.WalkDir(sourceFS, "assets", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -103,7 +106,7 @@ func Apply(targetDir string, ctx *BlueprintContext) error {
 		}
 
 		// 6. Render or Copy File
-		return processFile(path, finalPath, ctx)
+		return processFile(sourceFS, path, finalPath, ctx)
 	})
 
 	if err != nil {
@@ -128,14 +131,14 @@ func GetGitRoot() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func processFile(srcPath, destPath string, ctx *BlueprintContext) error {
+func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) error {
 	// Ensure parent dir exists
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
 
-	// Read source content from embed.FS
-	content, err := fs.ReadFile(templates.Assets, srcPath)
+	// Read source content from provided FS
+	content, err := fs.ReadFile(fsys, srcPath)
 	if err != nil {
 		return err
 	}
