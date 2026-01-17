@@ -13,5 +13,6 @@
                 "redhat.vscode-yaml"
             ]
         }
-    }
+    },
+    "postCreateCommand": "curl -sL https://github.com/casheiro/yby-cli/releases/latest/download/install.sh | bash"
 }

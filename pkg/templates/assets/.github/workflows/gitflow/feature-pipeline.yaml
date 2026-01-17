@@ -23,12 +23,13 @@ jobs:
         with:
           version: "v3.11.1"
 
-      - name: 🧪 Run Validation
+      - name: 📥 Install Yby CLI
         run: |
-          helm dependency update charts/bootstrap
-          helm lint charts/bootstrap
-          helm dependency update charts/cluster-config
-          helm lint charts/cluster-config
+          curl -sL https://github.com/casheiro/yby-cli/releases/latest/download/yby_linux_amd64.tar.gz | tar xz
+          sudo mv yby /usr/local/bin/
+
+      - name: 🧪 Run Validation
+        run: yby validate
 
   create-pr-to-develop:
     name: 🎁 Create PR to Develop
