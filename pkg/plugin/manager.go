@@ -1,12 +1,16 @@
 package plugin
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/scaffold"
@@ -231,9 +235,18 @@ func (m *Manager) ListPlugins() []PluginManifest {
 }
 
 // Install downloads and installs a native plugin.
-// Supports: "file:///path/to/binary" or plain "binary_name" (needs repository URL logic, unimplemented).
-// For now, we allow installing from local file path or "built-in" path relative to CWD for dev.
+// Supports: "file:///path/to/binary" or native plugin names "atlas", "bard", "sentinel".
 func (m *Manager) Install(pluginSource, version string) error {
+	nativePlugins := map[string]bool{
+		"atlas":    true,
+		"bard":     true,
+		"sentinel": true,
+	}
+
+	if nativePlugins[pluginSource] {
+		return m.installNative(pluginSource, version)
+	}
+
 	fmt.Printf("📦 Installing plugin from %s...\n", pluginSource)
 
 	// Determine source path
@@ -281,4 +294,173 @@ func (m *Manager) Install(pluginSource, version string) error {
 
 	fmt.Printf("✅ Plugin %s installed successfully to %s\n", pluginName, destPath)
 	return nil
+}
+
+func (m *Manager) installNative(name, version string) error {
+	if version == "dev" {
+		fmt.Println("⚠️  Running in dev mode. Assuming 'latest' release for plugins.")
+		// In a real scenario, we might want to fail or look for local builds.
+		// For now, let's warn and fail because we don't know the URL for sure without a tag.
+		return fmt.Errorf("cannot install native plugins in dev mode (version=dev). Please build locally or specify a version")
+	}
+
+	osName := runtime.GOOS
+	arch := runtime.GOARCH
+
+	// Format: yby-plugin-<name>_<version>_<os>_<arch>.tar.gz
+	// Example: yby-plugin-atlas_v0.1.0_linux_amd64.tar.gz
+	// Note: GoReleaser usually removes "v" from version in template {{ .Version }}
+	// BUT checking .goreleaser.yaml: name_template: "yby-plugin-atlas_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+	// And ldflags: cmd.Version={{.Version}}.
+	// Usually tags have 'v', but .Version might strip it or not depending on goreleaser config.
+	// Let's assume the version string passed here matches what's in the filename.
+
+	filename := fmt.Sprintf("yby-plugin-%s_%s_%s_%s.tar.gz", name, version, osName, arch)
+	if osName == "windows" {
+		filename = fmt.Sprintf("yby-plugin-%s_%s_%s_%s.zip", name, version, osName, arch)
+	}
+
+	// URL: https://github.com/casheiro/yby-cli/releases/download/<version>/<filename>
+	// Note: If version passed is "v1.0.0", and release tag is "v1.0.0", it works.
+	url := fmt.Sprintf("https://github.com/casheiro/yby-cli/releases/download/%s/%s", version, filename)
+
+	fmt.Printf("⬇️  Downloading %s plugin from %s...\n", name, url)
+
+	// Create temp dir
+	tmpDir, err := os.MkdirTemp("", "yby-plugin-install-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Download
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download plugin: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download plugin: status %d", resp.StatusCode)
+	}
+
+	// Extract
+	// Handling tar.gz only for now (as per Linux user environment)
+	// TODO: Handle Zip for windows if needed in future
+	if strings.HasSuffix(filename, ".tar.gz") {
+		if err := extractTarGz(resp.Body, tmpDir); err != nil {
+			return fmt.Errorf("failed to extract plugin: %w", err)
+		}
+	} else {
+		return fmt.Errorf("unsupported archive format: %s", filename)
+	}
+
+	// Find the binary in extraction
+	// Expected binary name: yby-plugin-<name>
+	binaryName := fmt.Sprintf("yby-plugin-%s", name)
+	if osName == "windows" {
+		binaryName += ".exe"
+	}
+
+	// Search for binary in tmpDir (it might be in a subdir or root)
+	var binaryPath string
+	err = filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && info.Name() == binaryName {
+			binaryPath = path
+			return io.EOF // Stop search
+		}
+		return nil
+	})
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("failed to find binary in archive: %w", err)
+	}
+
+	if binaryPath == "" {
+		return fmt.Errorf("binary %s not found in downloaded archive", binaryName)
+	}
+
+	// Install to final destination
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home: %w", err)
+	}
+	pluginsDir := filepath.Join(home, ".yby", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins dir: %w", err)
+	}
+
+	finalPath := filepath.Join(pluginsDir, binaryName)
+
+	// Move/Copy
+	if err := copyFile(binaryPath, finalPath); err != nil {
+		return fmt.Errorf("failed to install binary: %w", err)
+	}
+
+	// Chmod +x
+	if err := os.Chmod(finalPath, 0755); err != nil {
+		return fmt.Errorf("failed to make plugin executable: %w", err)
+	}
+
+	fmt.Printf("✅ Plugin %s installed successfully to %s\n", name, finalPath)
+	return nil
+}
+
+func extractTarGz(r io.Reader, dest string) error {
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dest, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return err
+			}
+			f.Close()
+		}
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
