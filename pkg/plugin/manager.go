@@ -374,6 +374,9 @@ func (m *Manager) installNative(name, version string) error {
 		}
 		return nil
 	})
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("failed to find binary in archive: %w", err)
+	}
 
 	if binaryPath == "" {
 		return fmt.Errorf("binary %s not found in downloaded archive", binaryName)
