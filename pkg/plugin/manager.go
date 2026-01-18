@@ -320,9 +320,14 @@ func (m *Manager) installNative(name, version string) error {
 		filename = fmt.Sprintf("yby-plugin-%s_%s_%s_%s.zip", name, version, osName, arch)
 	}
 
-	// URL: https://github.com/casheiro/yby-cli/releases/download/<version>/<filename>
-	// Note: If version passed is "v1.0.0", and release tag is "v1.0.0", it works.
-	url := fmt.Sprintf("https://github.com/casheiro/yby-cli/releases/download/%s/%s", version, filename)
+	// URL: https://github.com/casheiro/yby-cli/releases/download/<tag>/<filename>
+	// Note: Release tags usually start with 'v', but artifact filenames (from goreleaser) do not always.
+	// We need to ensure the tag component has 'v'.
+	tag := version
+	if !strings.HasPrefix(tag, "v") {
+		tag = "v" + tag
+	}
+	url := fmt.Sprintf("https://github.com/casheiro/yby-cli/releases/download/%s/%s", tag, filename)
 
 	fmt.Printf("⬇️  Downloading %s plugin from %s...\n", name, url)
 
