@@ -3,5 +3,5 @@ package main
 import "fmt"
 
 func main() {
-fmt.Println("Hello from Oracle CLI")
+	fmt.Println("Olá da CLI Oracle")
 }

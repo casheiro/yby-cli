@@ -22,7 +22,12 @@ dist/
 
 # Local binary
 yby
+yby-sentinel
 yby-cli
+bin/
+.yby/
+bin/
+.yby/
 
 !yby/
 !.agent/
@@ -48,3 +53,6 @@ Thumbs.db
 
 # Vagrant
 **/.vagrant
+
+prd.md
+spec.md
