@@ -10,12 +10,20 @@ import (
 )
 
 func main() {
-	// Read request from Stdin
 	var req plugin.PluginRequest
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
-		// If running without input (manual run?), just print generic error or help
-		// But strictly speaking, it expects JSON.
-		fail(fmt.Errorf("failed to decode request: %w", err))
+
+	// 1. Check for Environment Variable Protocol
+	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
+		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+			fail(fmt.Errorf("failed to decode request from env: %w", err))
+		}
+	} else {
+		// 2. Fallback to Stdin
+		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+			// If running without input (manual run?), just print generic error or help
+			// But strictly speaking, it expects JSON.
+			fail(fmt.Errorf("failed to decode request from stdin: %w", err))
+		}
 	}
 
 	switch req.Hook {

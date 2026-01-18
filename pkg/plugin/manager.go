@@ -226,12 +226,40 @@ func (m *Manager) ExecuteContextHook(ctx *scaffold.BlueprintContext) error {
 	return nil
 }
 
-func (m *Manager) ListPlugins() []PluginManifest {
-	list := make([]PluginManifest, len(m.plugins))
-	for i, p := range m.plugins {
-		list[i] = p.Manifest
+// ExecuteCommandHook runs the 'command' hook on a specific plugin.
+// This is used when the plugin is invoked directly as a CLI subcommand (e.g., "yby bard").
+func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
+	var targetPlugin *LoadedPlugin
+	for _, p := range m.plugins {
+		if p.Manifest.Name == pluginName {
+			targetPlugin = &p
+			break
+		}
 	}
-	return list
+
+	if targetPlugin == nil {
+		return fmt.Errorf("plugin %s not found", pluginName)
+	}
+
+	// Prepare Request
+	// For now, we don't have a full Blueprint context when running independent commands
+	// But we can add it later if needed.
+	req := PluginRequest{
+		Hook:    "command",
+		Args:    args,
+		Context: make(map[string]interface{}),
+	}
+
+	fmt.Printf("🚀 Executing plugin: %s\n", pluginName)
+	return m.executor.RunInteractive(context.Background(), targetPlugin.Path, req)
+}
+
+func (m *Manager) ListPlugins() []PluginManifest {
+	var manifests []PluginManifest
+	for _, p := range m.plugins {
+		manifests = append(manifests, p.Manifest)
+	}
+	return manifests
 }
 
 // Install downloads and installs a native plugin.

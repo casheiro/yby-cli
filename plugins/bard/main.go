@@ -14,24 +14,30 @@ import (
 )
 
 func main() {
-	// 1. Check arguments. If run as "yby bard", likely initiated by CLI via Executor
-	//    But "plugin" usually implies "command" hook.
-	//    The Core CLI invokes binary with JSON on Stdin.
-	//    However, for a "command" plugin, it might take over the TUI.
+	var req plugin.PluginRequest
 
-	// Check if stdin has data (Plugin Request) or is interactive
+	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
+	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
+		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+			fmt.Printf("Error parsing YBY_PLUGIN_REQUEST: %v\n", err)
+			os.Exit(1)
+		}
+		handlePluginRequest(req)
+		return
+	}
+
+	// 2. Check for Stdin Protocol (Legacy/Automation)
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
 		// Data on pipe -> Plugin Request
-		var req plugin.PluginRequest
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
 			handlePluginRequest(req)
 			return
 		}
 	}
 
-	// Falls back to direct execution (dev mode or if invoked directly)
-	// mock request
+	// 3. Fallback / Dev Mode
+	// Mock request for development or direct invocation without context
 	handlePluginRequest(plugin.PluginRequest{Hook: "command"})
 }
 
