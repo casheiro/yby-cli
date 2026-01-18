@@ -115,8 +115,20 @@ func investigate(podName, namespace string) {
 		fmt.Printf("⚠️  Failed to get events: %v\n", err)
 	}
 
+	// 3. Get Metrics (CPU/RAM)
+	cmdMetrics := execCommand("kubectl", "top", "pod", podName, "-n", namespace, "--no-headers")
+	metricsOut, errMet := cmdMetrics.CombinedOutput()
+	metricsStr := ""
+	if errMet != nil {
+		fmt.Printf("⚠️  Metrics not available (is metrics-server installed?): %v\n", errMet)
+		metricsStr = "Metrics unavailable"
+	} else {
+		metricsStr = string(metricsOut)
+		fmt.Printf("📊 Metrics: %s", metricsStr)
+	}
+
 	// Construct Context for AI
-	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s", string(logsOut), string(eventsOut))
+	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", string(logsOut), string(eventsOut), metricsStr)
 
 	if len(strings.TrimSpace(realContext)) < 20 {
 		fmt.Println("❌ No sufficient data (logs/events) gathered to analyze.")
