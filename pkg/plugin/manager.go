@@ -524,6 +524,9 @@ func (m *Manager) installFromURL(url string) error {
 			}
 			return nil
 		})
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("failed to walk source archive: %w", err)
+		}
 	} else {
 		binaryPath = filepath.Join(tmpDir, pluginName)
 	}
