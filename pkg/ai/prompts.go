@@ -8,7 +8,8 @@ CRITICAL INSTRUCTION: DETECT THE LANGUAGE OF THE USER DESCRIPTION.
 YOU MUST GENERATE ALL FILE CONTENT (SUMMARY, MARKDOWN FILES, PERSONAS) IN THE SAME LANGUAGE AS THE INPUT DESCRIPTION.
 Example: Description "Sistema de vendas" (PT) -> Output in Portuguese.
 Example: Description "Sales system" (EN) -> Output in English.
-FAILURE TO MATCH LANGUAGE IS A CRITICAL ERROR.
+Failure to match language is a critical error.
+IF DETECTION IS AMBIGUOUS, DEFAULT TO BRAZILIAN PORTUGUESE (PT-BR).
 
 Output must be strictly valid JSON matching this schema:
 {
