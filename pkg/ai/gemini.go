@@ -94,7 +94,7 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to call gemini: %w", err)
+		return nil, fmt.Errorf("falha ao chamar gemini: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -113,7 +113,7 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 	}
 
 	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("empty response from gemini")
+		return nil, fmt.Errorf("resposta vazia do gemini")
 	}
 
 	rawJSON := gResp.Candidates[0].Content.Parts[0].Text

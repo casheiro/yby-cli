@@ -110,7 +110,7 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("scaffold failed: %w", err)
+		return fmt.Errorf("scaffold falhou: %w", err)
 	}
 
 	return nil
@@ -120,7 +120,7 @@ func GetGitRoot() (string, error) {
 	// Check if git is installed
 	_, err := exec.LookPath("git")
 	if err != nil {
-		return "", fmt.Errorf("git binary not found")
+		return "", fmt.Errorf("binário git não encontrado")
 	}
 
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")

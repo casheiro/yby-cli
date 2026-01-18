@@ -44,17 +44,17 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 
 	// Execute
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("plugin execution failed (%s): %w. Stderr: %s", binaryPath, err, stderr.String())
+		return nil, fmt.Errorf("execução do plugin falhou (%s): %w. Stderr: %s", binaryPath, err, stderr.String())
 	}
 
 	// Parse STDOUT
 	var resp PluginResponse
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse plugin response: %w. Stdout: %s", err, stdout.String())
+		return nil, fmt.Errorf("falha ao analisar resposta do plugin: %w. Stdout: %s", err, stdout.String())
 	}
 
 	if resp.Error != "" {
-		return nil, fmt.Errorf("plugin reported error: %s", resp.Error)
+		return nil, fmt.Errorf("plugin reportou erro: %s", resp.Error)
 	}
 
 	return &resp, nil

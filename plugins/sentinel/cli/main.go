@@ -21,7 +21,7 @@ func main() {
 	// 1. Check for Environment Variable Protocol
 	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
 		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			fmt.Printf("Error parsing YBY_PLUGIN_REQUEST: %v\n", err)
+			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
 			os.Exit(1)
 		}
 		handlePluginRequest(req)

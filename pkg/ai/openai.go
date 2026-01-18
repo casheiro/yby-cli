@@ -79,7 +79,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	client := http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call openai: %w", err)
+		return nil, fmt.Errorf("falha ao chamar openai: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -97,7 +97,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	}
 
 	if len(oResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty response from openai")
+		return nil, fmt.Errorf("resposta vazia do openai")
 	}
 
 	cleanJSON := oResp.Choices[0].Message.Content

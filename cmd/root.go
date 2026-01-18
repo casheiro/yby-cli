@@ -50,7 +50,7 @@ func Execute() {
 					DisableFlagParsing: true, // Pass flags directly to plugin
 					Run: func(cmd *cobra.Command, args []string) {
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {
-							fmt.Printf("Error executing plugin %s: %v\n", pluginName, err)
+							fmt.Printf("Erro ao executar plugin %s: %v\n", pluginName, err)
 							os.Exit(1)
 						}
 					},
@@ -68,7 +68,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&contextFlag, "context", "c", "", "Define o contexto de execução (ex: local, staging, prod)")
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().BoolP("toggle", "t", false, "Mensagem de ajuda para alternância")
 }
 
 // initConfig reads in config file and ENV variables if set.

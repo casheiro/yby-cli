@@ -89,6 +89,6 @@ func (m Model) View() string {
 		)
 	}
 
-	s += "\nPress 'q' to quit."
+	s += "\nPressione 'q' para sair."
 	return s
 }

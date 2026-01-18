@@ -26,6 +26,6 @@ func (c *MockClient) GetPods() ([]Pod, error) {
 }
 
 func NewMockClient() *MockClient {
-	fmt.Println("🔌 Connecting to Mock K8s Cluster...")
+	fmt.Println("🔌 Conectando ao Cluster K8s (Mock)...")
 	return &MockClient{}
 }
