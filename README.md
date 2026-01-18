@@ -153,13 +153,14 @@ yby context show
 
 O Yby CLI suporta um sistema robusto de plugins, permitindo estender suas capacidades usando qualquer linguagem de programação.
 
-- **Crie seus próprios comandos**
-- **Injete variáveis de contexto** personalizadas nos templates
-- **Compartilhe ferramentas** com sua equipe via repositório
+- **Crie seus próprios comandos** em qualquer linguagem.
+- **Instale via URL** plugins da comunidade (`yby plugin install https://...`).
+- **Use IA e Hooks** para automatizar seu workflow.
 
 Consulte a documentação completa:
-- [Guia do Usuário](docs/wiki/Plugin-Usage.md) - Como instalar e gerenciar plugins.
-- [Guia do Desenvolvedor](docs/wiki/Plugin-Developer-Guide.md) - Como criar seus próprios plugins.
+- [Guia do Usuário](docs/wiki/Plugin-Usage.md) - Instalação e Gerenciamento.
+- [Catálogo de Plugins](docs/wiki/Plugins.md) - Lista de plugins oficiais e nativos.
+- [Guia do Desenvolvedor](docs/wiki/Plugin-Developer-Guide.md) - Crie seus próprios plugins.
 
 ---
 

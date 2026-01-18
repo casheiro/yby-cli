@@ -12,7 +12,11 @@ tasks:
       - go build -o bin/yby-plugin-atlas ./plugins/atlas
       - go build -o bin/yby-plugin-bard ./plugins/bard
       - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
+      - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
       - go build -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
+      - go build -o bin/yby-plugin-forge ./plugins/forge
+      - go build -o bin/yby-plugin-oracle ./plugins/oracle
+      - go build -o bin/yby-plugin-viz ./plugins/viz
 
   test:
     desc: Run tests

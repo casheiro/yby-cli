@@ -269,6 +269,9 @@ func (m *Manager) Install(pluginSource, version string) error {
 		"atlas":    true,
 		"bard":     true,
 		"sentinel": true,
+		"forge":    true,
+		"oracle":   true,
+		"viz":      true,
 	}
 
 	if nativePlugins[pluginSource] {
@@ -281,6 +284,8 @@ func (m *Manager) Install(pluginSource, version string) error {
 	var srcPath string
 	if strings.HasPrefix(pluginSource, "file://") {
 		srcPath = strings.TrimPrefix(pluginSource, "file://")
+	} else if strings.HasPrefix(pluginSource, "http://") || strings.HasPrefix(pluginSource, "https://") {
+		return m.installFromURL(pluginSource)
 	} else {
 		// Assume it might be a local file if exists
 		if _, err := os.Stat(pluginSource); err == nil {
@@ -438,6 +443,114 @@ func (m *Manager) installNative(name, version string) error {
 	}
 
 	fmt.Printf("✅ Plugin %s installed successfully to %s\n", name, finalPath)
+	return nil
+}
+
+func (m *Manager) installFromURL(url string) error {
+	fmt.Printf("⬇️  Downloading generic plugin from %s...\n", url)
+
+	// Create temp dir
+	tmpDir, err := os.MkdirTemp("", "yby-plugin-generic-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Download
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download plugin: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download plugin: status %d", resp.StatusCode)
+	}
+
+	// We need to guess the format from URL or Content-Type if possible,
+	// but simplest is to assume tar.gz for now as per our convention, or check extension.
+	filename := filepath.Base(url)
+	// Remove query params if any
+	if idx := strings.Index(filename, "?"); idx != -1 {
+		filename = filename[:idx]
+	}
+
+	pluginName := "unknown"
+	if strings.HasSuffix(filename, ".tar.gz") || strings.HasSuffix(filename, ".zip") {
+		// Try to extract
+		if strings.HasSuffix(filename, ".tar.gz") {
+			if err := extractTarGz(resp.Body, tmpDir); err != nil {
+				return fmt.Errorf("failed to extract plugin: %w", err)
+			}
+		} else {
+			// Zip not implemented for untrusted URL yet in this snippet, sharing logic?
+			// For minimal change, let's error if not tar.gz for Linux context
+			return fmt.Errorf("unsupported generic plugin archive format: %s (only .tar.gz supported currently)", filename)
+		}
+	} else {
+		// Maybe it's a raw binary?
+		// Write directly to file
+		// Check name convention yby-plugin-*
+		if !strings.HasPrefix(filename, "yby-plugin-") {
+			fmt.Println("⚠️  Warning: Plugin binary name does not start with 'yby-plugin-'. It might not be discovered automatically.")
+		}
+		pluginName = filename
+		destFile := filepath.Join(tmpDir, pluginName)
+		out, err := os.Create(destFile)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, resp.Body); err != nil {
+			out.Close()
+			return err
+		}
+		out.Close()
+	}
+
+	// If extracted, find binary
+	binaryPath := ""
+	// If it was an archive, we walk. If raw binary, it's at tmpDir/filename
+	if strings.HasSuffix(filename, ".tar.gz") {
+		err = filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			// Improve heuristic: check for executable bit or name prefix
+			// Since we don't know the name, we look for 'yby-plugin-*'
+			if !info.IsDir() && strings.HasPrefix(info.Name(), "yby-plugin-") {
+				binaryPath = path
+				pluginName = info.Name()
+				return io.EOF
+			}
+			return nil
+		})
+	} else {
+		binaryPath = filepath.Join(tmpDir, pluginName)
+	}
+
+	if binaryPath == "" {
+		return fmt.Errorf("no executable starting with 'yby-plugin-' found in archive")
+	}
+
+	// Install
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home: %w", err)
+	}
+	pluginsDir := filepath.Join(home, ".yby", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins dir: %w", err)
+	}
+
+	finalPath := filepath.Join(pluginsDir, pluginName)
+	if err := copyFile(binaryPath, finalPath); err != nil {
+		return fmt.Errorf("failed to install %s: %w", pluginName, err)
+	}
+	if err := os.Chmod(finalPath, 0755); err != nil {
+		return fmt.Errorf("failed to chmod: %w", err)
+	}
+
+	fmt.Printf("✅ Generic plugin installed: %s\n", finalPath)
 	return nil
 }
 

@@ -23,6 +23,10 @@ dist/
 # Local binary
 yby
 yby-cli
+bin/
+.yby/
+bin/
+.yby/
 
 !yby/
 !.agent/
@@ -48,3 +52,6 @@ Thumbs.db
 
 # Vagrant
 **/.vagrant
+
+prd.md
+spec.md
