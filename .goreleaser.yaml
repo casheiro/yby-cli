@@ -53,7 +53,7 @@ builds:
       - -s -w
 archives:
   - id: core
-    builds:
+    ids:
       - core
     formats: ["tar.gz"]
     # use zip for windows
@@ -63,7 +63,7 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: atlas
-    builds:
+    ids:
       - atlas
     formats: ["tar.gz"]
     format_overrides:
@@ -72,7 +72,7 @@ archives:
     name_template: "yby-plugin-atlas_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: bard
-    builds:
+    ids:
       - bard
     formats: ["tar.gz"]
     format_overrides:
@@ -81,7 +81,7 @@ archives:
     name_template: "yby-plugin-bard_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: sentinel
-    builds:
+    ids:
       - sentinel
     formats: ["tar.gz"]
     format_overrides:
