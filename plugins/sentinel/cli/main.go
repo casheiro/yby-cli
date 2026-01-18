@@ -17,6 +17,18 @@ var execCommand = exec.Command
 
 func main() {
 	var req plugin.PluginRequest
+
+	// 1. Check for Environment Variable Protocol
+	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
+		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+			fmt.Printf("Error parsing YBY_PLUGIN_REQUEST: %v\n", err)
+			os.Exit(1)
+		}
+		handlePluginRequest(req)
+		return
+	}
+
+	// 2. Fallback to Stdin
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
@@ -24,6 +36,7 @@ func main() {
 			return
 		}
 	}
+
 	// Fallback/Mock
 	handlePluginRequest(plugin.PluginRequest{Hook: "command"})
 }
@@ -38,31 +51,27 @@ func handlePluginRequest(req plugin.PluginRequest) {
 		})
 	case "command":
 		// Expect "yby sentinel investigate [pod-name] [namespace]"
-		// The Context map might contain "args" if passed by the host CLI
-		// Or we might parse explicit fields from PluginRequest if we extend it.
-		// For now, let's assume valid Context usage or default to interactive prompt if missing.
-
 		var podName, namespace string
 
-		// Try to get from context
-		if req.Context != nil {
+		// Try to get from request Args (provided by CLI wrapper)
+		// Logic: ["investigate", "pod-name", "namespace"]
+		args := req.Args
+		if len(args) > 0 && args[0] == "investigate" {
+			if len(args) > 1 {
+				podName = args[1]
+			}
+			if len(args) > 2 {
+				namespace = args[2]
+			}
+		}
+
+		// Fallback to Context if args missing
+		if podName == "" && req.Context != nil {
 			if p, ok := req.Context["pod"]; ok {
 				podName = fmt.Sprintf("%v", p)
 			}
 			if n, ok := req.Context["namespace"]; ok {
 				namespace = fmt.Sprintf("%v", n)
-			}
-		}
-
-		// If missing, ask interactively (or error out if non-interactive)
-		// But let's keep it simple: Error if no pod provided unless we want to list pods.
-		if podName == "" {
-			// Try to get arguments from os.Args if passed through
-			if len(os.Args) > 2 && os.Args[1] == "investigate" {
-				podName = os.Args[2]
-				if len(os.Args) > 3 {
-					namespace = os.Args[3]
-				}
 			}
 		}
 
@@ -106,8 +115,20 @@ func investigate(podName, namespace string) {
 		fmt.Printf("⚠️  Failed to get events: %v\n", err)
 	}
 
+	// 3. Get Metrics (CPU/RAM)
+	cmdMetrics := execCommand("kubectl", "top", "pod", podName, "-n", namespace, "--no-headers")
+	metricsOut, errMet := cmdMetrics.CombinedOutput()
+	metricsStr := ""
+	if errMet != nil {
+		fmt.Printf("⚠️  Metrics not available (is metrics-server installed?): %v\n", errMet)
+		metricsStr = "Metrics unavailable"
+	} else {
+		metricsStr = string(metricsOut)
+		fmt.Printf("📊 Metrics: %s", metricsStr)
+	}
+
 	// Construct Context for AI
-	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s", string(logsOut), string(eventsOut))
+	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", string(logsOut), string(eventsOut), metricsStr)
 
 	if len(strings.TrimSpace(realContext)) < 20 {
 		fmt.Println("❌ No sufficient data (logs/events) gathered to analyze.")

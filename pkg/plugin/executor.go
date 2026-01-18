@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -57,4 +58,32 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 	}
 
 	return &resp, nil
+}
+
+// RunInteractive executes the plugin in interactive mode (TUI).
+// It passes the request payload via the YBY_PLUGIN_REQUEST environment variable
+// and connects the plugin's Stdin/Stdout/Stderr directly to the OS.
+func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req interface{}) error {
+	// Interactive plugins typically manage their own timeout or run indefinitely until user exit
+	// So we might not want to enforce a strict short timeout, but context cancellation is still good.
+	cmd := exec.CommandContext(ctx, binaryPath)
+
+	// Pass payload via Env Var
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal plugin request: %w", err)
+	}
+	cmd.Env = append(cmd.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqBytes)))
+
+	// Connect IO
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Execute
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("interactive plugin execution failed: %w", err)
+	}
+
+	return nil
 }

@@ -12,6 +12,16 @@ server:
   extraArgs:
     - --insecure
 
+# Configuração de Segurança (Hardening)
+security:
+  secrets:
+    # Monta segredos em RAM (/run/secrets) em vez de EnvVars
+    mountPath: "/run/secrets"
+    enabled: true
+  networkPolicy:
+    # Bloqueia tráfego de entrada por padrão no namespace infra
+    enabled: true
+
 # Configuração do Sistema (Fase 0)
 system:
   k3s:
