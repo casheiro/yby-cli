@@ -12,7 +12,7 @@ import (
 
 // These variables are populated by GoReleaser during build
 var (
-	version = "dev"
+	Version = "dev"
 	commit  = "none"
 	date    = "unknown"
 )
@@ -23,7 +23,7 @@ var versionCmd = &cobra.Command{
 	Short: "Exibe informações de versão do Yby CLI",
 	Long:  `Mostra a versão atual, hash do commit, data de build e informações do sistema.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		info := fmt.Sprintf("yby version %s", version)
+		info := fmt.Sprintf("yby version %s", Version)
 
 		if commit != "none" {
 			info += fmt.Sprintf(" (%s)", commit)

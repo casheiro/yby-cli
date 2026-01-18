@@ -44,7 +44,22 @@ var pluginListCmd = &cobra.Command{
 	},
 }
 
+var pluginInstallCmd = &cobra.Command{
+	Use:   "install [path|name]",
+	Short: "Instala um plugin a partir de um arquivo local ou nome (atlas, bard, sentinel)",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		pm := plugin.NewManager()
+		// Version is defined in version.go within the same package
+		if err := pm.Install(args[0], Version); err != nil {
+			fmt.Printf("❌ Erro ao instalar plugin: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(pluginCmd)
 	pluginCmd.AddCommand(pluginListCmd)
+	pluginCmd.AddCommand(pluginInstallCmd)
 }

@@ -15,7 +15,7 @@ builds:
     binary: yby
     ldflags:
       - -s -w
-      - -X github.com/casheiro/yby-cli/cmd.version={{.Version}}
+      - -X github.com/casheiro/yby-cli/cmd.Version={{.Version}}
       - -X github.com/casheiro/yby-cli/cmd.commit={{.Commit}}
       - -X github.com/casheiro/yby-cli/cmd.date={{.Date}}
   - id: atlas
@@ -52,11 +52,42 @@ builds:
     ldflags:
       - -s -w
 archives:
-  - formats: ["tar.gz"]
+  - id: core
+    ids:
+      - core
+    formats: ["tar.gz"]
     # use zip for windows
     format_overrides:
       - goos: windows
         formats: ["zip"]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: atlas
+    ids:
+      - atlas
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: "yby-plugin-atlas_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: bard
+    ids:
+      - bard
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: "yby-plugin-bard_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: sentinel
+    ids:
+      - sentinel
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: "yby-plugin-sentinel_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 checksum:
   name_template: "checksums.txt"
 snapshot:
