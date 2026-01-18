@@ -78,8 +78,14 @@ Exemplo:
 		// 4. Save Files
 		baseDir := ".synapstor"
 		// Ensure dirs exist
-		os.MkdirAll(filepath.Join(baseDir, ".uki"), 0755)
-		os.MkdirAll(filepath.Join(baseDir, ".personas"), 0755)
+		if err := os.MkdirAll(filepath.Join(baseDir, ".uki"), 0755); err != nil {
+			fmt.Printf("%s Falha ao criar diretório .uki: %v\n", crossStyle.String(), err)
+			os.Exit(1)
+		}
+		if err := os.MkdirAll(filepath.Join(baseDir, ".personas"), 0755); err != nil {
+			fmt.Printf("%s Falha ao criar diretório .personas: %v\n", crossStyle.String(), err)
+			os.Exit(1)
+		}
 
 		fmt.Println("")
 		fmt.Println(headerStyle.Render("📄 Arquivos Gerados:"))
@@ -94,7 +100,10 @@ Exemplo:
 
 			// Create dir if needed
 			dir := filepath.Dir(cleanPath)
-			os.MkdirAll(dir, 0755)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				fmt.Printf("%s Falha ao criar diretório pai %s: %v\n", crossStyle.String(), dir, err)
+				continue
+			}
 
 			if err := os.WriteFile(cleanPath, []byte(f.Content), 0644); err != nil {
 				fmt.Printf("%s Falha ao escrever %s: %v\n", crossStyle.String(), cleanPath, err)
