@@ -150,7 +150,7 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 
 		tmpl, err := template.New(filepath.Base(srcPath)).Parse(string(content))
 		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", srcPath, err)
+			return fmt.Errorf("falha ao analisar template %s: %w", srcPath, err)
 		}
 
 		f, err := os.Create(destPath)
@@ -160,7 +160,7 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 		defer f.Close()
 
 		if err := tmpl.Execute(f, ctx); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", srcPath, err)
+			return fmt.Errorf("falha ao executar template %s: %w", srcPath, err)
 		}
 
 		fmt.Printf("   📄 Rendered: %s\n", destPath)

@@ -33,7 +33,7 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 	// Prepare STDIN
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal plugin request: %w", err)
+		return nil, fmt.Errorf("falha ao serializar requisição do plugin: %w", err)
 	}
 	cmd.Stdin = bytes.NewReader(reqBytes)
 
@@ -71,7 +71,7 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 	// Pass payload via Env Var
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal plugin request: %w", err)
+		return fmt.Errorf("falha ao serializar requisição do plugin: %w", err)
 	}
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqBytes)))
 
@@ -82,7 +82,7 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 
 	// Execute
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("interactive plugin execution failed: %w", err)
+		return fmt.Errorf("execução interativa do plugin falhou: %w", err)
 	}
 
 	return nil

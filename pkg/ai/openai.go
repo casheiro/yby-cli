@@ -66,7 +66,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 		Model: p.Model,
 		Messages: []openAIMessage{
 			{Role: "system", Content: SystemPrompt},
-			{Role: "user", Content: fmt.Sprintf("Project Description: %s", description)},
+			{Role: "user", Content: fmt.Sprintf("Descrição do Projeto: %s", description)},
 		},
 	}
 	reqBody.ResponseFormat.Type = "json_object"
@@ -86,14 +86,14 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	if resp.StatusCode != 200 {
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("openai returned status: %d (failed to read body: %v)", resp.StatusCode, err)
+			return nil, fmt.Errorf("openai retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("openai returned status: %d - %s", resp.StatusCode, buf.String())
+		return nil, fmt.Errorf("openai retornou status: %d - %s", resp.StatusCode, buf.String())
 	}
 
 	var oResp openAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
-		return nil, fmt.Errorf("failed to decode openai response: %w", err)
+		return nil, fmt.Errorf("falha ao decodificar resposta da openai: %w", err)
 	}
 
 	if len(oResp.Choices) == 0 {
@@ -107,7 +107,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 
 	var blueprint GovernanceBlueprint
 	if err := json.Unmarshal([]byte(cleanJSON), &blueprint); err != nil {
-		return nil, fmt.Errorf("failed to parse blueprint json: %w", err)
+		return nil, fmt.Errorf("falha ao analisar json do blueprint: %w", err)
 	}
 
 	return &blueprint, nil
@@ -131,21 +131,21 @@ func (p *OpenAIProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	client := http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to call openai: %w", err)
+		return "", fmt.Errorf("falha ao chamar openai: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("openai returned status: %d", resp.StatusCode)
+		return "", fmt.Errorf("openai retornou status: %d", resp.StatusCode)
 	}
 
 	var oResp openAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
-		return "", fmt.Errorf("failed to decode openai response: %w", err)
+		return "", fmt.Errorf("falha ao decodificar resposta da openai: %w", err)
 	}
 
 	if len(oResp.Choices) == 0 {
-		return "", fmt.Errorf("empty response from openai")
+		return "", fmt.Errorf("resposta vazia da openai")
 	}
 
 	return oResp.Choices[0].Message.Content, nil
@@ -176,7 +176,7 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	client := http.Client{} // No timeout for streaming
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to call openai stream: %w", err)
+		return fmt.Errorf("falha ao chamar openai stream: %w", err)
 	}
 	defer resp.Body.Close()
 

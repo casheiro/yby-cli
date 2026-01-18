@@ -76,7 +76,7 @@ func handlePluginRequest(req plugin.PluginRequest) {
 		}
 
 		if podName == "" {
-			fmt.Println("❌ Pod name is required. Usage: yby sentinel investigate <pod> [namespace]")
+			fmt.Println("❌ Nome do Pod é obrigatório. Uso: yby sentinel investigate <pod> [namespace]")
 			return
 		}
 
@@ -92,13 +92,13 @@ func handlePluginRequest(req plugin.PluginRequest) {
 
 func investigate(podName, namespace string) {
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Render("🛡️  Sentinel Investigation"))
-	fmt.Printf("🔍 Fetching logs and events for pod '%s' in namespace '%s'...\n", podName, namespace)
+	fmt.Printf("🔍 Buscando logs e eventos para o pod '%s' no namespace '%s'...\n", podName, namespace)
 
 	// 1. Get Pod Logs via kubectl
 	cmdLogs := execCommand("kubectl", "logs", podName, "-n", namespace, "--tail=50")
 	logsOut, err := cmdLogs.CombinedOutput()
 	if err != nil {
-		fmt.Printf("⚠️  Failed to get logs: %v\nOutput: %s\n", err, string(logsOut))
+		fmt.Printf("⚠️  Falha ao obter logs: %v\nSaída: %s\n", err, string(logsOut))
 		// Continue? Maybe events help.
 	}
 
@@ -112,7 +112,7 @@ func investigate(podName, namespace string) {
 
 	eventsOut, err := cmdEvents.CombinedOutput()
 	if err != nil {
-		fmt.Printf("⚠️  Failed to get events: %v\n", err)
+		fmt.Printf("⚠️  Falha ao obter eventos: %v\n", err)
 	}
 
 	// 3. Get Metrics (CPU/RAM)
@@ -120,7 +120,7 @@ func investigate(podName, namespace string) {
 	metricsOut, errMet := cmdMetrics.CombinedOutput()
 	metricsStr := ""
 	if errMet != nil {
-		fmt.Printf("⚠️  Metrics not available (is metrics-server installed?): %v\n", errMet)
+		fmt.Printf("⚠️  Métricas indisponíveis (metrics-server instalado?): %v\n", errMet)
 		metricsStr = "Metrics unavailable"
 	} else {
 		metricsStr = string(metricsOut)
@@ -131,22 +131,22 @@ func investigate(podName, namespace string) {
 	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", string(logsOut), string(eventsOut), metricsStr)
 
 	if len(strings.TrimSpace(realContext)) < 20 {
-		fmt.Println("❌ No sufficient data (logs/events) gathered to analyze.")
+		fmt.Println("❌ Dados insuficientes (logs/eventos) coletados para análise.")
 		return
 	}
 
-	fmt.Println("🤖 Analyzing with AI...")
+	fmt.Println("🤖 Analisando com IA...")
 
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
-		fmt.Println("❌ No AI provider available. Set OLLAMA_HOST or OPENAI_API_KEY.")
+		fmt.Println("❌ Nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY.")
 		return
 	}
 
 	analysis, err := provider.Completion(ctx, SentinelSystemPrompt, realContext)
 	if err != nil {
-		fmt.Printf("Error analyzing: %v\n", err)
+		fmt.Printf("Erro ao analisar: %v\n", err)
 		return
 	}
 

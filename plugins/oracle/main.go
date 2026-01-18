@@ -71,7 +71,7 @@ func main() {
 			fmt.Printf("Oracle: Pesquisando na base de conhecimento por '%s'...\n", question)
 			docs, _ := indexer.Search(context.Background(), question)
 			if len(docs) > 0 {
-				fmt.Println("Found relevant context:")
+				fmt.Println("Contexto relevante encontrado:")
 				for _, d := range docs {
 					fmt.Printf("- %s\n", d.Source)
 				}

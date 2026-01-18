@@ -74,7 +74,7 @@ type geminiResponse struct {
 func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
 
-	fullPrompt := fmt.Sprintf("%s\n\nPROJECT DESCRIPTION: %s", SystemPrompt, description)
+	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", SystemPrompt, description)
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{
@@ -102,14 +102,14 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 		// Read body for error details
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("gemini returned status: %d (failed to read body: %v)", resp.StatusCode, err)
+			return nil, fmt.Errorf("gemini retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("gemini returned status: %d - %s", resp.StatusCode, buf.String())
+		return nil, fmt.Errorf("gemini retornou status: %d - %s", resp.StatusCode, buf.String())
 	}
 
 	var gResp geminiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
-		return nil, fmt.Errorf("failed to decode gemini response: %w", err)
+		return nil, fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
 	}
 
 	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
@@ -124,7 +124,7 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 
 	var blueprint GovernanceBlueprint
 	if err := json.Unmarshal([]byte(cleanJSON), &blueprint); err != nil {
-		return nil, fmt.Errorf("failed to parse blueprint json: %w", err)
+		return nil, fmt.Errorf("falha ao analisar json do blueprint: %w", err)
 	}
 
 	return &blueprint, nil
@@ -152,7 +152,7 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return "", fmt.Errorf("failed to call gemini: %w", err)
+		return "", fmt.Errorf("falha ao chamar gemini: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -162,11 +162,11 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 
 	var gResp geminiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
-		return "", fmt.Errorf("failed to decode gemini response: %w", err)
+		return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
 	}
 
 	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty response from gemini")
+		return "", fmt.Errorf("resposta vazia do gemini")
 	}
 
 	return gResp.Candidates[0].Content.Parts[0].Text, nil

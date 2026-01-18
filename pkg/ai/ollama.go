@@ -151,7 +151,7 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 
 	reqBody := ollamaRequest{
 		Model:  p.Model,
-		Prompt: fmt.Sprintf("Project Description: %s", description),
+		Prompt: fmt.Sprintf("Descrição do Projeto: %s", description),
 		System: SystemPrompt,
 		Stream: false,
 		Format: "json",
@@ -167,7 +167,7 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("ollama returned status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("ollama retornou status: %d", resp.StatusCode)
 	}
 
 	var oResp ollamaResponse
@@ -191,7 +191,7 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	// Auto-detect model if possible
 	if err := p.resolveModel(ctx); err != nil {
-		return "", fmt.Errorf("ollama model check failed: %w", err)
+		return "", fmt.Errorf("verificação de modelo ollama falhou: %w", err)
 	}
 
 	reqBody := ollamaRequest{
@@ -206,17 +206,17 @@ func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPromp
 
 	resp, err := client.Post(p.BaseURL+"/api/generate", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return "", fmt.Errorf("failed to call ollama: %w", err)
+		return "", fmt.Errorf("falha ao chamar ollama: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("ollama returned status: %d", resp.StatusCode)
+		return "", fmt.Errorf("ollama retornou status: %d", resp.StatusCode)
 	}
 
 	var oResp ollamaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
-		return "", fmt.Errorf("failed to decode ollama response: %w", err)
+		return "", fmt.Errorf("falha ao decodificar resposta do ollama: %w", err)
 	}
 
 	return oResp.Response, nil
@@ -225,7 +225,7 @@ func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPromp
 func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
 	// Auto-detect model if possible
 	if err := p.resolveModel(ctx); err != nil {
-		return fmt.Errorf("ollama model check failed: %w", err)
+		return fmt.Errorf("verificação de modelo ollama falhou: %w", err)
 	}
 
 	reqBody := ollamaRequest{
@@ -243,7 +243,7 @@ func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to call ollama: %w", err)
+		return fmt.Errorf("falha ao chamar ollama: %w", err)
 	}
 	defer resp.Body.Close()
 

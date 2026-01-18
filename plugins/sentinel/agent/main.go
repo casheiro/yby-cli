@@ -30,7 +30,7 @@ func main() {
 	// Ensure kubectl is available
 	_, err := exec.LookPath("kubectl")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ kubectl not found. The agent needs kubectl to interact with the cluster.\n")
+		fmt.Fprintf(os.Stderr, "❌ kubectl não encontrado. O agente precisa do kubectl para interagir com o cluster.\n")
 		os.Exit(1)
 	}
 
