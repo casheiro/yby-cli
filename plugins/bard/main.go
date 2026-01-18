@@ -19,7 +19,7 @@ func main() {
 	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
 	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
 		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			fmt.Printf("Error parsing YBY_PLUGIN_REQUEST: %v\n", err)
+			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
 			os.Exit(1)
 		}
 		handlePluginRequest(req)
@@ -63,12 +63,12 @@ func startChat(ctxData map[string]interface{}) {
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
-		fmt.Println("❌ No AI provider available. Set OLLAMA_HOST or OPENAI_API_KEY.")
+		fmt.Println("❌ Nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY.")
 		os.Exit(1)
 	}
 
 	// Prepare System Prompt
-	blueprintSummary := "No context available."
+	blueprintSummary := "Nenhum contexto disponível."
 	if bp, ok := ctxData["blueprint"]; ok {
 		// Convert blueprint to string summary
 		// This is naive, relies on fmt/json stringification
@@ -80,7 +80,7 @@ func startChat(ctxData map[string]interface{}) {
 
 	// UI Setup
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
-	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Type 'exit' to quit."))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair."))
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)

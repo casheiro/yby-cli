@@ -104,7 +104,7 @@ func (m *Manager) scanDirectory(dir string) error {
 		// Checking manifest is safer.
 		manifest, err := m.loadManifest(path)
 		if err != nil {
-			fmt.Printf("⚠️  Skipping invalid plugin candidate %s: %v\n", entry.Name(), err)
+			fmt.Printf("⚠️  Pulando candidato a plugin inválido %s: %v\n", entry.Name(), err)
 			continue
 		}
 
@@ -156,7 +156,7 @@ func (m *Manager) GetAssets() []string {
 
 		resp, err := m.executor.Run(context.Background(), p.Path, PluginRequest{Hook: "assets"})
 		if err != nil {
-			fmt.Printf("⚠️  Plugin %s assets hook failed: %v\n", p.Manifest.Name, err)
+			fmt.Printf("⚠️  Hook de assets do Plugin %s falhou: %v\n", p.Manifest.Name, err)
 			continue
 		}
 
@@ -205,7 +205,7 @@ func (m *Manager) ExecuteContextHook(ctx *scaffold.BlueprintContext) error {
 
 		resp, err := m.executor.Run(context.Background(), p.Path, req)
 		if err != nil {
-			fmt.Printf("⚠️  Plugin %s context hook failed: %v\n", p.Manifest.Name, err)
+			fmt.Printf("⚠️  Hook de contexto do Plugin %s falhou: %v\n", p.Manifest.Name, err)
 			continue
 		}
 
@@ -238,7 +238,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	}
 
 	if targetPlugin == nil {
-		return fmt.Errorf("plugin %s not found", pluginName)
+		return fmt.Errorf("plugin %s não encontrado", pluginName)
 	}
 
 	// Prepare Request
@@ -278,7 +278,7 @@ func (m *Manager) Install(pluginSource, version string) error {
 		return m.installNative(pluginSource, version)
 	}
 
-	fmt.Printf("📦 Installing plugin from %s...\n", pluginSource)
+	fmt.Printf("📦 Instalando plugin de %s...\n", pluginSource)
 
 	// Determine source path
 	var srcPath string
@@ -291,18 +291,18 @@ func (m *Manager) Install(pluginSource, version string) error {
 		if _, err := os.Stat(pluginSource); err == nil {
 			srcPath = pluginSource
 		} else {
-			return fmt.Errorf("plugin source not found or scheme not supported yet: %s", pluginSource)
+			return fmt.Errorf("origem do plugin não encontrada ou esquema não suportado ainda: %s", pluginSource)
 		}
 	}
 
 	// Determine destination
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user home: %w", err)
+		return fmt.Errorf("falha ao obter diretório home do usuário: %w", err)
 	}
 	pluginsDir := filepath.Join(home, ".yby", "plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugins dir: %w", err)
+		return fmt.Errorf("falha ao criar diretório de plugins: %w", err)
 	}
 
 	pluginName := filepath.Base(srcPath)
@@ -322,19 +322,19 @@ func (m *Manager) Install(pluginSource, version string) error {
 	defer destFile.Close()
 
 	if _, err := io.Copy(destFile, srcFile); err != nil {
-		return fmt.Errorf("failed to copy binary: %w", err)
+		return fmt.Errorf("falha ao copiar binário: %w", err)
 	}
 
-	fmt.Printf("✅ Plugin %s installed successfully to %s\n", pluginName, destPath)
+	fmt.Printf("✅ Plugin %s instalado com sucesso em %s\n", pluginName, destPath)
 	return nil
 }
 
 func (m *Manager) installNative(name, version string) error {
 	if version == "dev" {
-		fmt.Println("⚠️  Running in dev mode. Assuming 'latest' release for plugins.")
+		fmt.Println("⚠️  Rodando em modo dev. Assumindo release 'latest' para plugins.")
 		// In a real scenario, we might want to fail or look for local builds.
 		// For now, let's warn and fail because we don't know the URL for sure without a tag.
-		return fmt.Errorf("cannot install native plugins in dev mode (version=dev). Please build locally or specify a version")
+		return fmt.Errorf("não é possível instalar plugins nativos em modo dev (version=dev). Construa localmente ou especifique uma versão")
 	}
 
 	osName := runtime.GOOS
@@ -362,24 +362,24 @@ func (m *Manager) installNative(name, version string) error {
 	}
 	url := fmt.Sprintf("https://github.com/casheiro/yby-cli/releases/download/%s/%s", tag, filename)
 
-	fmt.Printf("⬇️  Downloading %s plugin from %s...\n", name, url)
+	fmt.Printf("⬇️  Baixando plugin %s de %s...\n", name, url)
 
 	// Create temp dir
 	tmpDir, err := os.MkdirTemp("", "yby-plugin-install-*")
 	if err != nil {
-		return fmt.Errorf("failed to create temp dir: %w", err)
+		return fmt.Errorf("falha ao criar diretório temporário: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	// Download
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("failed to download plugin: %w", err)
+		return fmt.Errorf("falha ao baixar plugin: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download plugin: status %d", resp.StatusCode)
+		return fmt.Errorf("falha ao baixar plugin: status %d", resp.StatusCode)
 	}
 
 	// Extract
@@ -387,7 +387,7 @@ func (m *Manager) installNative(name, version string) error {
 	// TODO: Handle Zip for windows if needed in future
 	if strings.HasSuffix(filename, ".tar.gz") {
 		if err := extractTarGz(resp.Body, tmpDir); err != nil {
-			return fmt.Errorf("failed to extract plugin: %w", err)
+			return fmt.Errorf("falha ao extrair plugin: %w", err)
 		}
 	} else {
 		return fmt.Errorf("unsupported archive format: %s", filename)
@@ -413,58 +413,58 @@ func (m *Manager) installNative(name, version string) error {
 		return nil
 	})
 	if err != nil && err != io.EOF {
-		return fmt.Errorf("failed to find binary in archive: %w", err)
+		return fmt.Errorf("falha ao encontrar binário no arquivo: %w", err)
 	}
 
 	if binaryPath == "" {
-		return fmt.Errorf("binary %s not found in downloaded archive", binaryName)
+		return fmt.Errorf("binário %s não encontrado no arquivo baixado", binaryName)
 	}
 
 	// Install to final destination
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user home: %w", err)
+		return fmt.Errorf("falha ao obter diretório home do usuário: %w", err)
 	}
 	pluginsDir := filepath.Join(home, ".yby", "plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugins dir: %w", err)
+		return fmt.Errorf("falha ao criar diretório de plugins: %w", err)
 	}
 
 	finalPath := filepath.Join(pluginsDir, binaryName)
 
 	// Move/Copy
 	if err := copyFile(binaryPath, finalPath); err != nil {
-		return fmt.Errorf("failed to install binary: %w", err)
+		return fmt.Errorf("falha ao instalar binário: %w", err)
 	}
 
 	// Chmod +x
 	if err := os.Chmod(finalPath, 0755); err != nil {
-		return fmt.Errorf("failed to make plugin executable: %w", err)
+		return fmt.Errorf("falha ao tornar plugin executável: %w", err)
 	}
 
-	fmt.Printf("✅ Plugin %s installed successfully to %s\n", name, finalPath)
+	fmt.Printf("✅ Plugin %s instalado com sucesso em %s\n", name, finalPath)
 	return nil
 }
 
 func (m *Manager) installFromURL(url string) error {
-	fmt.Printf("⬇️  Downloading generic plugin from %s...\n", url)
+	fmt.Printf("⬇️  Baixando plugin genérico de %s...\n", url)
 
 	// Create temp dir
 	tmpDir, err := os.MkdirTemp("", "yby-plugin-generic-*")
 	if err != nil {
-		return fmt.Errorf("failed to create temp dir: %w", err)
+		return fmt.Errorf("falha ao criar diretório temporário: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	// Download
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("failed to download plugin: %w", err)
+		return fmt.Errorf("falha ao baixar plugin: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download plugin: status %d", resp.StatusCode)
+		return fmt.Errorf("falha ao baixar plugin: status %d", resp.StatusCode)
 	}
 
 	// We need to guess the format from URL or Content-Type if possible,
@@ -480,19 +480,19 @@ func (m *Manager) installFromURL(url string) error {
 		// Try to extract
 		if strings.HasSuffix(filename, ".tar.gz") {
 			if err := extractTarGz(resp.Body, tmpDir); err != nil {
-				return fmt.Errorf("failed to extract plugin: %w", err)
+				return fmt.Errorf("falha ao extrair plugin: %w", err)
 			}
 		} else {
 			// Zip not implemented for untrusted URL yet in this snippet, sharing logic?
 			// For minimal change, let's error if not tar.gz for Linux context
-			return fmt.Errorf("unsupported generic plugin archive format: %s (only .tar.gz supported currently)", filename)
+			return fmt.Errorf("formato de arquivo de plugin genérico não suportado: %s (apenas .tar.gz suportado atualmente)", filename)
 		}
 	} else {
 		// Maybe it's a raw binary?
 		// Write directly to file
 		// Check name convention yby-plugin-*
 		if !strings.HasPrefix(filename, "yby-plugin-") {
-			fmt.Println("⚠️  Warning: Plugin binary name does not start with 'yby-plugin-'. It might not be discovered automatically.")
+			fmt.Println("⚠️  Aviso: Nome do binário do plugin não começa com 'yby-plugin-'. Pode não ser descoberto...")
 		}
 		pluginName = filename
 		destFile := filepath.Join(tmpDir, pluginName)
@@ -525,35 +525,35 @@ func (m *Manager) installFromURL(url string) error {
 			return nil
 		})
 		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to walk source archive: %w", err)
+			return fmt.Errorf("falha ao percorrer arquivo fonte: %w", err)
 		}
 	} else {
 		binaryPath = filepath.Join(tmpDir, pluginName)
 	}
 
 	if binaryPath == "" {
-		return fmt.Errorf("no executable starting with 'yby-plugin-' found in archive")
+		return fmt.Errorf("nenhum executável começando com 'yby-plugin-' encontrado no arquivo")
 	}
 
 	// Install
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user home: %w", err)
+		return fmt.Errorf("falha ao obter diretório home do usuário: %w", err)
 	}
 	pluginsDir := filepath.Join(home, ".yby", "plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugins dir: %w", err)
+		return fmt.Errorf("falha ao criar diretório de plugins: %w", err)
 	}
 
 	finalPath := filepath.Join(pluginsDir, pluginName)
 	if err := copyFile(binaryPath, finalPath); err != nil {
-		return fmt.Errorf("failed to install %s: %w", pluginName, err)
+		return fmt.Errorf("falha ao instalar %s: %w", pluginName, err)
 	}
 	if err := os.Chmod(finalPath, 0755); err != nil {
-		return fmt.Errorf("failed to chmod: %w", err)
+		return fmt.Errorf("falha ao executar chmod: %w", err)
 	}
 
-	fmt.Printf("✅ Generic plugin installed: %s\n", finalPath)
+	fmt.Printf("✅ Plugin genérico instalado: %s\n", finalPath)
 	return nil
 }
 

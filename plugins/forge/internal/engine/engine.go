@@ -46,20 +46,20 @@ func (e *Engine) Run(rootDir string) error {
 	}
 
 	for _, mod := range e.Mods {
-		fmt.Printf("🔍 Checking %s...\n", mod.Name())
+		fmt.Printf("🔍 Verificando %s...\n", mod.Name())
 		shouldRun, err := mod.Check(ctx)
 		if err != nil {
-			return fmt.Errorf("error checking mod %s: %w", mod.Name(), err)
+			return fmt.Errorf("erro ao verificar mod %s: %w", mod.Name(), err)
 		}
 
 		if shouldRun {
-			fmt.Printf("Rewrite: Applying %s...\n", mod.Name())
+			fmt.Printf("Reescrita: Aplicando %s...\n", mod.Name())
 			if err := mod.Apply(ctx); err != nil {
-				return fmt.Errorf("error applying mod %s: %w", mod.Name(), err)
+				return fmt.Errorf("erro ao aplicar mod %s: %w", mod.Name(), err)
 			}
-			fmt.Printf("✅ Applied %s\n", mod.Name())
+			fmt.Printf("✅ %s aplicado\n", mod.Name())
 		} else {
-			fmt.Printf("⏭️  Skipping %s (not needed)\n", mod.Name())
+			fmt.Printf("⏭️  Pulando %s (não necessário)\n", mod.Name())
 		}
 	}
 	return nil

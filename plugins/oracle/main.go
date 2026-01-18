@@ -47,7 +47,7 @@ func main() {
 				dir = args[0]
 			}
 			if err := indexer.Index(context.Background(), dir); err != nil {
-				fmt.Printf("Error indexing: %v\n", err)
+				fmt.Printf("Erro ao indexar: %v\n", err)
 			}
 		},
 	}
@@ -68,15 +68,15 @@ func main() {
 			// ou apenas mockamos a resposta.
 
 			// Vamos tentar responder algo.
-			fmt.Printf("Oracle: Searching knowledge base for '%s'...\n", question)
+			fmt.Printf("Oracle: Pesquisando na base de conhecimento por '%s'...\n", question)
 			docs, _ := indexer.Search(context.Background(), question)
 			if len(docs) > 0 {
-				fmt.Println("Found relevant context:")
+				fmt.Println("Contexto relevante encontrado:")
 				for _, d := range docs {
 					fmt.Printf("- %s\n", d.Source)
 				}
 			} else {
-				fmt.Println("No exact matches found in current session index.")
+				fmt.Println("Nenhuma correspondência exata encontrada no índice da sessão atual.")
 			}
 		},
 	}

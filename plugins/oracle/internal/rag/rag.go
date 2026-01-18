@@ -33,7 +33,7 @@ func NewSimpleIndexer() *SimpleIndexer {
 }
 
 func (i *SimpleIndexer) Index(ctx context.Context, dir string) error {
-	fmt.Printf("📂 Scanning documentation in %s...\n", dir)
+	fmt.Printf("📂 Escaneando documentação em %s...\n", dir)
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {

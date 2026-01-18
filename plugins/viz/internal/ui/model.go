@@ -74,7 +74,7 @@ func (m Model) View() string {
 	for _, pod := range m.pods {
 		var statusStyle lipgloss.Style
 		icon := "●"
-		if pod.Status == "Running" {
+		if pod.Status == "Executando" {
 			statusStyle = runningStyle
 		} else {
 			statusStyle = errorStyle
@@ -89,6 +89,6 @@ func (m Model) View() string {
 		)
 	}
 
-	s += "\nPress 'q' to quit."
+	s += "\nPressione 'q' para sair."
 	return s
 }

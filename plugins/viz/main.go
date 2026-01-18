@@ -33,7 +33,7 @@ func main() {
 			// Inicia o programa Bubbletea com o modelo definido em internal/ui
 			p := tea.NewProgram(ui.NewModel())
 			if _, err := p.Run(); err != nil {
-				fmt.Printf("Alas, there's been an error: %v", err)
+				fmt.Printf("Ops, ocorreu um erro: %v", err)
 				os.Exit(1)
 			}
 		},

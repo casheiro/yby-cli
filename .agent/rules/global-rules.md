@@ -1,4 +1,4 @@
-# Global Rules for Agents
+# Regras Globais para Agentes
 
 > **Princípio Fundamental:** Todo código deve ter um propósito semântico claro e rastreável.
 
