@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/agent"
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/indexer"
 )
 
 func main() {
@@ -104,25 +104,20 @@ func handlePluginRequest(req plugin.PluginRequest) {
 }
 
 func runIndex() {
-	// MVP: Just listing for now, future: generate uki_index.json
-	fmt.Println("🔍 Indexando UKIs...")
-	cwd, _ := os.Getwd()
-	synapstorDir := filepath.Join(cwd, ".synapstor", ".uki")
-
-	files, err := os.ReadDir(synapstorDir)
-	if err != nil {
-		fmt.Println("Nenhum diretório .synapstor encontrado.")
+	ctx := context.Background()
+	provider := ai.GetProvider(ctx, "auto")
+	if provider == nil {
+		fmt.Println("❌ Nenhum provedor de IA configurado. Defina GEMINI_API_KEY, OPENAI_API_KEY ou OLLAMA_HOST.")
 		return
 	}
 
-	count := 0
-	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".md") {
-			count++
-			fmt.Printf("• %s\n", f.Name())
-		}
+	cwd, _ := os.Getwd()
+	idx := indexer.NewIndexer(provider, cwd)
+
+	if err := idx.Run(ctx); err != nil {
+		fmt.Printf("❌ Erro na indexação: %v\n", err)
+		os.Exit(1)
 	}
-	fmt.Printf("Total indexado: %d\n", count)
 }
 
 func respond(data interface{}) {

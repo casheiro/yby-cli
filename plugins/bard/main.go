@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
-	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -68,16 +68,20 @@ func startChat(ctxData map[string]interface{}) {
 		os.Exit(1)
 	}
 
-	// 1. Parse Context
+	// 1. Initialize Vector Store (Read-Only access effectively)
+	cwd, _ := os.Getwd()
+	storePath := filepath.Join(cwd, ".synapstor", ".index")
+	// Note: We initialize store. If it doesn't exist, search will just return empty or we handle error.
+	vectorStore, err := ai.NewVectorStore(ctx, storePath, provider)
+	if err != nil {
+		// Non-fatal, just means no long-term memory
+		// But in this architecture it's critical. Let's warn.
+		fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("⚠️  Aviso: Memória semântica indisponível (%v)\n"), err)
+	}
+
+	// 2. Build Base Context from Payload (still useful for Blueprint/High-level)
 	overview, _ := ctxData["overview"].(string)
 	backlog, _ := ctxData["backlog"].(string)
-
-	// Parse UKIs safe conversion
-	var ukis []projectContext.UKIMetadata
-	if v, ok := ctxData["uki_index"]; ok {
-		b, _ := json.Marshal(v)
-		_ = json.Unmarshal(b, &ukis)
-	}
 
 	blueprintSummary := "Nenhum blueprint disponível."
 	if bp, ok := ctxData["blueprint"]; ok {
@@ -85,8 +89,7 @@ func startChat(ctxData map[string]interface{}) {
 		blueprintSummary = string(bytes)
 	}
 
-	// 2. Build Rich System Prompt
-	// We inject the "Mental State" of the project
+	// 3. Build Rich System Prompt
 	contextBlock := fmt.Sprintf(`
 ## Project Overview
 %s
@@ -103,8 +106,9 @@ func startChat(ctxData map[string]interface{}) {
 	// UI Setup
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair."))
-	if len(ukis) > 0 {
-		fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("📚 %d UKIs indexadas para consulta inteligente.\n"), len(ukis))
+
+	if vectorStore != nil {
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("🧠 Memória Semântica Ativa."))
 	}
 	fmt.Println()
 
@@ -125,48 +129,31 @@ func startChat(ctxData map[string]interface{}) {
 
 		fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Bard > "))
 
-		// 3. Smart Retrieval (UKI Selector)
+		// 4. Smart Retrieval (Vector Search)
 		ukiContext := ""
-		if len(ukis) > 0 {
-			// Serialize index for LLM
-			indexBytes, _ := json.Marshal(ukis)
-			selectorPrompt := strings.ReplaceAll(BardUKISelectorPrompt, "{{ uki_index_json }}", string(indexBytes))
-			selectorPrompt = strings.ReplaceAll(selectorPrompt, "{{ user_question }}", input)
+		if vectorStore != nil {
+			// Search for top 3 relevant chunks
+			results, err := vectorStore.Search(ctx, input, 3)
+			if err == nil && len(results) > 0 {
+				var sources []string
+				var sb strings.Builder
 
-			// Ask LLM to select
-			// We use a separate context or simplified interaction?
-			// Provider.Completion is synchronous
-			selectionJson, err := provider.Completion(ctx, "You are a librarian.", selectorPrompt)
-			if err == nil {
-				// Parse response (naive: try to find JSON array)
-				// Clean markdown code blocks if any
-				cleanJson := strings.ReplaceAll(selectionJson, "```json", "")
-				cleanJson = strings.ReplaceAll(cleanJson, "```", "")
-
-				var selectedIDs []string
-				if err := json.Unmarshal([]byte(cleanJson), &selectedIDs); err == nil && len(selectedIDs) > 0 {
-					// Read files
-					fmt.Printf(lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("240")).Render("\n(Lendo: %s)... "), strings.Join(selectedIDs, ", "))
-
-					for _, id := range selectedIDs {
-						for _, uki := range ukis {
-							if uki.ID == id {
-								content, err := os.ReadFile(uki.Filename)
-								if err == nil {
-									ukiContext += fmt.Sprintf("\n--- UKI: %s ---\n%s\n", uki.Title, string(content))
-								}
-								break
-							}
-						}
-					}
+				for _, res := range results {
+					sources = append(sources, fmt.Sprintf("%s (%.2f)", res.Metadata["filename"], res.Score))
+					sb.WriteString(fmt.Sprintf("\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content))
 				}
+
+				ukiContext = sb.String()
+
+				// Show sources in UI (subtle)
+				fmt.Printf(lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("240")).Render("\n(Consultando: %s)... "), strings.Join(sources, ", "))
 			}
 		}
 
-		// 4. Final Answer
+		// 5. Final Answer
 		runInput := input
 		if ukiContext != "" {
-			runInput = fmt.Sprintf("Contexto Adicional da Documentação (UKIs):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
+			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
 		}
 
 		err := provider.StreamCompletion(ctx, systemPrompt, runInput, os.Stdout)

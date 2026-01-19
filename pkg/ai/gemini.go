@@ -181,3 +181,93 @@ func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	_, err = io.WriteString(out, text)
 	return err
 }
+
+type geminiEmbeddingRequest struct {
+	Model   string                 `json:"model"`
+	Content geminiEmbeddingContent `json:"content"`
+}
+
+type geminiEmbeddingContent struct {
+	Parts []geminiPart `json:"parts"`
+}
+
+type geminiEmbeddingResponse struct {
+	Embedding struct {
+		Values []float32 `json:"values"`
+	} `json:"embedding"`
+}
+
+type geminiBatchEmbeddingRequest struct {
+	Requests []geminiEmbeddingRequest `json:"requests"`
+}
+
+type geminiBatchEmbeddingResponse struct {
+	Embeddings []struct {
+		Values []float32 `json:"values"`
+	} `json:"embeddings"`
+}
+
+func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
+	embeddingModel := "text-embedding-004"
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchEmbedContents?key=%s", embeddingModel, p.APIKey)
+
+	const batchSize = 100
+	var allEmbeddings [][]float32
+
+	// Process in batches
+	for i := 0; i < len(texts); i += batchSize {
+		end := i + batchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+
+		batchTexts := texts[i:end]
+		requests := make([]geminiEmbeddingRequest, len(batchTexts))
+
+		for j, text := range batchTexts {
+			requests[j] = geminiEmbeddingRequest{
+				Model: "models/" + embeddingModel,
+				Content: geminiEmbeddingContent{
+					Parts: []geminiPart{{Text: text}},
+				},
+			}
+		}
+
+		batchReq := geminiBatchEmbeddingRequest{Requests: requests}
+		jsonBody, _ := json.Marshal(batchReq)
+
+		client := http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("falha ao chamar gemini embeddings (batch %d): %w", i, err)
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("gemini embeddings status: %d - %s", resp.StatusCode, string(body))
+		}
+
+		var batchResp geminiBatchEmbeddingResponse
+		if err := json.Unmarshal(body, &batchResp); err != nil {
+			return nil, fmt.Errorf("falha ao decodificar batch %d: %w", i, err)
+		}
+
+		if len(batchResp.Embeddings) != len(batchTexts) {
+			// In case of error or mismatch, we should probably error out or pad with zeros?
+			// Returning error is safer to detect data loss.
+			return nil, fmt.Errorf("mismatch in batch %d: sent %d, got %d", i, len(batchTexts), len(batchResp.Embeddings))
+		}
+
+		for _, emb := range batchResp.Embeddings {
+			allEmbeddings = append(allEmbeddings, emb.Values)
+		}
+	}
+
+	return allEmbeddings, nil
+}

@@ -51,18 +51,6 @@ builds:
     binary: yby-plugin-sentinel
     ldflags:
       - -s -w
-  - id: forge
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    dir: ./plugins/forge
-    main: .
-    binary: yby-plugin-forge
-    ldflags:
-      - -s -w
   - id: oracle
     env:
       - CGO_ENABLED=0
@@ -124,15 +112,6 @@ archives:
       - goos: windows
         formats: ["zip"]
     name_template: "yby-plugin-sentinel_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-
-  - id: forge
-    ids:
-      - forge
-    formats: ["tar.gz"]
-    format_overrides:
-      - goos: windows
-        formats: ["zip"]
-    name_template: "yby-plugin-forge_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: oracle
     ids:
