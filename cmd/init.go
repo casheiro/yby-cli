@@ -54,26 +54,26 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 
 	// Bind Flags
-	initCmd.Flags().StringVar(&opts.Topology, "topology", "", "Topology strategy: single, standard, complete")
-	initCmd.Flags().StringVar(&opts.Workflow, "workflow", "", "Workflow pattern: essential, gitflow, trunkbased")
-	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Generate .devcontainer configuration")
-	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Enable CI/CD generation")
+	initCmd.Flags().StringVar(&opts.Topology, "topology", "", "Estratégia de Topologia: single, standard, complete")
+	initCmd.Flags().StringVar(&opts.Workflow, "workflow", "", "Padrão de Workflow: essential, gitflow, trunkbased")
+	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Gerar configuração .devcontainer")
+	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Habilitar geração de CI/CD")
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 
-	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Target directory for project initialization")
-	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Git Repository URL")
-	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Main git branch")
-	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Project Name/Slug (Override default derivation)")
-	initCmd.Flags().StringVar(&opts.Description, "description", "", "Natural language description of the project (Enable AI generation)")
-	initCmd.Flags().StringVar(&opts.AIProvider, "ai-provider", "", "Force specific AI provider (ollama, gemini, openai)")
-	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Cluster base domain")
-	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Admin email")
-	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Initial environment name")
+	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
+	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
+	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Branch principal do git")
+	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Nome do Projeto/Slug (Sobrescreve derivação padrão)")
+	initCmd.Flags().StringVar(&opts.Description, "description", "", "Descrição em linguagem natural do projeto (Habilita geração por IA)")
+	initCmd.Flags().StringVar(&opts.AIProvider, "ai-provider", "", "Forçar provedor de IA específico (ollama, gemini, openai)")
+	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
+	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
+	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
 
-	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Enable Kepler module")
-	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Enable MinIO module")
-	initCmd.Flags().BoolVar(&opts.EnableKEDA, "enable-keda", false, "Enable KEDA module")
+	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Habilitar módulo Kepler")
+	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Habilitar módulo MinIO")
+	initCmd.Flags().BoolVar(&opts.EnableKEDA, "enable-keda", false, "Habilitar módulo KEDA")
 }
 
 var initCmd = &cobra.Command{

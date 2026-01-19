@@ -7,9 +7,10 @@ type PluginManifest struct {
 	Hooks   []string `json:"hooks"`
 }
 
-// PluginRequest defines the structure sent to the plugin via STDIN.
+// PluginRequest defines the structure sent to the plugin via STDIN or Env Var.
 type PluginRequest struct {
 	Hook    string                 `json:"hook"`
+	Args    []string               `json:"args,omitempty"` // For "command" hook
 	Context map[string]interface{} `json:"context,omitempty"`
 }
 

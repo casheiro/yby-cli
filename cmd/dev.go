@@ -152,8 +152,8 @@ Equivalente ao antigo 'make dev'.`,
 		// 6. Blocking Sync Loop
 		if mirrorMgr != nil {
 			fmt.Println("")
-			fmt.Println(titleStyle.Render("🔄 Yby Dev Mirror Active"))
-			fmt.Println("   Press Ctrl+C to stop syncing.")
+			fmt.Println(titleStyle.Render("🔄 Espelho de Desenvolvimento Yby Ativo"))
+			fmt.Println("   Pressione Ctrl+C para parar a sincronização.")
 			mirrorMgr.StartSyncLoop(context.Background())
 		}
 	},

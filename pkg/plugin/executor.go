@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -32,7 +33,7 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 	// Prepare STDIN
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal plugin request: %w", err)
+		return nil, fmt.Errorf("falha ao serializar requisição do plugin: %w", err)
 	}
 	cmd.Stdin = bytes.NewReader(reqBytes)
 
@@ -43,18 +44,46 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 
 	// Execute
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("plugin execution failed (%s): %w. Stderr: %s", binaryPath, err, stderr.String())
+		return nil, fmt.Errorf("execução do plugin falhou (%s): %w. Stderr: %s", binaryPath, err, stderr.String())
 	}
 
 	// Parse STDOUT
 	var resp PluginResponse
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse plugin response: %w. Stdout: %s", err, stdout.String())
+		return nil, fmt.Errorf("falha ao analisar resposta do plugin: %w. Stdout: %s", err, stdout.String())
 	}
 
 	if resp.Error != "" {
-		return nil, fmt.Errorf("plugin reported error: %s", resp.Error)
+		return nil, fmt.Errorf("plugin reportou erro: %s", resp.Error)
 	}
 
 	return &resp, nil
+}
+
+// RunInteractive executes the plugin in interactive mode (TUI).
+// It passes the request payload via the YBY_PLUGIN_REQUEST environment variable
+// and connects the plugin's Stdin/Stdout/Stderr directly to the OS.
+func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req interface{}) error {
+	// Interactive plugins typically manage their own timeout or run indefinitely until user exit
+	// So we might not want to enforce a strict short timeout, but context cancellation is still good.
+	cmd := exec.CommandContext(ctx, binaryPath)
+
+	// Pass payload via Env Var
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("falha ao serializar requisição do plugin: %w", err)
+	}
+	cmd.Env = append(cmd.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqBytes)))
+
+	// Connect IO
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Execute
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("execução interativa do plugin falhou: %w", err)
+	}
+
+	return nil
 }

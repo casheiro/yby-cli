@@ -29,7 +29,7 @@ func (m *MirrorManager) EnsureGitServer() error {
 	// 1. Check Service
 	cmd := exec.Command("kubectl", "get", "svc", "git-server", "-n", m.Namespace)
 	if err := cmd.Run(); err != nil {
-		fmt.Println("📦 Deploying In-Cluster Git Server...")
+		fmt.Println("📦 Implantando Servidor Git no Cluster...")
 		return m.deployServer()
 	}
 	return nil
@@ -98,11 +98,11 @@ spec:
 	cmd.Stdin = strings.NewReader(manifest)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to deploy git-server: %s", string(output))
+		return fmt.Errorf("falha ao implantar git-server: %s", string(output))
 	}
 
 	// Wait for rollout
-	fmt.Println("⏳ Waiting for Git Server...")
+	fmt.Println("⏳ Aguardando Servidor Git...")
 	_ = exec.Command("kubectl", "rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s").Run()
 
 	return nil
@@ -110,13 +110,13 @@ spec:
 
 // StartSyncLoop starts the synchronization process
 func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
-	fmt.Println("🔄 Starting Sync Scheduler (5s interval)...")
+	fmt.Println("🔄 Iniciando Agendador de Sincronização (intervalo de 5s)...")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	// Initial Sync
 	if err := m.Sync(); err != nil {
-		fmt.Printf("⚠️ Sync Error: %v\n", err)
+		fmt.Printf("⚠️ Erro de Sincronização: %v\n", err)
 	}
 
 	for {
@@ -125,7 +125,7 @@ func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := m.Sync(); err != nil {
-				fmt.Printf("⚠️ Sync Error: %v\n", err)
+				fmt.Printf("⚠️ Erro de Sincronização: %v\n", err)
 			}
 		}
 	}
@@ -136,11 +136,11 @@ func (m *MirrorManager) Sync() error {
 	// 1. Get Pod Name
 	out, err := exec.Command("kubectl", "get", "pods", "-n", m.Namespace, "-l", "app=git-server", "-o", "jsonpath={.items[0].metadata.name}").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to get pod: %v", err)
+		return fmt.Errorf("falha ao obter pod: %v", err)
 	}
 	podName := strings.TrimSpace(string(out))
 	if podName == "" {
-		return fmt.Errorf("no git-server pod found in namespace %s", m.Namespace)
+		return fmt.Errorf("nenhum pod git-server encontrado no namespace %s", m.Namespace)
 	}
 
 	// Note: We need to handle 'incremental' updates to avoid overhead?
