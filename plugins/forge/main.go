@@ -52,7 +52,7 @@ func main() {
 			eng := engine.NewEngine()
 
 			// Registro dos mods
-			eng.Register(&mods.DummyMod{})
+			eng.Register(&mods.LogMod{})
 
 			if err := eng.Run(dir); err != nil {
 				fmt.Printf("Erro na execução: %v\n", err)
