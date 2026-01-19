@@ -58,7 +58,8 @@ builds:
       - linux
       - windows
       - darwin
-    main: ./plugins/forge
+    dir: ./plugins/forge
+    main: .
     binary: yby-plugin-forge
     ldflags:
       - -s -w
@@ -69,7 +70,8 @@ builds:
       - linux
       - windows
       - darwin
-    main: ./plugins/oracle
+    dir: ./plugins/oracle
+    main: .
     binary: yby-plugin-oracle
     ldflags:
       - -s -w
@@ -80,7 +82,8 @@ builds:
       - linux
       - windows
       - darwin
-    main: ./plugins/viz
+    dir: ./plugins/viz
+    main: .
     binary: yby-plugin-viz
     ldflags:
       - -s -w
