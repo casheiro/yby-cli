@@ -264,7 +264,7 @@ func configureSecrets(repoURL string) {
 	token := os.Getenv("GITHUB_TOKEN")
 
 	if token == "" {
-		fmt.Println(itemStyle.Render("Skipping Secrets Config (Token not provided)..."))
+		fmt.Println(itemStyle.Render("Pulando Configuração de Secrets (Token não fornecido)..."))
 		return
 	}
 	fmt.Println(itemStyle.Render("Configurando Argo CD Repo Secret..."))

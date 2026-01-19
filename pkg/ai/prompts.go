@@ -8,7 +8,8 @@ CRITICAL INSTRUCTION: DETECT THE LANGUAGE OF THE USER DESCRIPTION.
 YOU MUST GENERATE ALL FILE CONTENT (SUMMARY, MARKDOWN FILES, PERSONAS) IN THE SAME LANGUAGE AS THE INPUT DESCRIPTION.
 Example: Description "Sistema de vendas" (PT) -> Output in Portuguese.
 Example: Description "Sales system" (EN) -> Output in English.
-FAILURE TO MATCH LANGUAGE IS A CRITICAL ERROR.
+Failure to match language is a critical error.
+IF DETECTION IS AMBIGUOUS, DEFAULT TO BRAZILIAN PORTUGUESE (PT-BR).
 
 Output must be strictly valid JSON matching this schema:
 {
@@ -26,7 +27,7 @@ Output must be strictly valid JSON matching this schema:
 MANDATORY FILES TO GENERATE:
 1. .synapstor/00_PROJECT_OVERVIEW.md (High level summary)
 2. .synapstor/.personas/ARCHITECT_BOT.md (A persona definition for this project)
-3. At least 2 Domain-Specific UKIs (Unit of Knowledge Intelligence) relevant to the description.
+3. At least 2 Domain-Specific UKIs (Unit of Knowledge Interlinked) relevant to the description.
    IMPORTANT: These MUST be placed in ".synapstor/.uki/" directory.
    Examples: .synapstor/.uki/UKI_HIPAA.md, .synapstor/.uki/UKI_PCI_DSS.md.
 

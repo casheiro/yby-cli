@@ -10,12 +10,20 @@ import (
 )
 
 func main() {
-	// Read request from Stdin
 	var req plugin.PluginRequest
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
-		// If running without input (manual run?), just print generic error or help
-		// But strictly speaking, it expects JSON.
-		fail(fmt.Errorf("failed to decode request: %w", err))
+
+	// 1. Check for Environment Variable Protocol
+	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
+		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+			fail(fmt.Errorf("falha ao decodificar requisição do env: %w", err))
+		}
+	} else {
+		// 2. Fallback to Stdin
+		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+			// If running without input (manual run?), just print generic error or help
+			// But strictly speaking, it expects JSON.
+			fail(fmt.Errorf("falha ao decodificar requisição do stdin: %w", err))
+		}
 	}
 
 	switch req.Hook {
@@ -45,14 +53,14 @@ func main() {
 			"blueprint": blueprint,
 		})
 	default:
-		fail(fmt.Errorf("unknown hook: %s", req.Hook))
+		fail(fmt.Errorf("hook desconhecido: %s", req.Hook))
 	}
 }
 
 func respond(data interface{}) {
 	resp := plugin.PluginResponse{Data: data}
 	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		fmt.Fprintf(os.Stderr, "falha ao codificar resposta: %v\n", err)
 		os.Exit(1)
 	}
 }
