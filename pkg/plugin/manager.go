@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
@@ -242,12 +243,45 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	}
 
 	// Prepare Request
-	// For now, we don't have a full Blueprint context when running independent commands
-	// But we can add it later if needed.
+	// 1. Load Core Context (Synapstor / README / Identity)
+	cwd, _ := os.Getwd()
+	coreCtx, err := projectContext.GetCoreContext(cwd)
+	if err != nil {
+		fmt.Printf("⚠️  Aviso: Falha ao carregar contexto core: %v\n", err)
+		// Fallback to empty core context
+		coreCtx = &projectContext.CoreContext{
+			ProjectName: "unknown",
+			Environment: "unknown",
+		}
+	}
+
+	// 2. Prepare BlueprintContext for plugin enrichment
+	// We map CoreContext fields into the Data map so they are available to plugins (and consumers like Bard)
+	initialData := make(map[string]interface{})
+
+	// Convert CoreContext struct to map for Data bucket
+	// We do this manually or via JSON roundtrip to be safe
+	coreBytes, _ := json.Marshal(coreCtx)
+	_ = json.Unmarshal(coreBytes, &initialData)
+
+	blueprintCtx := &scaffold.BlueprintContext{
+		ProjectName: coreCtx.ProjectName,
+		Environment: coreCtx.Environment,
+		Data:        initialData,
+	}
+
+	// 3. Run Context Hook (Collect data from Atlas, etc.)
+	// This will populate blueprintCtx.Data with plugin contributions (e.g. "blueprint" from Atlas)
+	if err := m.ExecuteContextHook(blueprintCtx); err != nil {
+		fmt.Printf("⚠️  Erro ao coletar contexto dos plugins: %v\n", err)
+	}
+
+	// 4. Final Context for the command
+	// We pass the aggregated Data map
 	req := PluginRequest{
 		Hook:    "command",
 		Args:    args,
-		Context: make(map[string]interface{}),
+		Context: blueprintCtx.Data,
 	}
 
 	fmt.Printf("🚀 Executing plugin: %s\n", pluginName)
