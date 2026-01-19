@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
@@ -242,12 +243,45 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	}
 
 	// Prepare Request
-	// For now, we don't have a full Blueprint context when running independent commands
-	// But we can add it later if needed.
+	// 1. Load Core Context (Synapstor / README / Identity)
+	cwd, _ := os.Getwd()
+	coreCtx, err := projectContext.GetCoreContext(cwd)
+	if err != nil {
+		fmt.Printf("⚠️  Aviso: Falha ao carregar contexto core: %v\n", err)
+		// Fallback to empty core context
+		coreCtx = &projectContext.CoreContext{
+			ProjectName: "unknown",
+			Environment: "unknown",
+		}
+	}
+
+	// 2. Prepare BlueprintContext for plugin enrichment
+	// We map CoreContext fields into the Data map so they are available to plugins (and consumers like Bard)
+	initialData := make(map[string]interface{})
+
+	// Convert CoreContext struct to map for Data bucket
+	// We do this manually or via JSON roundtrip to be safe
+	coreBytes, _ := json.Marshal(coreCtx)
+	_ = json.Unmarshal(coreBytes, &initialData)
+
+	blueprintCtx := &scaffold.BlueprintContext{
+		ProjectName: coreCtx.ProjectName,
+		Environment: coreCtx.Environment,
+		Data:        initialData,
+	}
+
+	// 3. Run Context Hook (Collect data from Atlas, etc.)
+	// This will populate blueprintCtx.Data with plugin contributions (e.g. "blueprint" from Atlas)
+	if err := m.ExecuteContextHook(blueprintCtx); err != nil {
+		fmt.Printf("⚠️  Erro ao coletar contexto dos plugins: %v\n", err)
+	}
+
+	// 4. Final Context for the command
+	// We pass the aggregated Data map
 	req := PluginRequest{
 		Hook:    "command",
 		Args:    args,
-		Context: make(map[string]interface{}),
+		Context: blueprintCtx.Data,
 	}
 
 	fmt.Printf("🚀 Executing plugin: %s\n", pluginName)
@@ -262,19 +296,108 @@ func (m *Manager) ListPlugins() []PluginManifest {
 	return manifests
 }
 
+// GetPlugin returns a loaded plugin by name.
+func (m *Manager) GetPlugin(name string) (*LoadedPlugin, bool) {
+	for _, p := range m.plugins {
+		if p.Manifest.Name == name {
+			return &p, true
+		}
+	}
+	return nil, false
+}
+
+// Remove uninstalls a plugin by name.
+func (m *Manager) Remove(name string) error {
+	// Ensure we have the latest state
+	if len(m.plugins) == 0 {
+		_ = m.Discover()
+	}
+
+	p, found := m.GetPlugin(name)
+	if !found {
+		return fmt.Errorf("plugin '%s' não encontrado", name)
+	}
+
+	// Safety check: Only remove from user home dir to avoid deleting project files
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	startPath := filepath.Join(home, ".yby", "plugins")
+
+	rel, err := filepath.Rel(startPath, p.Path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("plugin '%s' está instalado fora do diretório global (%s). Remoção manual necessária", name, p.Path)
+	}
+
+	fmt.Printf("🗑️  Removendo plugin %s de %s...\n", name, p.Path)
+	return os.Remove(p.Path)
+}
+
+// Update attempts to update a plugin to the latest version.
+func (m *Manager) Update(name string) error {
+	// Ensure we have the latest state
+	if len(m.plugins) == 0 {
+		_ = m.Discover()
+	}
+
+	p, found := m.GetPlugin(name)
+	if !found {
+		return fmt.Errorf("plugin '%s' não encontrado", name)
+	}
+
+	// Update logic depends on source.
+	// For native plugins, we can try to install "latest".
+	nativePlugins := map[string]bool{
+		"atlas":     true,
+		"bard":      true,
+		"sentinel":  true,
+		"forge":     true,
+		"synapstor": true,
+		"viz":       true,
+	}
+
+	if nativePlugins[name] {
+		// Native plugin: simple reinstall/upgrade
+		fmt.Printf("🔄 Atualizando plugin nativo '%s' (Atual: %s)...\n", name, p.Manifest.Version)
+		return m.Install(name, "latest", true) // Force = true
+	}
+
+	// For generic plugins, we don't track the source URL currently.
+	// Future improvement: save metadata file alongside binary.
+	return fmt.Errorf("update automático não suportado para plugins de terceiros '%s' (origem desconhecida). Por favor, reinstale manualmente", name)
+}
+
 // Install downloads and installs a native plugin.
 // Supports: "file:///path/to/binary" or native plugin names "atlas", "bard", "sentinel".
-func (m *Manager) Install(pluginSource, version string) error {
+func (m *Manager) Install(pluginSource, version string, force bool) error {
+	// Discover existing first to check for conflicts
+	if len(m.plugins) == 0 {
+		_ = m.Discover()
+	}
 	nativePlugins := map[string]bool{
-		"atlas":    true,
-		"bard":     true,
-		"sentinel": true,
-		"forge":    true,
-		"oracle":   true,
-		"viz":      true,
+		"atlas":     true,
+		"bard":      true,
+		"sentinel":  true,
+		"forge":     true,
+		"synapstor": true,
+		"viz":       true,
 	}
 
 	if nativePlugins[pluginSource] {
+		// Check if already installed
+		if !force {
+			if existing, found := m.GetPlugin(pluginSource); found {
+				if existing.Manifest.Version == version && version != "latest" {
+					return fmt.Errorf("plugin '%s' versão %s já está instalado. Use --force para reinstalar", pluginSource, version)
+				}
+				if version == "latest" {
+					fmt.Printf("⚠️  Plugin '%s' já existe (v%s). Reinstalando 'latest'...\n", pluginSource, existing.Manifest.Version)
+				} else {
+					fmt.Printf("⚠️  Plugin '%s' já existe (v%s). Substituindo por v%s...\n", pluginSource, existing.Manifest.Version, version)
+				}
+			}
+		}
 		return m.installNative(pluginSource, version)
 	}
 
@@ -320,6 +443,13 @@ func (m *Manager) Install(pluginSource, version string) error {
 		return err
 	}
 	defer destFile.Close()
+
+	// Check if already installed (by name)
+	if !force {
+		if existing, found := m.GetPlugin(pluginName); found {
+			return fmt.Errorf("plugin '%s' já está instalado em %s. Use --force para sobrescrever", pluginName, existing.Path)
+		}
+	}
 
 	if _, err := io.Copy(destFile, srcFile); err != nil {
 		return fmt.Errorf("falha ao copiar binário: %w", err)

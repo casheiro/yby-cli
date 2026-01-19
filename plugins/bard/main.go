@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -67,20 +68,44 @@ func startChat(ctxData map[string]interface{}) {
 		os.Exit(1)
 	}
 
-	// Prepare System Prompt
-	blueprintSummary := "Nenhum contexto disponível."
+	// 1. Parse Context
+	overview, _ := ctxData["overview"].(string)
+	backlog, _ := ctxData["backlog"].(string)
+
+	// Parse UKIs safe conversion
+	var ukis []projectContext.UKIMetadata
+	if v, ok := ctxData["uki_index"]; ok {
+		b, _ := json.Marshal(v)
+		_ = json.Unmarshal(b, &ukis)
+	}
+
+	blueprintSummary := "Nenhum blueprint disponível."
 	if bp, ok := ctxData["blueprint"]; ok {
-		// Convert blueprint to string summary
-		// This is naive, relies on fmt/json stringification
 		bytes, _ := json.MarshalIndent(bp, "", "  ")
 		blueprintSummary = string(bytes)
 	}
 
-	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", blueprintSummary)
+	// 2. Build Rich System Prompt
+	// We inject the "Mental State" of the project
+	contextBlock := fmt.Sprintf(`
+## Project Overview
+%s
+
+## Backlog & Debt
+%s
+
+## Technical Blueprint (Atlas)
+%s
+`, overview, backlog, blueprintSummary)
+
+	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
 
 	// UI Setup
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair."))
+	if len(ukis) > 0 {
+		fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("📚 %d UKIs indexadas para consulta inteligente.\n"), len(ukis))
+	}
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -100,7 +125,51 @@ func startChat(ctxData map[string]interface{}) {
 
 		fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Bard > "))
 
-		err := provider.StreamCompletion(ctx, systemPrompt, input, os.Stdout)
+		// 3. Smart Retrieval (UKI Selector)
+		ukiContext := ""
+		if len(ukis) > 0 {
+			// Serialize index for LLM
+			indexBytes, _ := json.Marshal(ukis)
+			selectorPrompt := strings.ReplaceAll(BardUKISelectorPrompt, "{{ uki_index_json }}", string(indexBytes))
+			selectorPrompt = strings.ReplaceAll(selectorPrompt, "{{ user_question }}", input)
+
+			// Ask LLM to select
+			// We use a separate context or simplified interaction?
+			// Provider.Completion is synchronous
+			selectionJson, err := provider.Completion(ctx, "You are a librarian.", selectorPrompt)
+			if err == nil {
+				// Parse response (naive: try to find JSON array)
+				// Clean markdown code blocks if any
+				cleanJson := strings.ReplaceAll(selectionJson, "```json", "")
+				cleanJson = strings.ReplaceAll(cleanJson, "```", "")
+
+				var selectedIDs []string
+				if err := json.Unmarshal([]byte(cleanJson), &selectedIDs); err == nil && len(selectedIDs) > 0 {
+					// Read files
+					fmt.Printf(lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("240")).Render("\n(Lendo: %s)... "), strings.Join(selectedIDs, ", "))
+
+					for _, id := range selectedIDs {
+						for _, uki := range ukis {
+							if uki.ID == id {
+								content, err := os.ReadFile(uki.Filename)
+								if err == nil {
+									ukiContext += fmt.Sprintf("\n--- UKI: %s ---\n%s\n", uki.Title, string(content))
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// 4. Final Answer
+		runInput := input
+		if ukiContext != "" {
+			runInput = fmt.Sprintf("Contexto Adicional da Documentação (UKIs):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
+		}
+
+		err := provider.StreamCompletion(ctx, systemPrompt, runInput, os.Stdout)
 		if err != nil {
 			fmt.Printf("\nError: %v\n", err)
 		}
