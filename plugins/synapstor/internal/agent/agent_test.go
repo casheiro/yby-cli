@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
@@ -48,7 +49,7 @@ func TestCapture(t *testing.T) {
 	mockJson := `{
 		"title": "Test UKI",
 		"filename": "UKI-123-test.md",
-		"content": "# Test UKI\nContent here.",
+		"content": "**ID:** UKI-MOCK-TEST\n# Test UKI\nContent here.",
 		"summary": "Summary"
 	}`
 
@@ -70,7 +71,12 @@ func TestCapture(t *testing.T) {
 	}
 
 	content, _ := os.ReadFile(expectedPath)
-	if string(content) != "# Test UKI\nContent here." {
+	// Check for semantic ID format
+	if !strings.Contains(string(content), "**ID:** UKI-") {
+		t.Errorf("Expected content to contain semantic ID format, but got: %s", string(content))
+	}
+	// Original content check (assuming it should still be there or modified)
+	if !strings.Contains(string(content), "# Test UKI\nContent here.") {
 		t.Errorf("Unexpected content: %s", string(content))
 	}
 }

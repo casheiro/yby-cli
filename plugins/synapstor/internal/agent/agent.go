@@ -25,11 +25,9 @@ type SynapstorResponse struct {
 const CaptureSystemPrompt = `
 Goal: You are the Synapstor Agent, a Governance Architect.
 Input: Raw unstructured text (idea, log, meeting note, decision).
-Output: A structured Markdown document following the UKI (Unit of Knowledge Intelligence) format.
-
-Structure:
+Output: A structured Markdown document following theO UKI (Unit of Knowledge Interlinked) é o padrão de conhecimento do projeto.ure:
 # [Title]
-**ID:** UKI-[TIMESTAMP]-[SHORT_SLUG]
+**ID:** UKI-[DOMAIN]-[CONCEPT]
 **Type:** [Concept|Decision|Guide|Reference]
 **Status:** Draft
 

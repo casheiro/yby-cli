@@ -349,12 +349,12 @@ func (m *Manager) Update(name string) error {
 	// Update logic depends on source.
 	// For native plugins, we can try to install "latest".
 	nativePlugins := map[string]bool{
-		"atlas":    true,
-		"bard":     true,
-		"sentinel": true,
-		"forge":    true,
-		"oracle":   true,
-		"viz":      true,
+		"atlas":     true,
+		"bard":      true,
+		"sentinel":  true,
+		"forge":     true,
+		"synapstor": true,
+		"viz":       true,
 	}
 
 	if nativePlugins[name] {
@@ -376,12 +376,12 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 		_ = m.Discover()
 	}
 	nativePlugins := map[string]bool{
-		"atlas":    true,
-		"bard":     true,
-		"sentinel": true,
-		"forge":    true,
-		"oracle":   true,
-		"viz":      true,
+		"atlas":     true,
+		"bard":      true,
+		"sentinel":  true,
+		"forge":     true,
+		"synapstor": true,
+		"viz":       true,
 	}
 
 	if nativePlugins[pluginSource] {
