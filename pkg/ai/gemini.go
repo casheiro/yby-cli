@@ -191,11 +191,7 @@ type geminiEmbeddingContent struct {
 	Parts []geminiPart `json:"parts"`
 }
 
-type geminiEmbeddingResponse struct {
-	Embedding struct {
-		Values []float32 `json:"values"`
-	} `json:"embedding"`
-}
+// geminiEmbeddingResponse was unused and removed
 
 type geminiBatchEmbeddingRequest struct {
 	Requests []geminiEmbeddingRequest `json:"requests"`
