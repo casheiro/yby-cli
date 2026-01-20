@@ -133,9 +133,20 @@ jobs:
         with:
           go-version: stable
 
+      - name: 🔨 Build Native Plugins
+        run: |
+          cd main-repo
+          mkdir -p .yby/plugins
+          # Build manual dos plugins conhecidos para garantir que o gen-docs pegue as descrições
+          go build -o .yby/plugins/yby-plugin-atlas ./plugins/atlas
+          go build -o .yby/plugins/yby-plugin-bard ./plugins/bard
+          # Sentinel tem estrutura diferente
+          go build -tags k8s -o .yby/plugins/yby-plugin-sentinel ./plugins/sentinel/cli
+
       - name: 📝 Generate Docs
         run: |
           cd main-repo
+          # Gera na raiz da wiki (CLI-Reference.md será criado lá) e limpa comandos antigos se houver
           go run ./cmd/yby gen-docs ../docs/wiki
 
       - name: 🚀 Commit & Push Wiki

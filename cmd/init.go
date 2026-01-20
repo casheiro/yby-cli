@@ -39,9 +39,10 @@ type InitOptions struct {
 	Environment string
 
 	// Modules
-	EnableKepler bool
-	EnableMinio  bool
-	EnableKEDA   bool
+	EnableKepler        bool
+	EnableMinio         bool
+	EnableKEDA          bool
+	EnableMetricsServer bool
 
 	// Modes
 	Offline        bool
@@ -74,6 +75,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Habilitar módulo Kepler")
 	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Habilitar módulo MinIO")
 	initCmd.Flags().BoolVar(&opts.EnableKEDA, "enable-keda", false, "Habilitar módulo KEDA")
+	initCmd.Flags().BoolVar(&opts.EnableMetricsServer, "enable-metrics-server", false, "Habilitar Metrics Server (Observability)")
 }
 
 var initCmd = &cobra.Command{
@@ -238,18 +240,19 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 	ctx := &scaffold.BlueprintContext{
-		GitRepoURL:         flags.GitRepo,
-		GitBranch:          flags.GitBranch,
-		Domain:             flags.Domain,
-		Email:              flags.Email,
-		Environment:        flags.Environment,
-		EnableCI:           flags.IncludeCI,
-		EnableDevContainer: flags.IncludeDevContainer,
-		EnableKepler:       flags.EnableKepler,
-		EnableMinio:        flags.EnableMinio,
-		EnableKEDA:         flags.EnableKEDA,
-		Topology:           flags.Topology,
-		WorkflowPattern:    flags.Workflow,
+		GitRepoURL:          flags.GitRepo,
+		GitBranch:           flags.GitBranch,
+		Domain:              flags.Domain,
+		Email:               flags.Email,
+		Environment:         flags.Environment,
+		EnableCI:            flags.IncludeCI,
+		EnableDevContainer:  flags.IncludeDevContainer,
+		EnableKepler:        flags.EnableKepler,
+		EnableMinio:         flags.EnableMinio,
+		EnableKEDA:          flags.EnableKEDA,
+		EnableMetricsServer: flags.EnableMetricsServer,
+		Topology:            flags.Topology,
+		WorkflowPattern:     flags.Workflow,
 
 		// Template Data
 		GitRepo:     flags.GitRepo,
@@ -401,9 +404,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 		promptModules := &survey.MultiSelect{
 			Message: "Selecione os Módulos Adicionais (Add-ons):",
-			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)"},
+			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)", "Observability Core (Metrics Server)"},
 			Default: defaults,
-			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos.",
+			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
 		}
 		if err := survey.AskOne(promptModules, &selectedModules); err != nil {
 			fmt.Println("❌ Cancelado")
@@ -414,6 +417,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		ctx.EnableKepler = false
 		ctx.EnableMinio = false
 		ctx.EnableKEDA = false
+		ctx.EnableMetricsServer = false
 		for _, m := range selectedModules {
 			if strings.Contains(m, "Kepler") {
 				ctx.EnableKepler = true
@@ -423,6 +427,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			}
 			if strings.Contains(m, "KEDA") {
 				ctx.EnableKEDA = true
+			}
+			if strings.Contains(m, "Observability") {
+				ctx.EnableMetricsServer = true
 			}
 		}
 

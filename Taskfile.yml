@@ -11,12 +11,8 @@ tasks:
       - go build -o bin/yby ./cmd/yby
       - go build -o bin/yby-plugin-atlas ./plugins/atlas
       - go build -o bin/yby-plugin-bard ./plugins/bard
-      - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
-      - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
-      - go build -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
-      - go build -o bin/yby-plugin-forge ./plugins/forge
-      - go build -o bin/yby-plugin-synapstor ./plugins/synapstor
-      - go build -o bin/yby-plugin-viz ./plugins/viz
+      - go build -tags k8s -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
+      - go build -tags k8s -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
 
   test:
     desc: Run tests

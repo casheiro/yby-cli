@@ -134,6 +134,8 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
 
 	// Context + User Prompt
+	lang := GetLanguage()
+	systemPrompt = fmt.Sprintf("%s\n\n(IMPORTANT: You MUST output your analysis/response entirely in %s language, maintaining the JSON structure if requested.)", systemPrompt, lang)
 	fullPrompt := fmt.Sprintf("%s\n\nUSER PROMPT: %s", systemPrompt, userPrompt)
 
 	reqBody := geminiRequest{
@@ -147,29 +149,53 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 		// No specific response mime type force, let it be text
 	}
 
-	jsonBody, _ := json.Marshal(reqBody)
-	client := http.Client{Timeout: 60 * time.Second}
+	// Retry Configuration
+	const maxRetries = 3
+	const baseDelay = 2 * time.Second
 
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("falha ao chamar gemini: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("gemini returned status: %d", resp.StatusCode)
-	}
-
+	var lastErr error
 	var gResp geminiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
-		return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		jsonBody, _ := json.Marshal(reqBody)
+		client := http.Client{Timeout: 60 * time.Second}
+
+		resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			lastErr = fmt.Errorf("falha ao chamar gemini: %w", err)
+			time.Sleep(baseDelay * time.Duration(1<<attempt)) // Exponential Backoff
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 200 {
+			// Success!
+			if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
+				return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
+			}
+			if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
+				return "", fmt.Errorf("resposta vazia do gemini")
+			}
+			return gResp.Candidates[0].Content.Parts[0].Text, nil
+		}
+
+		// Handle Errors
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyString := string(bodyBytes)
+		lastErr = fmt.Errorf("gemini returned status: %d - %s", resp.StatusCode, bodyString)
+
+		// Retry only on 503 (Unavailable) or 429 (Too Many Requests)
+		if resp.StatusCode == 503 || resp.StatusCode == 429 {
+			fmt.Printf("\r⚠️  Gemini ocupado (Status %d). Tentando novamente em %d segundos (Tentativa %d/%d)...\n", resp.StatusCode, int(baseDelay.Seconds())*(1<<attempt), attempt+1, maxRetries)
+			time.Sleep(baseDelay * time.Duration(1<<attempt))
+			continue
+		}
+
+		// If it's another error (400, 401, 500), fail immediately
+		break
 	}
 
-	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("resposta vazia do gemini")
-	}
-
-	return gResp.Candidates[0].Content.Parts[0].Text, nil
+	return "", lastErr
 }
 
 func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {

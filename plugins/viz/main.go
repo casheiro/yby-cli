@@ -45,7 +45,7 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			manifest := PluginManifest{
 				Name:        "viz",
-				Description: "Observability TUI Plugin",
+				Description: "Observabilidade visual no terminal (Dashboards TUI)",
 				Version:     "0.1.0",
 				Hooks:       []string{"command"},
 			}
@@ -64,7 +64,7 @@ func main() {
 			if req.Hook == "manifest" {
 				manifest := PluginManifest{
 					Name:        "viz",
-					Description: "Observability TUI Plugin",
+					Description: "Observabilidade visual no terminal (Dashboards TUI)",
 					Version:     "0.1.0",
 					Hooks:       []string{"command"},
 				}
