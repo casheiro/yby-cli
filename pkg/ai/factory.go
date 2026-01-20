@@ -1,13 +1,24 @@
 package ai
 
-import "context"
+import (
+	"context"
+	"os"
+	"strings"
+)
 
 // GetProvider returns the requested AI provider or defaults to the best available.
 // preferred: "ollama", "gemini", "openai"
 func GetProvider(ctx context.Context, preferred string) Provider {
-	// 1. Explicit Preference
-	if preferred != "" && preferred != "auto" {
-		switch preferred {
+	// 1. Explicit Preference (Argument or Env Var)
+	target := preferred
+	if target == "" || target == "auto" {
+		if env := os.Getenv("YBY_AI_PROVIDER"); env != "" {
+			target = strings.ToLower(env)
+		}
+	}
+
+	if target != "" && target != "auto" {
+		switch target {
 		case "ollama":
 			p := NewOllamaProvider()
 			if p.IsAvailable(ctx) {

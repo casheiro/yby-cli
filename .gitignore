@@ -30,6 +30,8 @@ bin/
 .yby/
 
 !yby/
+.synapstor/.index
+
 !.agent/
 
 # Logs
