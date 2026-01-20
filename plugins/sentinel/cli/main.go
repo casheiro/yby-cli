@@ -1,3 +1,5 @@
+//go:build k8s
+
 package main
 
 import (
@@ -133,6 +135,8 @@ func handlePluginRequest() {
 		// Se rodar sem hook mas com args via main, talvez seja uso direto?
 		if len(os.Args) > 1 {
 			// Mock behavior for dev?
+			// Placeholder for future dev mode
+			_ = 0
 		}
 		os.Exit(0)
 	}
@@ -217,7 +221,7 @@ func investigate(podName, namespace string) {
 		}
 
 		// We re-enable exec just for this fallback
-		cmdMetrics := exec.Command("kubectl", args...)
+		cmdMetrics := execCommand("kubectl", args...)
 		out, err := cmdMetrics.CombinedOutput()
 		if err == nil {
 			metricsStr = string(out)

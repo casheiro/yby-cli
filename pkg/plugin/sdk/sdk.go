@@ -47,10 +47,6 @@ func Init() error {
 			}
 			currentContext = &fullCtx
 		}
-	} else {
-		// No stdin? Maybe running standalone for dev?
-		// We could support loading from basic config or env vars here.
-		// For now, leave nil.
 	}
 
 	// Handle Idempotency of flags logic mentioned in PRD?
