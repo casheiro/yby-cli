@@ -49,33 +49,11 @@ builds:
       - darwin
     main: ./plugins/sentinel/cli
     binary: yby-plugin-sentinel
+    flags:
+      - -tags=k8s
     ldflags:
       - -s -w
 
-  - id: viz
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    dir: ./plugins/viz
-    main: .
-    binary: yby-plugin-viz
-    ldflags:
-      - -s -w
-  - id: synapstor
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    dir: ./plugins/synapstor
-    main: .
-    binary: yby-plugin-synapstor
-    ldflags:
-      - -s -w
 archives:
   - id: core
     ids:
@@ -113,24 +91,6 @@ archives:
       - goos: windows
         formats: ["zip"]
     name_template: "yby-plugin-sentinel_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-
-  - id: synapstor
-    ids:
-      - synapstor
-    formats: ["tar.gz"]
-    format_overrides:
-      - goos: windows
-        formats: ["zip"]
-    name_template: "yby-plugin-synapstor_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-
-  - id: viz
-    ids:
-      - viz
-    formats: ["tar.gz"]
-    format_overrides:
-      - goos: windows
-        formats: ["zip"]
-    name_template: "yby-plugin-viz_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 checksum:
   name_template: "checksums.txt"
 snapshot:

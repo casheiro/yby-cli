@@ -15,6 +15,7 @@ import (
 
 	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"sigs.k8s.io/yaml"
 )
 
 // Manager orchestrates plugin discovery and execution.
@@ -270,22 +271,100 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 		Data:        initialData,
 	}
 
-	// 3. Run Context Hook (Collect data from Atlas, etc.)
-	// This will populate blueprintCtx.Data with plugin contributions (e.g. "blueprint" from Atlas)
-	if err := m.ExecuteContextHook(blueprintCtx); err != nil {
-		fmt.Printf("⚠️  Erro ao coletar contexto dos plugins: %v\n", err)
+	// 3. Resolve Environment & Infrastructure, and 4. Apply Context Hooks
+	fullCtx, _, err := m.BuildPluginContext(coreCtx, blueprintCtx, cwd)
+	if err != nil {
+		fmt.Printf("⚠️  Erro ao construir contexto do plugin: %v\n", err)
 	}
 
-	// 4. Final Context for the command
-	// We pass the aggregated Data map
+	// Converter struct FullContext para map
+	fullCtxMap := make(map[string]interface{})
+	fullCtxBytes, _ := json.Marshal(fullCtx)
+	_ = json.Unmarshal(fullCtxBytes, &fullCtxMap)
+
 	req := PluginRequest{
 		Hook:    "command",
 		Args:    args,
-		Context: blueprintCtx.Data,
+		Context: fullCtxMap,
 	}
 
 	fmt.Printf("🚀 Executing plugin: %s\n", pluginName)
 	return m.executor.RunInteractive(context.Background(), targetPlugin.Path, req)
+}
+
+// BuildPluginContext constructs the full context payload.
+// Exposed for testing.
+func (m *Manager) BuildPluginContext(coreCtx *projectContext.CoreContext, blueprintCtx *scaffold.BlueprintContext, cwd string) (*PluginFullContext, map[string]interface{}, error) {
+	// 3. Resolve Environment & Infrastructure
+	envManager := projectContext.NewManager(cwd)
+	var envDef projectContext.Environment
+	var infraCtx PluginInfrastructure
+	valuesMap := make(map[string]interface{})
+
+	if coreCtx.Environment != "unknown" {
+		manifest, err := envManager.LoadManifest()
+		if err == nil {
+			if val, ok := manifest.Environments[coreCtx.Environment]; ok {
+				envDef = val
+
+				// Resolve Values
+				if envDef.Values != "" {
+					if v, err := loadValues(filepath.Join(cwd, envDef.Values)); err == nil {
+						valuesMap = v
+					} else {
+						// Log only?
+						fmt.Printf("⚠️  Falha ao carregar values (%s): %v\n", envDef.Values, err)
+					}
+				}
+
+				// Resolve Infra
+				infraCtx = PluginInfrastructure{
+					KubeConfig:  expandPath(envDef.KubeConfig),
+					KubeContext: envDef.KubeContext,
+					Namespace:   envDef.Namespace,
+				}
+			}
+		}
+	}
+
+	// 4. Run Context Hook (Collect data from Atlas, etc.)
+	if err := m.ExecuteContextHook(blueprintCtx); err != nil {
+		return nil, nil, err
+	}
+
+	// 5. Final Context for the command
+	fullCtx := &PluginFullContext{
+		ProjectName: coreCtx.ProjectName,
+		Environment: coreCtx.Environment,
+		Infra:       infraCtx,
+		Values:      valuesMap,
+		Data:        blueprintCtx.Data, // Dados agregados (Core + Plugins)
+	}
+
+	return fullCtx, valuesMap, nil
+}
+
+func loadValues(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var v map[string]interface{}
+	if err := yaml.Unmarshal(data, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func expandPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, path[2:])
+	}
+	return path
 }
 
 func (m *Manager) ListPlugins() []PluginManifest {

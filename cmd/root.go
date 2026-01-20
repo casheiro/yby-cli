@@ -16,6 +16,9 @@ var rootCmd = &cobra.Command{
 	Short: "Yby - Zero-Touch Kubernetes Automation",
 	Long: `Yby CLI: Ferramenta oficial para automação e gerenciamento de clusters
 seguindo os princípios GitOps.`,
+	CompletionOptions: cobra.CompletionOptions{
+		DisableDefaultCmd: true,
+	},
 	PersistentPreRun: initConfig,
 }
 
@@ -44,9 +47,13 @@ func Execute() {
 
 				// Register dynamic command
 				pluginName := p.Name
+				desc := p.Description
+				if desc == "" {
+					desc = fmt.Sprintf("Executa o plugin %s", pluginName)
+				}
 				cmd := &cobra.Command{
 					Use:                pluginName,
-					Short:              fmt.Sprintf("Executes %s plugin", pluginName),
+					Short:              desc,
 					DisableFlagParsing: true, // Pass flags directly to plugin
 					Run: func(cmd *cobra.Command, args []string) {
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {

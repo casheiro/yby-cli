@@ -46,9 +46,10 @@ func handlePluginRequest(req plugin.PluginRequest) {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
-			Name:    "bard",
-			Version: "0.1.0",
-			Hooks:   []string{"command"},
+			Name:        "bard",
+			Version:     "0.1.0",
+			Description: "Assistente de IA interativo para diagnóstico e operações",
+			Hooks:       []string{"command"},
 		})
 	case "command":
 		startChat(req.Context)

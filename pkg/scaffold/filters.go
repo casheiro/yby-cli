@@ -47,7 +47,7 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 		}
 	}
 
-	// 3. Module Filters (Kepler, MinIO, KEDA)
+	// 3. Module Filters (Kepler, MinIO, KEDA, Metrics Server)
 	// Assuming these are organized in charts/ or manifests/
 	// Example: assets/charts/kepler
 	if !ctx.EnableKepler {
@@ -62,6 +62,11 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 	}
 	if !ctx.EnableKEDA {
 		if strings.Contains(path, "charts/keda") {
+			return true
+		}
+	}
+	if !ctx.EnableMetricsServer {
+		if strings.Contains(path, "manifests/observability/metrics-server.yaml") {
 			return true
 		}
 	}
