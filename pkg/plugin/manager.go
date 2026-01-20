@@ -352,7 +352,6 @@ func (m *Manager) Update(name string) error {
 		"atlas":     true,
 		"bard":      true,
 		"sentinel":  true,
-		"forge":     true,
 		"synapstor": true,
 		"viz":       true,
 	}
@@ -379,7 +378,6 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 		"atlas":     true,
 		"bard":      true,
 		"sentinel":  true,
-		"forge":     true,
 		"synapstor": true,
 		"viz":       true,
 	}

@@ -8,16 +8,3 @@ Style: Direct, technical, helpful. Avoid "I hope this helps".
 
 Current Project Context: {{ blueprint_json_summary }}
 `
-
-const BardUKISelectorPrompt = `
-Goal: Select relevant documentation (UKIs) to answer the user's question.
-Input: User Question + List of Available UKIs (ID, Title).
-Output: JSON Array of Strings containing ONLY the IDs of the UKIs that are strictly necessary. If none, return [].
-
-Available UKIs:
-{{ uki_index_json }}
-
-User Question: {{ user_question }}
-
-JSON Response:
-`

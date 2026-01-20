@@ -37,6 +37,11 @@ func (m *MockProvider) StreamCompletion(ctx context.Context, systemPrompt, userP
 	return nil
 }
 
+func (m *MockProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	// Mock implementation: return empty vectors or random
+	return make([][]float32, len(texts)), nil
+}
+
 func TestCapture(t *testing.T) {
 	// Create temp dir for test
 	tmpDir, err := os.MkdirTemp("", "synapstor-test")
