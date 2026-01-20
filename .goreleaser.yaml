@@ -51,30 +51,7 @@ builds:
     binary: yby-plugin-sentinel
     ldflags:
       - -s -w
-  - id: forge
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    dir: ./plugins/forge
-    main: .
-    binary: yby-plugin-forge
-    ldflags:
-      - -s -w
-  - id: oracle
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-    dir: ./plugins/oracle
-    main: .
-    binary: yby-plugin-oracle
-    ldflags:
-      - -s -w
+
   - id: viz
     env:
       - CGO_ENABLED=0
@@ -125,23 +102,14 @@ archives:
         formats: ["zip"]
     name_template: "yby-plugin-sentinel_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-  - id: forge
+  - id: synapstor
     ids:
-      - forge
+      - synapstor
     formats: ["tar.gz"]
     format_overrides:
       - goos: windows
         formats: ["zip"]
-    name_template: "yby-plugin-forge_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-
-  - id: oracle
-    ids:
-      - oracle
-    formats: ["tar.gz"]
-    format_overrides:
-      - goos: windows
-        formats: ["zip"]
-    name_template: "yby-plugin-oracle_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "yby-plugin-synapstor_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: viz
     ids:
