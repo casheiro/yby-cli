@@ -27,8 +27,8 @@ jobs:
         run: go test ./... -v
 
       - name: 📚 Validate Documentation
-        # Smoke Test only (verify generation works)
-        run: go run ./cmd/yby gen-docs
+        # Smoke Test only (verify generation works, output to temp dir)
+        run: go run ./cmd/yby gen-docs /tmp/yby-docs-test
 
       - name: 🔍 Lint Code
         uses: golangci/golangci-lint-action@v6

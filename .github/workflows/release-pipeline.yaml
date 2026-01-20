@@ -136,7 +136,8 @@ jobs:
       - name: 📝 Generate Docs
         run: |
           cd main-repo
-          go run ./cmd/yby gen-docs ../docs/wiki
+          # Gerar na subpasta 'commands' para não poluir a raiz
+          go run ./cmd/yby gen-docs ../docs/wiki/commands
 
       - name: 🚀 Commit & Push Wiki
         run: |
