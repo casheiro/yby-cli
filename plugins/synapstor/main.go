@@ -55,9 +55,10 @@ func handlePluginRequest(req plugin.PluginRequest) {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
-			Name:    "synapstor",
-			Version: "0.1.0",
-			Hooks:   []string{"command"},
+			Name:        "synapstor",
+			Version:     "0.1.0",
+			Description: "Governança semântica e gestão de conhecimento (UKIs)",
+			Hooks:       []string{"command"},
 		})
 	case "command":
 		if len(req.Args) == 0 {

@@ -54,9 +54,10 @@ func handlePluginRequest(req plugin.PluginRequest) {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
-			Name:    "sentinel",
-			Version: "0.2.0",
-			Hooks:   []string{"command"},
+			Name:        "sentinel",
+			Version:     "0.2.0",
+			Description: "Auditoria de segurança e conformidade (CIS/NSA)",
+			Hooks:       []string{"command"},
 		})
 	case "command":
 		// Expect "yby sentinel investigate [pod-name] [flags]"
