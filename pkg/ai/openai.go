@@ -231,3 +231,54 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	}
 	return nil
 }
+
+type openAIEmbeddingRequest struct {
+	Input          []string `json:"input"`
+	Model          string   `json:"model"`
+	EncodingFormat string   `json:"encoding_format"`
+}
+
+type openAIEmbeddingResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+}
+
+func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	reqBody := openAIEmbeddingRequest{
+		Input:          texts,
+		Model:          "text-embedding-3-small", // Efficient and cheap
+		EncodingFormat: "float",
+	}
+
+	jsonBody, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/embeddings", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+
+	client := http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao chamar openai embeddings: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("openai embeddings status: %d", resp.StatusCode)
+	}
+
+	var oResp openAIEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
+		return nil, err
+	}
+
+	// Sort by index just in case, though usually ordered
+	results := make([][]float32, len(texts))
+	for _, data := range oResp.Data {
+		if data.Index < len(results) {
+			results[data.Index] = data.Embedding
+		}
+	}
+	return results, nil
+}

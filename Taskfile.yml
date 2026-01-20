@@ -15,7 +15,7 @@ tasks:
       - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
       - go build -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
       - go build -o bin/yby-plugin-forge ./plugins/forge
-      - go build -o bin/yby-plugin-oracle ./plugins/oracle
+      - go build -o bin/yby-plugin-synapstor ./plugins/synapstor
       - go build -o bin/yby-plugin-viz ./plugins/viz
 
   test:
