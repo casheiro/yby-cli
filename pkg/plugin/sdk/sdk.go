@@ -6,8 +6,6 @@ import (
 	"os"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 // currentContext holds the payload received from the CLI.
@@ -85,48 +83,6 @@ func Init() error {
 	}
 
 	return nil
-}
-
-// GetKubeClient returns a clientset configured based on the injected context.
-func GetKubeClient() (*kubernetes.Clientset, error) {
-	if currentContext == nil {
-		return nil, fmt.Errorf("SDK not initialized or no context received. Did you call sdk.Init()?")
-	}
-
-	// If we have specific kubeconfig path
-	kubeConfigPath := currentContext.Infra.KubeConfig
-
-	// If empty, clientcmd.BuildConfigFromFlags("", "") uses default ~/.kube/config
-	// But we really want to respect what CLI told us.
-	// If CLI didn't send anything (empty), we fallback to default.
-
-	config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build kube config: %w", err)
-	}
-
-	// Important: We should respect KubeContext if provided,
-	// but BuildConfigFromFlags doesn't easily let us select a context from a file.
-	// Logic: We need to load the config file, set the current context, and then build config.
-	if currentContext.Infra.KubeContext != "" {
-		// Advanced loading
-		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-		if kubeConfigPath != "" {
-			loadingRules.ExplicitPath = kubeConfigPath
-		}
-
-		configOverrides := &clientcmd.ConfigOverrides{
-			CurrentContext: currentContext.Infra.KubeContext,
-		}
-
-		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-		config, err = clientConfig.ClientConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create client config for context '%s': %w", currentContext.Infra.KubeContext, err)
-		}
-	}
-
-	return kubernetes.NewForConfig(config)
 }
 
 // GetValues returns the raw values map associated with the environment.
