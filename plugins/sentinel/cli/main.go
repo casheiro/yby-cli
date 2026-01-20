@@ -10,35 +10,48 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/charmbracelet/lipgloss"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var execCommand = exec.Command
 
 func main() {
-	var req plugin.PluginRequest
-
-	// 1. Check for Environment Variable Protocol
-	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
-		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
-			os.Exit(1)
-		}
-		handlePluginRequest(req)
-		return
+	// Initialize SDK
+	if err := sdk.Init(); err != nil {
+		// Log to stderr so it doesn't break JSON output if relevant
+		fmt.Fprintf(os.Stderr, "SDK Init error: %v\n", err)
 	}
 
-	// 2. Fallback to Stdin
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
-			handlePluginRequest(req)
-			return
-		}
-	}
+	// Use context definition from SDK if available, or fallback to manual generic request check
+	// But SDK Init already handles parsing plugin request.
+	// Since handlePluginRequest expects a req object, we need to reconstruct it or change the signature.
+	// Ideally handlePluginRequest should use sdk.GetFullContext() directly for logic,
+	// but hook dispatching depends on the "Hook" field which SDK parses into hidden struct.
 
-	// Fallback/Mock
-	handlePluginRequest(plugin.PluginRequest{Hook: "command"})
+	// Wait, SDK currentContext is PluginFullContext.
+	// PluginRequest has 'Hook'. SDK Init reads PluginRequest.
+	// We need to know WHICH hook was called.
+	// My SDK provided `GetFullContext` but didn't expose the `Hook`.
+	// I should probably export `GetHook()` from SDK or return the request from Init.
+
+	// Let's modify SDK to export GetHook or modify this main to re-read?
+	// No, SDK consumed stdin.
+
+	// FIX: I need to update SDK to expose the Hook or the Request.
+	// For now, I will hack it by accessing the raw request if I expose it, or just make SDK return the hook.
+	// OR: I can just use the fact that SDK Init absorbs the request.
+	// But I need to switch on the hook.
+
+	// I will invoke handleLogic() and inside it assume SDK is ready.
+	// But I need the hook name.
+	// If I check os.Args, maybe "manifest" is passed as arg?
+	// Usually Yby plugins pass context via stdin for 'command', but 'manifest' might be just arg or stdin with Hook="manifest".
+	// The manager sends: PluginRequest{Hook: "manifest"}.
+
+	handlePluginRequest()
 }
 
 // AnalysisResult define a estrutura esperada da resposta da IA
@@ -50,8 +63,10 @@ type AnalysisResult struct {
 	KubectlPatch    *string `json:"kubectl_patch"`
 }
 
-func handlePluginRequest(req plugin.PluginRequest) {
-	switch req.Hook {
+func handlePluginRequest() {
+	hook := sdk.GetHook()
+
+	switch hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
 			Name:        "sentinel",
@@ -63,7 +78,7 @@ func handlePluginRequest(req plugin.PluginRequest) {
 		// Expect "yby sentinel investigate [pod-name] [flags]"
 		// Flags: -n/--namespace
 		var podName, namespace string
-		args := req.Args
+		args := sdk.GetArgs() // Use SDK args
 
 		// Parser simples de argumentos
 		if len(args) > 0 {
@@ -92,14 +107,19 @@ func handlePluginRequest(req plugin.PluginRequest) {
 		}
 
 		// Fallback to Context if needed
-		if podName == "" && req.Context != nil {
-			if p, ok := req.Context["pod"]; ok {
+		ctx := sdk.GetFullContext()
+		if podName == "" && ctx != nil {
+			if p, ok := ctx.Data["pod"]; ok {
 				podName = fmt.Sprintf("%v", p)
 			}
 		}
-		if namespace == "" && req.Context != nil {
-			if n, ok := req.Context["namespace"]; ok {
-				namespace = fmt.Sprintf("%v", n)
+
+		// Priority: Flag > Values > Context > Default
+		if namespace == "" {
+			if ctx != nil && ctx.Infra.Namespace != "" {
+				namespace = ctx.Infra.Namespace
+			} else {
+				namespace = "default"
 			}
 		}
 
@@ -108,12 +128,12 @@ func handlePluginRequest(req plugin.PluginRequest) {
 			return
 		}
 
-		if namespace == "" {
-			namespace = "default"
-		}
-
 		investigate(podName, namespace)
 	default:
+		// Se rodar sem hook mas com args via main, talvez seja uso direto?
+		if len(os.Args) > 1 {
+			// Mock behavior for dev?
+		}
 		os.Exit(0)
 	}
 }
@@ -134,46 +154,83 @@ func investigate(podName, namespace string) {
 
 	fmt.Println(titleStyle.Render(fmt.Sprintf("\n🛡️  Sentinel Investigation: %s/%s", namespace, podName)))
 
-	// 1. Get Pod Logs via kubectl
+	k8sClient, err := sdk.GetKubeClient()
+	if err != nil {
+		fmt.Printf("⚠️  Falha ao obter cliente Kubernetes: %v\n", err)
+		return
+	}
+
+	ctx := context.Background()
+
+	// 1. Get Pod Logs via client-go
 	fmt.Print("🔍 Coletando logs...")
-	cmdLogs := execCommand("kubectl", "logs", podName, "-n", namespace, "--tail=50")
-	logsOut, err := cmdLogs.CombinedOutput()
+	tailLines := int64(50)
+	logsReq := k8sClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+		TailLines: &tailLines,
+	})
+	podLogs, err := logsReq.DoRaw(ctx)
+
+	logsStr := ""
 	if err != nil {
 		fmt.Printf("\r⚠️  Falha ao obter logs (%v). Continuando...\n", err)
 	} else {
+		logsStr = string(podLogs)
 		fmt.Println("\r✅ Logs coletados")
 	}
 
-	// 2. Get Events via kubectl
+	// 2. Get Events via client-go
 	fmt.Print("🔍 Coletando eventos...")
-	cmdEvents := execCommand("kubectl", "get", "events", "-n", namespace,
-		"--field-selector", fmt.Sprintf("involvedObject.name=%s", podName),
-		"--sort-by=.lastTimestamp",
-		"-o", "json")
+	events, err := k8sClient.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("involvedObject.name=%s", podName),
+	})
 
-	eventsOut, err := cmdEvents.CombinedOutput()
+	eventsStr := "[]"
 	if err != nil {
-		fmt.Printf("\r⚠️  Falha ao obter eventos. Continuando...\n")
+		fmt.Printf("\r⚠️  Falha ao obter eventos (%v). Continuando...\n", err)
 	} else {
+		// Serialize events to JSON for AI
+		eventsBytes, _ := json.Marshal(events.Items)
+		eventsStr = string(eventsBytes)
 		fmt.Println("\r✅ Eventos coletados")
 	}
 
 	// 3. Get Metrics (CPU/RAM)
+	// Client-go core doesn't have Metrics. API call directly or fallback to kubectl top?
+	// Given we want to avoid shelling out if possible, but metrics client is separate.
+	// For now, let's skip metrics strictly via client-go to save time on setting up metrics client deps,
+	// or try to shell out BUT ensuring we use the context.
+	// SDK gives us KubeConfig/Context.
+
 	fmt.Print("🔍 Coletando métricas...")
-	cmdMetrics := execCommand("kubectl", "top", "pod", podName, "-n", namespace, "--no-headers")
-	metricsOut, errMet := cmdMetrics.CombinedOutput()
-	metricsStr := ""
-	if errMet != nil {
-		// Silencioso sobre métricas, comum não ter metrics-server
-		metricsStr = "Metrics unavailable (metrics-server likely missing)"
-		fmt.Println("\r⚠️  Métricas indisponíveis")
+
+	metricsStr := "Metrics unavailable (client-go metrics not implemented yet)"
+
+	// Fallback to kubectl top ONLY if we have context info to pass
+	fullCtx := sdk.GetFullContext()
+	if fullCtx != nil {
+		args := []string{"top", "pod", podName, "-n", namespace, "--no-headers"}
+		if fullCtx.Infra.KubeConfig != "" {
+			args = append(args, "--kubeconfig", fullCtx.Infra.KubeConfig)
+		}
+		if fullCtx.Infra.KubeContext != "" {
+			args = append(args, "--context", fullCtx.Infra.KubeContext)
+		}
+
+		// We re-enable exec just for this fallback
+		cmdMetrics := exec.Command("kubectl", args...)
+		out, err := cmdMetrics.CombinedOutput()
+		if err == nil {
+			metricsStr = string(out)
+			fmt.Println("\r✅ Métricas coletadas (via kubectl)")
+		} else {
+			fmt.Println("\r⚠️  Métricas indisponíveis")
+		}
 	} else {
-		metricsStr = string(metricsOut)
-		fmt.Println("\r✅ Métricas coletadas")
+		fmt.Println("\r⚠️  Métricas indisponíveis (sem contexto)")
 	}
 
 	// Construct Context for AI
-	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", string(logsOut), string(eventsOut), metricsStr)
+	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", logsStr, eventsStr, metricsStr)
 
 	if len(strings.TrimSpace(realContext)) < 20 {
 		fmt.Println("❌ Dados insuficientes (logs/eventos) coletados para análise.")
@@ -182,7 +239,6 @@ func investigate(podName, namespace string) {
 
 	fmt.Println("\n🤖 Analisando com IA...")
 
-	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
 		fmt.Println("❌ Nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY.")

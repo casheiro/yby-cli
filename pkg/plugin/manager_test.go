@@ -1,38 +1,92 @@
 package plugin
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+
+	projectContext "github.com/casheiro/yby-cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
-// TestInstallPathValidation checks if install paths are calculated correctly.
-// Since Install interacts with FS, we test path logical resolution here mostly.
-// In a real scenario, we'd mock the OS/FS but that's complex for this cycle.
-// We verify that we are at least getting the right home dir logic.
-func TestInstallPathLogic(t *testing.T) {
-	// This is a partial test as we can't easily mock UserHomeDir without Dependency Injection
-	// But we can verify syntax of pluginSource parsing.
+func TestBuildPluginContext(t *testing.T) {
+	// Setup temporary directory structure
+	tmpDir, err := os.MkdirTemp("", "yby-test-mgr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
 
-	tests := []struct {
-		input    string
-		wantName string
-		isUrl    bool
-	}{
-		{"file:///tmp/myplugin", "myplugin", true},
-		{"./bin/myplugin", "myplugin", false},
+	// .yby/environments.yaml
+	envConfig := `
+current: prod
+environments:
+  prod:
+    type: remote
+    kube_config: ~/.kube/config
+    kube_context: prod-ctx
+    namespace: backend
+    values: config/values-prod.yaml
+`
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".yby"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".yby", "environments.yaml"), []byte(envConfig), 0644); err != nil {
+		t.Fatal(err)
 	}
 
-	for _, tt := range tests {
-		var srcPath string
-		if len(tt.input) > 7 && tt.input[:7] == "file://" {
-			srcPath = tt.input[7:]
-		} else {
-			srcPath = tt.input
-		}
+	// config/values-prod.yaml
+	valuesConfig := `
+replicas: 3
+image: nginx
+`
+	if err := os.MkdirAll(filepath.Join(tmpDir, "config"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "config", "values-prod.yaml"), []byte(valuesConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-		name := filepath.Base(srcPath)
-		if name != tt.wantName {
-			t.Errorf("Path parsing failed for %s: got name %s, want %s", tt.input, name, tt.wantName)
-		}
+	// Inputs
+	coreCtx := &projectContext.CoreContext{
+		ProjectName: "test-project",
+		Environment: "prod",
+	}
+	blueprintCtx := &scaffold.BlueprintContext{
+		Data: make(map[string]interface{}),
+	}
+
+	manager := NewManager() // No plugins loaded, so hooks won't do much
+
+	// Execute
+	fullCtx, values, err := manager.BuildPluginContext(coreCtx, blueprintCtx, tmpDir)
+	if err != nil {
+		t.Fatalf("BuildPluginContext failed: %v", err)
+	}
+
+	// Assertions
+	if fullCtx.ProjectName != "test-project" {
+		t.Errorf("expected ProjectName 'test-project', got '%s'", fullCtx.ProjectName)
+	}
+	if fullCtx.Environment != "prod" {
+		t.Errorf("expected Environment 'prod', got '%s'", fullCtx.Environment)
+	}
+
+	// Infra
+	if fullCtx.Infra.KubeContext != "prod-ctx" {
+		t.Errorf("expected KubeContext 'prod-ctx', got '%s'", fullCtx.Infra.KubeContext)
+	}
+	if fullCtx.Infra.Namespace != "backend" {
+		t.Errorf("expected Namespace 'backend', got '%s'", fullCtx.Infra.Namespace)
+	}
+
+	// Values
+	if val, ok := values["replicas"]; !ok || val.(int) != 3 {
+		t.Errorf("expected values['replicas'] = 3, got %v", val)
+	}
+
+	// Ensure values made it into fullCtx
+	if val, ok := fullCtx.Values["image"]; !ok || val != "nginx" {
+		t.Errorf("expected fullCtx.Values['image'] = 'nginx', got %v", val)
 	}
 }

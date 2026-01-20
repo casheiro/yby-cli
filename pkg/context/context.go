@@ -14,6 +14,11 @@ type Environment struct {
 	Description string `yaml:"description"`
 	Values      string `yaml:"values"` // path to values file
 	URL         string `yaml:"url,omitempty"`
+
+	// Infra
+	KubeConfig  string `yaml:"kube_config,omitempty"`
+	KubeContext string `yaml:"kube_context,omitempty"`
+	Namespace   string `yaml:"namespace,omitempty"`
 }
 
 // EnvironmentsManifest represents .yby/environments.yaml
