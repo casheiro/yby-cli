@@ -2,9 +2,10 @@ package plugin
 
 // PluginManifest defines the metadata for a Yby CLI plugin.
 type PluginManifest struct {
-	Name    string   `json:"name"`
-	Version string   `json:"version"`
-	Hooks   []string `json:"hooks"`
+	Name        string   `json:"name"`
+	Version     string   `json:"version"`
+	Description string   `json:"description,omitempty"`
+	Hooks       []string `json:"hooks"`
 }
 
 // PluginRequest defines the structure sent to the plugin via STDIN or Env Var.

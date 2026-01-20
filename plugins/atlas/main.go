@@ -29,9 +29,10 @@ func main() {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
-			Name:    "atlas",
-			Version: "0.1.0",
-			Hooks:   []string{"context", "manifest"},
+			Name:        "atlas",
+			Version:     "0.1.0",
+			Description: "Mapeamento contínuo de recursos e blueprint do cluster",
+			Hooks:       []string{"context", "manifest"},
 		})
 	case "context":
 		// Run discovery
