@@ -41,16 +41,16 @@ go install github.com/casheiro/yby-cli@latest
 
 A documentação completa foi movida para a nossa **Wiki**.
 
-### 🎓 Começando
-- **[Getting Started](docs/wiki/Getting-Started.md)**: Guia passo-a-passo para seu primeiro projeto.
-- **[Core Concepts](docs/wiki/Core-Concepts.md)**: Entenda a topologia, ambientes e arquitetura.
+### 🎓 Guia Principal
+- **[Getting Started](docs/wiki/Getting-Started.md)**: Passos iniciais.
+- **[Core Concepts](docs/wiki/Core-Concepts.md)**: Estrutura, Monorepo e Arquivos Gerados.
+- **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
 
-### 📖 Referência
-- **[CLI Reference](docs/wiki/CLI-Reference.md)**: Lista completa de todos os comandos (`yby init`, `dev`, etc).
-- **[Plugins Reference](docs/wiki/Plugins-Reference.md)**: Catálogo de plugins oficiais (Atlas, Bard, Sentinel).
-
-### 🤖 Governança
-- **[DevGovOps](docs/wiki/Governance.md)**: Como integramos IA e governança semântica (`.synapstor`).
+### 📖 Referência & Operação
+- **[CLI Reference](docs/wiki/CLI-Reference.md)**: Todos os comandos.
+- **[Plugins](docs/wiki/Plugins.md)**: Guia completo de extensão e plugins oficiais.
+- **[Operations](docs/wiki/Operations.md)**: Manual do dia-a-dia e Troubleshooting.
+- **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
 
 ---
 
