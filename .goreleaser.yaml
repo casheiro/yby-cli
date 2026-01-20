@@ -64,6 +64,18 @@ builds:
     binary: yby-plugin-viz
     ldflags:
       - -s -w
+  - id: synapstor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    dir: ./plugins/synapstor
+    main: .
+    binary: yby-plugin-synapstor
+    ldflags:
+      - -s -w
 archives:
   - id: core
     ids:
