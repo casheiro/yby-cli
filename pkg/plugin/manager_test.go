@@ -80,9 +80,29 @@ image: nginx
 		t.Errorf("expected Namespace 'backend', got '%s'", fullCtx.Infra.Namespace)
 	}
 
-	// Values
-	if val, ok := values["replicas"]; !ok || val.(int) != 3 {
-		t.Errorf("expected values['replicas'] = 3, got %v", val)
+	// Values are unmarshaled as interface{}, numbers usually come as int from loose YAML or we need to handle.
+	// Since we used yaml.v3 (or sigs.yaml), standard behavior varies.
+	// If it was JSON, it would be float64. YAML v3 typically preserves int if it looks like int.
+	// However, panic says 'interface {} is float64'.
+	// This means sigs.k8s.io/yaml uses JSON unmarshal under hood or v3 behaves so?
+	// Safe way: cast to int with check.
+	replicas, ok := values["replicas"]
+	if !ok {
+		t.Errorf("expected values['replicas']")
+	} else {
+		// Handle potential float64/int
+		var asInt int
+		switch v := replicas.(type) {
+		case int:
+			asInt = v
+		case float64:
+			asInt = int(v)
+		default:
+			t.Errorf("expected int or float64 for replicas, got %T", v)
+		}
+		if asInt != 3 {
+			t.Errorf("expected values['replicas'] = 3, got %d", asInt)
+		}
 	}
 
 	// Ensure values made it into fullCtx

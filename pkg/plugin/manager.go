@@ -15,7 +15,7 @@ import (
 
 	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
-	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/yaml"
 )
 
 // Manager orchestrates plugin discovery and execution.
