@@ -28,3 +28,26 @@ type ContextPatch map[string]interface{}
 type AssetsDefinition struct {
 	Path string `json:"path"` // Local absolute path or relative to plugin binary
 }
+
+// PluginInfrastructure carries infrastructure details.
+type PluginInfrastructure struct {
+	KubeConfig  string `json:"kube_config"`
+	KubeContext string `json:"kube_context"`
+	Namespace   string `json:"namespace"`
+}
+
+// PluginFullContext represents the enriched context payload.
+type PluginFullContext struct {
+	// Core Project Info
+	ProjectName string `json:"project_name"`
+	Environment string `json:"environment"`
+
+	// Infrastructure
+	Infra PluginInfrastructure `json:"infra"`
+
+	// Configuration (parsed from values-*.yaml)
+	Values map[string]interface{} `json:"values"`
+
+	// Legacy/Generic Data bucket
+	Data map[string]interface{} `json:"data,omitempty"`
+}

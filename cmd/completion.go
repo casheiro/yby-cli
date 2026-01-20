@@ -15,8 +15,8 @@ Bash:
   $ source <(yby completion bash)
 
 Zsh:
-  # Se o autocompletion shell não estiver ativado adicione a seu .zshrc:
-  autoload -U compinit; compinit
+  * Se o autocompletion shell não estiver ativado adicione a seu .zshrc:
+  > autoload -U compinit; compinit
   $ source <(yby completion zsh)
 
 Fish:
