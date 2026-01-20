@@ -267,3 +267,46 @@ func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 
 	return nil
 }
+
+type ollamaEmbeddingRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+}
+
+type ollamaEmbeddingResponse struct {
+	Embedding []float32 `json:"embedding"`
+}
+
+func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	if err := p.resolveModel(ctx); err != nil {
+		return nil, err
+	}
+
+	results := make([][]float32, len(texts))
+	client := http.Client{Timeout: 300 * time.Second}
+
+	for i, text := range texts {
+		reqBody := ollamaEmbeddingRequest{
+			Model:  p.Model,
+			Prompt: text,
+		}
+		jsonBody, _ := json.Marshal(reqBody)
+
+		resp, err := client.Post(p.BaseURL+"/api/embeddings", "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("falha ao chamar ollama embedding [%d]: %w", i, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("ollama embedding status: %d", resp.StatusCode)
+		}
+
+		var oResp ollamaEmbeddingResponse
+		if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
+			return nil, err
+		}
+		results[i] = oResp.Embedding
+	}
+	return results, nil
+}
