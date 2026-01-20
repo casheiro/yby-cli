@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+// GetLanguage returns the configured AI language or defaults to pt-BR
+func GetLanguage() string {
+	if lang := os.Getenv("YBY_AI_LANGUAGE"); lang != "" {
+		return lang
+	}
+	return "pt-BR"
+}
+
 // GetProvider returns the requested AI provider or defaults to the best available.
 // preferred: "ollama", "gemini", "openai"
 func GetProvider(ctx context.Context, preferred string) Provider {
