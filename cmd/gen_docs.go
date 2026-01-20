@@ -40,8 +40,14 @@ var genDocsCmd = &cobra.Command{
 		defer f.Close()
 
 		// Write Header
-		f.WriteString("# 📖 CLI Reference\n\n")
-		f.WriteString("Referência completa de todos os comandos do Yby CLI.\n\n")
+		if _, err := f.WriteString("# 📖 CLI Reference\n\n"); err != nil {
+			fmt.Printf("❌ Erro escrevendo no arquivo: %v\n", err)
+			os.Exit(1)
+		}
+		if _, err := f.WriteString("Referência completa de todos os comandos do Yby CLI.\n\n"); err != nil {
+			fmt.Printf("❌ Erro escrevendo no arquivo: %v\n", err)
+			os.Exit(1)
+		}
 
 		// Disable AutoGen tag globally
 		rootCmd.DisableAutoGenTag = true
@@ -71,7 +77,9 @@ func writeCommandDocs(f *os.File, cmd *cobra.Command) error {
 	if err := doc.GenMarkdownCustom(cmd, f, linkHandler); err != nil {
 		return err
 	}
-	f.WriteString("\n---\n\n")
+	if _, err := f.WriteString("\n---\n\n"); err != nil {
+		return err
+	}
 
 	// Recurse children
 	for _, c := range cmd.Commands() {
