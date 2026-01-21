@@ -140,6 +140,8 @@ jobs:
           # Build manual dos plugins conhecidos para garantir que o gen-docs pegue as descrições
           go build -o .yby/plugins/yby-plugin-atlas ./plugins/atlas
           go build -o .yby/plugins/yby-plugin-bard ./plugins/bard
+          go build -C ./plugins/synapstor -o ../../.yby/plugins/yby-plugin-synapstor .
+          go build -C ./plugins/viz -o ../../.yby/plugins/yby-plugin-viz .
           # Sentinel tem estrutura diferente
           go build -tags k8s -o .yby/plugins/yby-plugin-sentinel ./plugins/sentinel/cli
 

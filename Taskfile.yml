@@ -13,6 +13,8 @@ tasks:
       - go build -o bin/yby-plugin-bard ./plugins/bard
       - go build -tags k8s -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
       - go build -tags k8s -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
+      - go build -C ./plugins/synapstor -o ../../bin/yby-plugin-synapstor .
+      - go build -C ./plugins/viz -o ../../bin/yby-plugin-viz .
 
   test:
     desc: Run tests
