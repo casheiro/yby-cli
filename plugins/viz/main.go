@@ -49,9 +49,12 @@ func main() {
 				Version:     "0.1.0",
 				Hooks:       []string{"command"},
 			}
-			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			if err := json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 				"data": manifest,
-			})
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to encode manifest: %v\n", err)
+				os.Exit(1)
+			}
 		},
 	}
 
@@ -68,7 +71,10 @@ func main() {
 					Version:     "0.1.0",
 					Hooks:       []string{"command"},
 				}
-				json.NewEncoder(os.Stdout).Encode(PluginResponse{Data: manifest})
+				if err := json.NewEncoder(os.Stdout).Encode(PluginResponse{Data: manifest}); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+					os.Exit(1)
+				}
 				return
 			}
 		}
