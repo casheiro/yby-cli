@@ -32,7 +32,7 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          args: --build-tags k8s
+          args: --build-tags k8s --timeout=5m
           skip-cache: false
         timeout-minutes: 15
 
