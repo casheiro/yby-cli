@@ -28,6 +28,9 @@ jobs:
       - name: 🏃 Run Tests
         run: go test ./... -v
 
+      - name: ⬇️ Download Dependencies
+        run: go mod download
+
       - name: 🔍 Lint Core (Fast)
         uses: golangci/golangci-lint-action@v6
         with:

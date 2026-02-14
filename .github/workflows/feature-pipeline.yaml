@@ -29,6 +29,9 @@ jobs:
           PKGS=$(go list ./... | grep -v 'plugins/sentinel/cli')
           go test -v $PKGS
 
+      - name: ⬇️ Download Dependencies
+        run: go mod download
+
       - name: 📚 Validate Documentation
         # Smoke Test only (verify generation works, output to temp dir)
         run: go run ./cmd/yby gen-docs /tmp/yby-docs-test
