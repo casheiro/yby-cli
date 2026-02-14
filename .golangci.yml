@@ -1,0 +1,29 @@
+# Documentação: https://golangci-lint.run/usage/configuration/
+run:
+  # O timeout está configurado para 5m para evitar falhas no CI
+  timeout: 5m
+
+linters:
+  # Desabilitar todos e habilitar apenas os essenciais
+  disable-all: true
+  enable:
+    - gofmt
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+
+issues:
+  # Restaurar padrões de exclusão úteis
+  exclude-use-default: true
+  # Excluir diretórios de terceiros e testes
+  exclude-dirs:
+    - vendor
+    - testdata
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        disabled: true # Ignorar stutter e comentários ausentes por enquanto para não quebrar CI

@@ -32,6 +32,9 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          args: --build-tags k8s
+          skip-cache: false
+        timeout-minutes: 15
 
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6
