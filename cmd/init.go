@@ -259,6 +259,27 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		ProjectName: resolveProjectName(flags),
 	}
 
+	// Calculate RepoRootPath (for ArgoCD)
+	if gitRoot, err := scaffold.GetGitRoot(); err == nil && gitRoot != "" {
+		// Determine absolute target path
+		targetDir := "."
+		if flags.TargetDir != "" {
+			targetDir = flags.TargetDir
+		}
+		absTarget, _ := filepath.Abs(targetDir)
+
+		// Calculate relative path from GitRoot to TargetDir
+		if rel, err := filepath.Rel(gitRoot, absTarget); err == nil {
+			// If target is same as root, rel is "." -> empty for path joining
+			if rel == "." {
+				ctx.RepoRootPath = ""
+			} else {
+				// Ensure forward slashes for ArgoCD/K8s manifests
+				ctx.RepoRootPath = filepath.ToSlash(rel)
+			}
+		}
+	}
+
 	// Enrich with AI Context
 	inferContext(ctx)
 
