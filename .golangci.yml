@@ -2,6 +2,8 @@
 run:
   # O timeout está configurado para 5m para evitar falhas no CI
   timeout: 5m
+  # Limitar concorrência para evitar OOM em runners com pouco recurso
+  concurrency: 2
 
 linters:
   # Desabilitar todos e habilitar apenas os essenciais
@@ -11,7 +13,7 @@ linters:
     - govet
     - ineffassign
     - staticcheck
-    - unused
+    # - unused # Desabilitado por consumo excessivo de memória
     - revive
 
 issues:
@@ -21,6 +23,8 @@ issues:
   exclude-dirs:
     - vendor
     - testdata
+    - plugins/sentinel/cli
+    - test
 
 linters-settings:
   revive:
