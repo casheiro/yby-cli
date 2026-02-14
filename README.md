@@ -66,6 +66,10 @@ yby init
 yby dev
 ```
 
+> [!IMPORTANT]
+> **Discovery Topic**: O Yby usa tópicos do GitHub para descobrir quais repositórios deployar.
+> Por padrão, ele busca repositórios com a tag `yby-cluster`. Se você alterar isso no `values.yaml`, lembre-se de adicionar a nova tag nos seus repositórios!
+
 ---
 
 ## 📂 Estrutura do Projeto
