@@ -5,6 +5,13 @@ tasks:
     cmds:
       - task: build
 
+  setup-hooks:
+    desc: Configure git hooks
+    cmds:
+      - git config core.hooksPath .githooks
+      - chmod +x .githooks/pre-commit
+      - echo "✅ Git hooks configured!"
+
   build:
     desc: Build all binaries
     cmds:

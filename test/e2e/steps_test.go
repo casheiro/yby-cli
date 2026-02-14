@@ -153,19 +153,19 @@ func (s *scenarioContext) euExecutoOComando(cmdStr string) error {
 	} else {
 		parts = strings.Fields(cmdStr)
 	}
-	
+
 	if len(parts) == 0 {
 		return fmt.Errorf("empty command")
 	}
 
 	// Prepare args for docker exec
 	args := []string{"exec"}
-	
+
 	// Add env vars
 	for k, v := range s.envVars {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
 	}
-	
+
 	// Set working directory
 	workDir := filepath.Join("/workspace", s.currentDir)
 	args = append(args, "-w", workDir)
@@ -222,7 +222,7 @@ func (s *scenarioContext) euEntroNoDiretrio(dir string) error {
 func (s *scenarioContext) oArquivoDeveExistirDentroDe(file, dir string) error {
 	checkPath := filepath.Join(dir, file)
 	// Note: dir is relative to currentDir if not absolute. Let's assume relative to root workspace for this specific step logic or just composed.
-	
+
 	cmd := exec.Command("docker", "exec", s.containerID, "test", "-f", checkPath)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("file %s does not exist", checkPath)
@@ -240,7 +240,7 @@ func (s *scenarioContext) aSaidaDeveIndicarRaizInfra(dirName string) error {
 	// Or we check if it found the config.
 	// The requirement says: "a saída deve indicar que a raiz de infra foi encontrada em 'infra'"
 	// Let's look for log message like "Found infrastructure root at" or just the path.
-	
+
 	if !strings.Contains(s.lastOutput, dirName) {
 		// Looser check if exact message is unknown
 		return fmt.Errorf("output does not indicate infra root %s. Output:\n%s", dirName, s.lastOutput)
