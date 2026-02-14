@@ -29,7 +29,8 @@ type BlueprintContext struct {
 
 	// Template Data
 	// Template Data
-	GitRepo string
+	GitRepo      string
+	RepoRootPath string // [NEW] Relative path from Git Root to Project Root (where charts/ resides)
 
 	// AI/Context Data
 	BusinessDomain  string // e.g. "Fintech", "E-Commerce", "General"

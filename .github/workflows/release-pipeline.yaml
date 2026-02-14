@@ -23,15 +23,32 @@ jobs:
       - name: 🔧 Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version: "1.24"
 
       - name: 🏃 Run Tests
         run: go test ./... -v
 
-      - name: 🔍 Lint Code
+      - name: ⬇️ Download Dependencies
+        run: go mod download
+
+      - name: 🔍 Lint Core (Fast)
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          # Exclude heavy k8s paths
+          args: --timeout=5m --exclude-dirs plugins/sentinel/cli,pkg/plugin/sdk
+          skip-cache: false
+
+      - name: 🔍 Lint K8s (Isolated)
+        uses: golangci/golangci-lint-action@v6
+        env:
+          GOGC: "30" # Aggressive GC for K8s lint
+        with:
+          version: latest
+          # Run ONLY on k8s paths with build tags
+          args: --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
+          skip-cache: false
+        timeout-minutes: 15
 
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6
