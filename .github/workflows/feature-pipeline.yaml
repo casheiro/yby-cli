@@ -33,13 +33,22 @@ jobs:
         # Smoke Test only (verify generation works, output to temp dir)
         run: go run ./cmd/yby gen-docs /tmp/yby-docs-test
 
-      - name: 🔍 Lint Code
+      - name: 🔍 Lint Core (Fast)
         uses: golangci/golangci-lint-action@v6
-        env:
-          GOGC: "30"
         with:
           version: latest
-          args: --build-tags k8s --timeout=5m --concurrency=2
+          # Exclude heavy k8s paths
+          args: --timeout=5m --exclude-dirs plugins/sentinel/cli,pkg/plugin/sdk
+          skip-cache: false
+
+      - name: 🔍 Lint K8s (Isolated)
+        uses: golangci/golangci-lint-action@v6
+        env:
+          GOGC: "30" # Aggressive GC for K8s lint
+        with:
+          version: latest
+          # Run ONLY on k8s paths with build tags
+          args: --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
           skip-cache: false
         timeout-minutes: 15
 
