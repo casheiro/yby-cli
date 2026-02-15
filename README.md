@@ -62,8 +62,14 @@ Inicie um novo projeto GitOps pronto para produção em segundos:
 # 1. Crie o scaffold interativo
 yby init
 
-# 2. Suba o ambiente local (Cluster + ArgoCD + Apps)
-yby dev
+# 2. Suba o ambiente (Local = Sync, Remoto = Check)
+yby up
+
+# 3. Crie Workloads Padronizados
+yby chart create meu-app
+
+# 4. Limpeza (Ambiente Local)
+yby destroy
 ```
 
 > [!IMPORTANT]

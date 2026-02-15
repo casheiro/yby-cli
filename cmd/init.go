@@ -217,15 +217,17 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		}
 
 		// 3. Post-Scaffold: Generate Values Files for Environments
-		baseValues := "config/cluster-values.yaml"
+		baseValues := filepath.Join(targetDir, "config/cluster-values.yaml")
 		// Verify if scaffold created baseValues
 		if _, err := os.Stat(baseValues); err == nil {
 			for _, env := range ctx.Environments {
-				target := fmt.Sprintf("config/values-%s.yaml", env)
+				target := filepath.Join(targetDir, fmt.Sprintf("config/values-%s.yaml", env))
 				if _, err := os.Stat(target); os.IsNotExist(err) {
 					// Copy content
 					if content, err := os.ReadFile(baseValues); err == nil {
 						// Simple replace if needed, or just clone
+						// For local env, we might want to override things?
+						// For now, clone is better than nothing.
 						_ = os.WriteFile(target, content, 0644)
 						fmt.Printf("   📄 Generated Config: %s\n", target)
 					}
@@ -257,6 +259,23 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		// Template Data
 		GitRepo:     flags.GitRepo,
 		ProjectName: resolveProjectName(flags),
+	}
+
+	// Populate Github details
+	if org := extractGithubOrg(flags.GitRepo); org != "" {
+		ctx.GithubOrg = org
+		ctx.GithubDiscovery = true
+	} else {
+		// Default to a placeholder if needed, or disable discovery
+		// If Discovery is enabled by default in schema, we should provide something?
+		// Schema says enabled: true default.
+		// If we leave empty, helm might complain OR render empty string.
+		// Let's set a default "yby-org" if strictly needed, or trust user fills it.
+		// For Zero Config, we try our best.
+		if flags.Offline {
+			ctx.GithubOrg = "yby-local"
+			ctx.GithubDiscovery = false // Disable in offline/local mirror mode usually?
+		}
 	}
 
 	// Calculate RepoRootPath (for ArgoCD)
@@ -600,6 +619,35 @@ func deriveProjectName(repoURL string) string {
 	}
 
 	return "yby-project"
+}
+
+func extractGithubOrg(repoURL string) string {
+	if repoURL == "" {
+		return ""
+	}
+	repoURL = strings.TrimSpace(repoURL)
+	repoURL = strings.TrimSuffix(repoURL, "/")
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+
+	// Handle git@github.com:org/repo
+	if strings.Contains(repoURL, "git@") {
+		parts := strings.Split(repoURL, ":")
+		if len(parts) == 2 {
+			repoURL = parts[1]
+		}
+	} else {
+		// Handle https://github.com/org/repo
+		parts := strings.Split(repoURL, "github.com/")
+		if len(parts) == 2 {
+			repoURL = parts[1]
+		}
+	}
+
+	parts := strings.Split(repoURL, "/")
+	if len(parts) >= 2 {
+		return parts[0] // Org is the first part
+	}
+	return ""
 }
 
 // inferContext populates AI-related context fields based on heuristics
