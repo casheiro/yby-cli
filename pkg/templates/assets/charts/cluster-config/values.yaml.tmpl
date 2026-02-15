@@ -92,13 +92,7 @@ keda:
   enabled: true
   # Default configuration is sufficient for basic usage
 
-kube-prometheus-stack:
-  crds:
-    enabled: false # CRDs instalados pelo chart 'system'
-  prometheusOperator:
-    enabled: false # Operator instalado pelo chart 'system'
-  grafana:
-    enabled: false # Default Ecofuturista
+
 
 observability:
   mode: "prometheus" # options: none, prometheus
@@ -112,7 +106,7 @@ security:
 minio:
   mode: standalone
   replicas: 1
-  existingSecret: "minio-creds" # Criado imperativamente pelo Makefile (bootstrap)
+  existingSecret: "minio-secret" # Criado imperativamente pelo Makefile (bootstrap)
   ingress:
     enabled: false
     ingressClassName: ""

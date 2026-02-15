@@ -1,0 +1,41 @@
+{{- if .Values.storage.minio.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio
+  namespace: {{ .Values.argocd.namespace | default "argocd" }}
+  labels:
+    component: storage
+    tier: infrastructure
+    app.kubernetes.io/managed-by: yby-cli
+spec:
+  project: default
+  source:
+    repoURL: https://charts.min.io/
+    chart: minio
+    targetRevision: 5.4.0
+    helm:
+      values: |
+        mode: {{ .Values.minio.mode | default "standalone" }}
+        replicas: {{ .Values.minio.replicas | default 1 }}
+        existingSecret: {{ .Values.minio.existingSecret | default "minio-secret" }}
+        ingress:
+          enabled: {{ .Values.minio.ingress.enabled | default false }}
+        persistence:
+          enabled: {{ .Values.minio.persistence.enabled | default true }}
+          size: {{ .Values.minio.persistence.size | default "10Gi" }}
+        resources:
+          requests:
+            memory: {{ .Values.minio.resources.requests.memory | default "256Mi" }}
+            cpu: {{ .Values.minio.resources.requests.cpu | default "100m" }}
+        buckets: {{ toJson .Values.minio.buckets }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: storage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}

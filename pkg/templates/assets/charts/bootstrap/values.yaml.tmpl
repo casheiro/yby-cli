@@ -38,8 +38,15 @@ clusterConfig:
 
 # Observabilidade
 observability:
+  enabled: false
+  grafana:
+    enabled: false
+    adminPassword: "admin"
   prometheus:
-    enabled: false # Controlado via values.yaml, padrão false para evitar install acidental
+    enabled: true
+    retention: "10d"
+  alertmanager:
+    enabled: false
 
 
 # Descoberta Automática de Aplicações (Zero-Touch)
@@ -55,3 +62,23 @@ discovery:
 # Controla uso de manifests legados por Kustomize
 legacy:
   enabled: false
+
+# Armazenamento (MinIO) - Defaults
+storage:
+  minio:
+    enabled: false
+
+minio:
+  mode: standalone
+  replicas: 1
+  existingSecret: "minio-secret"
+  ingress:
+    enabled: false
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+  buckets: []

@@ -14,11 +14,3 @@ dependencies:
     version: "2.18.1"
     repository: "https://kedacore.github.io/charts"
     condition: keda.enabled
-
-  - name: kube-prometheus-stack
-    version: "66.3.0" # Using a stable version (approx Nov 2024) to be safe, or 66.x
-    repository: "https://prometheus-community.github.io/helm-charts"
-  - name: minio
-    version: "5.4.0" # Official MinIO Chart
-    repository: "https://charts.min.io/"
-    condition: storage.minio.enabled
