@@ -1,0 +1,33 @@
+FROM golang:1.24
+
+# Install basic tools
+RUN apt-get update && apt-get install -y curl git bash
+
+# Install Kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+# Install Helm
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Install K3d (optional context, useful if DinD is available)
+RUN curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+# Set workdir
+WORKDIR /app
+
+# Copy dependencies first for caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build
+RUN go build -o /usr/local/bin/yby ./cmd/yby
+
+# Script for testing
+COPY scripts/e2e-docker.sh /usr/local/bin/run-e2e
+RUN chmod +x /usr/local/bin/run-e2e
+
+CMD ["/usr/local/bin/run-e2e"]
