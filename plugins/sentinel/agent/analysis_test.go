@@ -48,10 +48,10 @@ func TestAnalyzeEvent(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := AnalyzeEvent(tt.event); got != tt.wantCrit {
-				t.Errorf("AnalyzeEvent() = %v, want %v", got, tt.wantCrit)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := AnalyzeEvent(tc.event); got != tc.wantCrit {
+				t.Errorf("AnalyzeEvent() = %v, want %v", got, tc.wantCrit)
 			}
 		})
 	}

@@ -70,7 +70,7 @@ ingress:
     email: {{ .Email }}
     # Nome do ClusterIssuer (letsencrypt-prod é o padrão para produção com limites reais)
     # Use 'letsencrypt-staging' para testes se estiver depurando.
-    issuer: letsencrypt-prod
+    issuer: {{ if eq .Environment "prod" }}letsencrypt-prod{{ else }}letsencrypt-staging{{ end }}
 
 # Stack de Observabilidade (Prometheus + Grafana + Kepler)
 observability:
