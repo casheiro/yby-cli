@@ -58,6 +58,13 @@ applicationset:
   pathsExist: ["k8s"]
   requeueAfterSeconds: 300
 
+discovery:
+  enabled: true
+  organization: "{{ .GithubOrg }}"
+  # Tópico GitHub usado para filtrar quais repositórios serão deployados (AppSet)
+  # IMPORTANTE: Se mudar aqui, deve adicionar este tópico nos seus repositórios!
+  topic: "yby-cluster"
+
 storage:
   minio:
     enabled: false

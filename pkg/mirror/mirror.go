@@ -3,51 +3,52 @@ package mirror
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
-	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
-// MirrorManager handles the lifecycle of the in-cluster Git Mirror
+var (
+	stepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // Blue
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // Green
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // Red
+)
+
+// MirrorManager handles the in-cluster Git mirror for Hybrid GitOps
 type MirrorManager struct {
+	LocalPath string // Path to the local git repo (e.g. ".")
 	Namespace string
-	LocalPath string
+
+	// PortForwarder instance for local access
+	forwarder *PortForwarder
+	localPort int
 }
 
 func NewManager(localPath string) *MirrorManager {
 	return &MirrorManager{
-		Namespace: "yby-system",
 		LocalPath: localPath,
+		Namespace: "yby-system",
 	}
 }
 
-// EnsureGitServer checks if the git-server is running, if not deploys it
+// EnsureGitServer deploys the git-server to the cluster if not present
 func (m *MirrorManager) EnsureGitServer() error {
-	// 0. Ensure Namespace
-	_ = exec.Command("kubectl", "create", "ns", m.Namespace).Run() // Ignore error if exists
-
-	// 1. Check Service
-	cmd := exec.Command("kubectl", "get", "svc", "git-server", "-n", m.Namespace)
-	if err := cmd.Run(); err != nil {
-		fmt.Println("📦 Implantando Servidor Git no Cluster...")
-		return m.deployServer()
+	// 1. Create Namespace
+	if err := runKubectl("create", "namespace", m.Namespace, "--dry-run=client", "-o", "yaml", "|", "kubectl", "apply", "-f", "-"); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
 	}
-	return nil
-}
 
-// deployServer applies the manifest for a simple git server
-func (m *MirrorManager) deployServer() error {
-	// Minimal Git Server Manifest (Alpine + git-daemon or HTTP)
-	// Using a simple busybox with git init --bare + minimal http/ssh is tricky.
-	// Let's use a known image or a simple script.
-	// For MVP: We assume a 'git-server' Deployment exposing port 80/22.
-
-	manifest := `
+	// 2. Apply Manifests (Deployment + Service)
+	// BUG-008 Fix: Service exposes port 9418, targetPort 9418
+	// BUG-010 Fix: git init --bare --initial-branch=main
+	manifest := fmt.Sprintf(`
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: git-server
-  namespace: yby-system
+  namespace: %s
   labels:
     app: git-server
 spec:
@@ -63,112 +64,150 @@ spec:
       containers:
       - name: git-server
         image: bitnami/git:latest
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            mkdir -p /git/repo.git && \
-            cd /git/repo.git && \
-            git init --bare && \
-            touch /git/repo.git/git-daemon-export-ok && \
-            echo "Starting Git Daemon..." && \
-            git daemon --reuseaddr --base-path=/git --export-all --verbose --enable=receive-pack
+        command:
+        - /bin/bash
+        - -c
+        - |
+          mkdir -p /git/repo.git
+          if [ ! -d "/git/repo.git/HEAD" ]; then
+            git init --bare --initial-branch=main /git/repo.git
+            # Allow anonymous push (safe for localhost-only access via forwarder)
+            git config --file /git/repo.git/config http.receivepack true
+            touch /git/repo.git/git-daemon-export-ok
+          fi
+          # Start git daemon with verbose logging
+          exec git daemon --verbose --base-path=/git --export-all --enable=receive-pack
         ports:
         - containerPort: 9418
         volumeMounts:
-        - name: git-volume
+        - name: git-data
           mountPath: /git
       volumes:
-      - name: git-volume
+      - name: git-data
         emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: git-server
-  namespace: yby-system
+  namespace: %s
+  labels:
+    app: git-server
 spec:
   selector:
     app: git-server
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 9418
-`
+  - port: 9418
+    targetPort: 9418
+    protocol: TCP
+`, m.Namespace, m.Namespace)
+
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	output, err := cmd.CombinedOutput()
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("falha ao implantar git-server: %s", string(output))
+		return err
+	}
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, manifest)
+	}()
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to apply git-server manifests: %s: %w", out, err)
 	}
 
 	// Wait for rollout
-	fmt.Println("⏳ Aguardando Servidor Git...")
-	_ = exec.Command("kubectl", "rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s").Run()
+	if err := runKubectl("rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s"); err != nil {
+		return fmt.Errorf("git-server failed to start: %w", err)
+	}
 
 	return nil
 }
 
-// StartSyncLoop starts the synchronization process
+// SetupTunnel establishes the port-forward tunnel
+// MUST be called before Sync() or StartSyncLoop() in local environment
+func (m *MirrorManager) SetupTunnel(ctx context.Context) error {
+	pf, err := NewPortForwarder(m.Namespace, "git-server", 9418)
+	if err != nil {
+		return fmt.Errorf("failed to create port forwarder: %w", err)
+	}
+
+	port, err := pf.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start port forwarder: %w", err)
+	}
+
+	m.forwarder = pf
+	m.localPort = port
+	fmt.Printf("📡 Tunnel established: localhost:%d -> git-server:9418\n", port)
+	return nil
+}
+
+// Sync pushes local changes to the in-cluster git server via the tunnel
+func (m *MirrorManager) Sync() error {
+	if m.localPort == 0 {
+		return fmt.Errorf("tunnel not established. Call SetupTunnel() first")
+	}
+
+	// Git push to localhost
+	// git push git://localhost:<port>/repo.git HEAD:main --force
+	remoteURL := fmt.Sprintf("git://localhost:%d/repo.git", m.localPort)
+
+	// Ensure we are pushing to main
+	cmd := exec.Command("git", "push", remoteURL, "HEAD:main", "--force")
+	cmd.Dir = m.LocalPath
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push failed: %s: %w", out, err)
+	}
+
+	return nil
+}
+
+// StartSyncLoop watches for changes and syncs automatically
+// This blocks until context is cancelled
 func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
-	fmt.Println("🔄 Iniciando Agendador de Sincronização (intervalo de 5s)...")
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(5 * time.Second) // Poll every 5s
 	defer ticker.Stop()
 
-	// Initial Sync
+	fmt.Println(stepStyle.Render("🔄 Auto-sync enabled. Watching for changes..."))
+
+	// Initial sync
 	if err := m.Sync(); err != nil {
-		fmt.Printf("⚠️ Erro de Sincronização: %v\n", err)
+		fmt.Println(errorStyle.Render(fmt.Sprintf("❌ Initial Sync Failed: %v", err)))
+	} else {
+		fmt.Println(successStyle.Render("✅ Initial Sync Complete"))
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
+			if m.forwarder != nil {
+				m.forwarder.Stop()
+			}
 			return
 		case <-ticker.C:
+			// Optimization: Check if there are changes to commit/push?
+			// For now, to keep it "Zero Config", we push whatever committed state implies?
+			// The original "yby dev" promise was "commit -> sync".
+			// So we blindly try to push HEAD. If it's up to date, git handles it gracefully.
 			if err := m.Sync(); err != nil {
-				fmt.Printf("⚠️ Erro de Sincronização: %v\n", err)
+				// Don't spam terminal on "Everything up-to-date" or transient errors?
+				// Actually git push returns 0 if up to date.
+				// If it fails, likely connectivity or non-fast-forward (we use force).
+				fmt.Println(errorStyle.Render(fmt.Sprintf("⚠️ Sync Error: %v", err)))
+
+				// Self-healing: Try to restart tunnel if broken?
+				// Implement implementation logic here if needed.
 			}
 		}
 	}
 }
 
-// Sync performs a one-shot synchronization
-func (m *MirrorManager) Sync() error {
-	// 1. Get Pod Name
-	out, err := exec.Command("kubectl", "get", "pods", "-n", m.Namespace, "-l", "app=git-server", "-o", "jsonpath={.items[0].metadata.name}").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("falha ao obter pod: %v", err)
+func runKubectl(args ...string) error {
+	cmd := exec.Command("kubectl", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", string(out), err)
 	}
-	podName := strings.TrimSpace(string(out))
-	if podName == "" {
-		return fmt.Errorf("nenhum pod git-server encontrado no namespace %s", m.Namespace)
-	}
-
-	// Note: We need to handle 'incremental' updates to avoid overhead?
-	// For MVP 5s loop, full sync is fine for small repos.
-
-	remoteScript := `
-set -e
-mkdir -p /tmp/workspace
-rm -rf /tmp/workspace/*
-tar xf - -C /tmp/workspace
-cd /tmp/workspace
-# if [ ! -d infra ]; then echo "Warning: infra dir not found in sync"; fi
-git init -q
-git config user.email "bot@yby"
-git config user.name "Yby Bot"
-git add .
-git commit -q -m "Sync" || true
-git remote add origin /git/repo.git || git remote set-url origin /git/repo.git
-git push origin master --force -q
-`
-	// Phase 5 Logic: Sync CONTENTS of m.LocalPath to ROOT of git-server repo.
-	cmdStr := fmt.Sprintf("tar cf - -C %s . | kubectl exec -i -n %s %s -- sh -c '%s'", m.LocalPath, m.Namespace, podName, remoteScript)
-
-	// fmt.Printf("DEBUG: Executing Sync...\n")
-	if err := exec.Command("sh", "-c", cmdStr).Run(); err != nil {
-		return err
-	}
-
-	// fmt.Println("   ✅ Synced.")
 	return nil
 }

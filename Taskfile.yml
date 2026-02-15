@@ -24,9 +24,14 @@ tasks:
       - go build -C ./plugins/viz -o ../../bin/yby-plugin-viz .
 
   test:
-    desc: Run tests
+    desc: Run unit tests (default)
     cmds:
-      - go test ./pkg/... ./plugins/...
+      - go test -v ./pkg/... ./plugins/... ./cmd/...
+
+  test:e2e:
+    desc: Run E2E tests (requires Docker)
+    cmds:
+      - go test -v -tags e2e ./test/e2e/...
 
   clean:
     desc: Clean bin directory

@@ -19,7 +19,8 @@
           "enum": [
             "dev",
             "staging",
-            "prod"
+            "prod",
+            "local"
           ],
           "description": "Deployment environment"
         },

@@ -47,7 +47,8 @@ discovery:
   enabled: {{ .GithubDiscovery }}  # Override: discovery.enabled
   scmProvider: github
   organization: "{{ .GithubOrg }}"  # Override: discovery.organization
-  topic: ""  # Override: discovery.topic
+  organization: "{{ .GithubOrg }}"  # Override: discovery.organization
+  topic: "yby-cluster"  # Default topic for discovery
   tokenSecretName: github-token
   tokenSecretKey: token
 

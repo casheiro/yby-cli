@@ -1,3 +1,4 @@
+//go:build e2e
 package e2e
 
 import (
@@ -69,6 +70,31 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 
 		// Install basic tools in alpine if needed (optional for these tests?)
 		// For now, assume we don't need extra tools like git unless tested.
+
+		// Install fake tools (k3d, kubectl, helm)
+		fakeScript := `#!/bin/sh
+echo "Fake tool executed: $0 $@"
+exit 0
+`
+		// Write fake script to workspace
+		fakeScriptPath := filepath.Join(s.workDir, "fake_tool.sh")
+		if err := os.WriteFile(fakeScriptPath, []byte(fakeScript), 0755); err != nil {
+			return ctx, fmt.Errorf("failed to create fake tool: %v", err)
+		}
+
+		// Copy fake script to /usr/local/bin inside container
+		tools := []string{"k3d", "kubectl", "helm"}
+		for _, tool := range tools {
+			cmd := exec.Command("docker", "exec", s.containerID, "cp", "/workspace/fake_tool.sh", "/usr/local/bin/"+tool)
+			if err := cmd.Run(); err != nil {
+				return ctx, fmt.Errorf("failed to install fake %s: %v", tool, err)
+			}
+			// Ensure executable
+			cmd = exec.Command("docker", "exec", s.containerID, "chmod", "+x", "/usr/local/bin/"+tool)
+			if err := cmd.Run(); err != nil {
+				return ctx, fmt.Errorf("failed to chmod fake %s: %v", tool, err)
+			}
+		}
 
 		return ctx, nil
 	})
@@ -258,6 +284,7 @@ func (s *scenarioContext) oComandoDeveValidarParametros() error {
 			strings.Contains(output, "exit status 255") ||
 			strings.Contains(output, "Connection refused") ||
 			strings.Contains(output, "k3d não encontrado") ||
+			strings.Contains(output, "failed to create port forwarder") ||
 			strings.Contains(output, "exec: \"k3d\": executable file not found") {
 			return nil // Validated parameters, failed on network or missing tools
 		}

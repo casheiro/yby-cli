@@ -62,9 +62,19 @@ Inicie um novo projeto GitOps pronto para produção em segundos:
 # 1. Crie o scaffold interativo
 yby init
 
-# 2. Suba o ambiente local (Cluster + ArgoCD + Apps)
-yby dev
+# 2. Suba o ambiente (Local = Sync, Remoto = Check)
+yby up
+
+# 3. Crie Workloads Padronizados
+yby chart create meu-app
+
+# 4. Limpeza (Ambiente Local)
+yby destroy
 ```
+
+> [!IMPORTANT]
+> **Discovery Topic**: O Yby usa tópicos do GitHub para descobrir quais repositórios deployar.
+> Por padrão, ele busca repositórios com a tag `yby-cluster`. Se você alterar isso no `values.yaml`, lembre-se de adicionar a nova tag nos seus repositórios!
 
 ---
 
