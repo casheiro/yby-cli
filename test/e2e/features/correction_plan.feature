@@ -18,7 +18,7 @@ Feature: Plano de Correção e Validação de Fluxos Críticos
     And eu entro no diretório "infra"
     And eu executo o comando "yby dev"
     Then o comando deve validar os parâmetros
-    And a saída deve conter "Contexto Ativo: local"
+    And a saída deve conter "(Contexto: local)"
 
   Scenario: Bootstrap VPS sem .env (flags explicitas)
     Given que eu estou em um diretório limpo
