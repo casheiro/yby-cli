@@ -20,7 +20,31 @@ spec:
         replicas: {{ .Values.minio.replicas | default 1 }}
         existingSecret: {{ .Values.minio.existingSecret | default "minio-secret" }}
         ingress:
-          enabled: {{ .Values.minio.ingress.enabled | default false }}
+          enabled: {{ and .Values.global.domainBase .Values.storage.minio.enabled }}
+          ingressClassName: traefik
+          annotations:
+            {{- if .Values.ingress.tls.enabled }}
+            cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
+            {{- end }}
+          hosts:
+            - {{ default (printf "minio.%s" .Values.global.domainBase) .Values.hosts.minio }}
+          tls:
+            - secretName: minio-tls
+              hosts:
+                - {{ default (printf "minio.%s" .Values.global.domainBase) .Values.hosts.minio }}
+        consoleIngress:
+          enabled: {{ and .Values.global.domainBase .Values.storage.minio.enabled }}
+          ingressClassName: traefik
+          annotations:
+            {{- if .Values.ingress.tls.enabled }}
+            cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
+            {{- end }}
+          hosts:
+            - {{ default (printf "minio-console.%s" .Values.global.domainBase) .Values.hosts.minioConsole }}
+          tls:
+            - secretName: minio-console-tls
+              hosts:
+                - {{ default (printf "minio-console.%s" .Values.global.domainBase) .Values.hosts.minioConsole }}
         persistence:
           enabled: {{ .Values.minio.persistence.enabled | default true }}
           size: {{ .Values.minio.persistence.size | default "10Gi" }}

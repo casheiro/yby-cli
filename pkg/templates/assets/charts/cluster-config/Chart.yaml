@@ -5,12 +5,4 @@ type: application
 version: 0.1.0
 appVersion: "1.0.0"
 dependencies:
-  - name: kepler
-    version: "0.5.11" # Latest stable as of Nov 2025
-    repository: "https://sustainable-computing-io.github.io/kepler-helm-chart"
-    condition: kepler.enabled
 
-  - name: keda
-    version: "2.18.1"
-    repository: "https://kedacore.github.io/charts"
-    condition: keda.enabled

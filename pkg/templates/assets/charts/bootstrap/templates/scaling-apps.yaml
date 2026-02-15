@@ -1,0 +1,64 @@
+{{- if .Values.keda.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: {{ .Values.argocd.namespace | default "argocd" }}
+  labels:
+    component: scaling
+    tier: infrastructure
+    app.kubernetes.io/managed-by: yby-cli
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    targetRevision: 2.14.2
+    helm:
+      values: |
+        # Values default from cluster-values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
+---
+{{- if .Values.kepler.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kepler
+  namespace: {{ .Values.argocd.namespace | default "argocd" }}
+  labels:
+    component: monitoring
+    tier: infrastructure
+    app.kubernetes.io/managed-by: yby-cli
+spec:
+  project: default
+  source:
+    repoURL: https://sustainable-computing-io.github.io/kepler-helm-chart
+    chart: kepler
+    targetRevision: 0.5.11
+    helm:
+      values: |
+        serviceMonitor:
+          enabled: {{ .Values.kepler.serviceMonitor.enabled | default false }}
+          labels:
+            release: prometheus-stack # Ajustar conforme label do Prometheus Operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
