@@ -1,0 +1,31 @@
+{{- if or .Values.ingress.enabled .Values.ingress.tls.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: connectivity
+  namespace: {{ .Values.argocd.namespace | default "argocd" }}
+  labels:
+    component: ingress
+    tier: infrastructure
+    app.kubernetes.io/managed-by: yby-cli
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.git.repoURL }}
+    targetRevision: {{ .Values.git.targetRevision }}
+    path: charts/connectivity
+    helm:
+      valueFiles:
+      {{- range $f := .Values.clusterConfig.valueFiles }}
+      - {{ printf "../../%s" $f | quote }}
+      {{- end }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default # ClusterIssuer é cluster-wide, mas Ingress Dashboard geralmente é system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}

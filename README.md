@@ -1,4 +1,4 @@
-# 🚀 Yby CLI - GitOps Radical
+# 🤖 Yby CLI - Infrastructure Intelligence Assistant
 
 <div align="center">
 
@@ -8,18 +8,33 @@
 
 </div>
 
-> **Yby (Tupi: Terra)** - O solo fértil para suas aplicações. CLI oficial para provisionamento de clusters Kubernetes **Ecofuturistas**: GitOps Radical, Eficiência Energética e Zero-Touch Discovery.
+> **Yby (Tupi: Terra)** - O solo fértil para suas aplicações. A **Plataforma de Engenharia** que atua como seu assistente inteligente para bootstrap, governança e operação de clusters Kubernetes.
 
 ---
 
-## 📋 Visão Geral
+## 🧠 O Que é o Yby?
 
-A **Yby CLI** é a interface unificada para gerenciar todo o ciclo de vida da infraestrutura da Casheiro Org, abstaindo a complexidade de Kubernetes, Helm e Argo CD.
+O **Yby CLI** não é apenas um wrapper de comandos. Ele é um **Assistente Estratégico** que orbita o ciclo de vida da sua infraestrutura, fornecendo:
 
-- **🌱 Ecofuturista**: Padrões nativos para eficiência energética (Kepler) e scale-to-zero (KEDA).
-- **🔒 GitOps Puro**: Tudo é gerenciado via Argo CD. Sem comandos imperativos.
-- **🛠️ Self-Provisioning**: Configure VPS e clusters diretamente (`yby bootstrap vps`).
-- **🏠 Offline-First**: O modo `yby dev` roda 100% local com Mirror Git interno.
+1.  🚀 **Bootstrap Platform**: Entrega um cluster de produção "batteries-included" em minutos (VPS -> K3s -> ArgoCD -> Monitoring).
+2.  🛡️ **Guardian (Governança)**: Garante padrões de arquitetura e segurança desde o Day 0.
+3.  🤖 **Intelligence Layer**: Usa IA para diagnosticar problemas (`sentinel`), documentar arquitetura (`atlas`) e gerir conhecimento (`synapstor`).
+4.  💻 **Developer Experience**: Abstrai a complexidade do ambiente local sem esconder a realidade do Kubernetes.
+
+---
+
+## 🆚 Yby vs Kubectl
+
+O Yby **não substitui** o `kubectl`. Eles trabalham juntos:
+
+| Funcionalidade | Ferramenta Padrão | Abordagem Yby |
+| :--- | :--- | :--- |
+| **Interagir com Cluster** | `kubectl get pods` | `yby sentinel investigate` (Adiciona IA e Contexto ao diagnóstico) |
+| **Gerenciar Releases** | `helm install` | `yby chart create` (Gera Boilerplate Padronizado e Seguro) |
+| **Setup Inicial** | Scripts Bash manuais | `yby bootstrap vps` (Declarativo, Idempotente e Seguro) |
+| **Documentação** | Wiki desatualizada | `yby synapstor` (Conhecimento vivo extraído do código) |
+
+> **Resumo:** Use o `kubectl` para operar. Use o `yby` para entender, planejar e evoluir.
 
 ---
 
@@ -33,62 +48,67 @@ curl -sfL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | s
 go install github.com/casheiro/yby-cli@latest
 ```
 
-> **Verificação:** Rode `yby doctor` para checar dependências (Docker, Helm, Kubectl).
-
----
-
-## 📚 Documentação
-
-A documentação completa foi movida para a nossa **Wiki**.
-
-### 🎓 Guia Principal
-- **[Getting Started](docs/wiki/Getting-Started.md)**: Passos iniciais.
-- **[Core Concepts](docs/wiki/Core-Concepts.md)**: Estrutura, Monorepo e Arquivos Gerados.
-- **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
-
-### 📖 Referência & Operação
-- **[CLI Reference](docs/wiki/CLI-Reference.md)**: Todos os comandos.
-- **[Plugins](docs/wiki/Plugins.md)**: Guia completo de extensão e plugins oficiais.
-- **[Operations](docs/wiki/Operations.md)**: Manual do dia-a-dia e Troubleshooting.
-- **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
+> **Verificação:** Rode `yby doctor` para checar se você tem as ferramentas necessárias (Docker, Helm, Kubectl).
 
 ---
 
 ## 🛠️ Exemplo de Uso
 
-Inicie um novo projeto GitOps pronto para produção em segundos:
-
+### 1. Bootstrap (Day 0)
+Crie um novo projeto GitOps pronto para produção:
 ```bash
-# 1. Crie o scaffold interativo
-yby init
-
-# 2. Suba o ambiente (Local = Sync, Remoto = Check)
-yby up
-
-# 3. Crie Workloads Padronizados
-yby chart create meu-app
-
-# 4. Limpeza (Ambiente Local)
-yby destroy
+yby init        # Cria a estrutura do projeto
+yby bootstrap   # Provisiona o cluster (Local ou VPS)
 ```
 
-> [!IMPORTANT]
-> **Discovery Topic**: O Yby usa tópicos do GitHub para descobrir quais repositórios deployar.
-> Por padrão, ele busca repositórios com a tag `yby-cluster`. Se você alterar isso no `values.yaml`, lembre-se de adicionar a nova tag nos seus repositórios!
+### 2. Operação Assistida (Day 1+)
+Seu pod falhou? Pergunte ao Sentinel:
+```bash
+yby sentinel investigate pod-xyz -n production
+# 🤖 Sentinel: "Detectei OOMKilled. Seu limite de memória é 128Mi, mas o pico foi 256Mi."
+```
+
+### 3. Evolução (Day N)
+Precisa de um novo serviço?
+```bash
+yby chart create meu-novo-app  # Cria chart seguindo Golden Path da empresa
+yby up                         # Sobe ambiente de dev local espelhando produção
+```
 
 ---
 
-## 📂 Estrutura do Projeto
+## 🧩 Extensibilidade (Plugins)
 
-Ao iniciar um projeto (`yby init`), você obtém:
+O Yby foi desenhado para ser estendido. Não encontrou o que precisa? Crie seu próprio comando!
+
+*   **Linguagem Agnóstica**: Seu plugin pode ser em Go, Rust, Bash, Python... qualquer coisa que fale JSON.
+*   **API Simples**: Receba contexto no `STDIN`, devolva ações no `STDOUT`.
+*   **Distribuição Fácil**: Publique no GitHub e instale com `yby plugin install`.
+
+[📖 Guia de Desenvolvimento de Plugins](docs/wiki/Plugins.md)
+
+---
+
+## 📚 Documentação
+
+A documentação completa está na nossa **Wiki**:
+
+- **[Getting Started](docs/wiki/Getting-Started.md)**: Passos iniciais.
+- **[Core Concepts](docs/wiki/Core-Concepts.md)**: Estrutura, Monorepo e Arquivos Gerados.
+- **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
+- **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
+
+---
+
+## 📂 Estrutura Gerada
 
 ```text
 .
 ├── .github/workflows/    # Pipelines CI/CD e Release Automation
 ├── .yby/                 # Definições do Blueprint e Ambientes
 ├── infra/                # Manifestos Kubernetes (Helm/Kustomize)
-│   ├── charts/           # Charts locais
-│   └── manifests/        # ArgoCD Apps
+│   ├── charts/           # Charts locais (Golden paths)
+│   └── manifests/        # ArgoCD Apps (GitOps state)
 └── README.md
 ```
 

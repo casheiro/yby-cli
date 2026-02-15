@@ -1,3 +1,4 @@
+{{ "{{" }}- if .Values.applicationset.enabled {{ "}}" }}
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -27,3 +28,4 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: '{{ "{{" }} .path.basename {{ "}}" }}'
+{{ "{{" }}- end {{ "}}" }}

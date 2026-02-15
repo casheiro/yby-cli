@@ -13,9 +13,9 @@ var contextFlag string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "yby",
-	Short: "Yby - Zero-Touch Kubernetes Automation",
-	Long: `Yby CLI: Ferramenta oficial para automação e gerenciamento de clusters
-seguindo os princípios GitOps.`,
+	Short: "Yby - Developer Experience & Infrastructure Assistant",
+	Long: `Yby CLI: Plataforma de Engenharia e Assistente Inteligente para clusters Kubernetes.
+Atua no bootstrap, governança e operação assistida, complementando o uso do kubectl.`,
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
