@@ -57,7 +57,7 @@ git:
 # Descoberta Automática de Aplicações
 discovery:
   enabled: {{ .GithubDiscovery }}
-  organization: {{ .GithubOrg }}
+  organization: "{{ .GithubOrg }}"
   topic: {{ .ProjectName }}-app
   # Secret name para token do GitHub (não altere a menos que saiba o que está fazendo)
   tokenSecretName: github-token
