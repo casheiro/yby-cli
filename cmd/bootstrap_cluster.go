@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -44,135 +45,24 @@ var bootstrapClusterCmd = &cobra.Command{
 			fmt.Printf("📂 Infraestrutura detectada em: %s\n", root)
 		}
 
-		// Load Version Config from Blueprint (Infra as Data)
-		argoVersion := "5.51.6" // Default fallback
-		argoChart := "argo/argo-cd"
+		// Inject Dependencies
+		runner := &bootstrap.RealRunner{}
+		filesystem := &bootstrap.RealFilesystem{}
+		k8s := &bootstrap.RealK8sClient{Runner: runner}
 
-		// 0. Resolve Config (Blueprint)
-		blueprintRepo := getRepoURLFromBlueprint(root)
+		svc := bootstrap.NewService(runner, filesystem, k8s)
 
-		// 1. Pre-checks
-		ensureToolsInstalled()
-		checkEnvVars(blueprintRepo)
-
-		// 1. Ensure Template Assets (Self-Repair)
-		// This must happen before reading blueprint or applying manifests
-		// because the blueprint or manifests might be missing themselves.
-		repoURL := os.Getenv("GITHUB_REPO")
-		if repoURL == "" {
-			repoURL = blueprintRepo
-		}
-		ensureTemplateAssets(repoURL, root)
-
-		blueprintPath := JoinInfra(root, ".yby/blueprint.yaml")
-		// Existing code used ".yby/blueprint.yaml". If we are in infra/, that works if .yby is in infra/.
-		// Let's verify ensuring assets are relative to CWD.
-
-		if blueprintPath != "" {
-			if data, err := os.ReadFile(blueprintPath); err == nil {
-				var bp struct {
-					Infrastructure struct {
-						Argocd struct {
-							Version string `yaml:"version"`
-							Chart   string `yaml:"chart"`
-						} `yaml:"argocd"`
-					} `yaml:"infrastructure"`
-				}
-				if err := yaml.Unmarshal(data, &bp); err == nil {
-					if bp.Infrastructure.Argocd.Version != "" {
-						argoVersion = bp.Infrastructure.Argocd.Version
-						fmt.Printf("📋 Versão ArgoCD definida no Blueprint: %s\n", argoVersion)
-					}
-					if bp.Infrastructure.Argocd.Chart != "" {
-						argoChart = bp.Infrastructure.Argocd.Chart
-					}
-				}
-			}
+		opts := bootstrap.BootstrapOptions{
+			Root:        root,
+			RepoURL:     os.Getenv("GITHUB_REPO"),
+			Context:     contextFlag,
+			Environment: os.Getenv("YBY_ENV"),
 		}
 
-		// 1. Bootstrap Argo CD & System
-		fmt.Println(headerStyle.Render("🌱 Fase 1: Bootstrap do Sistema"))
-
-		fmt.Println(stepStyle.Render("📦 Instalando Argo CD e Argo Workflows..."))
-		executeHelmRepoAdd("argo", "https://argoproj.github.io/argo-helm")
-		createNamespace("argocd")
-
-		// Helm Upgrade ArgoCD
-		// Helm Upgrade ArgoCD
-		runCommand("helm", "upgrade", "--install", "argocd", argoChart,
-			"--namespace", "argocd",
-			"--version", argoVersion,
-			"-f", JoinInfra(root, "config/cluster-values.yaml"),
-			"--wait", "--timeout", "300s")
-
-		// Argo Workflows & Events (Manifests)
-		createNamespace("argo")
-		runCommand("kubectl", "apply", "-n", "argo", "-f", JoinInfra(root, "manifests/upstream/argo-workflows.yaml"))
-
-		createNamespace("argo-events")
-		runCommand("kubectl", "apply", "-f", JoinInfra(root, "manifests/upstream/argo-events.yaml"))
-
-		fmt.Println(stepStyle.Render("⏳ Aguardando controladores..."))
-		waitPodReady("app=workflow-controller", "argo")
-		waitPodReady("controller=sensor-controller", "argo-events")
-
-		// 2. Install System Chart
-		// 2. Install System Chart
-		fmt.Println(stepStyle.Render("⚙️  Instalando Chart System (CRDs e Controllers)..."))
-		runCommand("helm", "dependency", "build", JoinInfra(root, "charts/system"))
-
-		// Workaround CRDs (ServerSideApply to fix BUG-018/SUG-009)
-		if _, err := os.Stat(JoinInfra(root, "charts/system/crds")); err == nil {
-			fmt.Println(stepStyle.Render("Applying CRDs (ServerSide)..."))
-			runCommand("kubectl", "apply", "--server-side", "--force-conflicts", "-f", JoinInfra(root, "charts/system/crds/"))
+		if err := svc.Run(cmd.Context(), opts); err != nil {
+			fmt.Printf(crossStyle.Render("❌ Erro no bootstrap: %v\n"), err)
+			osExit(1)
 		}
-
-		runCommand("helm", "upgrade", "--install", "system", JoinInfra(root, "charts/system"),
-			"--namespace", "argocd",
-			"--create-namespace",
-			"-f", JoinInfra(root, "config/cluster-values.yaml"),
-			"--wait", "--timeout", "600s")
-
-		// 3. Secrets
-		fmt.Println(headerStyle.Render("🔐 Fase 2: Configuração de Segredos"))
-		// 3. Secrets
-		fmt.Println(headerStyle.Render("🔐 Fase 2: Configuração de Segredos"))
-		configureSecrets(root, repoURL)
-
-		// 4. Wait for CRDs
-		fmt.Println(stepStyle.Render("⏳ Aguardando CRDs críticos..."))
-		waitCRD("servicemonitors.monitoring.coreos.com")
-		waitCRD("certificates.cert-manager.io")
-
-		// 5. Bootstrap Config (Root App)
-		// 5. Bootstrap Config (Root App)
-		fmt.Println(headerStyle.Render("🚀 Fase 3: Bootstrap de Configuração"))
-
-		// 5.1 Ensure AppProject exists (Fix BUG-006)
-		// We explicitly apply the project manifest first so root-app (which belongs to it) doesn't fail
-		projectManifest := JoinInfra(root, "manifests/projects/yby-project.yaml")
-		if _, err := os.Stat(projectManifest); err == nil {
-			fmt.Println(stepStyle.Render("Applying AppProject..."))
-			runCommand("kubectl", "apply", "-f", projectManifest)
-		}
-
-		fmt.Println(stepStyle.Render("Applying Root App..."))
-		runCommand("kubectl", "apply", "-f", JoinInfra(root, "manifests/argocd/root-app.yaml"))
-
-		// 5.2 Patch RepoURL for Local Mode (Fix BUG-009)
-		// If we are using internal mirror, we must ensure root-app points to it.
-		// The manifest might have the github URL.
-		if os.Getenv("YBY_ENV") == "local" || contextFlag == "local" {
-			internalRepo := "git://git-server.yby-system.svc:9418/repo.git"
-			fmt.Printf("🔄 Patching Root App RepoURL to %s...\n", internalRepo)
-			// We use merge patch. source.repoURL
-			patch := fmt.Sprintf(`{"spec": {"source": {"repoURL": "%s"}}}`, internalRepo)
-			_ = exec.Command("kubectl", "patch", "application", "root-app", "-n", "argocd", "--type", "merge", "-p", patch).Run()
-		}
-
-		fmt.Println(stepStyle.Render("🔄 Forçando Sync inicial..."))
-		time.Sleep(5 * time.Second)
-		_ = exec.Command("kubectl", "patch", "application", "root-app", "-n", "argocd", "--type", "merge", "-p", "{\"operation\": {\"sync\": {\"prune\": true}}}").Run()
 
 		fmt.Println("\n" + checkStyle.Render("🎉 Bootstrap do Cluster concluído!"))
 		fmt.Println("👉 Execute 'yby access' para acessar os dashboards.")
@@ -231,65 +121,6 @@ func checkEnvVars(blueprintRepo string) {
 			fmt.Println(warningStyle.Render("Necessário para bootstrap em ambientes remotos ou sem credenciais prévias."))
 			osExit(1)
 		}
-	}
-}
-
-func ensureToolsInstalled() {
-	if _, err := lookPath("kubectl"); err != nil {
-		fmt.Println(crossStyle.Render("kubectl não encontrado."))
-		osExit(1)
-	}
-	if _, err := lookPath("helm"); err != nil {
-		fmt.Println(crossStyle.Render("helm não encontrado."))
-		osExit(1)
-	}
-}
-
-func executeHelmRepoAdd(name, url string) {
-	if err := execCommand("helm", "repo", "add", name, url).Run(); err != nil {
-		fmt.Printf("%s Falha ao adicionar repo Helm '%s': %v\n", crossStyle.String(), name, err)
-		osExit(1)
-	}
-	if err := execCommand("helm", "repo", "update", name).Run(); err != nil {
-		fmt.Printf("%s Falha ao atualizar repo Helm '%s': %v\n", crossStyle.String(), name, err)
-		osExit(1)
-	}
-}
-
-func createNamespace(ns string) {
-	out, err := execCommand("kubectl", "create", "namespace", ns).CombinedOutput()
-	if err != nil {
-		// Ignore if already exists
-		if strings.Contains(string(out), "already exists") {
-			return
-		}
-		fmt.Printf("%s Falha ao criar namespace '%s': %s\n", crossStyle.String(), ns, string(out))
-		osExit(1)
-	}
-}
-
-func runCommand(name string, args ...string) {
-	cmd := execCommand(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fmt.Printf("%s Executando: %s %s\n", grayStyle.Render("Exec >"), name, strings.Join(args, " "))
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("%s Erro ao executar %s\n", crossStyle.String(), name)
-		osExit(1)
-	}
-}
-
-func waitPodReady(label, ns string) {
-	cmd := exec.Command("kubectl", "wait", "--for=condition=Ready", "pod", "-l", label, "-n", ns, "--timeout=300s")
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("%s Timeout aguardando pod %s no namespace %s\n", warningStyle.String(), label, ns)
-	}
-}
-
-func waitCRD(crdName string) {
-	cmd := exec.Command("kubectl", "wait", "--for", "condition=established", "--timeout=60s", "crd/"+crdName)
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("%s Timeout aguardando CRD %s\n", warningStyle.String(), crdName)
 	}
 }
 

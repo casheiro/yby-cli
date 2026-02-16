@@ -20,6 +20,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Allow mocking for tests
+var askOne = survey.AskOne
+
 // InitOptions holds the flags for headless mode
 type InitOptions struct {
 	Topology            string
@@ -156,7 +159,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 		if err := scaffold.Apply(targetDir, ctx, compositeFS); err != nil {
 			fmt.Printf("❌ Erro ao gerar scaffold: %v\n", err)
-			os.Exit(1)
+			osExit(1)
 		}
 
 		// 2.5 Generative AI Layer
@@ -332,7 +335,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 		if len(missing) > 0 {
 			fmt.Printf("❌ Erro: Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s\n", strings.Join(missing, ", "))
-			os.Exit(1)
+			osExit(1)
 		}
 		interactive = false
 	} else {
@@ -352,9 +355,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "Diretório onde os arquivos serão criados. Se não existir, será criado.",
 			}
 			var dir string
-			if err := survey.AskOne(prompt, &dir); err != nil {
+			if err := askOne(prompt, &dir); err != nil {
 				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+				osExit(1)
 			}
 			flags.TargetDir = dir
 		}
@@ -367,9 +370,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "single: Apenas 1 env. standard: Local+Prod. complete: Local+Dev+Staging+Prod",
 				Default: "standard",
 			}
-			if err := survey.AskOne(prompt, &ctx.Topology); err != nil {
+			if err := askOne(prompt, &ctx.Topology); err != nil {
 				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+				osExit(1)
 			}
 		}
 
@@ -381,9 +384,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "essential: Apenas checks básica. gitflow: Release automatizado. trunkbased: CD rápido.",
 				Default: "gitflow",
 			}
-			if err := survey.AskOne(prompt, &ctx.WorkflowPattern); err != nil {
+			if err := askOne(prompt, &ctx.WorkflowPattern); err != nil {
 				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+				osExit(1)
 			}
 		}
 
@@ -397,9 +400,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 					Message: "Qual a URL do repositório Git?",
 					Help:    "Se não tiver um ainda, deixe em branco para usar um placeholder ou gerar localmente.",
 				}
-				if err := survey.AskOne(prompt, &ctx.GitRepoURL); err != nil {
+				if err := askOne(prompt, &ctx.GitRepoURL); err != nil {
 					fmt.Println("❌ Cancelado")
-					os.Exit(1)
+					osExit(1)
 				}
 			}
 		}
@@ -415,7 +418,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			Default: defaultName,
 			Help:    "Identificador único usado em namespaces e resources.",
 		}
-		_ = survey.AskOne(promptName, &ctx.ProjectName)
+		_ = askOne(promptName, &ctx.ProjectName)
 
 		// Ask for Project Details (Domain / Email)
 		if ctx.Domain == "yby.local" { // Check if default
@@ -423,7 +426,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Defina o Domínio Base do Cluster:",
 				Default: "yby.local",
 			}
-			_ = survey.AskOne(prompt, &ctx.Domain)
+			_ = askOne(prompt, &ctx.Domain)
 		}
 
 		if ctx.Email == "admin@yby.local" { // Check if default
@@ -431,7 +434,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Email para Admin/Certificados:",
 				Default: "admin@yby.local",
 			}
-			_ = survey.AskOne(prompt, &ctx.Email)
+			_ = askOne(prompt, &ctx.Email)
 		}
 
 		// Modules Selection (MultiSelect)
@@ -448,9 +451,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			Default: defaults,
 			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
 		}
-		if err := survey.AskOne(promptModules, &selectedModules); err != nil {
+		if err := askOne(promptModules, &selectedModules); err != nil {
 			fmt.Println("❌ Cancelado")
-			os.Exit(1)
+			osExit(1)
 		}
 
 		// Map Selection back to Context
@@ -479,9 +482,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Deseja incluir configuração de DevContainer (.devcontainer)?",
 				Default: true,
 			}
-			if err := survey.AskOne(prompt, &ctx.EnableDevContainer); err != nil {
+			if err := askOne(prompt, &ctx.EnableDevContainer); err != nil {
 				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+				osExit(1)
 			}
 		}
 
@@ -495,7 +498,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Default: true,
 				Help:    "Gera documentação técnica, decisões de arquitetura e personas baseada na descrição do projeto.",
 			}
-			_ = survey.AskOne(promptAI, &enableAI)
+			_ = askOne(promptAI, &enableAI)
 
 			if enableAI {
 				// Provider Selection
@@ -506,7 +509,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 						Default: "auto",
 						Help:    "auto: Tenta Ollama local, depois chaves de API (Gemini/OpenAI).",
 					}
-					_ = survey.AskOne(promptProvider, &flags.AIProvider)
+					_ = askOne(promptProvider, &flags.AIProvider)
 					// If user selects "auto", we leave it empty string for factory defaults, or "auto"
 					if flags.AIProvider == "auto" {
 						flags.AIProvider = ""
@@ -519,7 +522,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 						Message: "📝 Descreva seu projeto (em linguagem natural):",
 						Help:    "Ex: 'Um gateway de pagamento para criptoativos focado em segurança'. A IA detectará o idioma.",
 					}
-					_ = survey.AskOne(promptDesc, &flags.Description)
+					_ = askOne(promptDesc, &flags.Description)
 				}
 			}
 		}

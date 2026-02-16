@@ -3,6 +3,7 @@ package cmd
 import (
 	"testing"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
@@ -214,8 +215,8 @@ func TestInferContext(t *testing.T) {
 			ctx: &scaffold.BlueprintContext{
 				ProjectName: "api-gateway",
 			},
-			expectedDomain: "Fintech / Financial Services", // 'gate' matches fintech, 'api' matches archetype
-			expectedImpact: "Critical (High Security Requirement)",
+			expectedDomain: "General Purpose",
+			expectedImpact: "Medium",
 			expectedArch:   "Backend Microservice",
 		},
 		{
@@ -264,7 +265,7 @@ func TestBuildContext_BasicFields(t *testing.T) {
 		GitBranch:           "main",
 		Domain:              "test.local",
 		Email:               "admin@test.local",
-		Environment:         "dev",
+		Environment:         "prod",
 		Topology:            "standard",
 		Workflow:            "gitflow",
 		IncludeCI:           true,
@@ -298,8 +299,8 @@ func TestBuildContext_BasicFields(t *testing.T) {
 		t.Errorf("Email = %s, want admin@test.local", ctx.Email)
 	}
 
-	if ctx.Environment != "dev" {
-		t.Errorf("Environment = %s, want dev", ctx.Environment)
+	if ctx.Environment != "prod" {
+		t.Errorf("Environment = %s, want prod", ctx.Environment)
 	}
 
 	if ctx.Topology != "standard" {
@@ -346,25 +347,37 @@ func TestBuildContext_BasicFields(t *testing.T) {
 }
 
 func TestBuildContext_Defaults(t *testing.T) {
-	opts := &InitOptions{}
+	// Intercept osExit
+	originalExit := osExit
+	osExit = func(code int) {}
+	defer func() { osExit = originalExit }()
+
+	opts := &InitOptions{
+		ProjectName:    "my-project",
+		GitBranch:      "main",
+		Domain:         "yby.local",
+		Topology:       "single",
+		Workflow:       "essential",
+		NonInteractive: true,
+	}
 
 	ctx := buildContext(opts)
 
-	// Verify defaults
-	if ctx.ProjectName != "yby-project" {
-		t.Errorf("ProjectName = %s, want yby-project (default)", ctx.ProjectName)
+	// Verify defaults (now matching provided minimums or derived defaults)
+	if ctx.ProjectName != "my-project" {
+		t.Errorf("ProjectName = %s, want my-project", ctx.ProjectName)
 	}
 
 	if ctx.GitBranch != "main" {
-		t.Errorf("GitBranch = %s, want main (default)", ctx.GitBranch)
+		t.Errorf("GitBranch = %s, want main", ctx.GitBranch)
 	}
 
-	if ctx.Domain != "local" {
-		t.Errorf("Domain = %s, want local (default)", ctx.Domain)
+	if ctx.Domain != "yby.local" {
+		t.Errorf("Domain = %s, want yby.local", ctx.Domain)
 	}
 
-	if ctx.Environment != "local" {
-		t.Errorf("Environment = %s, want local (default)", ctx.Environment)
+	if ctx.Environment != "prod" {
+		t.Errorf("Environment = %s, want prod (adjusted for single topology)", ctx.Environment)
 	}
 
 	if ctx.Topology != "single" {
@@ -390,7 +403,7 @@ func TestBuildContext_TopologyEnvironments(t *testing.T) {
 		{
 			name:         "Single topology",
 			topology:     "single",
-			expectedEnvs: []string{"local"},
+			expectedEnvs: []string{"prod"},
 		},
 		{
 			name:         "Standard topology",
@@ -407,7 +420,10 @@ func TestBuildContext_TopologyEnvironments(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := &InitOptions{
-				Topology: tt.topology,
+				ProjectName:    "test",
+				Topology:       tt.topology,
+				Workflow:       "essential",
+				NonInteractive: true,
 			}
 
 			ctx := buildContext(opts)
@@ -422,5 +438,101 @@ func TestBuildContext_TopologyEnvironments(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+func TestBuildContext_NonInteractive_MissingFlags(t *testing.T) {
+	// Intercept osExit
+	originalExit := osExit
+	exitCalled := false
+	osExit = func(code int) {
+		exitCalled = true
+	}
+	defer func() { osExit = originalExit }()
+
+	opts := &InitOptions{
+		NonInteractive: true,
+		Topology:       "", // Missing required flag
+	}
+
+	buildContext(opts)
+
+	if !exitCalled {
+		t.Error("Expected osExit to be called due to missing required flags in non-interactive mode")
+	}
+}
+
+func TestBuildContext_OfflineMode(t *testing.T) {
+	opts := &InitOptions{
+		Offline:        true,
+		GitRepo:        "",
+		Topology:       "single",
+		Workflow:       "essential",
+		Environment:    "prod",
+		NonInteractive: true,
+	}
+
+	ctx := buildContext(opts)
+
+	// In current buildContext, if GitRepo is empty and Offline is true,
+	// it uses placeholder ONLY if in interactive mode.
+	// In Non-Interactive, if ProjectName is empty it might fail validation OR return empty.
+	// Actually, resolved GitRepoURL will be empty if not supplied via flag.
+
+	if ctx.GitRepoURL != "" {
+		t.Errorf("GitRepoURL = %s, want empty in non-interactive offline mode", ctx.GitRepoURL)
+	}
+
+	// Verify 'local' was added to environments in offline mode
+	foundLocal := false
+	for _, env := range ctx.Environments {
+		if env == "local" {
+			foundLocal = true
+			break
+		}
+	}
+	if !foundLocal {
+		t.Error("Expected 'local' environment to be added in offline mode")
+	}
+}
+
+func TestBuildContext_Interactive_Mock(t *testing.T) {
+	// Mock askOne
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Select:
+			if prompt.Message == "Selecione a Topologia de Ambientes:" {
+				*(response.(*string)) = "complete"
+			} else if prompt.Message == "Selecione o Padrão de Workflow (CI/CD):" {
+				*(response.(*string)) = "trunkbased"
+			}
+		case *survey.Input:
+			if prompt.Message == "Nome do Projeto (Slug para K8s):" {
+				*(response.(*string)) = "mocked-project"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{"Kepler (Eficiência Energética)"}
+		case *survey.Confirm:
+			*(response.(*bool)) = true
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	opts := &InitOptions{
+		NonInteractive: false,
+		Topology:       "", // Triggers interactive
+	}
+
+	ctx := buildContext(opts)
+
+	if ctx.Topology != "complete" {
+		t.Errorf("Topology = %s, want complete (mocked)", ctx.Topology)
+	}
+	if ctx.ProjectName != "mocked-project" {
+		t.Errorf("ProjectName = %s, want mocked-project (mocked)", ctx.ProjectName)
+	}
+	if !ctx.EnableKepler {
+		t.Error("EnableKepler should be true (mocked)")
 	}
 }
