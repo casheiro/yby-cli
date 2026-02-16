@@ -28,13 +28,7 @@ system:
     version: "v1.31.2+k3s1" # Versão utilizada pelo yby bootstrap vps
 
 # Configuração Eco-Friendly (Fase 1)
-kube-prometheus-stack:
-  prometheus:
-    prometheusSpec:
-      retention: "5d" # Retenção reduzida para economizar disco
-      resources:
-        requests:
-          memory: 400Mi # Otimizado para VPS pequeno
+
 
 # Definição de Namespaces do Sistema
 namespaces:
@@ -57,7 +51,7 @@ git:
 # Descoberta Automática de Aplicações
 discovery:
   enabled: {{ .GithubDiscovery }}
-  organization: {{ .GithubOrg }}
+  organization: "{{ .GithubOrg }}"
   topic: {{ .ProjectName }}-app
   # Secret name para token do GitHub (não altere a menos que saiba o que está fazendo)
   tokenSecretName: github-token
@@ -75,6 +69,11 @@ ingress:
 # Stack de Observabilidade (Prometheus + Grafana + Kepler)
 observability:
   mode: prometheus
+  prometheus:
+    retention: "5d" # Retenção reduzida
+    resources:
+      requests:
+        memory: 400Mi # Otimizado para VPS pequeno
 
 kepler:
   enabled: {{ .EnableKepler }}

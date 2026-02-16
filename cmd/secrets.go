@@ -102,8 +102,8 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 
 		fmt.Printf("Gerando credenciais MinIO (User: %s)...\n", user)
 
-		secretName := "minio-creds"
-		namespace := "argocd" // MinIO usually in argocd or system ns
+		secretName := "minio-secret"
+		namespace := "storage" // Correct architecture: MinIO runs in storage
 		outputFile := JoinInfra(root, "charts/system/templates/secrets/sealed-secret-minio.yaml")
 
 		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,

@@ -1,0 +1,57 @@
+{{- if .Values.observability.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability
+  namespace: {{ .Values.argocd.namespace | default "argocd" }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    component: monitoring
+    tier: infrastructure
+    app.kubernetes.io/managed-by: yby-cli
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 66.3.0
+    helm:
+      values: |
+        grafana:
+          enabled: {{ .Values.observability.grafana.enabled | default false }}
+          adminPassword: {{ .Values.observability.grafana.adminPassword | default "admin" }}
+          ingress:
+            enabled: {{ and .Values.global.domainBase .Values.observability.grafana.enabled }}
+            ingressClassName: traefik
+            annotations:
+              {{- if .Values.ingress.tls.enabled }}
+              cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
+              {{- end }}
+            hosts: 
+              - {{ default (printf "grafana.%s" .Values.global.domainBase) .Values.hosts.grafana }}
+            tls: 
+              - secretName: grafana-tls
+                hosts:
+                  - {{ default (printf "grafana.%s" .Values.global.domainBase) .Values.hosts.grafana }}
+        prometheus:
+          enabled: {{ .Values.observability.prometheus.enabled | default true }}
+          prometheusSpec:
+            retention: {{ .Values.observability.prometheus.retention | default "10d" }}
+            {{- if .Values.observability.prometheus.resources }}
+            resources:
+              {{- toYaml .Values.observability.prometheus.resources | nindent 14 }}
+            {{- end }}
+        alertmanager:
+          enabled: {{ .Values.observability.alertmanager.enabled | default false }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+{{- end }}

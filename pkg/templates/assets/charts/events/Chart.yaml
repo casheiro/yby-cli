@@ -1,0 +1,6 @@
+apiVersion: v2
+name: events
+description: Chart for Argo Events resources (SA, Secrets, EventBus)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
