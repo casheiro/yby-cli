@@ -164,10 +164,10 @@ Necessário para o ApplicationSet descobrir repositórios.`,
 }
 
 var backupKeysCmd = &cobra.Command{
-	Use:   "backup",
+	Use:   "backup [file]",
 	Short: "Backup da chave mestre do Sealed Secrets",
 	Long: `Faz backup da chave privada do Sealed Secrets (cuidado!).
-Salva em: bootstrap/sealed-secrets-backup.yaml`,
+Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especificado.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(titleStyle.Render("🔐 Backup Sealed Secrets Keys"))
 
@@ -193,11 +193,15 @@ Salva em: bootstrap/sealed-secrets-backup.yaml`,
 		fmt.Printf("Chave encontrada: %s\n", keyName)
 
 		outputFile := JoinInfra(root, "bootstrap/sealed-secrets-backup.yaml")
+		if len(args) > 0 {
+			outputFile = args[0]
+		}
+
 		_ = os.MkdirAll(filepath.Dir(outputFile), 0755)
 
 		file, err := os.Create(outputFile)
 		if err != nil {
-			fmt.Println(crossStyle.Render("Erro ao criar arquivo de backup."))
+			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro ao criar arquivo de backup em %s", outputFile)))
 			return
 		}
 		defer file.Close()
@@ -210,7 +214,9 @@ Salva em: bootstrap/sealed-secrets-backup.yaml`,
 		}
 
 		fmt.Printf("%s Backup salvo em %s\n", checkStyle.String(), outputFile)
-		fmt.Println(warningStyle.Render("⚠️  NÃO COLOQUE ESTE ARQUIVO NO GIT se for um repositório público!"))
+		if len(args) == 0 {
+			fmt.Println(warningStyle.Render("⚠️  NÃO COLOQUE ESTE ARQUIVO NO GIT se for um repositório público!"))
+		}
 	},
 }
 
