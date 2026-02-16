@@ -137,7 +137,7 @@ var bootstrapClusterCmd = &cobra.Command{
 		fmt.Println(headerStyle.Render("🔐 Fase 2: Configuração de Segredos"))
 		// 3. Secrets
 		fmt.Println(headerStyle.Render("🔐 Fase 2: Configuração de Segredos"))
-		configureSecrets(repoURL)
+		configureSecrets(root, repoURL)
 
 		// 4. Wait for CRDs
 		fmt.Println(stepStyle.Render("⏳ Aguardando CRDs críticos..."))
@@ -163,7 +163,7 @@ var bootstrapClusterCmd = &cobra.Command{
 		// If we are using internal mirror, we must ensure root-app points to it.
 		// The manifest might have the github URL.
 		if os.Getenv("YBY_ENV") == "local" || contextFlag == "local" {
-			internalRepo := "git://git-server.yby-system.svc:80/repo.git"
+			internalRepo := "git://git-server.yby-system.svc:9418/repo.git"
 			fmt.Printf("🔄 Patching Root App RepoURL to %s...\n", internalRepo)
 			// We use merge patch. source.repoURL
 			patch := fmt.Sprintf(`{"spec": {"source": {"repoURL": "%s"}}}`, internalRepo)
@@ -195,7 +195,7 @@ func checkEnvVars(blueprintRepo string) {
 			isLocal := (contextFlag == "local" || os.Getenv("YBY_ENV") == "local")
 			if isLocal {
 				// Use internal mirror URL
-				internalRepo := "git://git-server.yby-system.svc:80/repo.git"
+				internalRepo := "git://git-server.yby-system.svc:9418/repo.git"
 				fmt.Printf("ℹ️  Ambiente Local detectado sem GITHUB_REPO. Usando Mirror Interno: %s\n", internalRepo)
 				os.Setenv("GITHUB_REPO", internalRepo)
 			} else {
@@ -279,7 +279,61 @@ func waitCRD(crdName string) {
 	}
 }
 
-func configureSecrets(repoURL string) {
+func configureSecrets(root, repoURL string) {
+	// 1. Sealed Secrets (Critical - Must run even without GITHUB_TOKEN)
+	// Restore Sealed Secrets Keys (Check Global First)
+	fmt.Println(itemStyle.Render("Verificando backup de chaves Sealed Secrets..."))
+
+	homeDir, _ := os.UserHomeDir()
+	globalKeyPath := filepath.Join(homeDir, ".yby", "keys", "local-cluster.key")
+
+	isLocal := (os.Getenv("YBY_ENV") == "local" || contextFlag == "local")
+
+	if isLocal {
+		if _, err := os.Stat(globalKeyPath); err == nil {
+			fmt.Printf("🔑 Chave Global encontrada em: %s. Restaurando...\n", globalKeyPath)
+			restoreKeysCmd.Run(restoreKeysCmd, []string{globalKeyPath})
+		} else {
+			fmt.Println("ℹ️  Chave Global não encontrada. Verificando backup local do projeto...")
+			restoreKeysCmd.Run(restoreKeysCmd, []string{}) // Fallback to bootstrap/
+		}
+	} else {
+		// Remote/Prod: Only check local project backup (or explicitly provided)
+		restoreKeysCmd.Run(restoreKeysCmd, []string{})
+	}
+
+	// Auto-Backup Logic (Fix BUG-016 - Secure Global Backup)
+	// Only for Local Environment
+	if isLocal {
+		if _, err := os.Stat(globalKeyPath); os.IsNotExist(err) {
+			fmt.Println(warningStyle.Render("⚠️  Chave Global não encontrada. Iniciando Auto-Backup Seguro..."))
+
+			fmt.Println("⏳ Aguardando criação da chave mestra (Sealed Secrets)...")
+			gotKey := false
+			// Increase timeout to 5 minutes (60 * 5s) to allow image pull on slow connections
+			for i := 1; i <= 60; i++ {
+				cmd := exec.Command("kubectl", "get", "secret", "-n", "sealed-secrets", "-l", "sealedsecrets.bitnami.com/sealed-secrets-key=active")
+				if err := cmd.Run(); err == nil {
+					gotKey = true
+					break
+				}
+				if i%2 == 0 { // Log every 10s
+					fmt.Printf("   ... aguardando chave (tentativa %d/60)\r", i)
+				}
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Println() // New line after progress
+
+			if gotKey {
+				backupKeysCmd.Run(backupKeysCmd, []string{globalKeyPath})
+				fmt.Printf("✅ Chave Mestra salva com segurança em: %s\n", globalKeyPath)
+			} else {
+				fmt.Println(crossStyle.Render("❌ Timeout aguardando chave mestra. Backup ignorado."))
+			}
+		}
+	}
+
+	// 2. Output Secrets (Requires Token)
 	// Argo CD Repo Secret
 	// repo := os.Getenv("GITHUB_REPO") // Already passed as arg
 	token := os.Getenv("GITHUB_TOKEN")
@@ -315,11 +369,6 @@ func configureSecrets(repoURL string) {
 	_ = cmdToken.Start()
 	_ = applyCmdToken.Run()
 	_ = cmdToken.Wait()
-
-	// Restore Sealed Secrets Keys
-	fmt.Println(itemStyle.Render("Verificando backup de chaves Sealed Secrets..."))
-	// We call the restore command internally. It checks for the file itself.
-	restoreKeysCmd.Run(restoreKeysCmd, []string{})
 
 	// Webhook Secret
 	fmt.Println(itemStyle.Render("Verificando Webhook Secret..."))
