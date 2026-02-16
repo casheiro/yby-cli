@@ -28,5 +28,5 @@ O padrão utiliza um servidor Git intermediário rodando dentro do próprio clus
 - **Toggle**: A ativação ocorre via contexto `local` ou variável de ambiente `YBY_MODE=mirror`.
 
 ## 5. Implementação de Referência
-- **CLI**: `yby-cli` (comando `dev`).
+- **Facilitador**: `yby-cli` (comando `dev`) atua como o agente de sincronização.
 - **Infra**: Pod `git-server` no namespace de infraestrutura.

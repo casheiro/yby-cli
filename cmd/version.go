@@ -30,7 +30,7 @@ var versionCmd = &cobra.Command{
 		}
 
 		if date != "unknown" {
-			info += fmt.Sprintf(" built at %s", date)
+			info += fmt.Sprintf(" compilado em %s", date)
 		}
 
 		info += fmt.Sprintf(" [%s/%s]", runtime.GOOS, runtime.GOARCH)

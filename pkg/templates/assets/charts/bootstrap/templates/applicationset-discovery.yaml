@@ -34,8 +34,8 @@ spec:
         labelMatch: {{ .Values.discovery.topic }}
       # Filtro: Apenas branch principal
       - branchMatch: "{{ .Values.git.branch }}"
-      # Filtro: Deve ter pasta k8s/
-      - pathsExist: ["k8s"]
+      # Filtro: Deve ter pasta infra/
+      - pathsExist: ["infra"]
   
   template:
     metadata:
@@ -50,7 +50,7 @@ spec:
       source:
         repoURL: '{{`{{ .url }}`}}'
         targetRevision: '{{`{{ .branch }}`}}'
-        path: k8s
+        path: infra
         
       destination:
         server: {{ .Values.argocd.destinationServer }}

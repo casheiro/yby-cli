@@ -1,0 +1,31 @@
+{{- if .Values.events.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: events
+  namespace: {{ .Values.argocd.namespace | default "argocd" }}
+  labels:
+    component: events
+    tier: infrastructure
+    app.kubernetes.io/managed-by: yby-cli
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.git.repoURL }}
+    targetRevision: {{ .Values.git.targetRevision }}
+    path: charts/events
+    helm:
+      valueFiles:
+      {{- range $f := .Values.clusterConfig.valueFiles }}
+      - {{ printf "../../%s" $f | quote }}
+      {{- end }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-events
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}

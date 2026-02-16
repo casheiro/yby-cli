@@ -1,0 +1,20 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.ingress.tls.issuer }}
+spec:
+  acme:
+    # Email address used for ACME registration
+    email: {{ .Values.ingress.tls.email }}
+    {{- if eq .Values.ingress.tls.issuer "letsencrypt-prod" }}
+    server: https://acme-v02.api.letsencrypt.org/directory
+    {{- else }}
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    {{- end }}
+    privateKeySecretRef:
+      name: {{ .Values.ingress.tls.issuer }}
+    # Enable the HTTP-01 challenge provider
+    solvers:
+    - http01:
+        ingress:
+          class: traefik

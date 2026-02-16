@@ -19,3 +19,8 @@ O usuário não deve configurar IPs ou URLs manualmente.
 
 ## 3. Auto-Repair
 Se um arquivo de configuração estiver faltando, a CLI deve ser capaz de baixá-lo novamente do template oficial. Nunca deixe o usuário "quebrado".
+
+## 4. AI-Native Context
+A CLI deve ser desenhada para ser lida por máquinas.
+- **Prefer:** Outputs estruturados (JSON) e arquivos de estado claros (`.yby/`).
+- **Goal:** Permitir que agentes (como Bard ou Sentinel) entendam o estado sem heurísticas complexas.

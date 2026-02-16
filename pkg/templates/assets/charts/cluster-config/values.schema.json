@@ -19,7 +19,8 @@
           "enum": [
             "dev",
             "staging",
-            "prod"
+            "prod",
+            "local"
           ],
           "description": "Deployment environment"
         },
@@ -124,6 +125,18 @@
         "enabled": {
           "type": "boolean",
           "default": true
+        }
+      }
+    },
+    "applicationset": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "organization": {
+          "type": "string"
         }
       }
     },

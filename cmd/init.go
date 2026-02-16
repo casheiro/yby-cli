@@ -39,9 +39,10 @@ type InitOptions struct {
 	Environment string
 
 	// Modules
-	EnableKepler bool
-	EnableMinio  bool
-	EnableKEDA   bool
+	EnableKepler        bool
+	EnableMinio         bool
+	EnableKEDA          bool
+	EnableMetricsServer bool
 
 	// Modes
 	Offline        bool
@@ -54,26 +55,27 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 
 	// Bind Flags
-	initCmd.Flags().StringVar(&opts.Topology, "topology", "", "Topology strategy: single, standard, complete")
-	initCmd.Flags().StringVar(&opts.Workflow, "workflow", "", "Workflow pattern: essential, gitflow, trunkbased")
-	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Generate .devcontainer configuration")
-	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Enable CI/CD generation")
+	initCmd.Flags().StringVar(&opts.Topology, "topology", "", "Estratégia de Topologia: single, standard, complete")
+	initCmd.Flags().StringVar(&opts.Workflow, "workflow", "", "Padrão de Workflow: essential, gitflow, trunkbased")
+	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Gerar configuração .devcontainer")
+	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Habilitar geração de CI/CD")
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 
-	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Target directory for project initialization")
-	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Git Repository URL")
-	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Main git branch")
-	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Project Name/Slug (Override default derivation)")
-	initCmd.Flags().StringVar(&opts.Description, "description", "", "Natural language description of the project (Enable AI generation)")
-	initCmd.Flags().StringVar(&opts.AIProvider, "ai-provider", "", "Force specific AI provider (ollama, gemini, openai)")
-	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Cluster base domain")
-	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Admin email")
-	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Initial environment name")
+	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
+	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
+	initCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "main", "Branch principal do git")
+	initCmd.Flags().StringVar(&opts.ProjectName, "project-name", "", "Nome do Projeto/Slug (Sobrescreve derivação padrão)")
+	initCmd.Flags().StringVar(&opts.Description, "description", "", "Descrição em linguagem natural do projeto (Habilita geração por IA)")
+	initCmd.Flags().StringVar(&opts.AIProvider, "ai-provider", "", "Forçar provedor de IA específico (ollama, gemini, openai)")
+	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
+	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
+	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
 
-	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Enable Kepler module")
-	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Enable MinIO module")
-	initCmd.Flags().BoolVar(&opts.EnableKEDA, "enable-keda", false, "Enable KEDA module")
+	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Habilitar módulo Kepler")
+	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Habilitar módulo MinIO")
+	initCmd.Flags().BoolVar(&opts.EnableKEDA, "enable-keda", false, "Habilitar módulo KEDA")
+	initCmd.Flags().BoolVar(&opts.EnableMetricsServer, "enable-metrics-server", false, "Habilitar Metrics Server (Observability)")
 }
 
 var initCmd = &cobra.Command{
@@ -215,15 +217,17 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		}
 
 		// 3. Post-Scaffold: Generate Values Files for Environments
-		baseValues := "config/cluster-values.yaml"
+		baseValues := filepath.Join(targetDir, "config/cluster-values.yaml")
 		// Verify if scaffold created baseValues
 		if _, err := os.Stat(baseValues); err == nil {
 			for _, env := range ctx.Environments {
-				target := fmt.Sprintf("config/values-%s.yaml", env)
+				target := filepath.Join(targetDir, fmt.Sprintf("config/values-%s.yaml", env))
 				if _, err := os.Stat(target); os.IsNotExist(err) {
 					// Copy content
 					if content, err := os.ReadFile(baseValues); err == nil {
 						// Simple replace if needed, or just clone
+						// For local env, we might want to override things?
+						// For now, clone is better than nothing.
 						_ = os.WriteFile(target, content, 0644)
 						fmt.Printf("   📄 Generated Config: %s\n", target)
 					}
@@ -238,22 +242,61 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 	ctx := &scaffold.BlueprintContext{
-		GitRepoURL:         flags.GitRepo,
-		GitBranch:          flags.GitBranch,
-		Domain:             flags.Domain,
-		Email:              flags.Email,
-		Environment:        flags.Environment,
-		EnableCI:           flags.IncludeCI,
-		EnableDevContainer: flags.IncludeDevContainer,
-		EnableKepler:       flags.EnableKepler,
-		EnableMinio:        flags.EnableMinio,
-		EnableKEDA:         flags.EnableKEDA,
-		Topology:           flags.Topology,
-		WorkflowPattern:    flags.Workflow,
+		GitRepoURL:          flags.GitRepo,
+		GitBranch:           flags.GitBranch,
+		Domain:              flags.Domain,
+		Email:               flags.Email,
+		Environment:         flags.Environment,
+		EnableCI:            flags.IncludeCI,
+		EnableDevContainer:  flags.IncludeDevContainer,
+		EnableKepler:        flags.EnableKepler,
+		EnableMinio:         flags.EnableMinio,
+		EnableKEDA:          flags.EnableKEDA,
+		EnableMetricsServer: flags.EnableMetricsServer,
+		Topology:            flags.Topology,
+		WorkflowPattern:     flags.Workflow,
 
 		// Template Data
 		GitRepo:     flags.GitRepo,
 		ProjectName: resolveProjectName(flags),
+	}
+
+	// Populate Github details
+	if org := extractGithubOrg(flags.GitRepo); org != "" {
+		ctx.GithubOrg = org
+		ctx.GithubDiscovery = true
+	} else {
+		// Default to a placeholder if needed, or disable discovery
+		// If Discovery is enabled by default in schema, we should provide something?
+		// Schema says enabled: true default.
+		// If we leave empty, helm might complain OR render empty string.
+		// Let's set a default "yby-org" if strictly needed, or trust user fills it.
+		// For Zero Config, we try our best.
+		if flags.Offline {
+			ctx.GithubOrg = "yby-local"
+			ctx.GithubDiscovery = false // Disable in offline/local mirror mode usually?
+		}
+	}
+
+	// Calculate RepoRootPath (for ArgoCD)
+	if gitRoot, err := scaffold.GetGitRoot(); err == nil && gitRoot != "" {
+		// Determine absolute target path
+		targetDir := "."
+		if flags.TargetDir != "" {
+			targetDir = flags.TargetDir
+		}
+		absTarget, _ := filepath.Abs(targetDir)
+
+		// Calculate relative path from GitRoot to TargetDir
+		if rel, err := filepath.Rel(gitRoot, absTarget); err == nil {
+			// If target is same as root, rel is "." -> empty for path joining
+			if rel == "." {
+				ctx.RepoRootPath = ""
+			} else {
+				// Ensure forward slashes for ArgoCD/K8s manifests
+				ctx.RepoRootPath = filepath.ToSlash(rel)
+			}
+		}
 	}
 
 	// Enrich with AI Context
@@ -401,9 +444,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 		promptModules := &survey.MultiSelect{
 			Message: "Selecione os Módulos Adicionais (Add-ons):",
-			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)"},
+			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)", "Observability Core (Metrics Server)"},
 			Default: defaults,
-			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos.",
+			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
 		}
 		if err := survey.AskOne(promptModules, &selectedModules); err != nil {
 			fmt.Println("❌ Cancelado")
@@ -414,6 +457,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		ctx.EnableKepler = false
 		ctx.EnableMinio = false
 		ctx.EnableKEDA = false
+		ctx.EnableMetricsServer = false
 		for _, m := range selectedModules {
 			if strings.Contains(m, "Kepler") {
 				ctx.EnableKepler = true
@@ -423,6 +467,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			}
 			if strings.Contains(m, "KEDA") {
 				ctx.EnableKEDA = true
+			}
+			if strings.Contains(m, "Observability") {
+				ctx.EnableMetricsServer = true
 			}
 		}
 
@@ -572,6 +619,35 @@ func deriveProjectName(repoURL string) string {
 	}
 
 	return "yby-project"
+}
+
+func extractGithubOrg(repoURL string) string {
+	if repoURL == "" {
+		return ""
+	}
+	repoURL = strings.TrimSpace(repoURL)
+	repoURL = strings.TrimSuffix(repoURL, "/")
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+
+	// Handle git@github.com:org/repo
+	if strings.Contains(repoURL, "git@") {
+		parts := strings.Split(repoURL, ":")
+		if len(parts) == 2 {
+			repoURL = parts[1]
+		}
+	} else {
+		// Handle https://github.com/org/repo
+		parts := strings.Split(repoURL, "github.com/")
+		if len(parts) == 2 {
+			repoURL = parts[1]
+		}
+	}
+
+	parts := strings.Split(repoURL, "/")
+	if len(parts) >= 2 {
+		return parts[0] // Org is the first part
+	}
+	return ""
 }
 
 // inferContext populates AI-related context fields based on heuristics

@@ -5,19 +5,33 @@ tasks:
     cmds:
       - task: build
 
+  setup-hooks:
+    desc: Configure git hooks
+    cmds:
+      - git config core.hooksPath .githooks
+      - chmod +x .githooks/pre-commit
+      - echo "✅ Git hooks configured!"
+
   build:
     desc: Build all binaries
     cmds:
       - go build -o bin/yby ./cmd/yby
       - go build -o bin/yby-plugin-atlas ./plugins/atlas
       - go build -o bin/yby-plugin-bard ./plugins/bard
-      - go build -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
-      - go build -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
+      - go build -tags k8s -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
+      - go build -tags k8s -o bin/yby-plugin-sentinel-agent ./plugins/sentinel/agent
+      - go build -C ./plugins/synapstor -o ../../bin/yby-plugin-synapstor .
+      - go build -C ./plugins/viz -o ../../bin/yby-plugin-viz .
 
   test:
-    desc: Run tests
+    desc: Run unit tests (default)
     cmds:
-      - go test ./pkg/... ./plugins/...
+      - go test -v ./pkg/... ./plugins/... ./cmd/...
+
+  test:e2e:
+    desc: Run E2E tests (requires Docker)
+    cmds:
+      - go test -v -tags e2e ./test/e2e/...
 
   clean:
     desc: Clean bin directory

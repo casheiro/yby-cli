@@ -1,0 +1,10 @@
+apiVersion: v2
+name: {{ .ProjectName }}
+description: A Helm chart for Yby Workload {{ .ProjectName }}
+type: application
+version: 0.1.0
+appVersion: "1.16.0"
+dependencies:
+  - name: app-template
+    version: "0.1.0"
+    repository: "https://casheiro.github.io/yby-charts"

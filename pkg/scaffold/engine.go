@@ -110,17 +110,41 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("scaffold failed: %w", err)
+		return fmt.Errorf("scaffold falhou: %w", err)
 	}
 
 	return nil
+}
+
+// RenderEmbedDir walks a specific directory in sourceFS and renders it to destDir
+func RenderEmbedDir(sourceFS fs.FS, embedPath, destDir string, ctx *BlueprintContext) error {
+	return fs.WalkDir(sourceFS, embedPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Calculate relative path from embedPath
+		rel, err := filepath.Rel(embedPath, path)
+		if err != nil {
+			return err
+		}
+
+		finalPath := filepath.Join(destDir, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(finalPath, 0755)
+		}
+
+		// Reuse internal processFile
+		return processFile(sourceFS, path, finalPath, ctx)
+	})
 }
 
 func GetGitRoot() (string, error) {
 	// Check if git is installed
 	_, err := exec.LookPath("git")
 	if err != nil {
-		return "", fmt.Errorf("git binary not found")
+		return "", fmt.Errorf("binário git não encontrado")
 	}
 
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -148,9 +172,9 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 		// Render Template
 		destPath = strings.TrimSuffix(destPath, ".tmpl") // Remove .tmpl extension from target
 
-		tmpl, err := template.New(filepath.Base(srcPath)).Parse(string(content))
+		tmpl, err := template.New(filepath.Base(srcPath)).Funcs(funcMap()).Parse(string(content))
 		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", srcPath, err)
+			return fmt.Errorf("falha ao analisar template %s: %w", srcPath, err)
 		}
 
 		f, err := os.Create(destPath)
@@ -160,7 +184,7 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 		defer f.Close()
 
 		if err := tmpl.Execute(f, ctx); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", srcPath, err)
+			return fmt.Errorf("falha ao executar template %s: %w", srcPath, err)
 		}
 
 		fmt.Printf("   📄 Rendered: %s\n", destPath)
@@ -173,4 +197,15 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 	}
 
 	return nil
+}
+
+func funcMap() template.FuncMap {
+	return template.FuncMap{
+		"contains":  strings.Contains,
+		"hasPrefix": strings.HasPrefix,
+		"hasSuffix": strings.HasSuffix,
+		"replace":   strings.ReplaceAll,
+		"toUpper":   strings.ToUpper,
+		"toLower":   strings.ToLower,
+	}
 }

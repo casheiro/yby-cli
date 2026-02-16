@@ -23,4 +23,7 @@ type Provider interface {
 
 	// StreamCompletion sends a prompt and writes the generated text chunks to the writer.
 	StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error
+
+	// EmbedDocuments generates vector embeddings for a list of texts.
+	EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error)
 }

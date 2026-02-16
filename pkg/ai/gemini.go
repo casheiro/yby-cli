@@ -74,7 +74,7 @@ type geminiResponse struct {
 func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
 
-	fullPrompt := fmt.Sprintf("%s\n\nPROJECT DESCRIPTION: %s", SystemPrompt, description)
+	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", SystemPrompt, description)
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{
@@ -94,7 +94,7 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to call gemini: %w", err)
+		return nil, fmt.Errorf("falha ao chamar gemini: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -102,18 +102,18 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 		// Read body for error details
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("gemini returned status: %d (failed to read body: %v)", resp.StatusCode, err)
+			return nil, fmt.Errorf("gemini retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("gemini returned status: %d - %s", resp.StatusCode, buf.String())
+		return nil, fmt.Errorf("gemini retornou status: %d - %s", resp.StatusCode, buf.String())
 	}
 
 	var gResp geminiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
-		return nil, fmt.Errorf("failed to decode gemini response: %w", err)
+		return nil, fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
 	}
 
 	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("empty response from gemini")
+		return nil, fmt.Errorf("resposta vazia do gemini")
 	}
 
 	rawJSON := gResp.Candidates[0].Content.Parts[0].Text
@@ -124,7 +124,7 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 
 	var blueprint GovernanceBlueprint
 	if err := json.Unmarshal([]byte(cleanJSON), &blueprint); err != nil {
-		return nil, fmt.Errorf("failed to parse blueprint json: %w", err)
+		return nil, fmt.Errorf("falha ao analisar json do blueprint: %w", err)
 	}
 
 	return &blueprint, nil
@@ -134,6 +134,8 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
 
 	// Context + User Prompt
+	lang := GetLanguage()
+	systemPrompt = fmt.Sprintf("%s\n\n(IMPORTANT: You MUST output your analysis/response entirely in %s language, maintaining the JSON structure if requested.)", systemPrompt, lang)
 	fullPrompt := fmt.Sprintf("%s\n\nUSER PROMPT: %s", systemPrompt, userPrompt)
 
 	reqBody := geminiRequest{
@@ -147,29 +149,53 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 		// No specific response mime type force, let it be text
 	}
 
-	jsonBody, _ := json.Marshal(reqBody)
-	client := http.Client{Timeout: 60 * time.Second}
+	// Retry Configuration
+	const maxRetries = 3
+	const baseDelay = 2 * time.Second
 
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to call gemini: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("gemini returned status: %d", resp.StatusCode)
-	}
-
+	var lastErr error
 	var gResp geminiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
-		return "", fmt.Errorf("failed to decode gemini response: %w", err)
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		jsonBody, _ := json.Marshal(reqBody)
+		client := http.Client{Timeout: 60 * time.Second}
+
+		resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			lastErr = fmt.Errorf("falha ao chamar gemini: %w", err)
+			time.Sleep(baseDelay * time.Duration(1<<attempt)) // Exponential Backoff
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 200 {
+			// Success!
+			if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
+				return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
+			}
+			if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
+				return "", fmt.Errorf("resposta vazia do gemini")
+			}
+			return gResp.Candidates[0].Content.Parts[0].Text, nil
+		}
+
+		// Handle Errors
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyString := string(bodyBytes)
+		lastErr = fmt.Errorf("gemini returned status: %d - %s", resp.StatusCode, bodyString)
+
+		// Retry only on 503 (Unavailable) or 429 (Too Many Requests)
+		if resp.StatusCode == 503 || resp.StatusCode == 429 {
+			fmt.Printf("\r⚠️  Gemini ocupado (Status %d). Tentando novamente em %d segundos (Tentativa %d/%d)...\n", resp.StatusCode, int(baseDelay.Seconds())*(1<<attempt), attempt+1, maxRetries)
+			time.Sleep(baseDelay * time.Duration(1<<attempt))
+			continue
+		}
+
+		// If it's another error (400, 401, 500), fail immediately
+		break
 	}
 
-	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty response from gemini")
-	}
-
-	return gResp.Candidates[0].Content.Parts[0].Text, nil
+	return "", lastErr
 }
 
 func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
@@ -180,4 +206,90 @@ func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	}
 	_, err = io.WriteString(out, text)
 	return err
+}
+
+type geminiEmbeddingRequest struct {
+	Model   string                 `json:"model"`
+	Content geminiEmbeddingContent `json:"content"`
+}
+
+type geminiEmbeddingContent struct {
+	Parts []geminiPart `json:"parts"`
+}
+
+// geminiEmbeddingResponse was unused and removed
+
+type geminiBatchEmbeddingRequest struct {
+	Requests []geminiEmbeddingRequest `json:"requests"`
+}
+
+type geminiBatchEmbeddingResponse struct {
+	Embeddings []struct {
+		Values []float32 `json:"values"`
+	} `json:"embeddings"`
+}
+
+func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
+	embeddingModel := "text-embedding-004"
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchEmbedContents?key=%s", embeddingModel, p.APIKey)
+
+	const batchSize = 100
+	var allEmbeddings [][]float32
+
+	// Process in batches
+	for i := 0; i < len(texts); i += batchSize {
+		end := i + batchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+
+		batchTexts := texts[i:end]
+		requests := make([]geminiEmbeddingRequest, len(batchTexts))
+
+		for j, text := range batchTexts {
+			requests[j] = geminiEmbeddingRequest{
+				Model: "models/" + embeddingModel,
+				Content: geminiEmbeddingContent{
+					Parts: []geminiPart{{Text: text}},
+				},
+			}
+		}
+
+		batchReq := geminiBatchEmbeddingRequest{Requests: requests}
+		jsonBody, _ := json.Marshal(batchReq)
+
+		client := http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			return nil, fmt.Errorf("falha ao chamar gemini embeddings (batch %d): %w", i, err)
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("gemini embeddings status: %d - %s", resp.StatusCode, string(body))
+		}
+
+		var batchResp geminiBatchEmbeddingResponse
+		if err := json.Unmarshal(body, &batchResp); err != nil {
+			return nil, fmt.Errorf("falha ao decodificar batch %d: %w", i, err)
+		}
+
+		if len(batchResp.Embeddings) != len(batchTexts) {
+			// In case of error or mismatch, we should probably error out or pad with zeros?
+			// Returning error is safer to detect data loss.
+			return nil, fmt.Errorf("mismatch in batch %d: sent %d, got %d", i, len(batchTexts), len(batchResp.Embeddings))
+		}
+
+		for _, emb := range batchResp.Embeddings {
+			allEmbeddings = append(allEmbeddings, emb.Values)
+		}
+	}
+
+	return allEmbeddings, nil
 }

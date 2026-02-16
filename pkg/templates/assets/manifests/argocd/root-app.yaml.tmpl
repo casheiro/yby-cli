@@ -13,7 +13,12 @@ spec:
   source:
     repoURL: {{ .GitRepo }}
     targetRevision: HEAD
+    {{- if .RepoRootPath }}
+    path: {{ .RepoRootPath }}/charts/bootstrap
+    {{- else }}
     path: charts/bootstrap
+    {{- end }}
+
 
     helm:
       valueFiles:

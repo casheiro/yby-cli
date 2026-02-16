@@ -5,8 +5,8 @@
 > **Última Atualização:** 2025-12-24
 
 ## 1. Identidade
-**Slogan:** Bootstrap facilitado para o ecossistema Yby.
-**Propósito:** Abstrair a complexidade de ferramentas como Helm, Argo CD e Kubernetes, oferecendo uma experiência de desenvolvedor (DX) fluida para iniciar projetos e gerenciar clusters.
+**Slogan:** Platform Engineering & Infrastructure Assistant.
+**Propósito:** Atuar como um **Assistente Inteligente** para bootstrap, governança e operação de clusters, organizando ferramentas padrão (Helm, Argo, Kubectl) em vez de escondê-las.
 **Maturidade:** **Active (Governed)** - Processos ágeis, mas exigência de UKI para mudanças semânticas.
 
 ## 2. Visão Técnica

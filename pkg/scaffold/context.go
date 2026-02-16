@@ -11,13 +11,14 @@ type BlueprintContext struct {
 	Environment string // dev, staging, prod
 
 	// Feature Flags for filtering
-	EnableCI           bool
-	EnableDiscovery    bool
-	EnableWhitelist    bool
-	EnableKepler       bool
-	EnableMinio        bool
-	EnableKEDA         bool
-	EnableDevContainer bool // New Quick Win
+	EnableCI            bool
+	EnableDiscovery     bool
+	EnableWhitelist     bool
+	EnableKepler        bool
+	EnableMinio         bool
+	EnableKEDA          bool
+	EnableDevContainer  bool // New Quick Win
+	EnableMetricsServer bool // [NEW] Habilita geração de manifests de observabilidade
 
 	// Workflow Pattern Strategy
 	WorkflowPattern string // "essential", "gitflow", "trunkbased"
@@ -28,7 +29,8 @@ type BlueprintContext struct {
 
 	// Template Data
 	// Template Data
-	GitRepo string
+	GitRepo      string
+	RepoRootPath string // [NEW] Relative path from Git Root to Project Root (where charts/ resides)
 
 	// AI/Context Data
 	BusinessDomain  string // e.g. "Fintech", "E-Commerce", "General"

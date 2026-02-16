@@ -1,6 +1,6 @@
 # UKI Specification (Entity: yby-cli)
 
-> **Unit of Knowledge Intelligence (UKI)**
+> **Unit of Knowledge Interlinked (UKI)**
 > Menor unidade atômica de conhecimento que descreve uma regra, decisão, padrão ou métrica perene do projeto.
 
 ## 1. Estrutura do Arquivo

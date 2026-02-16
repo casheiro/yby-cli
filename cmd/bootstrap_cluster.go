@@ -121,9 +121,10 @@ var bootstrapClusterCmd = &cobra.Command{
 		fmt.Println(stepStyle.Render("⚙️  Instalando Chart System (CRDs e Controllers)..."))
 		runCommand("helm", "dependency", "build", JoinInfra(root, "charts/system"))
 
-		// Workaround CRDs
+		// Workaround CRDs (ServerSideApply to fix BUG-018/SUG-009)
 		if _, err := os.Stat(JoinInfra(root, "charts/system/crds")); err == nil {
-			runCommand("kubectl", "apply", "-f", JoinInfra(root, "charts/system/crds/"))
+			fmt.Println(stepStyle.Render("Applying CRDs (ServerSide)..."))
+			runCommand("kubectl", "apply", "--server-side", "--force-conflicts", "-f", JoinInfra(root, "charts/system/crds/"))
 		}
 
 		runCommand("helm", "upgrade", "--install", "system", JoinInfra(root, "charts/system"),
@@ -146,8 +147,28 @@ var bootstrapClusterCmd = &cobra.Command{
 		// 5. Bootstrap Config (Root App)
 		// 5. Bootstrap Config (Root App)
 		fmt.Println(headerStyle.Render("🚀 Fase 3: Bootstrap de Configuração"))
+
+		// 5.1 Ensure AppProject exists (Fix BUG-006)
+		// We explicitly apply the project manifest first so root-app (which belongs to it) doesn't fail
+		projectManifest := JoinInfra(root, "manifests/projects/yby-project.yaml")
+		if _, err := os.Stat(projectManifest); err == nil {
+			fmt.Println(stepStyle.Render("Applying AppProject..."))
+			runCommand("kubectl", "apply", "-f", projectManifest)
+		}
+
 		fmt.Println(stepStyle.Render("Applying Root App..."))
 		runCommand("kubectl", "apply", "-f", JoinInfra(root, "manifests/argocd/root-app.yaml"))
+
+		// 5.2 Patch RepoURL for Local Mode (Fix BUG-009)
+		// If we are using internal mirror, we must ensure root-app points to it.
+		// The manifest might have the github URL.
+		if os.Getenv("YBY_ENV") == "local" || contextFlag == "local" {
+			internalRepo := "git://git-server.yby-system.svc:80/repo.git"
+			fmt.Printf("🔄 Patching Root App RepoURL to %s...\n", internalRepo)
+			// We use merge patch. source.repoURL
+			patch := fmt.Sprintf(`{"spec": {"source": {"repoURL": "%s"}}}`, internalRepo)
+			_ = exec.Command("kubectl", "patch", "application", "root-app", "-n", "argocd", "--type", "merge", "-p", patch).Run()
+		}
 
 		fmt.Println(stepStyle.Render("🔄 Forçando Sync inicial..."))
 		time.Sleep(5 * time.Second)
@@ -264,7 +285,7 @@ func configureSecrets(repoURL string) {
 	token := os.Getenv("GITHUB_TOKEN")
 
 	if token == "" {
-		fmt.Println(itemStyle.Render("Skipping Secrets Config (Token not provided)..."))
+		fmt.Println(itemStyle.Render("Pulando Configuração de Secrets (Token não fornecido)..."))
 		return
 	}
 	fmt.Println(itemStyle.Render("Configurando Argo CD Repo Secret..."))

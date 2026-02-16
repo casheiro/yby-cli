@@ -21,7 +21,7 @@ var contextDumpCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		env := os.Getenv("YBY_ENV")
 		if env == "" {
-			env = "default (local if configured or plain)"
+			env = "padrão (local se configurado ou simples)"
 		}
 
 		fmt.Println(headerStyle.Render(fmt.Sprintf("🔍 Contexto Atual: %s", env)))

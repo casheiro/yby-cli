@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
@@ -14,24 +15,30 @@ import (
 )
 
 func main() {
-	// 1. Check arguments. If run as "yby bard", likely initiated by CLI via Executor
-	//    But "plugin" usually implies "command" hook.
-	//    The Core CLI invokes binary with JSON on Stdin.
-	//    However, for a "command" plugin, it might take over the TUI.
+	var req plugin.PluginRequest
 
-	// Check if stdin has data (Plugin Request) or is interactive
+	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
+	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
+		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
+			os.Exit(1)
+		}
+		handlePluginRequest(req)
+		return
+	}
+
+	// 2. Check for Stdin Protocol (Legacy/Automation)
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
 		// Data on pipe -> Plugin Request
-		var req plugin.PluginRequest
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
 			handlePluginRequest(req)
 			return
 		}
 	}
 
-	// Falls back to direct execution (dev mode or if invoked directly)
-	// mock request
+	// 3. Fallback / Dev Mode
+	// Mock request for development or direct invocation without context
 	handlePluginRequest(plugin.PluginRequest{Hook: "command"})
 }
 
@@ -39,9 +46,10 @@ func handlePluginRequest(req plugin.PluginRequest) {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
-			Name:    "bard",
-			Version: "0.1.0",
-			Hooks:   []string{"command"},
+			Name:        "bard",
+			Version:     "0.1.0",
+			Description: "Assistente de IA interativo para diagnóstico e operações",
+			Hooks:       []string{"command"},
 		})
 	case "command":
 		startChat(req.Context)
@@ -57,24 +65,52 @@ func startChat(ctxData map[string]interface{}) {
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
-		fmt.Println("❌ No AI provider available. Set OLLAMA_HOST or OPENAI_API_KEY.")
+		fmt.Println("❌ Nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY.")
 		os.Exit(1)
 	}
 
-	// Prepare System Prompt
-	blueprintSummary := "No context available."
+	// 1. Initialize Vector Store (Read-Only access effectively)
+	cwd, _ := os.Getwd()
+	storePath := filepath.Join(cwd, ".synapstor", ".index")
+	// Note: We initialize store. If it doesn't exist, search will just return empty or we handle error.
+	vectorStore, err := ai.NewVectorStore(ctx, storePath, provider)
+	if err != nil {
+		// Non-fatal, just means no long-term memory
+		// But in this architecture it's critical. Let's warn.
+		fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("⚠️  Aviso: Memória semântica indisponível (%v)\n"), err)
+	}
+
+	// 2. Build Base Context from Payload (still useful for Blueprint/High-level)
+	overview, _ := ctxData["overview"].(string)
+	backlog, _ := ctxData["backlog"].(string)
+
+	blueprintSummary := "Nenhum blueprint disponível."
 	if bp, ok := ctxData["blueprint"]; ok {
-		// Convert blueprint to string summary
-		// This is naive, relies on fmt/json stringification
 		bytes, _ := json.MarshalIndent(bp, "", "  ")
 		blueprintSummary = string(bytes)
 	}
 
-	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", blueprintSummary)
+	// 3. Build Rich System Prompt
+	contextBlock := fmt.Sprintf(`
+## Project Overview
+%s
+
+## Backlog & Debt
+%s
+
+## Technical Blueprint (Atlas)
+%s
+`, overview, backlog, blueprintSummary)
+
+	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
 
 	// UI Setup
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
-	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Type 'exit' to quit."))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair."))
+
+	if vectorStore != nil {
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("🧠 Memória Semântica Ativa."))
+	}
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -94,7 +130,34 @@ func startChat(ctxData map[string]interface{}) {
 
 		fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Bard > "))
 
-		err := provider.StreamCompletion(ctx, systemPrompt, input, os.Stdout)
+		// 4. Smart Retrieval (Vector Search)
+		ukiContext := ""
+		if vectorStore != nil {
+			// Search for top 3 relevant chunks
+			results, err := vectorStore.Search(ctx, input, 3)
+			if err == nil && len(results) > 0 {
+				var sources []string
+				var sb strings.Builder
+
+				for _, res := range results {
+					sources = append(sources, fmt.Sprintf("%s (%.2f)", res.Metadata["filename"], res.Score))
+					sb.WriteString(fmt.Sprintf("\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content))
+				}
+
+				ukiContext = sb.String()
+
+				// Show sources in UI (subtle)
+				fmt.Printf(lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("240")).Render("\n(Consultando: %s)... "), strings.Join(sources, ", "))
+			}
+		}
+
+		// 5. Final Answer
+		runInput := input
+		if ukiContext != "" {
+			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
+		}
+
+		err := provider.StreamCompletion(ctx, systemPrompt, runInput, os.Stdout)
 		if err != nil {
 			fmt.Printf("\nError: %v\n", err)
 		}

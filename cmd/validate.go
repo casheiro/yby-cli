@@ -41,7 +41,7 @@ Equivalente ao antigo 'make validate'.`,
 
 		fmt.Println("\n" + headerStyle.Render("1️⃣  Helm Lint..."))
 		for _, chart := range charts {
-			fmt.Printf("Linting %s... ", chart)
+			fmt.Printf("Linting em %s... ", chart)
 			if err := exec.Command("helm", "lint", chart).Run(); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
 				os.Exit(1)
@@ -49,7 +49,7 @@ Equivalente ao antigo 'make validate'.`,
 			fmt.Printf("%s\n", checkStyle.String())
 		}
 
-		fmt.Println("\n" + headerStyle.Render("2️⃣  Helm Template Check (Dry Run)..."))
+		fmt.Println("\n" + headerStyle.Render("2️⃣  Verificação de Template Helm (Simulação)..."))
 		valuesFile := JoinInfra(root, "config/cluster-values.yaml")
 		// Fallback for location (if running from cli/)
 		if _, err := os.Stat(valuesFile); os.IsNotExist(err) {
@@ -58,7 +58,7 @@ Equivalente ao antigo 'make validate'.`,
 
 		for _, chart := range charts {
 			name := "release-name" // dummy name
-			fmt.Printf("Templating %s... ", chart)
+			fmt.Printf("Gerando template de %s... ", chart)
 			// Silent output unless error
 			cmd := exec.Command("helm", "template", name, chart, "-f", valuesFile)
 			if out, err := cmd.CombinedOutput(); err != nil {

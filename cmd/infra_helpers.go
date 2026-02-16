@@ -35,7 +35,7 @@ func FindInfraRoot() (string, error) {
 		wd = parent
 	}
 
-	return "", fmt.Errorf("infra root not found (searched .yby and infra/.yby from %s)", startWd)
+	return "", fmt.Errorf("raiz da infra não encontrada (procurado em .yby e infra/.yby a partir de %s)", startWd)
 }
 
 // JoinInfra joins paths preserving root context

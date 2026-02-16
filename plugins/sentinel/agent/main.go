@@ -25,16 +25,16 @@ type EventList struct {
 }
 
 func main() {
-	fmt.Println("🛡️  Sentinel Agent Starting...")
+	fmt.Println("🛡️  Iniciando Agente Sentinel...")
 
 	// Ensure kubectl is available
 	_, err := exec.LookPath("kubectl")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ kubectl not found. The agent needs kubectl to interact with the cluster.\n")
+		fmt.Fprintf(os.Stderr, "❌ kubectl não encontrado. O agente precisa do kubectl para interagir com o cluster.\n")
 		os.Exit(1)
 	}
 
-	fmt.Println("👀 Watching Kubernetes Events for 'CrashLoopBackOff'...")
+	fmt.Println("👀 Monitorando Eventos Kubernetes por 'CrashLoopBackOff'...")
 
 	// Native implementation with client-go is better, but to keep "Integrity" without
 	// massive refactor of dependencies right now, we use a robust kubectl polling

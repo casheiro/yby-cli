@@ -66,7 +66,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 		Model: p.Model,
 		Messages: []openAIMessage{
 			{Role: "system", Content: SystemPrompt},
-			{Role: "user", Content: fmt.Sprintf("Project Description: %s", description)},
+			{Role: "user", Content: fmt.Sprintf("Descrição do Projeto: %s", description)},
 		},
 	}
 	reqBody.ResponseFormat.Type = "json_object"
@@ -79,25 +79,25 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	client := http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call openai: %w", err)
+		return nil, fmt.Errorf("falha ao chamar openai: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("openai returned status: %d (failed to read body: %v)", resp.StatusCode, err)
+			return nil, fmt.Errorf("openai retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("openai returned status: %d - %s", resp.StatusCode, buf.String())
+		return nil, fmt.Errorf("openai retornou status: %d - %s", resp.StatusCode, buf.String())
 	}
 
 	var oResp openAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
-		return nil, fmt.Errorf("failed to decode openai response: %w", err)
+		return nil, fmt.Errorf("falha ao decodificar resposta da openai: %w", err)
 	}
 
 	if len(oResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty response from openai")
+		return nil, fmt.Errorf("resposta vazia do openai")
 	}
 
 	cleanJSON := oResp.Choices[0].Message.Content
@@ -107,7 +107,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 
 	var blueprint GovernanceBlueprint
 	if err := json.Unmarshal([]byte(cleanJSON), &blueprint); err != nil {
-		return nil, fmt.Errorf("failed to parse blueprint json: %w", err)
+		return nil, fmt.Errorf("falha ao analisar json do blueprint: %w", err)
 	}
 
 	return &blueprint, nil
@@ -131,21 +131,21 @@ func (p *OpenAIProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	client := http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to call openai: %w", err)
+		return "", fmt.Errorf("falha ao chamar openai: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("openai returned status: %d", resp.StatusCode)
+		return "", fmt.Errorf("openai retornou status: %d", resp.StatusCode)
 	}
 
 	var oResp openAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
-		return "", fmt.Errorf("failed to decode openai response: %w", err)
+		return "", fmt.Errorf("falha ao decodificar resposta da openai: %w", err)
 	}
 
 	if len(oResp.Choices) == 0 {
-		return "", fmt.Errorf("empty response from openai")
+		return "", fmt.Errorf("resposta vazia da openai")
 	}
 
 	return oResp.Choices[0].Message.Content, nil
@@ -176,7 +176,7 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	client := http.Client{} // No timeout for streaming
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to call openai stream: %w", err)
+		return fmt.Errorf("falha ao chamar openai stream: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -230,4 +230,55 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 		}
 	}
 	return nil
+}
+
+type openAIEmbeddingRequest struct {
+	Input          []string `json:"input"`
+	Model          string   `json:"model"`
+	EncodingFormat string   `json:"encoding_format"`
+}
+
+type openAIEmbeddingResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+}
+
+func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	reqBody := openAIEmbeddingRequest{
+		Input:          texts,
+		Model:          "text-embedding-3-small", // Efficient and cheap
+		EncodingFormat: "float",
+	}
+
+	jsonBody, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/embeddings", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+
+	client := http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao chamar openai embeddings: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("openai embeddings status: %d", resp.StatusCode)
+	}
+
+	var oResp openAIEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
+		return nil, err
+	}
+
+	// Sort by index just in case, though usually ordered
+	results := make([][]float32, len(texts))
+	for _, data := range oResp.Data {
+		if data.Index < len(results) {
+			results[data.Index] = data.Embedding
+		}
+	}
+	return results, nil
 }
