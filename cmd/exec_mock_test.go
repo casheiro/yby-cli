@@ -69,7 +69,18 @@ func mockExecCommand() func() {
 		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
 		return cmd
 	}
+
+	// Mock LookPath to always succeed for tools we expect, or fail for "fail-tool"
+	originalLookPath := lookPath
+	lookPath = func(file string) (string, error) {
+		if file == "fail-tool" || file == "missing-tool" {
+			return "", fmt.Errorf("tool not found: %s", file)
+		}
+		return "/usr/bin/" + file, nil
+	}
+
 	return func() {
 		execCommand = originalExecCommand
+		lookPath = originalLookPath
 	}
 }

@@ -25,7 +25,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -45,11 +44,11 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 		fmt.Println("---------------------------------------")
 
 		// Verificar dependências
-		if _, err := exec.LookPath("kubectl"); err != nil {
+		if _, err := lookPath("kubectl"); err != nil {
 			fmt.Println("❌ Erro: 'kubectl' não encontrado.")
 			return
 		}
-		if _, err := exec.LookPath("kubeseal"); err != nil {
+		if _, err := lookPath("kubeseal"); err != nil {
 			fmt.Println("❌ Erro: 'kubeseal' não encontrado.")
 			return
 		}

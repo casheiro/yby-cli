@@ -201,7 +201,7 @@ func checkEnvVars(blueprintRepo string) {
 			} else {
 				fmt.Println(crossStyle.Render("❌ Variável GITHUB_REPO faltando e não encontrada no Blueprint."))
 				fmt.Println(warningStyle.Render("Defina no .env, exporte ou execute 'yby init' novamente."))
-				os.Exit(1)
+				osExit(1)
 			}
 		}
 	}
@@ -229,19 +229,19 @@ func checkEnvVars(blueprintRepo string) {
 		} else {
 			fmt.Println(crossStyle.Render("❌ Variável GITHUB_TOKEN faltando."))
 			fmt.Println(warningStyle.Render("Necessário para bootstrap em ambientes remotos ou sem credenciais prévias."))
-			os.Exit(1)
+			osExit(1)
 		}
 	}
 }
 
 func ensureToolsInstalled() {
-	if _, err := exec.LookPath("kubectl"); err != nil {
+	if _, err := lookPath("kubectl"); err != nil {
 		fmt.Println(crossStyle.Render("kubectl não encontrado."))
-		os.Exit(1)
+		osExit(1)
 	}
-	if _, err := exec.LookPath("helm"); err != nil {
+	if _, err := lookPath("helm"); err != nil {
 		fmt.Println(crossStyle.Render("helm não encontrado."))
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -275,7 +275,7 @@ func runCommand(name string, args ...string) {
 	fmt.Printf("%s Executando: %s %s\n", grayStyle.Render("Exec >"), name, strings.Join(args, " "))
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("%s Erro ao executar %s\n", crossStyle.String(), name)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -476,7 +476,7 @@ func restoreEmbedFile(embedPath, destPath string, replacements map[string]string
 	data, err := templates.Assets.ReadFile(embedPath)
 	if err != nil {
 		fmt.Printf("%s Erro ao ler asset embedado %s: %v\n", crossStyle.String(), embedPath, err)
-		os.Exit(1)
+		osExit(1)
 	}
 	content := string(data)
 
@@ -488,13 +488,13 @@ func restoreEmbedFile(embedPath, destPath string, replacements map[string]string
 	// Ensure dir
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		fmt.Printf("%s Erro ao criar diretório %s: %v\n", crossStyle.String(), filepath.Dir(destPath), err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	// Write file
 	if err := os.WriteFile(destPath, []byte(content), 0644); err != nil {
 		fmt.Printf("%s Erro ao salvar arquivo %s: %v\n", crossStyle.String(), destPath, err)
-		os.Exit(1)
+		osExit(1)
 	}
 }
 

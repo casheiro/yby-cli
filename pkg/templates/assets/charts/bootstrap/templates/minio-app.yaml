@@ -1,4 +1,4 @@
-{{- if .Values.storage.minio.enabled }}
+{{- if .Values.minio.enabled }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,51 +11,17 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://charts.min.io/
-    chart: minio
-    targetRevision: 5.4.0
+    repoURL: {{ .Values.git.repoURL }}
+    targetRevision: {{ .Values.git.targetRevision }}
+    path: {{ if .RepoRootPath }}{{ .RepoRootPath }}/{{ end }}charts/minio
     helm:
-      values: |
-        mode: {{ .Values.minio.mode | default "standalone" }}
-        replicas: {{ .Values.minio.replicas | default 1 }}
-        existingSecret: {{ .Values.minio.existingSecret | default "minio-secret" }}
-        ingress:
-          enabled: {{ and .Values.global.domainBase .Values.storage.minio.enabled }}
-          ingressClassName: traefik
-          annotations:
-            {{- if .Values.ingress.tls.enabled }}
-            cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
-            {{- end }}
-          hosts:
-            - {{ default (printf "minio.%s" .Values.global.domainBase) .Values.hosts.minio }}
-          tls:
-            - secretName: minio-tls
-              hosts:
-                - {{ default (printf "minio.%s" .Values.global.domainBase) .Values.hosts.minio }}
-        consoleIngress:
-          enabled: {{ and .Values.global.domainBase .Values.storage.minio.enabled }}
-          ingressClassName: traefik
-          annotations:
-            {{- if .Values.ingress.tls.enabled }}
-            cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.issuer }}
-            {{- end }}
-          hosts:
-            - {{ default (printf "minio-console.%s" .Values.global.domainBase) .Values.hosts.minioConsole }}
-          tls:
-            - secretName: minio-console-tls
-              hosts:
-                - {{ default (printf "minio-console.%s" .Values.global.domainBase) .Values.hosts.minioConsole }}
-        persistence:
-          enabled: {{ .Values.minio.persistence.enabled | default true }}
-          size: {{ .Values.minio.persistence.size | default "10Gi" }}
-        resources:
-          requests:
-            memory: {{ .Values.minio.resources.requests.memory | default "256Mi" }}
-            cpu: {{ .Values.minio.resources.requests.cpu | default "100m" }}
-        buckets: {{ toJson .Values.minio.buckets }}
+      valueFiles:
+      {{- range $f := .Values.clusterConfig.valueFiles }}
+      - {{ printf "../../%s" $f | quote }}
+      {{- end }}
   destination:
     server: https://kubernetes.default.svc
-    namespace: storage
+    namespace: minio
   syncPolicy:
     automated:
       prune: true

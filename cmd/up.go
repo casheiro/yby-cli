@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -78,9 +77,9 @@ func init() {
 
 func runLocalUp(ctx context.Context, root string) {
 	// A. Check dependencies
-	if _, err := exec.LookPath("k3d"); err != nil {
+	if _, err := lookPath("k3d"); err != nil {
 		fmt.Println("❌ k3d não encontrado. Rode 'yby setup' primeiro.")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	clusterName := os.Getenv("YBY_CLUSTER_NAME")
@@ -90,7 +89,7 @@ func runLocalUp(ctx context.Context, root string) {
 
 	// B. Cluster Lifecycle
 	fmt.Printf("🔍 Verificando cluster '%s'...\n", clusterName)
-	checkCmd := exec.Command("k3d", "cluster", "list", clusterName)
+	checkCmd := execCommand("k3d", "cluster", "list", clusterName)
 	if err := checkCmd.Run(); err != nil {
 		// Cluster doesn't exist (k3d returns error if not found? or just empty list?)
 		// standard k3d list returns exit code 0 usually unless error.

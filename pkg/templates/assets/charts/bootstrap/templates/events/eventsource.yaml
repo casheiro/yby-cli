@@ -1,3 +1,4 @@
+{{- if .Values.events.enabled }}
 apiVersion: argoproj.io/v1alpha1
 kind: EventSource
 metadata:
@@ -42,3 +43,4 @@ spec:
         secret:
           name: gitlab-webhook-secret
           key: secret
+{{- end }}

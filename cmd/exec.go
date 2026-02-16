@@ -12,3 +12,6 @@ var execCommand = exec.Command
 var osExit = func(code int) {
 	os.Exit(code)
 }
+
+// lookPath is a variable to allow mocking in tests
+var lookPath = exec.LookPath
