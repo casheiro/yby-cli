@@ -554,7 +554,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 	// Then `dev` is invalid.
 	//
 	// Let's modify the behavior: If Offline is set, we ensure `local` environment is present
-	// so the user can run `yby dev`.
+	// so the user can run `yby up`.
 	if flags.Offline {
 		hasLocal := false
 		for _, e := range ctx.Environments {

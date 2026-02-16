@@ -4,13 +4,18 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // accessCmd represents the access command
@@ -28,7 +33,14 @@ Você pode especificar um contexto (local/prod) com --context.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("🚀 Iniciando Acesso Unificado ao Cluster...")
 
-		activeTunnels := 0
+		// Setup context with cancellation
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Setup signal handling for graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
 		targetContext, _ := cmd.Flags().GetString("context")
 		if targetContext == "" {
 			var err error
@@ -42,6 +54,9 @@ Você pode especificar um contexto (local/prod) com --context.`,
 			fmt.Printf("📍 Contexto: %s (definido via flag)\n", targetContext)
 		}
 
+		// Create errgroup for managing goroutines
+		g, gctx := errgroup.WithContext(ctx)
+
 		// 1. Argo CD (Default)
 		argoPwd, err := getArgoPassword(targetContext)
 		if err != nil {
@@ -49,9 +64,10 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		} else {
 			fmt.Println("🔌 Conectando Argo CD...")
 			killPortForward("8085")
-			go runPortForward(targetContext, "argocd", "svc/argocd-server", "8085:80")
+			g.Go(func() error {
+				return runPortForwardWithContext(gctx, targetContext, "argocd", "svc/argocd-server", "8085:80")
+			})
 			fmt.Printf("   -> Argo CD: http://localhost:8085 (admin / %s)\n", argoPwd)
-			activeTunnels++
 		}
 
 		// 2. MinIO (Dynamic)
@@ -60,9 +76,12 @@ Você pode especificar um contexto (local/prod) com --context.`,
 			fmt.Printf("🔌 Detectado MinIO (%s/%s)! Conectando...\n", minioNs, minioSvc)
 			killPortForward("9000")
 			killPortForward("9001")
-			go runPortForward(targetContext, minioNs, "svc/"+minioSvc, "9000:9000") // API
-			go runPortForward(targetContext, minioNs, "svc/"+minioSvc, "9001:9001") // Console
-			activeTunnels++
+			g.Go(func() error {
+				return runPortForwardWithContext(gctx, targetContext, minioNs, "svc/"+minioSvc, "9000:9000")
+			})
+			g.Go(func() error {
+				return runPortForwardWithContext(gctx, targetContext, minioNs, "svc/"+minioSvc, "9001:9001")
+			})
 
 			// Try to get creds (check default candidates first)
 			user, pass := getSecretKeys(targetContext, "storage", "minio-secret", "rootUser", "rootPassword")
@@ -90,8 +109,9 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		if promSvc != "" {
 			fmt.Printf("🔌 Detectado Prometheus (%s/%s)! Conectando para Grafana...\n", promNs, promSvc)
 			killPortForward("9090")
-			go runPortForward(targetContext, promNs, "svc/"+promSvc, "9090:9090")
-			activeTunnels++
+			g.Go(func() error {
+				return runPortForwardWithContext(gctx, targetContext, promNs, "svc/"+promSvc, "9090:9090")
+			})
 
 			// Start Local Grafana
 			fmt.Println("🐳 Iniciando Grafana Local (Docker)...")
@@ -114,15 +134,21 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		}
 
 		fmt.Println("")
-		if activeTunnels == 0 {
-			fmt.Println("🚫 Nenhum serviço detectado para encaminhamento. Encerrando.")
-			return
+		fmt.Println("ℹ️  Pressione Ctrl+C para encerrar os túneis...")
+
+		// Wait for signal or error
+		go func() {
+			<-sigChan
+			fmt.Println("\n🛑 Encerrando túneis...")
+			cancel()
+		}()
+
+		// Wait for all goroutines to finish
+		if err := g.Wait(); err != nil && err != context.Canceled {
+			fmt.Printf("⚠️  Erro nos túneis: %v\n", err)
 		}
 
-		fmt.Println("ℹ️  Pressione Ctrl+C para encerrar os túneis...")
-		// Deadlock fix: wait indefinitely IF we have tunnels, but do not block main logic if activeTunnels > 0.
-		// Since activeTunnels > 0, we simply block forever.
-		<-make(chan struct{})
+		fmt.Println("✅ Túneis encerrados.")
 	},
 }
 
@@ -195,18 +221,27 @@ func getSecretValue(context, ns, secret, jsonPathKey string) (string, error) {
 	return string(decoded), err
 }
 
-func runPortForward(context, namespace, resource, ports string) {
-	// Retry loop for stability
+func runPortForwardWithContext(ctx context.Context, kubeContext, namespace, resource, ports string) error {
 	for {
-		cmd := exec.Command("kubectl", "--context", context, "--insecure-skip-tls-verify", "-n", namespace, "port-forward", resource, ports)
-		cmd.Stdout = nil // Silence stdout
-		cmd.Stderr = nil // Silence stderr usually
-		if err := cmd.Run(); err != nil {
-			// fmt.Printf("debug: port-forward died for %s, restarting...\n", resource)
-			time.Sleep(2 * time.Second)
-		} else {
-			// clean exit
-			return
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "-n", namespace, "port-forward", resource, ports)
+			cmd.Stdout = nil // Silence stdout
+			cmd.Stderr = nil // Silence stderr
+
+			if err := cmd.Run(); err != nil {
+				// Check if context was cancelled
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				// Otherwise, retry after a delay
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			// Clean exit
+			return nil
 		}
 	}
 }
