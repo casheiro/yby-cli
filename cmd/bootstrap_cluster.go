@@ -246,16 +246,30 @@ func ensureToolsInstalled() {
 }
 
 func executeHelmRepoAdd(name, url string) {
-	_ = exec.Command("helm", "repo", "add", name, url).Run()
-	_ = exec.Command("helm", "repo", "update", name).Run()
+	if err := execCommand("helm", "repo", "add", name, url).Run(); err != nil {
+		fmt.Printf("%s Falha ao adicionar repo Helm '%s': %v\n", crossStyle.String(), name, err)
+		osExit(1)
+	}
+	if err := execCommand("helm", "repo", "update", name).Run(); err != nil {
+		fmt.Printf("%s Falha ao atualizar repo Helm '%s': %v\n", crossStyle.String(), name, err)
+		osExit(1)
+	}
 }
 
 func createNamespace(ns string) {
-	_ = exec.Command("kubectl", "create", "namespace", ns).Run()
+	out, err := execCommand("kubectl", "create", "namespace", ns).CombinedOutput()
+	if err != nil {
+		// Ignore if already exists
+		if strings.Contains(string(out), "already exists") {
+			return
+		}
+		fmt.Printf("%s Falha ao criar namespace '%s': %s\n", crossStyle.String(), ns, string(out))
+		osExit(1)
+	}
 }
 
 func runCommand(name string, args ...string) {
-	cmd := exec.Command(name, args...)
+	cmd := execCommand(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Printf("%s Executando: %s %s\n", grayStyle.Render("Exec >"), name, strings.Join(args, " "))

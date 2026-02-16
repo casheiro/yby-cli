@@ -109,7 +109,10 @@ func runLocalUp(ctx context.Context, root string) {
 		runCommand("k3d", k3dArgs...)
 	} else {
 		fmt.Println("✅ Cluster já existe. Garantindo start...")
-		_ = exec.Command("k3d", "cluster", "start", clusterName).Run()
+		if err := execCommand("k3d", "cluster", "start", clusterName).Run(); err != nil {
+			fmt.Printf("❌ Falha ao iniciar cluster '%s': %v\n", clusterName, err)
+			osExit(1)
+		}
 	}
 
 	// C. Mirror & Sync

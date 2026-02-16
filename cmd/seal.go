@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
@@ -81,7 +82,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 				Prompt: &survey.Input{
 					Message: "Chave do Dado (ex: password):",
 				},
-				Validate: survey.Required,
+				Validate: validateSecretKey,
 			},
 			{
 				Name: "Value",
@@ -100,7 +101,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 
 		// 1. Gerar Secret (Dry Run)
 		fmt.Println("⚙️  Gerando Secret...")
-		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", answers.Name,
+		kubectlCmd := execCommand("kubectl", "create", "secret", "generic", answers.Name,
 			"--namespace", answers.Namespace,
 			fmt.Sprintf("--from-literal=%s=%s", answers.Key, answers.Value),
 			"--dry-run=client", "-o", "yaml")
@@ -114,7 +115,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 
 		// 2. Selar com Kubeseal
 		fmt.Println("🔒 Selando com Kubeseal...")
-		kubesealCmd := exec.Command("kubeseal", "--format", "yaml")
+		kubesealCmd := execCommand("kubeseal", "--format", "yaml")
 		kubesealCmd.Stdin = &secretYaml
 
 		var sealedYaml bytes.Buffer
@@ -158,4 +159,20 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 
 func init() {
 	secretsCmd.AddCommand(sealCmd)
+}
+
+func validateSecretKey(val interface{}) error {
+	s, ok := val.(string)
+	if !ok || s == "" {
+		return fmt.Errorf("chave é obrigatória")
+	}
+	if strings.Contains(s, "=") {
+		return fmt.Errorf("a chave não pode conter '='")
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_') {
+			return fmt.Errorf("caractere inválido: %c. Use apenas [a-zA-Z0-9.-_]", r)
+		}
+	}
+	return nil
 }

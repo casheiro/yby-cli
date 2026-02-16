@@ -14,6 +14,9 @@ var (
 	stepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // Blue
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // Green
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // Red
+
+	// execCommand is a variable to allow mocking in tests
+	execCommand = exec.Command
 )
 
 // MirrorManager handles the in-cluster Git mirror for Hybrid GitOps
@@ -36,8 +39,25 @@ func NewManager(localPath string) *MirrorManager {
 // EnsureGitServer deploys the git-server to the cluster if not present
 func (m *MirrorManager) EnsureGitServer() error {
 	// 1. Create Namespace
-	if err := runKubectl("create", "namespace", m.Namespace, "--dry-run=client", "-o", "yaml", "|", "kubectl", "apply", "-f", "-"); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
+	nsManifest := fmt.Sprintf(`
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+`, m.Namespace)
+
+	cmdNs := execCommand("kubectl", "apply", "-f", "-")
+	stdinNs, err := cmdNs.StdinPipe()
+	if err != nil {
+		return err
+	}
+	go func() {
+		defer stdinNs.Close()
+		io.WriteString(stdinNs, nsManifest)
+	}()
+
+	if out, err := cmdNs.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create namespace: %s: %w", out, err)
 	}
 
 	// 2. Apply Manifests (Deployment + Service)
@@ -102,7 +122,7 @@ spec:
     protocol: TCP
 `, m.Namespace, m.Namespace)
 
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd := execCommand("kubectl", "apply", "-f", "-")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -154,7 +174,7 @@ func (m *MirrorManager) Sync() error {
 	remoteURL := fmt.Sprintf("git://localhost:%d/repo.git", m.localPort)
 
 	// Ensure we are pushing to main
-	cmd := exec.Command("git", "push", remoteURL, "HEAD:main", "--force")
+	cmd := execCommand("git", "push", remoteURL, "HEAD:main", "--force")
 	cmd.Dir = m.LocalPath
 
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -205,7 +225,7 @@ func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
 }
 
 func runKubectl(args ...string) error {
-	cmd := exec.Command("kubectl", args...)
+	cmd := execCommand("kubectl", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
