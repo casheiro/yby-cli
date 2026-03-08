@@ -351,3 +351,46 @@ func TestFuncMap(t *testing.T) {
 		})
 	}
 }
+
+func TestApply_WalkError(t *testing.T) {
+	err := Apply("/tmp", &BlueprintContext{}, fstest.MapFS{})
+	if err == nil {
+		t.Error("Apply() should fail when assets directory is missing")
+	}
+}
+
+func TestRenderEmbedDir_WalkError(t *testing.T) {
+	err := RenderEmbedDir(fstest.MapFS{}, "missing_dir", "/tmp", &BlueprintContext{})
+	if err == nil {
+		t.Error("RenderEmbedDir() should fail when dir is missing")
+	}
+}
+
+func TestProcessFile_ReadError(t *testing.T) {
+	err := processFile(fstest.MapFS{}, "nonexistent.txt", "/tmp/out.txt", &BlueprintContext{})
+	if err == nil {
+		t.Error("processFile() should fail when source file is missing")
+	}
+}
+
+func TestProcessFile_TemplateExecuteError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "yby-scaffold-exec-err-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mockFS := fstest.MapFS{
+		"bad_execution.tmpl": &fstest.MapFile{
+			Data: []byte("{{ len 5 }}"), // len of int fails at execute time
+		},
+	}
+
+	ctx := &BlueprintContext{}
+	destPath := filepath.Join(tmpDir, "output.txt")
+
+	err = processFile(mockFS, "bad_execution.tmpl", destPath, ctx)
+	if err == nil {
+		t.Error("processFile() should fail due to runtime execution error in template")
+	}
+}
