@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/casheiro/yby-cli/pkg/retry"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -42,7 +43,9 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 		fmt.Println("🔌 Conectando Argo CD...")
 		s.Network.KillPortForward("8085")
 		g.Go(func() error {
-			return s.Network.PortForward(gctx, targetContext, "argocd", "svc/argocd-server", "8085:80")
+			return retry.DoWithDefault(gctx, func() error {
+				return s.Network.PortForward(gctx, targetContext, "argocd", "svc/argocd-server", "8085:80")
+			})
 		})
 		fmt.Printf("   -> Argo CD: http://localhost:8085 (admin / %s)\n", argoPwd)
 	}
@@ -54,10 +57,14 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 		s.Network.KillPortForward("9000")
 		s.Network.KillPortForward("9001")
 		g.Go(func() error {
-			return s.Network.PortForward(gctx, targetContext, minioNs, "svc/"+minioSvc, "9000:9000")
+			return retry.DoWithDefault(gctx, func() error {
+				return s.Network.PortForward(gctx, targetContext, minioNs, "svc/"+minioSvc, "9000:9000")
+			})
 		})
 		g.Go(func() error {
-			return s.Network.PortForward(gctx, targetContext, minioNs, "svc/"+minioSvc, "9001:9001")
+			return retry.DoWithDefault(gctx, func() error {
+				return s.Network.PortForward(gctx, targetContext, minioNs, "svc/"+minioSvc, "9001:9001")
+			})
 		})
 
 		user, pass := s.getSecretKeys(gctx, targetContext, "storage", "minio-secret", "rootUser", "rootPassword")
@@ -84,7 +91,9 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 		fmt.Printf("🔌 Detectado Prometheus (%s/%s)! Conectando para Grafana...\n", promNs, promSvc)
 		s.Network.KillPortForward("9090")
 		g.Go(func() error {
-			return s.Network.PortForward(gctx, targetContext, promNs, "svc/"+promSvc, "9090:9090")
+			return retry.DoWithDefault(gctx, func() error {
+				return s.Network.PortForward(gctx, targetContext, promNs, "svc/"+promSvc, "9090:9090")
+			})
 		})
 
 		fmt.Println("🐳 Iniciando Grafana Local (Docker)...")

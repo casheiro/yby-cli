@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/cucumber/godog v0.15.1
 	github.com/joho/godotenv v1.5.1

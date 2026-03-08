@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -77,7 +79,12 @@ func Execute() {
 		}
 	}
 
+	start := time.Now()
 	err := rootCmd.Execute()
+
+	telemetry.Record("yby-cli", time.Since(start), err)
+	telemetry.Flush()
+
 	if err != nil {
 		var yerr *errors.YbyError
 		if stdErr.As(err, &yerr) {

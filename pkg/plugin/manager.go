@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	projectContext "github.com/casheiro/yby-cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"sigs.k8s.io/yaml"
 )
@@ -579,10 +580,22 @@ func (m *Manager) installNative(name, version string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Download
-	resp, err := http.Get(url)
+	// Download with retry
+	var resp *http.Response
+	err = retry.DoWithDefault(context.Background(), func() error {
+		var errGet error
+		resp, errGet = http.Get(url)
+		if errGet != nil {
+			return errGet
+		}
+		if resp.StatusCode >= 500 {
+			resp.Body.Close()
+			return fmt.Errorf("server error: %d", resp.StatusCode)
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("falha ao baixar plugin: %w", err)
+		return fmt.Errorf("falha ao baixar plugin após tentativas: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -664,10 +677,22 @@ func (m *Manager) installFromURL(url string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Download
-	resp, err := http.Get(url)
+	// Download with retry
+	var resp *http.Response
+	err = retry.DoWithDefault(context.Background(), func() error {
+		var errGet error
+		resp, errGet = http.Get(url)
+		if errGet != nil {
+			return errGet
+		}
+		if resp.StatusCode >= 500 {
+			resp.Body.Close()
+			return fmt.Errorf("server error: %d", resp.StatusCode)
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("falha ao baixar plugin: %w", err)
+		return fmt.Errorf("falha ao baixar plugin após tentativas: %w", err)
 	}
 	defer resp.Body.Close()
 
