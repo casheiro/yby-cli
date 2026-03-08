@@ -88,6 +88,9 @@ func (m *MockRunner) RunCombinedOutput(ctx context.Context, name string, args ..
 func (m *MockRunner) RunStdin(ctx context.Context, stdin string, name string, args ...string) error {
 	return nil
 }
+func (m *MockRunner) RunStdinOutput(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+	return nil, nil
+}
 func (m *MockRunner) LookPath(file string) (string, error) {
 	if m.LookPathFunc != nil {
 		return m.LookPathFunc(file)

@@ -4,13 +4,11 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/services/secrets"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
 )
 
@@ -47,37 +45,33 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 			secretVal = args[1]
 		}
 
-		// Check env if not provided
 		if secretVal == "" {
 			secretVal = os.Getenv("WEBHOOK_SECRET")
 		}
 
-		if secretVal == "" {
-			fmt.Println(warningStyle.Render("WEBHOOK_SECRET não definido. Gerando aleatório..."))
-			out, _ := exec.Command("openssl", "rand", "-hex", "20").Output()
-			secretVal = strings.TrimSpace(string(out))
-			fmt.Printf("Segredo gerado: %s\n", secretVal)
-		}
-
-		secretName := fmt.Sprintf("%s-webhook-secret", provider)
-		namespace := "argo-events"
 		outputFile := JoinInfra(root, fmt.Sprintf("charts/cluster-config/templates/events/sealed-secret-%s.yaml", provider))
 
-		// Create Secret (Dry Run)
-		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,
-			"--from-literal=secret="+secretVal,
-			"--namespace", namespace,
-			"--dry-run=client", "-o", "yaml")
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := secrets.NewService(runner, fsys)
 
-		var secretYaml bytes.Buffer
-		kubectlCmd.Stdout = &secretYaml
-		if err := kubectlCmd.Run(); err != nil {
-			fmt.Println(crossStyle.Render("Erro ao gerar secret com kubectl."))
+		opts := secrets.Options{
+			Provider:   provider,
+			SecretVal:  secretVal,
+			OutputPath: outputFile,
+		}
+
+		finalSecret, err := svc.GenerateWebhook(cmd.Context(), opts)
+		if err != nil {
+			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
 			return
 		}
 
-		// Seal
-		sealAndSave(secretYaml.Bytes(), outputFile)
+		if opts.SecretVal == "" {
+			fmt.Println(warningStyle.Render("WEBHOOK_SECRET não definido. Gerado aleatório."))
+			fmt.Printf("Segredo gerado: %s\n", finalSecret)
+		}
+		fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
 	},
 }
 
@@ -94,32 +88,24 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 			root = "."
 		}
 
-		user := "admin" // Default minio user
-
-		// Generate Password
-		out, _ := exec.Command("openssl", "rand", "-hex", "16").Output()
-		password := strings.TrimSpace(string(out))
-
-		fmt.Printf("Gerando credenciais MinIO (User: %s)...\n", user)
-
-		secretName := "minio-secret"
-		namespace := "storage" // Correct architecture: MinIO runs in storage
 		outputFile := JoinInfra(root, "charts/system/templates/secrets/sealed-secret-minio.yaml")
 
-		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,
-			"--from-literal=rootUser="+user,
-			"--from-literal=rootPassword="+password,
-			"--namespace", namespace,
-			"--dry-run=client", "-o", "yaml")
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := secrets.NewService(runner, fsys)
 
-		var secretYaml bytes.Buffer
-		kubectlCmd.Stdout = &secretYaml
-		if err := kubectlCmd.Run(); err != nil {
-			fmt.Println(crossStyle.Render("Erro ao gerar secret com kubectl."))
+		opts := secrets.Options{
+			OutputPath: outputFile,
+		}
+
+		fmt.Println("Gerando credenciais MinIO (User: admin)...")
+		_, err = svc.GenerateMinIO(cmd.Context(), opts)
+		if err != nil {
+			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
 			return
 		}
 
-		sealAndSave(secretYaml.Bytes(), outputFile)
+		fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
 	},
 }
 
@@ -133,29 +119,14 @@ Necessário para o ApplicationSet descobrir repositórios.`,
 		token := args[0]
 		fmt.Println(titleStyle.Render("🔐 GitHub Token Secret"))
 
-		kubectlCmd := exec.Command("kubectl", "create", "secret", "generic", "github-token",
-			"--from-literal=token="+token,
-			"--namespace", "argocd",
-			"--dry-run=client", "-o", "yaml")
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := secrets.NewService(runner, fsys)
 
-		var secretYaml bytes.Buffer
-		kubectlCmd.Stdout = &secretYaml
+		opts := secrets.Options{Token: token}
 
-		if err := kubectlCmd.Run(); err != nil {
-			fmt.Println(crossStyle.Render("Erro ao gerar secret."))
-			return
-		}
-
-		// Apply directly (it's not a sealed secret usually, or is it? The docs say "Crie o secret no cluster".
-		// The script name was create-github-token-secret.sh, not sealed.
-		// Usually discovery tokens are plain secrets if not using SealedSecrets for everything,
-		// but wait, ApplicationSet reads Env/Secret.
-		// Let's assume plain apply for now as per previous manual instructions.)
-
-		applyCmd := exec.Command("kubectl", "apply", "-f", "-")
-		applyCmd.Stdin = &secretYaml
-		if err := applyCmd.Run(); err != nil {
-			fmt.Println(crossStyle.Render("Erro ao aplicar secret."))
+		if err := svc.CreateGitHubToken(cmd.Context(), opts); err != nil {
+			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
 			return
 		}
 
@@ -176,43 +147,24 @@ Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especific
 			root = "."
 		}
 
-		// 1. Find Active Key Secret
-		// Try active label first
-		out, err := exec.Command("kubectl", "get", "secret", "-n", "sealed-secrets", "-l", "sealedsecrets.bitnami.com/sealed-secrets-key=active", "-o", "name").Output()
-		keyName := strings.TrimSpace(string(out))
-
-		if err != nil || keyName == "" {
-			fmt.Println(warningStyle.Render("Nenhuma chave ativa encontrada pelo label. Tentando a mais recente..."))
-			// Fallback logic could be complex in Go, simplifying for CLI context:
-			// Just get all secrets and pick one? For now let's error if strictly nothing.
-			fmt.Println(crossStyle.Render("Erro: Chave não encontrada."))
-			return
-		}
-
-		keyName = strings.ReplaceAll(keyName, "secret/", "") // remove prefix
-		fmt.Printf("Chave encontrada: %s\n", keyName)
-
 		outputFile := JoinInfra(root, "bootstrap/sealed-secrets-backup.yaml")
 		if len(args) > 0 {
 			outputFile = args[0]
 		}
 
-		_ = os.MkdirAll(filepath.Dir(outputFile), 0755)
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := secrets.NewService(runner, fsys)
 
-		file, err := os.Create(outputFile)
+		opts := secrets.Options{OutputPath: outputFile}
+
+		keyName, err := svc.BackupKeys(cmd.Context(), opts)
 		if err != nil {
-			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro ao criar arquivo de backup em %s", outputFile)))
-			return
-		}
-		defer file.Close()
-
-		bkpCmd := exec.Command("kubectl", "get", "secret", keyName, "-n", "sealed-secrets", "-o", "yaml")
-		bkpCmd.Stdout = file
-		if err := bkpCmd.Run(); err != nil {
-			fmt.Println(crossStyle.Render("Erro ao fazer backup."))
+			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
 			return
 		}
 
+		fmt.Printf("Chave encontrada: %s\n", keyName)
 		fmt.Printf("%s Backup salvo em %s\n", checkStyle.String(), outputFile)
 		if len(args) == 0 {
 			fmt.Println(warningStyle.Render("⚠️  NÃO COLOQUE ESTE ARQUIVO NO GIT se for um repositório público!"))
@@ -238,27 +190,20 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 			inputFile = args[0]
 		}
 
-		if _, err := os.Stat(inputFile); os.IsNotExist(err) {
-			fmt.Printf("%s Arquivo de backup %s não encontrado. Pulando restore.\n", warningStyle.String(), inputFile)
-			return
-		}
-
 		fmt.Printf("Restaurando de: %s\n", inputFile)
 
-		// Create ns if not exists
-		_ = exec.Command("kubectl", "create", "ns", "sealed-secrets").Run()
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := secrets.NewService(runner, fsys)
 
-		// Apply
-		if err := exec.Command("kubectl", "apply", "-f", inputFile).Run(); err != nil {
-			fmt.Println(crossStyle.Render("Erro ao aplicar chave."))
+		opts := secrets.Options{OutputPath: inputFile}
+
+		if err := svc.RestoreKeys(cmd.Context(), opts); err != nil {
+			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
 			return
 		}
 
-		// Delete pods to reload
-		fmt.Println("Reiniciando controller...")
-		_ = exec.Command("kubectl", "delete", "pod", "-n", "sealed-secrets", "-l", "app.kubernetes.io/name=sealed-secrets").Run()
-
-		fmt.Println(checkStyle.Render("✅ Chave restaurada."))
+		fmt.Println(checkStyle.Render("✅ Chave restaurada e controller reiniciado."))
 	},
 }
 
@@ -269,32 +214,4 @@ func init() {
 	secretsCmd.AddCommand(githubTokenSecretCmd)
 	secretsCmd.AddCommand(backupKeysCmd)
 	secretsCmd.AddCommand(restoreKeysCmd)
-}
-
-func sealAndSave(input []byte, outputFile string) {
-	fmt.Println("🔒 Selando com Kubeseal...")
-
-	kubesealCmd := exec.Command("kubeseal", "--controller-name=sealed-secrets", "--controller-namespace=sealed-secrets", "--format=yaml")
-	kubesealCmd.Stdin = bytes.NewReader(input)
-
-	var sealedYaml bytes.Buffer
-	kubesealCmd.Stdout = &sealedYaml
-
-	if err := kubesealCmd.Run(); err != nil {
-		fmt.Println(crossStyle.Render("Erro ao executar kubeseal. Verifique conexão com cluster."))
-		return
-	}
-
-	// Mkdir
-	if err := os.MkdirAll(filepath.Dir(outputFile), 0755); err != nil {
-		fmt.Printf("Erro ao criar diretório: %v\n", err)
-		return
-	}
-
-	if err := os.WriteFile(outputFile, sealedYaml.Bytes(), 0644); err != nil {
-		fmt.Printf("Erro ao salvar arquivo: %v\n", err)
-		return
-	}
-
-	fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
 }

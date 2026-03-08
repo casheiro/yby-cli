@@ -10,6 +10,7 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) error
 	RunCombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
 	RunStdin(ctx context.Context, stdin string, name string, args ...string) error
+	RunStdinOutput(ctx context.Context, stdin string, name string, args ...string) ([]byte, error)
 	LookPath(file string) (string, error)
 }
 

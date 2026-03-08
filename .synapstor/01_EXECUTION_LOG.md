@@ -36,3 +36,12 @@ Este arquivo rastreia mudanças significativas e execuções de workflows neste 
 - **Resumo:** Importação de UKI técnica via reorganização organizacional.
 - **Artefatos:**
   - `.synapstor/.uki/UKI_TECH_HYBRID_GITOPS.md` (Moved from Org Root)
+2026-03-08 15:13:25
+- Agent: Antigravity
+- Resumo: Análise de cobertura da Sprint 2. Identificado débito técnico em cmd/doctor.go e cmd/secrets.go. Planejado Sprint 3 com foco nestes débitos e testes E2E.
+- Artefatos: sprint_tracking.md
+2026-03-08 15:34:35
+- Agent: Antigravity
+- Resumo: Execução da Prioridade P0 da Sprint 3. Débito técnico pago. Comandos 'doctor' e 'secrets' foram isolados em services injetáveis (SharedRunner) e testados via MockRunner (100% pass rate).
+- Workflows: work-change-implement
+- Artefatos: pkg/services/doctor, pkg/services/secrets, cmd/doctor.go, cmd/secrets.go

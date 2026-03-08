@@ -30,6 +30,12 @@ func (r *RealRunner) RunStdin(ctx context.Context, stdin string, name string, ar
 	return cmd.Run()
 }
 
+func (r *RealRunner) RunStdinOutput(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = strings.NewReader(stdin)
+	return cmd.Output()
+}
+
 func (r *RealRunner) LookPath(file string) (string, error) {
 	return exec.LookPath(file)
 }

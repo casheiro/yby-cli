@@ -29,6 +29,10 @@ func (m *MockRunner) RunStdin(ctx context.Context, stdin string, name string, ar
 	return nil
 }
 
+func (m *MockRunner) RunStdinOutput(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+	return nil, nil
+}
+
 func (m *MockRunner) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }
