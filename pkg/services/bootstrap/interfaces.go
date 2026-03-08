@@ -2,25 +2,9 @@ package bootstrap
 
 import (
 	"context"
-	"io/fs"
 )
 
-// Runner abstracts command execution (sh, helm, kubectl)
-type Runner interface {
-	Run(ctx context.Context, name string, args ...string) error
-	RunCombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
-	LookPath(file string) (string, error)
-}
-
-// Filesystem abstracts file operations
-type Filesystem interface {
-	ReadFile(name string) ([]byte, error)
-	WriteFile(name string, data []byte, perm fs.FileMode) error
-	MkdirAll(path string, perm fs.FileMode) error
-	Stat(name string) (fs.FileInfo, error)
-	UserHomeDir() (string, error)
-	WalkDir(root string, fn fs.WalkDirFunc) error
-}
+// Runner and Filesystem are imported from shared
 
 // K8sClient abstracts specific Kubernetes operations requested by the bootstrap process
 type K8sClient interface {

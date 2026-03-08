@@ -6,16 +6,17 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"gopkg.in/yaml.v3"
 )
 
 type BootstrapService struct {
-	Runner Runner
-	FS     Filesystem
+	Runner shared.Runner
+	FS     shared.Filesystem
 	K8s    K8sClient
 }
 
-func NewService(r Runner, f Filesystem, k K8sClient) *BootstrapService {
+func NewService(r shared.Runner, f shared.Filesystem, k K8sClient) *BootstrapService {
 	return &BootstrapService{
 		Runner: r,
 		FS:     f,

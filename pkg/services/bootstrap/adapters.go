@@ -3,61 +3,14 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"io/fs"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
+
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
-
-// RealRunner implements Runner using os/exec
-type RealRunner struct{}
-
-func (r *RealRunner) Run(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func (r *RealRunner) RunCombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
-}
-
-func (r *RealRunner) LookPath(file string) (string, error) {
-	return exec.LookPath(file)
-}
-
-// RealFilesystem implements Filesystem using os
-type RealFilesystem struct{}
-
-func (f *RealFilesystem) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
-}
-
-func (f *RealFilesystem) WriteFile(name string, d []byte, p fs.FileMode) error {
-	return os.WriteFile(name, d, p)
-}
-
-func (f *RealFilesystem) MkdirAll(p string, perm fs.FileMode) error {
-	return os.MkdirAll(p, perm)
-}
-
-func (f *RealFilesystem) Stat(n string) (fs.FileInfo, error) {
-	return os.Stat(n)
-}
-
-func (f *RealFilesystem) UserHomeDir() (string, error) {
-	return os.UserHomeDir()
-}
-
-func (f *RealFilesystem) WalkDir(r string, fn fs.WalkDirFunc) error {
-	return filepath.WalkDir(r, fn)
-}
 
 // RealK8sClient implements K8sClient using kubectl commands
 type RealK8sClient struct {
-	Runner Runner
+	Runner shared.Runner
 }
 
 func (k *RealK8sClient) WaitPodReady(ctx context.Context, label, ns string, timeout int) error {

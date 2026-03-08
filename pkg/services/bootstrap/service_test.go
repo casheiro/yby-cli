@@ -25,6 +25,10 @@ func (m *MockRunner) RunCombinedOutput(ctx context.Context, name string, args ..
 	return nil, nil
 }
 
+func (m *MockRunner) RunStdin(ctx context.Context, stdin string, name string, args ...string) error {
+	return nil
+}
+
 func (m *MockRunner) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }

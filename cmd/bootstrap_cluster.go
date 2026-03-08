@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -46,8 +47,8 @@ var bootstrapClusterCmd = &cobra.Command{
 		}
 
 		// Inject Dependencies
-		runner := &bootstrap.RealRunner{}
-		filesystem := &bootstrap.RealFilesystem{}
+		runner := &shared.RealRunner{}
+		filesystem := &shared.RealFilesystem{}
 		k8s := &bootstrap.RealK8sClient{Runner: runner}
 
 		svc := bootstrap.NewService(runner, filesystem, k8s)

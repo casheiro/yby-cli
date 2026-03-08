@@ -8,7 +8,9 @@ import (
 	"syscall"
 
 	ybyctx "github.com/casheiro/yby-cli/pkg/context"
-	"github.com/casheiro/yby-cli/pkg/mirror"
+	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/pkg/services/environment"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -76,80 +78,43 @@ func init() {
 }
 
 func runLocalUp(ctx context.Context, root string) {
-	// A. Check dependencies
-	if _, err := lookPath("k3d"); err != nil {
-		fmt.Println("❌ k3d não encontrado. Rode 'yby setup' primeiro.")
-		osExit(1)
-	}
+	// 1. Dependency Injection Setup
+	runner := &shared.RealRunner{}
+	fs := &shared.RealFilesystem{}
+	cluster := &environment.K3dClusterManager{Runner: runner}
+	mirrorAdapter := environment.NewGitMirrorAdapter(root, runner)
 
+	// Bootstrap dependencies
+	k8s := &bootstrap.RealK8sClient{Runner: runner}
+	bs := bootstrap.NewService(runner, fs, k8s)
+
+	envSvc := environment.NewEnvironmentService(runner, fs, cluster, mirrorAdapter, bs)
+
+	// 2. Options Resolution
 	clusterName := os.Getenv("YBY_CLUSTER_NAME")
 	if clusterName == "" {
 		clusterName = "yby-local"
 	}
 
-	// B. Cluster Lifecycle
-	fmt.Printf("🔍 Verificando cluster '%s'...\n", clusterName)
-	checkCmd := execCommand("k3d", "cluster", "list", clusterName)
-	if err := checkCmd.Run(); err != nil {
-		// Cluster doesn't exist (k3d returns error if not found? or just empty list?)
-		// standard k3d list returns exit code 0 usually unless error.
-		// grep it?
-		// Let's rely on standard logic: Try verify, if fail create.
-		// Simplified:
-		fmt.Println("🚀 Criando cluster...")
-
-		k3dArgs := []string{"cluster", "create", clusterName}
-		// Config logic
-		configFile := JoinInfra(root, "local/k3d-config.yaml")
-		if _, err := os.Stat(configFile); err == nil {
-			k3dArgs = append(k3dArgs, "--config", configFile)
-		}
-
-		runCommand("k3d", k3dArgs...)
-	} else {
-		fmt.Println("✅ Cluster já existe. Garantindo start...")
-		if err := execCommand("k3d", "cluster", "start", clusterName).Run(); err != nil {
-			fmt.Printf("❌ Falha ao iniciar cluster '%s': %v\n", clusterName, err)
-			osExit(1)
-		}
+	opts := environment.UpOptions{
+		Root:        root,
+		Environment: "local",
+		ClusterName: clusterName,
 	}
 
-	// C. Mirror & Sync
-	fmt.Println("🪞 Inicializando Local Mirror (Hybrid GitOps)...")
-	mirrorMgr := mirror.NewManager(root)
-
-	if err := mirrorMgr.EnsureGitServer(); err != nil {
-		fmt.Printf("❌ Falha no Git Server: %v\n", err)
-		return
+	// 3. Execution
+	if err := envSvc.Up(ctx, opts); err != nil {
+		fmt.Printf("❌ Falha ao iniciar ambiente local: %v\n", err)
+		osExit(1)
 	}
 
-	// Tunnel (CRITICAL FIX)
-	fmt.Println("🔌 Estabelecendo Túnel Seguro...")
-	if err := mirrorMgr.SetupTunnel(ctx); err != nil {
-		fmt.Printf("❌ Falha no Túnel: %v\n", err)
-		return
-	}
-
-	// Initial Sync
-	fmt.Print("🔄 Sincronizando código inicial... ")
-	if err := mirrorMgr.Sync(); err != nil {
-		fmt.Printf("❌ Falha no Sync inicial: %v\n", err)
-		// Proceed anyway? Bootstrap might fail if repo empty.
-	} else {
-		fmt.Println("✅ Código sincronizado.")
-	}
-
-	// D. Bootstrap
-	fmt.Println("🛠️  Executando Bootstrap...")
-	// We call the existing bootstrap command logic
-	bootstrapClusterCmd.Run(bootstrapClusterCmd, []string{})
-
-	// E. Status
+	// 4. Final status report
+	fmt.Println("")
 	statusCmd.Run(statusCmd, []string{})
 
-	// F. Sync Loop
-	fmt.Println("\n🔄 Espelho de Desenvolvimento Yby Ativo (Ctrl+C para parar)")
-	mirrorMgr.StartSyncLoop(ctx)
+	// Maintain sync loop if context is active
+	// Note: StartSyncLoop is already started as a goroutine in Up() if local
+	<-ctx.Done()
 }
 
 func runRemoteUp(ctx context.Context, env string) {

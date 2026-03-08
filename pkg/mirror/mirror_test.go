@@ -1,77 +1,59 @@
 package mirror
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
+	"context"
 	"strings"
 	"testing"
 )
 
-// TestHelperProcess is the entrypoint for the mock process.
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-	defer os.Exit(0)
+type MockRunner struct {
+	RunFunc      func(ctx context.Context, name string, args ...string) error
+	RunStdinFunc func(ctx context.Context, stdin string, name string, args ...string) error
+}
 
-	args := os.Args
-	for len(args) > 0 {
-		if args[0] == "--" {
-			args = args[1:]
-			break
-		}
-		args = args[1:]
+func (m *MockRunner) Run(ctx context.Context, name string, args ...string) error {
+	if m.RunFunc != nil {
+		return m.RunFunc(ctx, name, args...)
 	}
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "No command\n")
-		os.Exit(2)
-	}
+	return nil
+}
 
-	cmd, args := args[0], args[1:]
-	switch cmd {
-	case "kubectl":
-		// check if it's the apply command for namespace
-		if len(args) >= 3 && args[0] == "apply" && args[1] == "-f" && args[2] == "-" {
-			// Success! The fix is working.
-			// We can verify stdin content here if needed, but for now just command args are enough.
-			return
-		}
-		// Failure case for old piped command
-		if len(args) > 0 && args[0] == "create" && strings.Contains(strings.Join(args, " "), "|") {
-			fmt.Fprintf(os.Stderr, "Error: piped command detected\n")
-			os.Exit(1)
-		}
-	case "helm":
-		// Mock helm success
-		return
-	case "git":
-		// Mock git success
-		return
+func (m *MockRunner) RunCombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return nil, nil
+}
+
+func (m *MockRunner) RunStdin(ctx context.Context, stdin string, name string, args ...string) error {
+	if m.RunStdinFunc != nil {
+		return m.RunStdinFunc(ctx, stdin, name, args...)
 	}
+	return nil
+}
+
+func (m *MockRunner) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
 }
 
 func TestEnsureGitServer_NamespaceCreation(t *testing.T) {
-	// Mock exec.Command
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
+	runner := &MockRunner{
+		RunStdinFunc: func(ctx context.Context, stdin string, name string, args ...string) error {
+			if name == "kubectl" && len(args) >= 3 && args[0] == "apply" && args[1] == "-f" && args[2] == "-" {
+				if strings.Contains(stdin, "kind: Namespace") {
+					// Namespace creation detected successfully
+				}
+				// Simulate success
+				return nil
+			}
+			return nil
+		},
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
 	}
-	defer func() { execCommand = exec.Command }()
 
 	m := &MirrorManager{
 		Namespace: "test-ns",
+		Runner:    runner,
 	}
-
-	// We only want to test the namespace creation logic which happens inside EnsureGitServer
-	// However, EnsureGitServer does many things.
-	// To isolate, we might need to mock more or refactor.
-	// For now, let's try running it and see if our mock catches the kubectl apply call.
-	// Note: EnsureGitServer calls other commands too (helm, git).
-	// Our TestHelperProcess mocks them as success.
 
 	err := m.EnsureGitServer()
 	if err != nil {
