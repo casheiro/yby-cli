@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// execCommandContext is a variable so it can be mocked in tests
+var execCommandContext = exec.CommandContext
+
 // Executor handles the execution of a plugin process.
 type Executor struct {
 	Timeout time.Duration

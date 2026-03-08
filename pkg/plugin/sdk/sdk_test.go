@@ -97,3 +97,51 @@ func TestGetters(t *testing.T) {
 		t.Error("Expected nil args initially")
 	}
 }
+
+func TestInit_WithStdin(t *testing.T) {
+	// Create a pipe to simulate stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write mock JSON-RPC request to pipe
+	w.Write([]byte(`{"hook":"manifest","args":["--debug"],"context":{"project_name":"test-yby"}}`))
+	w.Close()
+
+	// Replace os.Stdin
+	oldStdin := os.Stdin
+	defer func() { os.Stdin = oldStdin }()
+	os.Stdin = r
+
+	// Ensure global state is clean
+	currentContext = nil
+	currentHook = ""
+	currentArgs = nil
+
+	// Simulate standard execution flow
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"plugin"}
+
+	err = Init()
+	if err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	// Assert parsing results
+	if GetHook() != "manifest" {
+		t.Errorf("Expected hook 'manifest', got '%s'", GetHook())
+	}
+	if len(GetArgs()) != 1 || GetArgs()[0] != "--debug" {
+		t.Errorf("Got unexpected args: %v", GetArgs())
+	}
+
+	ctx := GetFullContext()
+	if ctx == nil {
+		t.Fatal("Context should not be nil")
+	}
+	if ctx.ProjectName != "test-yby" {
+		t.Errorf("Expected project_name 'test-yby', got '%s'", ctx.ProjectName)
+	}
+}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -45,7 +46,7 @@ func TestUpCmd_ClusterStartFailure(t *testing.T) {
 	// But the file declares "package cmd". So we CAN call it.
 	// It requires context and root string.
 	// But it prints to stdout/stderr.
-	runLocalUp(nil, ".")
+	runLocalUp(context.Background(), ".")
 
 	if exitCode != 1 {
 		t.Errorf("Expected exit code 1, got %d", exitCode)

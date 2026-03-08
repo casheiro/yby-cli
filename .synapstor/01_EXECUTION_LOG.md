@@ -45,3 +45,15 @@ Este arquivo rastreia mudanças significativas e execuções de workflows neste 
 - Resumo: Execução da Prioridade P0 da Sprint 3. Débito técnico pago. Comandos 'doctor' e 'secrets' foram isolados em services injetáveis (SharedRunner) e testados via MockRunner (100% pass rate).
 - Workflows: work-change-implement
 - Artefatos: pkg/services/doctor, pkg/services/secrets, cmd/doctor.go, cmd/secrets.go
+2026-03-08 17:48:31
+- Agent: Antigravity
+- Resumo: Adição do framework Go E2E baseado em testify/suite. Script isolado compila binário do CLI on-the-fly () e valida fluxos via `os/exec`. Pipeline integrada ao `task test:e2e`, suportando both testify e Godog features simultaneamente com success pass de 100%.
+- Workflows: work-change-implement
+- Artefatos: test/e2e/e2e_test.go
+
+2026-03-08 17:54:39
+- Agent: Antigravity
+- Resumo: Adição de testes em `executor_test.go` e `sdk_test.go` validando o envio, timeout e parse JSON-RPC dos plugins via os/exec com trick process mock do standard library. Fix também adicionado pra um nil context em `cmd/up_test.go`. Bateria de testes da ferramenta agora atingiu 100% de pass, cobrindo o ciclo de SDK de integração (Sprint 3 Finalizada).
+- Workflows: work-change-implement
+- Artefatos: pkg/plugin/executor_test.go, pkg/plugin/executor.go, pkg/plugin/sdk/sdk_test.go, cmd/up_test.go
+
