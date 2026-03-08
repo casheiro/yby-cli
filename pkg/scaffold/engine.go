@@ -3,6 +3,7 @@ package scaffold
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,8 +79,7 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 				if targetDir != "." && targetDir != "" {
 					wd, _ := os.Getwd()
 					finalPath = filepath.Join(wd, relPath)
-					// Log warning only once? Or just be silent in non-verbose?
-					// fmt.Printf("⚠️  Git root not found (using CWD): %s\n", relPath)
+					// slog.Warn("Git root not found (using CWD)", "path", relPath)
 				}
 			}
 		}
@@ -187,13 +187,13 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 			return fmt.Errorf("falha ao executar template %s: %w", srcPath, err)
 		}
 
-		fmt.Printf("   📄 Rendered: %s\n", destPath)
+		slog.Debug("Rendered template", "file", destPath)
 	} else {
 		// Regular Copy
 		if err := os.WriteFile(destPath, content, 0644); err != nil {
 			return err
 		}
-		fmt.Printf("   📄 Copied: %s\n", destPath)
+		slog.Debug("Copied asset", "file", destPath)
 	}
 
 	return nil

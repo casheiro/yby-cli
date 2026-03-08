@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/network"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +27,7 @@ var accessCmd = &cobra.Command{
 - Headlamp (Token)
 
 Você pode especificar um contexto (local/prod) com --context.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("🚀 Iniciando Acesso Unificado ao Cluster...")
 
 		// Setup context with cancellation
@@ -55,15 +56,11 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		}
 
 		if err := accessSvc.Run(ctx, opts); err != nil {
-			fmt.Printf("⚠️  Erro na execução: %v\n", err)
-			if osExit != nil {
-				osExit(1)
-			} else {
-				os.Exit(1)
-			}
+			return errors.Wrap(err, errors.ErrCodeExec, "Erro na execução de acesso")
 		}
 
 		fmt.Println("✅ Túneis encerrados.")
+		return nil
 	},
 }
 

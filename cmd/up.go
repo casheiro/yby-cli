@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	ybyctx "github.com/casheiro/yby-cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
 	"github.com/casheiro/yby-cli/pkg/services/environment"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
@@ -25,7 +26,7 @@ var upCmd = &cobra.Command{
 Comportamento por Ambiente:
   - local: Inicia cluster (se necessário), configura Git Mirror, cria Túnel de Sync e mantém sincronização automática.
   - dev/staging/prod: Verifica acesso ao cluster e estado do GitOps. NÃO inicia sincronização local (use 'git push').`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -66,9 +67,9 @@ Comportamento por Ambiente:
 		if targetEnv == "local" {
 			// Force YBY_ENV for subcommands
 			os.Setenv("YBY_ENV", "local")
-			runLocalUp(ctx, root)
+			return runLocalUp(ctx, root)
 		} else {
-			runRemoteUp(ctx, targetEnv)
+			return runRemoteUp(ctx, targetEnv)
 		}
 	},
 }
@@ -77,7 +78,7 @@ func init() {
 	rootCmd.AddCommand(upCmd)
 }
 
-func runLocalUp(ctx context.Context, root string) {
+func runLocalUp(ctx context.Context, root string) error {
 	// 1. Dependency Injection Setup
 	runner := &shared.RealRunner{}
 	fs := &shared.RealFilesystem{}
@@ -104,8 +105,7 @@ func runLocalUp(ctx context.Context, root string) {
 
 	// 3. Execution
 	if err := envSvc.Up(ctx, opts); err != nil {
-		fmt.Printf("❌ Falha ao iniciar ambiente local: %v\n", err)
-		osExit(1)
+		return errors.Wrap(err, errors.ErrCodeExec, "Falha ao iniciar ambiente local")
 	}
 
 	// 4. Final status report
@@ -115,9 +115,10 @@ func runLocalUp(ctx context.Context, root string) {
 	// Maintain sync loop if context is active
 	// Note: StartSyncLoop is already started as a goroutine in Up() if local
 	<-ctx.Done()
+	return nil
 }
 
-func runRemoteUp(ctx context.Context, env string) {
+func runRemoteUp(ctx context.Context, env string) error {
 	fmt.Printf("🌍 Ambiente Remoto Detectado: %s\n", env)
 	fmt.Println("ℹ️  Modo de Operação: Observação (Sync Local Desativado)")
 	fmt.Println("📝 Para atualizar o cluster, faça commit e push para o repositório remoto:")
@@ -125,4 +126,5 @@ func runRemoteUp(ctx context.Context, env string) {
 
 	// Delegate to status
 	statusCmd.Run(statusCmd, []string{})
+	return nil
 }

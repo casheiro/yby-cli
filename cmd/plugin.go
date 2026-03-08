@@ -5,8 +5,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/spf13/cobra"
 )
@@ -16,31 +15,32 @@ var pluginCmd = &cobra.Command{
 	Use:   "plugin",
 	Short: "Gerencia plugins do YBY CLI",
 	Long:  `Lista, instala e gerencia plugins que estendem as funcionalidades da CLI.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		_ = cmd.Help()
+		return nil
 	},
 }
 
 var pluginListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Lista plugins instalados",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := plugin.NewManager()
 		if err := pm.Discover(); err != nil {
-			fmt.Printf("Erro ao descobrir plugins: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao descobrir plugins")
 		}
 
 		plugins := pm.ListPlugins()
 		if len(plugins) == 0 {
 			fmt.Println("Nenhum plugin encontrado.")
-			return
+			return nil
 		}
 
 		fmt.Println("🔌 Plugins Instalados:")
 		for _, p := range plugins {
 			fmt.Printf("- %s (v%s): Hooks [%v]\n", p.Name, p.Version, p.Hooks)
 		}
+		return nil
 	},
 }
 
@@ -48,7 +48,7 @@ var pluginInstallCmd = &cobra.Command{
 	Use:   "install [path|name]",
 	Short: "Instala um plugin a partir de um arquivo local ou nome (atlas, bard, sentinel)",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := plugin.NewManager()
 		// Version resolution
 		targetVersion := Version
@@ -59,9 +59,9 @@ var pluginInstallCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 
 		if err := pm.Install(args[0], targetVersion, force); err != nil {
-			fmt.Printf("❌ Erro ao instalar plugin: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao instalar plugin")
 		}
+		return nil
 	},
 }
 
@@ -70,20 +70,20 @@ var pluginRemoveCmd = &cobra.Command{
 	Aliases: []string{"rm", "uninstall", "delete"},
 	Short:   "Remove um plugin instalado",
 	Args:    cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := plugin.NewManager()
 		if err := pm.Remove(args[0]); err != nil {
-			fmt.Printf("❌ Erro ao remover plugin: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao remover plugin")
 		}
 		fmt.Printf("✅ Plugin '%s' removido com sucesso.\n", args[0])
+		return nil
 	},
 }
 
 var pluginUpdateCmd = &cobra.Command{
 	Use:   "update [name]",
 	Short: "Atualiza um ou todos os plugins instalados",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := plugin.NewManager()
 		// Ensure discovery happens
 		if err := pm.Discover(); err != nil {
@@ -100,7 +100,7 @@ var pluginUpdateCmd = &cobra.Command{
 
 		if len(targets) == 0 {
 			fmt.Println("Nenhum plugin instalado para atualizar.")
-			return
+			return nil
 		}
 
 		hasError := false
@@ -114,8 +114,9 @@ var pluginUpdateCmd = &cobra.Command{
 		}
 
 		if hasError {
-			os.Exit(1)
+			return errors.New(errors.ErrCodePlugin, "Ocorreram erros durante a atualização de um ou mais plugins")
 		}
+		return nil
 	},
 }
 

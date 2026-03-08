@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -23,15 +24,14 @@ rodar o ambiente de desenvolvimento localmente (kubectl, helm, k3d, direnv).
 Exemplo:
   yby setup
 `,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🚀 Yby Setup - Configuração de Ambiente"))
 		fmt.Println("---------------------------------------")
 
 		// 0. Detect Profile
 		profile, _ := cmd.Flags().GetString("profile")
 		if profile != "dev" && profile != "server" {
-			fmt.Println(crossStyle.Render("❌ Perfil inválido. Use 'dev' ou 'server'."))
-			os.Exit(1)
+			return errors.New(errors.ErrCodeValidation, "Perfil inválido. Use 'dev' ou 'server'")
 		}
 		fmt.Printf("🔧 Perfil selecionado: %s\n", profile)
 
@@ -77,7 +77,7 @@ Exemplo:
 			if profile == "dev" {
 				configureDirenv()
 			}
-			return
+			return nil
 		}
 
 		fmt.Println("\n" + warningStyle.Render("Algumas ferramentas estão faltando:"))
@@ -105,6 +105,7 @@ Exemplo:
 				configureDirenv()
 			}
 		}
+		return nil
 	},
 }
 

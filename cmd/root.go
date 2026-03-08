@@ -1,14 +1,22 @@
 package cmd
 
 import (
+	stdErr "errors"
 	"fmt"
+	"log/slog"
 	"os"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/spf13/cobra"
 )
 
-var contextFlag string
+var (
+	contextFlag   string
+	logLevelFlag  string
+	logFormatFlag string
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -19,6 +27,8 @@ Atua no bootstrap, governança e operação assistida, complementando o uso do k
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
+	SilenceErrors:    true,
+	SilenceUsage:     true,
 	PersistentPreRun: initConfig,
 }
 
@@ -55,11 +65,11 @@ func Execute() {
 					Use:                pluginName,
 					Short:              desc,
 					DisableFlagParsing: true, // Pass flags directly to plugin
-					Run: func(cmd *cobra.Command, args []string) {
+					RunE: func(cmd *cobra.Command, args []string) error {
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {
-							fmt.Printf("Erro ao executar plugin %s: %v\n", pluginName, err)
-							os.Exit(1)
+							return errors.Wrap(err, errors.ErrCodePlugin, fmt.Sprintf("Erro ao executar plugin %s", pluginName))
 						}
+						return nil
 					},
 				}
 				rootCmd.AddCommand(cmd)
@@ -69,17 +79,37 @@ func Execute() {
 
 	err := rootCmd.Execute()
 	if err != nil {
+		var yerr *errors.YbyError
+		if stdErr.As(err, &yerr) {
+			if logLevelFlag == "debug" {
+				// Na flag verbose/debug, printa o stack trace verboso %+v
+				slog.Error("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
+			} else {
+				// Se for normal, printa só a mensagem controlada
+				slog.Error("Falha na execução", "code", yerr.Code, "message", yerr.Message)
+			}
+		} else {
+			slog.Error("Falha inesperada", "erro", err)
+		}
 		os.Exit(1)
 	}
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&contextFlag, "context", "c", "", "Define o contexto de execução (ex: local, staging, prod)")
+	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "info", "Nível de log (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&logFormatFlag, "log-format", "text", "Formato de log (text, json)")
 	rootCmd.Flags().BoolP("toggle", "t", false, "Mensagem de ajuda para alternância")
 }
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig(cmd *cobra.Command, args []string) {
+	// Initialize Global Logger
+	logger.InitGlobal(logger.Config{
+		Level:  logLevelFlag,
+		Format: logFormatFlag,
+	})
+
 	// If context flag is set, we override using the standard Env Var mechanism
 	// capable of being read by pkg/context
 	if contextFlag != "" {

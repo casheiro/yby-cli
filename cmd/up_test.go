@@ -11,20 +11,7 @@ func TestUpCmd_ClusterStartFailure(t *testing.T) {
 	teardown := mockExecCommand()
 	defer teardown()
 
-	var exitCode int
-	osExit = func(code int) {
-		exitCode = code
-		panic("os.Exit called")
-	}
-	defer func() { osExit = os.Exit }()
-
-	defer func() {
-		if r := recover(); r != nil {
-			if r != "os.Exit called" {
-				t.Errorf("Panicked with %v", r)
-			}
-		}
-	}()
+	// No osExit mock needed anymore, runLocalUp returns an error directly.
 
 	// We utilize the fact that runLocalUp calls:
 	// 1. lookPath("k3d") -> success (mocked)
@@ -35,7 +22,7 @@ func TestUpCmd_ClusterStartFailure(t *testing.T) {
 	// 3. Then it prints "✅ Cluster já existe. Garantindo start..."
 	// 4. Then execCommand("k3d", "cluster", "start", clusterName).Run()
 	//    If clusterName is "fail-cluster", HelperProcess exits 1.
-	//    Then runLocalUp calls osExit(1).
+	//    Then runLocalUp returns an error (no osExit(1) anymore).
 
 	// We need to set env var YBY_CLUSTER_NAME to "fail-cluster"
 	os.Setenv("YBY_CLUSTER_NAME", "fail-cluster")
@@ -46,9 +33,9 @@ func TestUpCmd_ClusterStartFailure(t *testing.T) {
 	// But the file declares "package cmd". So we CAN call it.
 	// It requires context and root string.
 	// But it prints to stdout/stderr.
-	runLocalUp(context.Background(), ".")
+	err := runLocalUp(context.Background(), ".")
 
-	if exitCode != 1 {
-		t.Errorf("Expected exit code 1, got %d", exitCode)
+	if err == nil {
+		t.Error("Expected error, got nil")
 	}
 }

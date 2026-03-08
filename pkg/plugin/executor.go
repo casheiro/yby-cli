@@ -31,7 +31,7 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 	ctx, cancel := context.WithTimeout(ctx, e.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binaryPath)
+	cmd := execCommandContext(ctx, binaryPath)
 
 	// Prepare STDIN
 	reqBytes, err := json.Marshal(req)
@@ -69,7 +69,7 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req interface{}) error {
 	// Interactive plugins typically manage their own timeout or run indefinitely until user exit
 	// So we might not want to enforce a strict short timeout, but context cancellation is still good.
-	cmd := exec.CommandContext(ctx, binaryPath)
+	cmd := execCommandContext(ctx, binaryPath)
 
 	// Pass payload via Env Var
 	reqBytes, err := json.Marshal(req)

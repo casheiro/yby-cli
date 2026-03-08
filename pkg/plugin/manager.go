@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -106,7 +107,7 @@ func (m *Manager) scanDirectory(dir string) error {
 		// Checking manifest is safer.
 		manifest, err := m.loadManifest(path)
 		if err != nil {
-			fmt.Printf("⚠️  Pulando candidato a plugin inválido %s: %v\n", entry.Name(), err)
+			slog.Warn("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
 			continue
 		}
 
@@ -158,7 +159,7 @@ func (m *Manager) GetAssets() []string {
 
 		resp, err := m.executor.Run(context.Background(), p.Path, PluginRequest{Hook: "assets"})
 		if err != nil {
-			fmt.Printf("⚠️  Hook de assets do Plugin %s falhou: %v\n", p.Manifest.Name, err)
+			slog.Warn("Hook de assets do Plugin falhou", "plugin", p.Manifest.Name, "error", err)
 			continue
 		}
 
@@ -207,7 +208,7 @@ func (m *Manager) ExecuteContextHook(ctx *scaffold.BlueprintContext) error {
 
 		resp, err := m.executor.Run(context.Background(), p.Path, req)
 		if err != nil {
-			fmt.Printf("⚠️  Hook de contexto do Plugin %s falhou: %v\n", p.Manifest.Name, err)
+			slog.Warn("Hook de contexto do Plugin falhou", "plugin", p.Manifest.Name, "error", err)
 			continue
 		}
 
@@ -248,7 +249,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	cwd, _ := os.Getwd()
 	coreCtx, err := projectContext.GetCoreContext(cwd)
 	if err != nil {
-		fmt.Printf("⚠️  Aviso: Falha ao carregar contexto core: %v\n", err)
+		slog.Warn("Falha ao carregar contexto core", "error", err)
 		// Fallback to empty core context
 		coreCtx = &projectContext.CoreContext{
 			ProjectName: "unknown",
@@ -274,7 +275,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	// 3. Resolve Environment & Infrastructure, and 4. Apply Context Hooks
 	fullCtx, _, err := m.BuildPluginContext(coreCtx, blueprintCtx, cwd)
 	if err != nil {
-		fmt.Printf("⚠️  Erro ao construir contexto do plugin: %v\n", err)
+		slog.Warn("Erro ao construir contexto do plugin", "error", err)
 	}
 
 	// Converter struct FullContext para map
@@ -288,7 +289,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 		Context: fullCtxMap,
 	}
 
-	fmt.Printf("🚀 Executing plugin: %s\n", pluginName)
+	slog.Debug("Executing plugin", "plugin", pluginName)
 	return m.executor.RunInteractive(context.Background(), targetPlugin.Path, req)
 }
 
@@ -313,7 +314,7 @@ func (m *Manager) BuildPluginContext(coreCtx *projectContext.CoreContext, bluepr
 						valuesMap = v
 					} else {
 						// Log only?
-						fmt.Printf("⚠️  Falha ao carregar values (%s): %v\n", envDef.Values, err)
+						slog.Warn("Falha ao carregar values do ambiente", "file", envDef.Values, "error", err)
 					}
 				}
 

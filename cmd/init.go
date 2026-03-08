@@ -13,6 +13,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/filesystem"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
@@ -94,7 +95,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
   # AI-Native Initialization
   yby init --description "A secure payment gateway for crypto assets"`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
 		// 1. Build Context (Merge Flags + Prompts)
@@ -114,7 +115,10 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			}
 		}
 
-		ctx := buildContext(&opts)
+		ctx, errCtx := buildContext(&opts)
+		if errCtx != nil {
+			return errCtx
+		}
 
 		// Hook: context (Enrich BlueprintContext)
 		if err := pm.ExecuteContextHook(ctx); err != nil {
@@ -158,8 +162,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		compositeFS := filesystem.NewCompositeFS(layers...)
 
 		if err := scaffold.Apply(targetDir, ctx, compositeFS); err != nil {
-			fmt.Printf("❌ Erro ao gerar scaffold: %v\n", err)
-			osExit(1)
+			return errors.Wrap(err, errors.ErrCodeManifest, "Erro ao gerar scaffold")
 		}
 
 		// 2.5 Generative AI Layer
@@ -240,10 +243,11 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 		fmt.Println("✅ Projeto inicializado com sucesso!")
 		fmt.Println("   próximo passo: 'yby env list'")
+		return nil
 	},
 }
 
-func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
+func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 	ctx := &scaffold.BlueprintContext{
 		GitRepoURL:          flags.GitRepo,
 		GitBranch:           flags.GitBranch,
@@ -334,8 +338,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		}
 
 		if len(missing) > 0 {
-			fmt.Printf("❌ Erro: Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s\n", strings.Join(missing, ", "))
-			osExit(1)
+			return nil, errors.New(errors.ErrCodeValidation, fmt.Sprintf("Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s", strings.Join(missing, ", ")))
 		}
 		interactive = false
 	} else {
@@ -356,8 +359,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			}
 			var dir string
 			if err := askOne(prompt, &dir); err != nil {
-				fmt.Println("❌ Cancelado")
-				osExit(1)
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 			flags.TargetDir = dir
 		}
@@ -371,8 +373,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Default: "standard",
 			}
 			if err := askOne(prompt, &ctx.Topology); err != nil {
-				fmt.Println("❌ Cancelado")
-				osExit(1)
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 		}
 
@@ -385,8 +386,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Default: "gitflow",
 			}
 			if err := askOne(prompt, &ctx.WorkflowPattern); err != nil {
-				fmt.Println("❌ Cancelado")
-				osExit(1)
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 		}
 
@@ -401,8 +401,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 					Help:    "Se não tiver um ainda, deixe em branco para usar um placeholder ou gerar localmente.",
 				}
 				if err := askOne(prompt, &ctx.GitRepoURL); err != nil {
-					fmt.Println("❌ Cancelado")
-					osExit(1)
+					return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 				}
 			}
 		}
@@ -452,8 +451,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
 		}
 		if err := askOne(promptModules, &selectedModules); err != nil {
-			fmt.Println("❌ Cancelado")
-			osExit(1)
+			return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 		}
 
 		// Map Selection back to Context
@@ -483,8 +481,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Default: true,
 			}
 			if err := askOne(prompt, &ctx.EnableDevContainer); err != nil {
-				fmt.Println("❌ Cancelado")
-				osExit(1)
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 		}
 
@@ -595,7 +592,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		}
 	}
 
-	return ctx
+	return ctx, nil
 }
 
 func resolveProjectName(flags *InitOptions) string {

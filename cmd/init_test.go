@@ -276,7 +276,7 @@ func TestBuildContext_BasicFields(t *testing.T) {
 		EnableMetricsServer: true,
 	}
 
-	ctx := buildContext(opts)
+	ctx, _ := buildContext(opts)
 
 	// Verify basic fields
 	if ctx.ProjectName != "test-project" {
@@ -347,11 +347,6 @@ func TestBuildContext_BasicFields(t *testing.T) {
 }
 
 func TestBuildContext_Defaults(t *testing.T) {
-	// Intercept osExit
-	originalExit := osExit
-	osExit = func(code int) {}
-	defer func() { osExit = originalExit }()
-
 	opts := &InitOptions{
 		ProjectName:    "my-project",
 		GitBranch:      "main",
@@ -361,7 +356,7 @@ func TestBuildContext_Defaults(t *testing.T) {
 		NonInteractive: true,
 	}
 
-	ctx := buildContext(opts)
+	ctx, _ := buildContext(opts)
 
 	// Verify defaults (now matching provided minimums or derived defaults)
 	if ctx.ProjectName != "my-project" {
@@ -426,7 +421,10 @@ func TestBuildContext_TopologyEnvironments(t *testing.T) {
 				NonInteractive: true,
 			}
 
-			ctx := buildContext(opts)
+			ctx, err := buildContext(opts)
+			if err != nil {
+				t.Errorf("Expected no error, got: %v", err)
+			}
 
 			if len(ctx.Environments) != len(tt.expectedEnvs) {
 				t.Errorf("Environments length = %d, want %d", len(ctx.Environments), len(tt.expectedEnvs))
@@ -440,24 +438,17 @@ func TestBuildContext_TopologyEnvironments(t *testing.T) {
 		})
 	}
 }
-func TestBuildContext_NonInteractive_MissingFlags(t *testing.T) {
-	// Intercept osExit
-	originalExit := osExit
-	exitCalled := false
-	osExit = func(code int) {
-		exitCalled = true
-	}
-	defer func() { osExit = originalExit }()
 
+func TestBuildContext_NonInteractive_MissingFlags(t *testing.T) {
+	// Intercept buildContext output instead of osExit
 	opts := &InitOptions{
 		NonInteractive: true,
 		Topology:       "", // Missing required flag
 	}
 
-	buildContext(opts)
-
-	if !exitCalled {
-		t.Error("Expected osExit to be called due to missing required flags in non-interactive mode")
+	_, err := buildContext(opts)
+	if err == nil {
+		t.Error("Expected error from buildContext due to missing required flags in non-interactive mode")
 	}
 }
 
@@ -471,7 +462,7 @@ func TestBuildContext_OfflineMode(t *testing.T) {
 		NonInteractive: true,
 	}
 
-	ctx := buildContext(opts)
+	ctx, _ := buildContext(opts)
 
 	// In current buildContext, if GitRepo is empty and Offline is true,
 	// it uses placeholder ONLY if in interactive mode.
@@ -524,7 +515,7 @@ func TestBuildContext_Interactive_Mock(t *testing.T) {
 		Topology:       "", // Triggers interactive
 	}
 
-	ctx := buildContext(opts)
+	ctx, _ := buildContext(opts)
 
 	if ctx.Topology != "complete" {
 		t.Errorf("Topology = %s, want complete (mocked)", ctx.Topology)
