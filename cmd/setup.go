@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -64,7 +63,7 @@ Exemplo:
 
 		for _, t := range selectedTools {
 			fmt.Printf("%s Verificando %s... ", stepStyle.Render("🔍"), t.Name)
-			if _, err := exec.LookPath(t.Cmd); err != nil {
+			if _, err := lookPath(t.Cmd); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
 				missing = append(missing, t.Name)
 			} else {
@@ -101,7 +100,7 @@ Exemplo:
 
 		// Always try to configure direnv if present and in dev mode
 		if profile == "dev" {
-			if _, err := exec.LookPath("direnv"); err == nil {
+			if _, err := lookPath("direnv"); err == nil {
 				configureDirenv()
 			}
 		}
@@ -118,11 +117,11 @@ func attemptInstall(tools []string) {
 	fmt.Println(headerStyle.Render("📦 Instalando Dependências..."))
 
 	pkgManager := ""
-	if _, err := exec.LookPath("brew"); err == nil {
+	if _, err := lookPath("brew"); err == nil {
 		pkgManager = "brew"
-	} else if _, err := exec.LookPath("apt-get"); err == nil && runtime.GOOS == "linux" {
+	} else if _, err := lookPath("apt-get"); err == nil && runtime.GOOS == "linux" {
 		pkgManager = "apt"
-	} else if _, err := exec.LookPath("snap"); err == nil && runtime.GOOS == "linux" {
+	} else if _, err := lookPath("snap"); err == nil && runtime.GOOS == "linux" {
 		pkgManager = "snap" // Fallback but apt is preferred
 	}
 
@@ -133,16 +132,16 @@ func attemptInstall(tools []string) {
 
 	for _, tool := range tools {
 		fmt.Printf("Instalando %s via %s... ", tool, pkgManager)
-		var cmd *exec.Cmd
 
+		var cmd = execCommand("echo", "noop") // default
 		switch pkgManager {
 		case "brew":
-			cmd = exec.Command("brew", "install", tool)
+			cmd = execCommand("brew", "install", tool)
 		case "apt":
 			// Need sudo
-			cmd = exec.Command("sudo", "apt-get", "install", "-y", tool)
+			cmd = execCommand("sudo", "apt-get", "install", "-y", tool)
 		case "snap":
-			cmd = exec.Command("sudo", "snap", "install", tool)
+			cmd = execCommand("sudo", "snap", "install", tool)
 		}
 
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -164,6 +163,6 @@ func configureDirenv() {
 		fmt.Println(checkStyle.Render(".envrc criado."))
 	}
 
-	_ = exec.Command("direnv", "allow").Run()
+	_ = execCommand("direnv", "allow").Run()
 	fmt.Println(checkStyle.Render("direnv allow executado."))
 }

@@ -128,10 +128,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		// 2. Execute Scaffold
 		fmt.Println("🚀 Gerando arquivos...")
 
-		targetDir := "."
-		if opts.TargetDir != "" {
-			targetDir = opts.TargetDir
-		}
+		targetDir := resolveTargetDir(opts.TargetDir)
 
 		// Prepare CompositeFS
 		// Layers: [Plugins Assets...] + [Core Embed Assets]
@@ -320,23 +317,7 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 
 	if flags.NonInteractive {
 		// VALIDATION MODE
-		missing := []string{}
-		if ctx.Topology == "" {
-			missing = append(missing, "--topology")
-		}
-		if ctx.WorkflowPattern == "" {
-			missing = append(missing, "--workflow")
-		}
-		// If NOT offline, Git Repo is usually required or at least we warn?
-		// Actually, resolveProjectName handles default if git repo is missing.
-		// So strictness depends on use case. Let's enforce ProjectName if GitRepo is missing.
-		if ctx.GitRepoURL == "" && !flags.Offline {
-			// In interactive we ask. In non-interactive, if ProjectName is also missing, we can't derive it.
-			if ctx.ProjectName == "yby-project" && flags.ProjectName == "" {
-				missing = append(missing, "--project-name OR --git-repo")
-			}
-		}
-
+		missing := validateNonInteractiveFlags(ctx, flags)
 		if len(missing) > 0 {
 			return nil, errors.New(errors.ErrCodeValidation, fmt.Sprintf("Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s", strings.Join(missing, ", ")))
 		}
@@ -454,25 +435,8 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 			return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 		}
 
-		// Map Selection back to Context
-		ctx.EnableKepler = false
-		ctx.EnableMinio = false
-		ctx.EnableKEDA = false
-		ctx.EnableMetricsServer = false
-		for _, m := range selectedModules {
-			if strings.Contains(m, "Kepler") {
-				ctx.EnableKepler = true
-			}
-			if strings.Contains(m, "MinIO") {
-				ctx.EnableMinio = true
-			}
-			if strings.Contains(m, "KEDA") {
-				ctx.EnableKEDA = true
-			}
-			if strings.Contains(m, "Observability") {
-				ctx.EnableMetricsServer = true
-			}
-		}
+		// Mapeia a seleção de volta para o contexto
+		ctx.EnableKepler, ctx.EnableMinio, ctx.EnableKEDA, ctx.EnableMetricsServer = mapModuleSelection(selectedModules)
 
 		// Ask for DevContainer
 		if !flags.IncludeDevContainer {
@@ -527,69 +491,19 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 
 	// Post-Validation / Defaults
 
-	// Calculate Environments list based on Topology
-	switch ctx.Topology {
-	case "single":
-		ctx.Environments = []string{"prod"}
-	case "standard":
-		ctx.Environments = []string{"local", "prod"}
-	case "complete":
-		ctx.Environments = []string{"local", "dev", "staging", "prod"}
-	default:
-		ctx.Environments = []string{"local"}
-	}
+	// Calcula lista de ambientes baseada na topologia
+	ctx.Environments = environmentsForTopology(ctx.Topology)
 
-	// Fix for Offline Mode in 'single' topology:
-	// If offline is enabled, we assume the user wants to test locally even if topology is single.
-	// OR we force 'local' environment to be present.
-	// But 'single' usually means just one env (production).
-	// The test uses 'single' but expects 'values-local.yaml'.
-	// This implies the test setup might be flawed for 'single', OR 'offline' implies 'local' capabilities.
-	// To pass the test without changing the test logic (which mocks user intent),
-	// if Offline is true, we ensure 'local' is available or we treat 'dev' as local?
-	// Actually, the test explicitly checks for ".yby/config/values-local.yaml".
-	//
-	// If the user runs `yby init --offline --topology single --env dev`,
-	// and if `single` -> `prod` only.
-	// Then `dev` is invalid.
-	//
-	// Let's modify the behavior: If Offline is set, we ensure `local` environment is present
-	// so the user can run `yby up`.
+	// Modo offline: garante que "local" está presente
 	if flags.Offline {
-		hasLocal := false
-		for _, e := range ctx.Environments {
-			if e == "local" {
-				hasLocal = true
-				break
-			}
-		}
-		if !hasLocal {
-			// Prepend local for offline dev support
-			ctx.Environments = append([]string{"local"}, ctx.Environments...)
-		}
+		ctx.Environments = ensureLocalEnvironment(ctx.Environments)
 	}
 
-	// Phase 3 Fix: Ensure 'current' environment (ctx.Environment) is in the list
-	// If not, fallback to the first environment in the list (or 'prod' if present)
-	isValidEnv := false
-	for _, env := range ctx.Environments {
-		if env == ctx.Environment {
-			isValidEnv = true
-			break
-		}
-	}
-
-	if !isValidEnv {
-		if len(ctx.Environments) > 0 {
-			// Prefer 'prod' if available and current was invalid
-			// Or just pick the first one.
-			// Let's pick the last one (usually prod) for single/standard?
-			// Actually, for 'standard' (local, prod), if user asked for 'dev', maybe they meant local?
-			// Safest bet: Pick the first one (usually local or prod).
-			newEnv := ctx.Environments[0]
-			fmt.Printf("⚠️  Ambiente inicial '%s' não existe na topologia '%s'. Ajustando para '%s'.\n", ctx.Environment, ctx.Topology, newEnv)
-			ctx.Environment = newEnv
-		}
+	// Valida se o ambiente atual existe na topologia
+	newEnv, valid := validateEnvironment(ctx.Environment, ctx.Environments)
+	if !valid {
+		fmt.Printf("⚠️  Ambiente inicial '%s' não existe na topologia '%s'. Ajustando para '%s'.\n", ctx.Environment, ctx.Topology, newEnv)
+		ctx.Environment = newEnv
 	}
 
 	return ctx, nil
@@ -648,6 +562,111 @@ func extractGithubOrg(repoURL string) string {
 		return parts[0] // Org is the first part
 	}
 	return ""
+}
+
+// resolveTargetDir retorna o diretório alvo para o scaffold.
+// Se o TargetDir das opções estiver vazio, retorna ".".
+func resolveTargetDir(targetDir string) string {
+	if targetDir != "" {
+		return targetDir
+	}
+	return "."
+}
+
+// environmentsForTopology retorna a lista de ambientes baseada na topologia informada.
+func environmentsForTopology(topology string) []string {
+	switch topology {
+	case "single":
+		return []string{"prod"}
+	case "standard":
+		return []string{"local", "prod"}
+	case "complete":
+		return []string{"local", "dev", "staging", "prod"}
+	default:
+		return []string{"local"}
+	}
+}
+
+// ensureLocalEnvironment garante que o ambiente "local" está presente na lista,
+// adicionando-o ao início caso não exista. Usado no modo offline.
+func ensureLocalEnvironment(envs []string) []string {
+	for _, e := range envs {
+		if e == "local" {
+			return envs
+		}
+	}
+	return append([]string{"local"}, envs...)
+}
+
+// validateEnvironment verifica se o ambiente atual é válido para a topologia.
+// Se não for, retorna o primeiro ambiente da lista e found=false.
+func validateEnvironment(env string, envs []string) (string, bool) {
+	for _, e := range envs {
+		if e == env {
+			return env, true
+		}
+	}
+	if len(envs) > 0 {
+		return envs[0], false
+	}
+	return env, false
+}
+
+// mapModuleSelection converte a lista de seleções do prompt MultiSelect
+// em flags booleanas de módulos.
+func mapModuleSelection(selectedModules []string) (kepler, minio, keda, metricsServer bool) {
+	for _, m := range selectedModules {
+		if strings.Contains(m, "Kepler") {
+			kepler = true
+		}
+		if strings.Contains(m, "MinIO") {
+			minio = true
+		}
+		if strings.Contains(m, "KEDA") {
+			keda = true
+		}
+		if strings.Contains(m, "Observability") {
+			metricsServer = true
+		}
+	}
+	return
+}
+
+// validateNonInteractiveFlags valida que os campos obrigatórios estão presentes
+// no modo não-interativo. Retorna a lista de flags faltantes.
+func validateNonInteractiveFlags(ctx *scaffold.BlueprintContext, flags *InitOptions) []string {
+	missing := []string{}
+	if ctx.Topology == "" {
+		missing = append(missing, "--topology")
+	}
+	if ctx.WorkflowPattern == "" {
+		missing = append(missing, "--workflow")
+	}
+	if ctx.GitRepoURL == "" && !flags.Offline {
+		if ctx.ProjectName == "yby-project" && flags.ProjectName == "" {
+			missing = append(missing, "--project-name OR --git-repo")
+		}
+	}
+	return missing
+}
+
+// resolveAIFilePath determina o caminho completo para um arquivo gerado por IA.
+// Arquivos .github são colocados na raiz do repositório Git, não dentro do targetDir.
+func resolveAIFilePath(filePath, targetDir, gitRoot string) string {
+	fullPath := filepath.Join(targetDir, filePath)
+
+	if strings.HasPrefix(filePath, ".github") {
+		if gitRoot != "" {
+			return filepath.Join(gitRoot, filePath)
+		}
+		if targetDir != "." && targetDir != "" {
+			// Sem gitRoot, usa o diretório de trabalho atual
+			// (nesta função pura, retornamos apenas baseado no targetDir)
+			return filePath // retorna o caminho relativo ao CWD
+		}
+	}
+
+	return fullPath
 }
 
 // inferContext populates AI-related context fields based on heuristics

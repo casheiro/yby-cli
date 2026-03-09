@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -279,11 +278,11 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 
 	// 2. Renomear Contexto
 	os.Setenv("KUBECONFIG", tempFile.Name())
-	_ = exec.Command("kubectl", "config", "rename-context", "default", clusterName).Run()
-	_ = exec.Command("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
-	_ = exec.Command("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
-	_ = exec.Command("kubectl", "config", "rename-cluster", "default", clusterName).Run()
-	_ = exec.Command("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
+	_ = execCommand("kubectl", "config", "rename-context", "default", clusterName).Run()
+	_ = execCommand("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
+	_ = execCommand("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
+	_ = execCommand("kubectl", "config", "rename-cluster", "default", clusterName).Run()
+	_ = execCommand("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
 	os.Unsetenv("KUBECONFIG")
 
 	// 3. Merge
@@ -297,7 +296,7 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 		_ = copyFile(mainConfigPath, mainConfigPath+".bak")
 	}
 
-	cmd := exec.Command("kubectl", "config", "view", "--flatten")
+	cmd := execCommand("kubectl", "config", "view", "--flatten")
 	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s:%s", mainConfigPath, tempFile.Name()))
 
 	var merged bytes.Buffer

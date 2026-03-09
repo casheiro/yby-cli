@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -22,14 +21,14 @@ Equivalente ao antigo 'make status'.`,
 		fmt.Println(titleStyle.Render("📊 Status do Cluster"))
 		fmt.Println("---------------------------------------")
 
-		if _, err := exec.LookPath("kubectl"); err != nil {
+		if _, err := lookPath("kubectl"); err != nil {
 			fmt.Println(crossStyle.Render("kubectl não encontrado"))
 			return
 		}
 
 		// Nodes
 		fmt.Println(headerStyle.Render("🖥️  Nodes"))
-		out, err := exec.Command("kubectl", "get", "nodes").CombinedOutput()
+		out, err := execCommand("kubectl", "get", "nodes").CombinedOutput()
 		if err != nil {
 			fmt.Println(crossStyle.Render("Erro ao obter nodes (Cluster rodando?)"))
 			fmt.Println(grayStyle.Render(string(out)))
@@ -40,7 +39,7 @@ Equivalente ao antigo 'make status'.`,
 		// ArgoCD Pods
 		fmt.Println("")
 		fmt.Println(headerStyle.Render("🐙 Argo CD Pods"))
-		out, err = exec.Command("kubectl", "get", "pods", "-n", "argocd").CombinedOutput()
+		out, err = execCommand("kubectl", "get", "pods", "-n", "argocd").CombinedOutput()
 		if err == nil {
 			fmt.Println(strings.TrimSpace(string(out)))
 		} else {
@@ -50,7 +49,7 @@ Equivalente ao antigo 'make status'.`,
 		// Ingress
 		fmt.Println("")
 		fmt.Println(headerStyle.Render("🔗 Ingresses"))
-		out, err = exec.Command("kubectl", "get", "ingress", "-A").CombinedOutput()
+		out, err = execCommand("kubectl", "get", "ingress", "-A").CombinedOutput()
 		if err == nil {
 			if len(out) > 0 {
 				fmt.Println(strings.TrimSpace(string(out)))
@@ -62,7 +61,7 @@ Equivalente ao antigo 'make status'.`,
 		// KEDA ScaledObjects
 		fmt.Println("")
 		fmt.Println(headerStyle.Render("⚡ Autoscaling (KEDA)"))
-		out, err = exec.Command("kubectl", "get", "scaledobjects", "-A").CombinedOutput()
+		out, err = execCommand("kubectl", "get", "scaledobjects", "-A").CombinedOutput()
 		if err == nil {
 			if len(out) > 0 {
 				fmt.Println(strings.TrimSpace(string(out)))
@@ -76,7 +75,7 @@ Equivalente ao antigo 'make status'.`,
 		// Kepler Stats
 		fmt.Println("")
 		fmt.Println(headerStyle.Render("🍃 Eficiência Energética (Kepler)"))
-		out, err = exec.Command("kubectl", "get", "pods", "-n", "kepler", "-l", "app.kubernetes.io/name=kepler").CombinedOutput()
+		out, err = execCommand("kubectl", "get", "pods", "-n", "kepler", "-l", "app.kubernetes.io/name=kepler").CombinedOutput()
 		if err == nil && len(out) > 0 {
 			if strings.Contains(string(out), "Running") {
 				fmt.Println(checkStyle.Render("Sensor Kepler ATIVO e monitorando o cluster."))

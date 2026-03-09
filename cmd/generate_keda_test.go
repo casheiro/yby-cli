@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGenerateKedaCmd(t *testing.T) {
@@ -57,4 +60,113 @@ spec:
 	if output != expected {
 		t.Errorf("Expected:\n%s\nGot:\n%s", expected, output)
 	}
+}
+
+func TestGenerateKedaCmd_ValoresDiferentes(t *testing.T) {
+	// Capturar stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Configurar com valores diferentes
+	kedaOpts.Name = "prod-scaler"
+	kedaOpts.Deployment = "nginx"
+	kedaOpts.Namespace = "production"
+	kedaOpts.Schedule = "0 22 * * 1-5"
+	kedaOpts.Replicas = "10"
+	kedaOpts.Timezone = "America/Sao_Paulo"
+
+	kedaCmd.Run(kedaCmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verificar que os valores foram aplicados corretamente
+	assert.Contains(t, output, "name: prod-scaler", "Deveria conter o nome do ScaledObject")
+	assert.Contains(t, output, "namespace: production", "Deveria conter o namespace")
+	assert.Contains(t, output, "name: nginx", "Deveria conter o nome do deployment")
+	assert.Contains(t, output, "maxReplicaCount: 10", "Deveria conter o máximo de réplicas")
+	assert.Contains(t, output, "timezone: America/Sao_Paulo", "Deveria conter o timezone")
+	assert.Contains(t, output, "start: 0 22 * * 1-5", "Deveria conter o schedule")
+	assert.Contains(t, output, "end: 0 8 * * *", "Deveria conter o end schedule fixo")
+}
+
+func TestGenerateKedaCmd_SaidaEhYAMLValido(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	kedaOpts.Name = "yaml-test"
+	kedaOpts.Deployment = "app"
+	kedaOpts.Namespace = "default"
+	kedaOpts.Schedule = "0 20 * * *"
+	kedaOpts.Replicas = "1"
+	kedaOpts.Timezone = "UTC"
+
+	kedaCmd.Run(kedaCmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verificar estrutura YAML básica
+	assert.True(t, strings.HasPrefix(output, "apiVersion:"), "Saída deveria começar com apiVersion")
+	assert.Contains(t, output, "kind: ScaledObject", "Deveria conter kind: ScaledObject")
+	assert.Contains(t, output, "metadata:", "Deveria conter metadata")
+	assert.Contains(t, output, "spec:", "Deveria conter spec")
+	assert.Contains(t, output, "triggers:", "Deveria conter triggers")
+}
+
+func TestKedaCmd_Estrutura(t *testing.T) {
+	assert.Equal(t, "keda", kedaCmd.Use, "Use deveria ser 'keda'")
+	assert.NotEmpty(t, kedaCmd.Short, "Short não deveria ser vazio")
+	assert.NotNil(t, kedaCmd.Run, "Run não deveria ser nil")
+}
+
+func TestKedaCmd_FlagsRegistradas(t *testing.T) {
+	flags := []struct {
+		name     string
+		defValue string
+	}{
+		{"name", ""},
+		{"deployment", ""},
+		{"namespace", ""},
+		{"schedule", "0 20 * * *"},
+		{"replicas", "1"},
+		{"timezone", "America/Sao_Paulo"},
+	}
+
+	for _, f := range flags {
+		t.Run("flag_"+f.name, func(t *testing.T) {
+			flag := kedaCmd.Flags().Lookup(f.name)
+			assert.NotNil(t, flag, "Flag %q deveria estar registrada", f.name)
+			if flag != nil {
+				assert.Equal(t, f.defValue, flag.DefValue, "Valor padrão da flag %q", f.name)
+			}
+		})
+	}
+}
+
+func TestKedaCmd_EhSubcomandoDeGenerate(t *testing.T) {
+	found := false
+	for _, sub := range generateCmd.Commands() {
+		if sub.Name() == "keda" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "keda deveria ser subcomando de generate")
+}
+
+func TestKedaCronTemplate_NaoEstaVazio(t *testing.T) {
+	assert.NotEmpty(t, kedaCronTemplate, "kedaCronTemplate não deveria estar vazio")
+	assert.Contains(t, kedaCronTemplate, "keda.sh/v1alpha1", "Template deveria conter apiVersion do KEDA")
+	assert.Contains(t, kedaCronTemplate, "ScaledObject", "Template deveria conter kind ScaledObject")
 }

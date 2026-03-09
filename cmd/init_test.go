@@ -527,3 +527,286 @@ func TestBuildContext_Interactive_Mock(t *testing.T) {
 		t.Error("EnableKepler should be true (mocked)")
 	}
 }
+
+// --- Casos adicionais para aumentar cobertura ---
+
+func TestDeriveProjectName_CasosExtras(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoURL  string
+		expected string
+	}{
+		{
+			name:     "URL com espaços ao redor",
+			repoURL:  "  https://github.com/org/repo.git  ",
+			expected: "repo",
+		},
+		{
+			name:     "URL somente com host sem path",
+			repoURL:  "https://github.com",
+			expected: "github.com",
+		},
+		{
+			name:     "URL com .git duplicado",
+			repoURL:  "https://github.com/org/repo.git.git",
+			expected: "repo.git",
+		},
+		{
+			name:     "URL SSH com subgrupo",
+			repoURL:  "git@github.com:org/sub/repo.git",
+			expected: "repo",
+		},
+		{
+			name:     "URL apenas com barra final",
+			repoURL:  "/",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := deriveProjectName(tt.repoURL)
+			if result != tt.expected {
+				t.Errorf("deriveProjectName(%q) = %q, esperado %q", tt.repoURL, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractGithubOrg_CasosExtras(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoURL  string
+		expected string
+	}{
+		{
+			name:     "URL com espaços ao redor",
+			repoURL:  "  https://github.com/org/repo.git  ",
+			expected: "org",
+		},
+		{
+			name:     "SSH sem repositório (apenas org)",
+			repoURL:  "git@github.com:singlepart",
+			expected: "",
+		},
+		{
+			name:     "URL github.com sem path",
+			repoURL:  "https://github.com/",
+			expected: "https:", // split por "github.com/" retorna "https:" como primeiro parte
+		},
+		{
+			name:     "URL com subgrupos profundos",
+			repoURL:  "https://github.com/org/sub/deep/repo.git",
+			expected: "org",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractGithubOrg(tt.repoURL)
+			if result != tt.expected {
+				t.Errorf("extractGithubOrg(%q) = %q, esperado %q", tt.repoURL, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestInferContext_TopologiaCompleta(t *testing.T) {
+	// Verifica que topologia "complete" adiciona sufixo ao ImpactLevel
+	ctx := &scaffold.BlueprintContext{
+		ProjectName: "payment-system",
+		Topology:    "complete",
+	}
+	inferContext(ctx)
+
+	if ctx.BusinessDomain != "Fintech / Financial Services" {
+		t.Errorf("BusinessDomain = %q, esperado 'Fintech / Financial Services'", ctx.BusinessDomain)
+	}
+	// ImpactLevel deve conter o sufixo da topologia completa
+	expectedSuffix := "(Enterprise Topology)"
+	if !contains(ctx.ImpactLevel, expectedSuffix) {
+		t.Errorf("ImpactLevel = %q, esperado conter %q", ctx.ImpactLevel, expectedSuffix)
+	}
+}
+
+func TestInferContext_PalavrasChaveVariadas(t *testing.T) {
+	tests := []struct {
+		name           string
+		projectName    string
+		expectedDomain string
+		expectedArch   string
+	}{
+		{"banco/fintech", "my-bank-app", "Fintech / Financial Services", "Cloud-Native Application"},
+		{"wallet", "crypto-wallet", "Fintech / Financial Services", "Cloud-Native Application"},
+		{"financeiro", "fin-tracker", "Fintech / Financial Services", "Cloud-Native Application"},
+		{"shopping cart", "shopping-cart", "E-Commerce / Retail", "Cloud-Native Application"},
+		{"e-commerce", "commerce-platform", "E-Commerce / Retail", "Cloud-Native Application"},
+		{"ETL pipeline", "etl-processor", "Data Engineering", "Data Pipeline / Batch Processing"},
+		{"data lake", "data-lake-v2", "Data Engineering", "Data Pipeline / Batch Processing"},
+		{"flow engine", "flow-engine", "Data Engineering", "Data Pipeline / Batch Processing"},
+		{"api service", "user-api", "General Purpose", "Backend Microservice"},
+		{"gateway svc", "auth-svc", "General Purpose", "Backend Microservice"},
+		{"generic app", "my-cool-app", "General Purpose", "Cloud-Native Application"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &scaffold.BlueprintContext{ProjectName: tt.projectName}
+			inferContext(ctx)
+
+			if ctx.BusinessDomain != tt.expectedDomain {
+				t.Errorf("BusinessDomain para %q = %q, esperado %q", tt.projectName, ctx.BusinessDomain, tt.expectedDomain)
+			}
+			if ctx.Archetype != tt.expectedArch {
+				t.Errorf("Archetype para %q = %q, esperado %q", tt.projectName, ctx.Archetype, tt.expectedArch)
+			}
+		})
+	}
+}
+
+func TestInferContext_CaseInsensitive(t *testing.T) {
+	// Nome com letras maiúsculas deve ser tratado como minúsculas
+	ctx := &scaffold.BlueprintContext{ProjectName: "MyPaymentGateway"}
+	inferContext(ctx)
+
+	if ctx.BusinessDomain != "Fintech / Financial Services" {
+		t.Errorf("BusinessDomain = %q, esperado 'Fintech / Financial Services' (case-insensitive)", ctx.BusinessDomain)
+	}
+}
+
+func TestBuildContext_NonInteractive_TodosFaltando(t *testing.T) {
+	o := &InitOptions{
+		NonInteractive: true,
+		Topology:       "",
+		Workflow:       "",
+	}
+
+	_, err := buildContext(o)
+	if err == nil {
+		t.Fatal("Esperado erro quando topology e workflow estão faltando no modo não-interativo")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "--topology") {
+		t.Errorf("Mensagem de erro deveria mencionar --topology, obtido: %s", errMsg)
+	}
+	if !contains(errMsg, "--workflow") {
+		t.Errorf("Mensagem de erro deveria mencionar --workflow, obtido: %s", errMsg)
+	}
+}
+
+func TestBuildContext_NonInteractive_SemGitRepoSemProjectName(t *testing.T) {
+	o := &InitOptions{
+		NonInteractive: true,
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		ProjectName:    "",
+		GitRepo:        "",
+	}
+
+	_, err := buildContext(o)
+	if err == nil {
+		t.Fatal("Esperado erro quando git-repo e project-name estão faltando no modo não-interativo")
+	}
+
+	if !contains(err.Error(), "--project-name OR --git-repo") {
+		t.Errorf("Mensagem deveria mencionar '--project-name OR --git-repo', obtido: %s", err.Error())
+	}
+}
+
+func TestBuildContext_OfflineMode_AdicionaLocal(t *testing.T) {
+	// Topologia "single" normalmente só tem "prod", mas offline deve adicionar "local"
+	o := &InitOptions{
+		Offline:        true,
+		Topology:       "single",
+		Workflow:       "essential",
+		Environment:    "local",
+		ProjectName:    "test",
+		NonInteractive: true,
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	foundLocal := false
+	for _, env := range ctx.Environments {
+		if env == "local" {
+			foundLocal = true
+			break
+		}
+	}
+	if !foundLocal {
+		t.Errorf("Esperado 'local' nos ambientes no modo offline, obtido: %v", ctx.Environments)
+	}
+}
+
+func TestBuildContext_OfflineMode_GithubOrgPadrao(t *testing.T) {
+	o := &InitOptions{
+		Offline:        true,
+		Topology:       "standard",
+		Workflow:       "essential",
+		ProjectName:    "test",
+		NonInteractive: true,
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	if ctx.GithubOrg != "yby-local" {
+		t.Errorf("GithubOrg = %q, esperado 'yby-local' no modo offline", ctx.GithubOrg)
+	}
+	if ctx.GithubDiscovery {
+		t.Error("GithubDiscovery deveria ser false no modo offline")
+	}
+}
+
+func TestBuildContext_AmbienteInvalidoAjustado(t *testing.T) {
+	// Topologia "single" tem ["prod"], se Environment="dev", deve ajustar
+	o := &InitOptions{
+		Topology:       "single",
+		Workflow:       "essential",
+		Environment:    "dev",
+		ProjectName:    "test",
+		NonInteractive: true,
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	// "dev" não existe em single, deve ser ajustado para o primeiro da lista
+	if ctx.Environment == "dev" {
+		t.Error("Environment deveria ter sido ajustado (dev não existe na topologia single)")
+	}
+}
+
+func TestResolveProjectName_FlagExplicitoSobrepoGitRepo(t *testing.T) {
+	o := &InitOptions{
+		ProjectName: "meu-projeto-custom",
+		GitRepo:     "https://github.com/org/outro-nome.git",
+	}
+
+	result := resolveProjectName(o)
+	if result != "meu-projeto-custom" {
+		t.Errorf("resolveProjectName deveria priorizar ProjectName flag, obtido: %q", result)
+	}
+}
+
+// contains é um helper simples para verificar substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && containsCheck(s, substr)
+}
+
+func containsCheck(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

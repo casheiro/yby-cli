@@ -15,22 +15,40 @@ var (
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // Red
 )
 
+// Forwarder define a interface para port-forwarding de pods K8s
+type Forwarder interface {
+	Start(ctx context.Context) (int, error)
+	Stop()
+}
+
+// ForwarderFactory cria instâncias de Forwarder
+type ForwarderFactory func(namespace, service string, targetPort int) (Forwarder, error)
+
+// defaultForwarderFactory usa NewPortForwarder real
+func defaultForwarderFactory(namespace, service string, targetPort int) (Forwarder, error) {
+	return NewPortForwarder(namespace, service, targetPort)
+}
+
 // MirrorManager handles the in-cluster Git mirror for Hybrid GitOps
 type MirrorManager struct {
 	LocalPath string // Path to the local git repo (e.g. ".")
 	Namespace string
 	Runner    shared.Runner
 
-	// PortForwarder instance for local access
-	forwarder *PortForwarder
+	// ForwarderFactory permite injetar factory customizada para testes
+	ForwarderFactory ForwarderFactory
+
+	// Forwarder instance for local access
+	forwarder Forwarder
 	localPort int
 }
 
 func NewManager(localPath string, runner shared.Runner) *MirrorManager {
 	return &MirrorManager{
-		LocalPath: localPath,
-		Namespace: "yby-system",
-		Runner:    runner,
+		LocalPath:        localPath,
+		Namespace:        "yby-system",
+		Runner:           runner,
+		ForwarderFactory: defaultForwarderFactory,
 	}
 }
 
@@ -120,7 +138,12 @@ spec:
 
 // SetupTunnel establishes the port-forward tunnel
 func (m *MirrorManager) SetupTunnel(ctx context.Context) error {
-	pf, err := NewPortForwarder(m.Namespace, "git-server", 9418)
+	factory := m.ForwarderFactory
+	if factory == nil {
+		factory = defaultForwarderFactory
+	}
+
+	pf, err := factory(m.Namespace, "git-server", 9418)
 	if err != nil {
 		return fmt.Errorf("failed to create port forwarder: %w", err)
 	}

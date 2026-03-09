@@ -20,6 +20,12 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// httpGet é uma variável para permitir mock em testes (substitui http.Get)
+var httpGet = http.Get
+
+// releaseBaseURL é a URL base para download de plugins nativos (mockável em testes)
+var releaseBaseURL = "https://github.com/casheiro/yby-cli/releases/download"
+
 // Manager orchestrates plugin discovery and execution.
 type Manager struct {
 	executor *Executor
@@ -569,7 +575,7 @@ func (m *Manager) installNative(name, version string) error {
 	if !strings.HasPrefix(tag, "v") {
 		tag = "v" + tag
 	}
-	url := fmt.Sprintf("https://github.com/casheiro/yby-cli/releases/download/%s/%s", tag, filename)
+	url := fmt.Sprintf("%s/%s/%s", releaseBaseURL, tag, filename)
 
 	fmt.Printf("⬇️  Baixando plugin %s de %s...\n", name, url)
 
@@ -584,7 +590,7 @@ func (m *Manager) installNative(name, version string) error {
 	var resp *http.Response
 	err = retry.DoWithDefault(context.Background(), func() error {
 		var errGet error
-		resp, errGet = http.Get(url)
+		resp, errGet = httpGet(url)
 		if errGet != nil {
 			return errGet
 		}
@@ -681,7 +687,7 @@ func (m *Manager) installFromURL(url string) error {
 	var resp *http.Response
 	err = retry.DoWithDefault(context.Background(), func() error {
 		var errGet error
-		resp, errGet = http.Get(url)
+		resp, errGet = httpGet(url)
 		if errGet != nil {
 			return errGet
 		}

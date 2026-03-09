@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 
@@ -33,7 +32,7 @@ Não afeta ambientes remotos (dev/staging/prod) por segurança.`,
 		fmt.Printf("💣 Destruindo cluster '%s'...\n", clusterName)
 
 		// Run k3d delete
-		c := exec.Command("k3d", "cluster", "delete", clusterName)
+		c := execCommand("k3d", "cluster", "delete", clusterName)
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 

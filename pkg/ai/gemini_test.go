@@ -6,92 +6,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// ─── Completion com GEMINI_API_KEY real ──────────────────────────────────────
-// Esses testes usam a API key real disponível em $GEMINI_API_KEY.
-
-func TestGeminiCompletion_RealAPI(t *testing.T) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		t.Skip("GEMINI_API_KEY não definido — pulando teste de integração")
-	}
-
-	p := &GeminiProvider{APIKey: apiKey, Model: "gemini-2.0-flash"}
-	ctx := context.Background()
-
-	result, err := p.Completion(ctx, "You are a helpful assistant.", "Diga apenas: OK")
-	require.NoError(t, err)
-	assert.NotEmpty(t, result)
-}
-
-func TestGeminiStreamCompletion_RealAPI(t *testing.T) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		t.Skip("GEMINI_API_KEY não definido — pulando teste de integração")
-	}
-
-	p := &GeminiProvider{APIKey: apiKey, Model: "gemini-2.0-flash"}
-	ctx := context.Background()
-
-	var buf bytes.Buffer
-	err := p.StreamCompletion(ctx, "You are a helpful assistant.", "Diga apenas: STREAM_OK", &buf)
-	require.NoError(t, err)
-	assert.NotEmpty(t, buf.String())
-}
-
-func TestGeminiEmbedDocuments_RealAPI(t *testing.T) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		t.Skip("GEMINI_API_KEY não definido — pulando teste de integração")
-	}
-
-	p := &GeminiProvider{APIKey: apiKey, Model: "gemini-2.0-flash"}
-	ctx := context.Background()
-
-	embeddings, err := p.EmbedDocuments(ctx, []string{"Olá mundo", "Teste de embedding"})
-	require.NoError(t, err)
-	assert.Len(t, embeddings, 2)
-	assert.NotEmpty(t, embeddings[0])
-}
-
-// ─── Completion com mock HTTP server ──────────────────────────────────────────
-// Testa o código de parsing da resposta sem chamar a API real.
+// ─── Testes de serialização/desserialização de estruturas ────────────────────
 
 func TestGeminiCompletion_MockServer_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"candidates": []map[string]interface{}{
-				{
-					"content": map[string]interface{}{
-						"parts": []map[string]interface{}{
-							{"text": "resposta mockada"},
-						},
-					},
-				},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	// GeminiProvider usa URL hardcoded para googleapis.com, então não conseguimos
-	// redirecionar diretamente. Testamos a estrutura de resposta via um provider
-	// com chave inválida para forçar o fluxo de erro, ou usamos API real.
-	// Este teste valida que a estrutura geminiResponse desserializa corretamente:
+	// Valida que a estrutura geminiResponse desserializa corretamente
 	payload := `{"candidates":[{"content":{"parts":[{"text":"hello"}]}}]}`
 	var resp geminiResponse
 	err := json.Unmarshal([]byte(payload), &resp)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", resp.Candidates[0].Content.Parts[0].Text)
-
-	_ = server.URL // server disponível para futuras variações
 }
 
 func TestGeminiCompletion_MockServer_EmptyResponse(t *testing.T) {
@@ -102,70 +31,6 @@ func TestGeminiCompletion_MockServer_EmptyResponse(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, resp.Candidates)
 }
-
-func TestGeminiCompletion_MockServer_RateLimitRetry(t *testing.T) {
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts < 2 {
-			w.WriteHeader(429)
-			return
-		}
-		resp := map[string]interface{}{
-			"candidates": []map[string]interface{}{
-				{"content": map[string]interface{}{"parts": []map[string]interface{}{{"text": "ok"}}}},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	// Como GeminiProvider usa URL hardcoded, não conseguimos testar o retry real
-	// sem refatoração. Mas testamos que o retry struct funciona corretamente.
-	// O path de retry está coberto pelo TestGeminiCompletion_RealAPI acima.
-	assert.GreaterOrEqual(t, attempts, 0)
-}
-
-// ─── GenerateGovernance com API key real ─────────────────────────────────────
-
-func TestGeminiGenerateGovernance_RealAPI(t *testing.T) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		t.Skip("GEMINI_API_KEY não definido")
-	}
-
-	p := &GeminiProvider{APIKey: apiKey, Model: "gemini-2.0-flash"}
-	ctx := context.Background()
-
-	blueprint, err := p.GenerateGovernance(ctx, "Um sistema simples de gerenciamento de tarefas em Go")
-	// A API pode retornar um JSON inválido às vezes, toleramos isso
-	if err != nil {
-		t.Logf("GenerateGovernance retornou erro (aceitável): %v", err)
-		return
-	}
-	assert.NotNil(t, blueprint)
-}
-
-// ─── Completion com API key inválida ─────────────────────────────────────────
-
-func TestGeminiCompletion_InvalidKey_ReturnsError(t *testing.T) {
-	p := &GeminiProvider{APIKey: "invalid-key-for-test", Model: "gemini-2.0-flash"}
-	ctx := context.Background()
-
-	_, err := p.Completion(ctx, "system", "user")
-	// Deve retornar erro (401 ou similar)
-	assert.Error(t, err)
-}
-
-func TestGeminiStreamCompletion_InvalidKey_ReturnsError(t *testing.T) {
-	p := &GeminiProvider{APIKey: "invalid-key", Model: "gemini-2.0-flash"}
-	var buf bytes.Buffer
-	err := p.StreamCompletion(context.Background(), "system", "user", &buf)
-	assert.Error(t, err)
-}
-
-// ─── Estruturas de request/response ──────────────────────────────────────────
 
 func TestGeminiRequest_Serialization(t *testing.T) {
 	req := geminiRequest{
@@ -205,11 +70,292 @@ func TestGeminiBatchResponse_Deserialization(t *testing.T) {
 	assert.InDelta(t, 0.4, resp.Embeddings[1].Values[0], 0.001)
 }
 
-// ─── EmbedDocuments com lista vazia ──────────────────────────────────────────
-
 func TestGeminiEmbedDocuments_EmptyList(t *testing.T) {
-	p := &GeminiProvider{APIKey: "key", Model: "gemini"}
+	p := &GeminiProvider{APIKey: "key", Model: "gemini", BaseURL: "http://localhost"}
 	result, err := p.EmbedDocuments(context.Background(), []string{})
 	assert.NoError(t, err)
 	assert.Nil(t, result)
+}
+
+// ─── Testes com httptest (BaseURL mockável) ─────────────────────────────────
+
+func newTestGeminiProvider(serverURL string) *GeminiProvider {
+	return &GeminiProvider{
+		APIKey:  "test-key",
+		Model:   "test-model",
+		BaseURL: serverURL,
+	}
+}
+
+func TestGeminiCompletion_HTTPTest_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "generateContent")
+		resp := geminiResponse{
+			Candidates: []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			}{
+				{Content: struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				}{Parts: []struct {
+					Text string `json:"text"`
+				}{{Text: "resposta do teste"}}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	result, err := p.Completion(context.Background(), "system", "user")
+	require.NoError(t, err)
+	assert.Equal(t, "resposta do teste", result)
+}
+
+func TestGeminiCompletion_HTTPTest_EmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{"candidates": []interface{}{}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	_, err := p.Completion(context.Background(), "system", "user")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "resposta vazia")
+}
+
+func TestGeminiCompletion_HTTPTest_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte("internal error"))
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	_, err := p.Completion(context.Background(), "system", "user")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestGeminiCompletion_HTTPTest_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	_, err := p.Completion(context.Background(), "system", "user")
+	assert.Error(t, err)
+}
+
+func TestGeminiStreamCompletion_HTTPTest_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := geminiResponse{
+			Candidates: []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			}{
+				{Content: struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				}{Parts: []struct {
+					Text string `json:"text"`
+				}{{Text: "resposta do teste"}}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	var buf bytes.Buffer
+	err := p.StreamCompletion(context.Background(), "system", "user", &buf)
+	require.NoError(t, err)
+	assert.Equal(t, "resposta do teste", buf.String())
+}
+
+func TestGeminiGenerateGovernance_HTTPTest_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		blueprint := GovernanceBlueprint{
+			Files: []GeneratedFile{
+				{Path: ".synapstor/.uki/test.md", Content: "# Test"},
+			},
+		}
+		bpJSON, _ := json.Marshal(blueprint)
+		resp := geminiResponse{
+			Candidates: []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			}{
+				{Content: struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				}{Parts: []struct {
+					Text string `json:"text"`
+				}{{Text: string(bpJSON)}}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	blueprint, err := p.GenerateGovernance(context.Background(), "teste")
+	require.NoError(t, err)
+	assert.NotNil(t, blueprint)
+	assert.Len(t, blueprint.Files, 1)
+}
+
+func TestGeminiGenerateGovernance_HTTPTest_InvalidJSON(t *testing.T) {
+	// Gemini retorna texto que não é JSON válido para o blueprint
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"candidates": []map[string]interface{}{
+				{"content": map[string]interface{}{
+					"parts": []map[string]interface{}{{"text": "not a valid blueprint json"}},
+				}},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	_, err := p.GenerateGovernance(context.Background(), "teste")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "json")
+}
+
+func TestGeminiGenerateGovernance_HTTPTest_MarkdownFences(t *testing.T) {
+	// Testa limpeza de markdown fences que Gemini às vezes adiciona
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		blueprint := GovernanceBlueprint{Files: []GeneratedFile{{Path: "test.md", Content: "ok"}}}
+		bpJSON, _ := json.Marshal(blueprint)
+		wrappedJSON := "```json" + string(bpJSON) + "```"
+		resp := map[string]interface{}{
+			"candidates": []map[string]interface{}{
+				{"content": map[string]interface{}{
+					"parts": []map[string]interface{}{{"text": wrappedJSON}},
+				}},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	blueprint, err := p.GenerateGovernance(context.Background(), "teste")
+	require.NoError(t, err)
+	assert.Len(t, blueprint.Files, 1)
+}
+
+func TestGeminiEmbedDocuments_HTTPTest_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "batchEmbedContents")
+		resp := geminiBatchEmbeddingResponse{
+			Embeddings: []struct {
+				Values []float32 `json:"values"`
+			}{
+				{Values: []float32{0.1, 0.2}},
+				{Values: []float32{0.3, 0.4}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	embeddings, err := p.EmbedDocuments(context.Background(), []string{"text1", "text2"})
+	require.NoError(t, err)
+	assert.Len(t, embeddings, 2)
+}
+
+func TestGeminiEmbedDocuments_HTTPTest_Mismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Retorna 1 embedding para 2 textos
+		resp := geminiBatchEmbeddingResponse{
+			Embeddings: []struct {
+				Values []float32 `json:"values"`
+			}{
+				{Values: []float32{0.1}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	_, err := p.EmbedDocuments(context.Background(), []string{"text1", "text2"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "mismatch")
+}
+
+func TestGeminiEmbedDocuments_HTTPTest_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte("error"))
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	_, err := p.EmbedDocuments(context.Background(), []string{"text1"})
+	assert.Error(t, err)
+}
+
+// ─── Testes do provider ─────────────────────────────────────────────────────
+
+func TestGeminiProvider_Name(t *testing.T) {
+	p := &GeminiProvider{}
+	assert.Equal(t, "Google Gemini (Cloud)", p.Name())
+}
+
+func TestGeminiProvider_IsAvailable(t *testing.T) {
+	p := &GeminiProvider{APIKey: "key"}
+	assert.True(t, p.IsAvailable(context.Background()))
+
+	p2 := &GeminiProvider{}
+	assert.False(t, p2.IsAvailable(context.Background()))
+}
+
+func TestNewGeminiProvider_WithEnv(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "test-key")
+	t.Setenv("GEMINI_MODEL", "custom-model")
+	p := NewGeminiProvider()
+	require.NotNil(t, p)
+	assert.Equal(t, "test-key", p.APIKey)
+	assert.Equal(t, "custom-model", p.Model)
+	assert.Equal(t, "https://generativelanguage.googleapis.com", p.BaseURL)
+}
+
+func TestNewGeminiProvider_NoKey(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	p := NewGeminiProvider()
+	assert.Nil(t, p)
+}
+
+func TestNewGeminiProvider_DefaultModel(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "key")
+	t.Setenv("GEMINI_MODEL", "")
+	p := NewGeminiProvider()
+	require.NotNil(t, p)
+	assert.Equal(t, "gemini-2.5-flash", p.Model)
 }

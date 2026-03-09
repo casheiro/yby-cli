@@ -12,6 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newDoctorService permite override em testes para injetar mocks
+var newDoctorService = func(r shared.Runner) doctor.Service {
+	return doctor.NewService(r)
+}
+
 // doctorCmd represents the doctor command
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -25,7 +30,7 @@ e se há conexão com o cluster Kubernetes configurado.`,
 
 		// 1. Setup DI
 		runner := &shared.RealRunner{}
-		docSvc := doctor.NewService(runner)
+		docSvc := newDoctorService(runner)
 
 		// 2. Run All Checks
 		report := docSvc.Run(cmd.Context())

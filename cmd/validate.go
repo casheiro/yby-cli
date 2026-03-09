@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
@@ -38,7 +37,7 @@ Equivalente ao antigo 'make validate'.`,
 		fmt.Println(headerStyle.Render("0️⃣  Resolvendo Dependências..."))
 		for _, chart := range charts {
 			fmt.Printf("%s Executando: helm dependency build %s\n", grayStyle.Render("Exec >"), chart)
-			runCmd := exec.Command("helm", "dependency", "build", chart)
+			runCmd := execCommand("helm", "dependency", "build", chart)
 			runCmd.Stdout = os.Stdout
 			runCmd.Stderr = os.Stderr
 			if err := runCmd.Run(); err != nil {
@@ -49,7 +48,7 @@ Equivalente ao antigo 'make validate'.`,
 		fmt.Println("\n" + headerStyle.Render("1️⃣  Helm Lint..."))
 		for _, chart := range charts {
 			fmt.Printf("Linting em %s... ", chart)
-			if err := exec.Command("helm", "lint", chart).Run(); err != nil {
+			if err := execCommand("helm", "lint", chart).Run(); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
 				return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro no lint do chart %s", chart))
 			}
@@ -67,7 +66,7 @@ Equivalente ao antigo 'make validate'.`,
 			name := "release-name" // dummy name
 			fmt.Printf("Gerando template de %s... ", chart)
 			// Silent output unless error
-			cmd := exec.Command("helm", "template", name, chart, "-f", valuesFile)
+			cmd := execCommand("helm", "template", name, chart, "-f", valuesFile)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
 				fmt.Println(string(out))

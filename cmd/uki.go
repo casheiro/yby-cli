@@ -16,6 +16,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// getAIProvider permite override em testes
+var getAIProvider = ai.GetProvider
+
 // ukiCmd represents the uki command
 var ukiCmd = &cobra.Command{
 	Use:   "uki",
@@ -56,7 +59,7 @@ Exemplo:
 
 		// 2. Init AI
 		providerName, _ := cmd.Flags().GetString("ai-provider")
-		provider := ai.GetProvider(ctx, providerName)
+		provider := getAIProvider(ctx, providerName)
 
 		if provider == nil {
 			return errors.New(errors.ErrCodeConfig, "Nenhum provedor de IA encontrado. Dica: Exporte OPENAI_API_KEY, GEMINI_API_KEY ou rode 'ollama serve'")

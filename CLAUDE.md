@@ -34,6 +34,7 @@ golangci-lint run
 **Build tags importantes:**
 - `k8s` — necessária para compilar `plugins/sentinel/cli` e `plugins/sentinel/agent`
 - `e2e` — isola testes E2E em `test/e2e/` (não rodam no `task test`)
+- `integration` — isola testes que fazem chamadas reais a APIs externas (ex: Gemini). Rodar localmente com: `go test -tags=integration ./pkg/ai/...`. **NÃO rodar no CI.**
 
 ## Arquitetura
 
