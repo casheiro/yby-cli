@@ -122,9 +122,10 @@ spec:
         - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
         - --kubelet-use-node-status-port
         - --metric-resolution=15s
-        # [YBY] Added insecure-tls to ensure compatibility with most dev/local setups (K3s, etc)
-        # In strict prod, this should be removed/configured properly.
+        {{- if or (eq .Environment "local") (eq .Environment "dev") }}
+        # Insecure TLS apenas para ambientes local/dev (K3s sem cert config)
         - --kubelet-insecure-tls
+        {{- end }}
         image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
         imagePullPolicy: IfNotPresent
         livenessProbe:

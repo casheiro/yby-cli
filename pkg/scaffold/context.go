@@ -39,6 +39,9 @@ type BlueprintContext struct {
 	GithubDiscovery bool
 	GithubOrg       string
 
+	// Estratégia de secrets (sealed-secrets, external-secrets, sops)
+	SecretsStrategy string
+
 	// [NEW] Dynamic Data injected by plugins
 	Data map[string]interface{}
 }

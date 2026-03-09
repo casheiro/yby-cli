@@ -263,12 +263,9 @@ func TestBuildContext_TopologiaDesconhecida(t *testing.T) {
 		NonInteractive: true,
 	}
 
-	ctx, err := buildContext(o)
-	require.NoError(t, err)
-
-	// Topologia desconhecida cai no default do switch -> ["local"]
-	assert.Equal(t, []string{"local"}, ctx.Environments,
-		"Topologia desconhecida deveria retornar apenas 'local' como ambiente")
+	_, err := buildContext(o)
+	assert.Error(t, err, "Topologia desconhecida deve ser rejeitada pela validação")
+	assert.Contains(t, err.Error(), "topologia inválida")
 }
 
 func TestBuildContext_TopologiaVaziaComNonInteractivo(t *testing.T) {

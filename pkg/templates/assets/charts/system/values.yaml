@@ -10,6 +10,6 @@ argo-cd:
       server.insecure: true
 
 k3s:
-  version: v1.33.6+k3s1
+  version: v1.31.2+k3s1
   upgrade:
     enabled: true # Habilitar apenas quando quiser atualizar via GitOps

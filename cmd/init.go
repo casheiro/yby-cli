@@ -42,6 +42,9 @@ type InitOptions struct {
 	Email       string
 	Environment string
 
+	// Secrets
+	SecretsStrategy string
+
 	// Modules
 	EnableKepler        bool
 	EnableMinio         bool
@@ -51,6 +54,7 @@ type InitOptions struct {
 	// Modes
 	Offline        bool
 	NonInteractive bool
+	Force          bool
 }
 
 var opts InitOptions
@@ -65,6 +69,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Habilitar geração de CI/CD")
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
+	initCmd.Flags().BoolVar(&opts.Force, "force", false, "Sobrescrever projeto existente sem confirmação")
 
 	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
@@ -75,6 +80,8 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
+
+	initCmd.Flags().StringVar(&opts.SecretsStrategy, "secrets-strategy", "external-secrets", "Estratégia de secrets: sealed-secrets, external-secrets, sops")
 
 	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Habilitar módulo Kepler")
 	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Habilitar módulo MinIO")
@@ -125,10 +132,30 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			fmt.Printf("⚠️  Erro no hook 'context' dos plugins: %v\n", err)
 		}
 
+		// 1.5 Detecção de init duplo
+		targetDir := resolveTargetDir(opts.TargetDir)
+		blueprintPath := filepath.Join(targetDir, ".yby", "blueprint.yaml")
+		if _, err := os.Stat(blueprintPath); err == nil {
+			// Projeto já inicializado
+			if opts.Force {
+				fmt.Println("⚠️  Projeto Yby já inicializado. Sobrescrevendo (--force).")
+			} else if opts.NonInteractive {
+				return errors.New(errors.ErrCodeValidation,
+					"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
+			} else {
+				var confirm bool
+				confirmPrompt := &survey.Confirm{
+					Message: "⚠️  Projeto Yby já inicializado neste diretório. Deseja sobrescrever?",
+					Default: false,
+				}
+				if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
+					return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+				}
+			}
+		}
+
 		// 2. Execute Scaffold
 		fmt.Println("🚀 Gerando arquivos...")
-
-		targetDir := resolveTargetDir(opts.TargetDir)
 
 		// Prepare CompositeFS
 		// Layers: [Plugins Assets...] + [Core Embed Assets]
@@ -219,22 +246,14 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			fmt.Println("    Verifique se o Ollama está rodando ou se as chaves de API (GEMINI_API_KEY, OPENAI_API_KEY) estão definidas.")
 		}
 
-		// 3. Post-Scaffold: Generate Values Files for Environments
-		baseValues := filepath.Join(targetDir, "config/cluster-values.yaml")
-		// Verify if scaffold created baseValues
-		if _, err := os.Stat(baseValues); err == nil {
-			for _, env := range ctx.Environments {
-				target := filepath.Join(targetDir, fmt.Sprintf("config/values-%s.yaml", env))
-				if _, err := os.Stat(target); os.IsNotExist(err) {
-					// Copy content
-					if content, err := os.ReadFile(baseValues); err == nil {
-						// Simple replace if needed, or just clone
-						// For local env, we might want to override things?
-						// For now, clone is better than nothing.
-						_ = os.WriteFile(target, content, 0644)
-						fmt.Printf("   📄 Generated Config: %s\n", target)
-					}
-				}
+		// 3. Post-Scaffold: Generate Values Files for Environments (diferenciados)
+		for _, env := range ctx.Environments {
+			target := filepath.Join(targetDir, fmt.Sprintf("config/values-%s.yaml", env))
+			if _, err := os.Stat(target); os.IsNotExist(err) {
+				content := scaffold.RenderEnvironmentValues(ctx, env)
+				_ = os.MkdirAll(filepath.Dir(target), 0755)
+				_ = os.WriteFile(target, []byte(content), 0644)
+				fmt.Printf("   📄 Generated Config: %s\n", target)
 			}
 		}
 
@@ -257,6 +276,7 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		EnableMinio:         flags.EnableMinio,
 		EnableKEDA:          flags.EnableKEDA,
 		EnableMetricsServer: flags.EnableMetricsServer,
+		SecretsStrategy:     flags.SecretsStrategy,
 		Topology:            flags.Topology,
 		WorkflowPattern:     flags.Workflow,
 
@@ -490,6 +510,16 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 	}
 
 	// Post-Validation / Defaults
+
+	// Sanitizar project name em modo interativo
+	if interactive && ctx.ProjectName != "" {
+		ctx.ProjectName = scaffold.SanitizeProjectName(ctx.ProjectName)
+	}
+
+	// Validar contexto (project-name, domain, email, git-repo, topology, workflow)
+	if err := scaffold.ValidateContext(ctx); err != nil {
+		return nil, err
+	}
 
 	// Calcula lista de ambientes baseada na topologia
 	ctx.Environments = environmentsForTopology(ctx.Topology)

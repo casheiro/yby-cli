@@ -1,0 +1,38 @@
+# .github/workflows/continuous-deploy.yaml
+name: "🚀 Continuous Deploy (Trunk-Based)"
+
+on:
+  push:
+    branches:
+      - {{ .GitBranch }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    name: 🏗️ Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🧪 Run Tests
+        run: |
+          echo "Executar testes antes do deploy"
+          # go test ./... ou npm test
+
+      - name: 🐳 Build Container Image
+        run: |
+          echo "Build da imagem de container"
+          # docker build -t ghcr.io/${{ "{{" }} github.repository {{ "}}" }}:${{ "{{" }} github.sha {{ "}}" }} .
+
+      - name: 📦 Push Container Image
+        run: |
+          echo "Push da imagem para registry"
+          # docker push ghcr.io/${{ "{{" }} github.repository {{ "}}" }}:${{ "{{" }} github.sha {{ "}}" }}
+
+      - name: 🔄 Update GitOps Manifests
+        run: |
+          echo "Atualizar tag da imagem nos manifests GitOps"
+          # O ArgoCD detectará a mudança e fará o deploy automaticamente

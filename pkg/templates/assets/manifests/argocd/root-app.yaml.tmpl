@@ -12,7 +12,7 @@ spec:
   project: {{ .ProjectName }}
   source:
     repoURL: {{ .GitRepo }}
-    targetRevision: HEAD
+    targetRevision: {{ .GitBranch }}
     {{- if .RepoRootPath }}
     path: {{ .RepoRootPath }}/charts/bootstrap
     {{- else }}

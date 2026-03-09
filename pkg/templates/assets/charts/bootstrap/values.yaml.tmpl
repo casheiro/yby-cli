@@ -5,7 +5,7 @@
 # Repositório Git do Cluster
 git:
   repoURL: "{{ .GitRepo }}"
-  targetRevision: HEAD
+  targetRevision: {{ .GitBranch }}
   branch: {{ .GitBranch }}
   repoName: "{{ .ProjectName }}"
 
@@ -22,6 +22,7 @@ argocd:
 
 # Configurações de Eventos (Argo Events)
 events:
+  enabled: true
   eventbus:
     replicas: 1
     storageClass: local-path
@@ -41,7 +42,10 @@ observability:
   enabled: false
   grafana:
     enabled: false
-    adminPassword: "admin"
+    # Usar existingSecret para senha do Grafana em produção:
+    # existingSecret: grafana-admin-secret
+    # Para desenvolvimento local, definir adminPassword no values do ambiente
+    adminPassword: ""
   prometheus:
     enabled: true
     retention: "10d"
@@ -53,7 +57,6 @@ observability:
 discovery:
   enabled: {{ .GithubDiscovery }}  # Override: discovery.enabled
   scmProvider: github
-  organization: "{{ .GithubOrg }}"  # Override: discovery.organization
   organization: "{{ .GithubOrg }}"  # Override: discovery.organization
   topic: "yby-cluster"  # Default topic for discovery
   tokenSecretName: github-token
@@ -85,16 +88,12 @@ minio:
 
 # Scaling - Defaults
 keda:
-  enabled: true
+  enabled: false
 
 kepler:
-  enabled: true
+  enabled: false
   serviceMonitor:
     enabled: false
-
-# Events - Defaults
-events:
-  enabled: true
 
 # Connectivity - Defaults
 ingress:
@@ -102,7 +101,7 @@ ingress:
   tls:
     enabled: true
     issuer: letsencrypt-staging
-    email: admin@example.com
+    email: {{ .Email }}
 
 # Hosts Definitions (Used by Ingresses)
 hosts: {}

@@ -78,6 +78,10 @@ observability:
 kepler:
   enabled: {{ .EnableKepler }}
 
+# Autoscaling (KEDA)
+keda:
+  enabled: {{ .EnableKEDA }}
+
 # Armazenamento de Objetos (MinIO)
 storage:
   minio:

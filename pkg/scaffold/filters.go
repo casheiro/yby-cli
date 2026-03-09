@@ -66,7 +66,7 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 		}
 	}
 	if !ctx.EnableMetricsServer {
-		if strings.Contains(path, "manifests/observability/metrics-server.yaml") {
+		if strings.Contains(path, "manifests/observability/metrics-server") {
 			return true
 		}
 	}
