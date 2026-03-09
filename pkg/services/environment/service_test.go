@@ -52,7 +52,7 @@ func (m *MockMirrorService) EnsureGitServer() error {
 
 func (m *MockMirrorService) SetupTunnel(ctx context.Context) error {
 	if m.SetupTunnelFunc != nil {
-		return m.SetupTunnel(ctx)
+		return m.SetupTunnelFunc(ctx)
 	}
 	return nil
 }
