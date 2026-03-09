@@ -170,6 +170,73 @@ func TestBootstrapService_Run_CheckEnvVarsFalha(t *testing.T) {
 	assert.Contains(t, err.Error(), "GITHUB_REPO")
 }
 
+// ---- phaseConfigBootstrap com PatchApplication falhando ----
+
+type patchFailK8s struct {
+	MockK8sClient
+}
+
+func (k *patchFailK8s) PatchApplication(ctx context.Context, name, ns, patch string) error {
+	return errors.New("falha no patch")
+}
+
+func TestBootstrapService_PhaseConfigBootstrap_PatchFalha(t *testing.T) {
+	ctx, cancel := shortCtx()
+	defer cancel()
+
+	k8s := &patchFailK8s{}
+	svc := NewService(&MockRunner{}, &MockFilesystem{}, k8s)
+	// local=true dispara PatchApplication
+	err := svc.phaseConfigBootstrap(ctx, "/infra", "https://github.com/test/repo.git", "local", "local")
+	assert.Error(t, err)
+}
+
+// ---- Run com phaseSystemBootstrap falhando (cobre linha 57 do Run) ----
+
+func TestBootstrapService_Run_PhaseSystemFalha(t *testing.T) {
+	ctx, cancel := shortCtx()
+	defer cancel()
+
+	t.Setenv("GITHUB_REPO", "https://github.com/org/repo.git")
+
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return errors.New("falha no helm")
+		},
+	}
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return nil, os.ErrNotExist
+		},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+	err := svc.Run(ctx, BootstrapOptions{Root: "/infra", Context: "remote", Environment: "production"})
+	assert.Error(t, err)
+}
+
+// ---- Run com phaseConfigBootstrap falhando (cobre linha 67 do Run) ----
+
+func TestBootstrapService_Run_PhaseConfigFalha(t *testing.T) {
+	ctx, cancel := shortCtx()
+	defer cancel()
+
+	t.Setenv("GITHUB_REPO", "https://github.com/org/repo.git")
+
+	k8s := &MockK8sClient{
+		ApplyManifestFunc: func(ctx context.Context, path string, namespace string) error {
+			return errors.New("falha ao aplicar manifesto")
+		},
+	}
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return nil, os.ErrNotExist
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, k8s)
+	err := svc.Run(ctx, BootstrapOptions{Root: "/infra", Context: "remote", Environment: "production"})
+	assert.Error(t, err)
+}
+
 // ---- getRepoURLFromBlueprint ----
 
 func TestBootstrapService_GetRepoURLFromBlueprint_DefaultNaoString(t *testing.T) {

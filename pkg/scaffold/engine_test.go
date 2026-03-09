@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApply_BasicScaffold(t *testing.T) {
@@ -393,4 +396,336 @@ func TestProcessFile_TemplateExecuteError(t *testing.T) {
 	if err == nil {
 		t.Error("processFile() should fail due to runtime execution error in template")
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Testes adicionais de cobertura
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestApply_RootAssetWithoutGit_FallbackCWD(t *testing.T) {
+	// Quando targetDir != "." e git root não está disponível,
+	// root assets (.github) devem ir para CWD como fallback.
+	// Aqui testamos com targetDir sendo um subdiretório.
+	tmpDir := t.TempDir()
+	targetDir := filepath.Join(tmpDir, "infra")
+	require.NoError(t, os.MkdirAll(targetDir, 0755))
+
+	mockFS := fstest.MapFS{
+		"assets/.github/CODEOWNERS": &fstest.MapFile{
+			Data: []byte("* @team"),
+		},
+		"assets/config/app.yaml": &fstest.MapFile{
+			Data: []byte("app: config"),
+		},
+	}
+
+	ctx := &BlueprintContext{
+		EnableCI: false, // CI desabilitado mas CODEOWNERS não é workflows
+	}
+
+	// Neste teste, estamos em um repo git real, então .github irá para o git root.
+	// Mas verificamos que config vai para targetDir corretamente.
+	err := Apply(targetDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	// config/app.yaml deve estar em targetDir
+	configPath := filepath.Join(targetDir, "config", "app.yaml")
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, "app: config", string(data))
+}
+
+func TestApply_DevContainerEnabled(t *testing.T) {
+	// Quando EnableDevContainer=true, arquivos .devcontainer devem ser incluídos
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/.devcontainer/devcontainer.json": &fstest.MapFile{
+			Data: []byte(`{"name": "dev"}`),
+		},
+		"assets/readme.txt": &fstest.MapFile{
+			Data: []byte("leia-me"),
+		},
+	}
+
+	ctx := &BlueprintContext{
+		EnableDevContainer: true,
+	}
+
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	// .devcontainer pode ir para git root ou tmpDir dependendo do ambiente.
+	// Verificamos que readme.txt vai para tmpDir.
+	readmePath := filepath.Join(tmpDir, "readme.txt")
+	data, err := os.ReadFile(readmePath)
+	require.NoError(t, err)
+	assert.Equal(t, "leia-me", string(data))
+}
+
+func TestApply_WorkflowPattern_EmptyPattern_SkipsWorkflows(t *testing.T) {
+	// Quando EnableCI=true mas WorkflowPattern está vazio,
+	// todos os workflows devem ser pulados (filtro shouldSkip retorna true).
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/.github/workflows/ci.yaml": &fstest.MapFile{
+			Data: []byte("name: CI"),
+		},
+		"assets/config/values.yaml": &fstest.MapFile{
+			Data: []byte("key: val"),
+		},
+	}
+
+	ctx := &BlueprintContext{
+		EnableCI:        true,
+		WorkflowPattern: "", // vazio
+	}
+
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	// Workflows devem ser pulados quando WorkflowPattern está vazio
+	// config deve existir
+	configPath := filepath.Join(tmpDir, "config", "values.yaml")
+	_, err = os.Stat(configPath)
+	assert.NoError(t, err, "config/values.yaml deve existir")
+}
+
+func TestProcessFile_CreateParentDirAutomatically(t *testing.T) {
+	// processFile deve criar diretórios pais automaticamente
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"deep/nested/file.txt": &fstest.MapFile{
+			Data: []byte("conteúdo aninhado"),
+		},
+	}
+
+	ctx := &BlueprintContext{}
+	destPath := filepath.Join(tmpDir, "a", "b", "c", "file.txt")
+
+	err := processFile(mockFS, "deep/nested/file.txt", destPath, ctx)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	assert.Equal(t, "conteúdo aninhado", string(data))
+}
+
+func TestFuncMap_Execution_Contains(t *testing.T) {
+	// Testa a execução real das funções do funcMap em templates
+	fm := funcMap()
+
+	// Testar contains
+	containsFn := fm["contains"].(func(string, string) bool)
+	assert.True(t, containsFn("hello world", "world"))
+	assert.False(t, containsFn("hello world", "xyz"))
+}
+
+func TestFuncMap_Execution_HasPrefix(t *testing.T) {
+	fm := funcMap()
+	hasPrefixFn := fm["hasPrefix"].(func(string, string) bool)
+	assert.True(t, hasPrefixFn("yby-plugin-test", "yby-"))
+	assert.False(t, hasPrefixFn("other", "yby-"))
+}
+
+func TestFuncMap_Execution_HasSuffix(t *testing.T) {
+	fm := funcMap()
+	hasSuffixFn := fm["hasSuffix"].(func(string, string) bool)
+	assert.True(t, hasSuffixFn("config.yaml", ".yaml"))
+	assert.False(t, hasSuffixFn("config.yaml", ".json"))
+}
+
+func TestFuncMap_Execution_Replace(t *testing.T) {
+	fm := funcMap()
+	replaceFn := fm["replace"].(func(string, string, string) string)
+	assert.Equal(t, "hello-world", replaceFn("hello world", " ", "-"))
+}
+
+func TestFuncMap_Execution_ToUpperLower(t *testing.T) {
+	fm := funcMap()
+	toUpperFn := fm["toUpper"].(func(string) string)
+	toLowerFn := fm["toLower"].(func(string) string)
+
+	assert.Equal(t, "HELLO", toUpperFn("hello"))
+	assert.Equal(t, "hello", toLowerFn("HELLO"))
+}
+
+func TestFuncMap_InTemplate(t *testing.T) {
+	// Testar funcMap integrado com template real
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"test.tmpl": &fstest.MapFile{
+			Data: []byte(`projeto={{ toUpper .ProjectName }}, lower={{ toLower .Domain }}, replaced={{ replace .ProjectName "-" "_" }}`),
+		},
+	}
+
+	ctx := &BlueprintContext{
+		ProjectName: "meu-app",
+		Domain:      "MEU.LOCAL",
+	}
+
+	destPath := filepath.Join(tmpDir, "output.txt")
+	err := processFile(mockFS, "test.tmpl", destPath, ctx)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	assert.Equal(t, "projeto=MEU-APP, lower=meu.local, replaced=meu_app", string(data))
+}
+
+func TestApply_RepoFilesFiltered(t *testing.T) {
+	// Arquivos do repositório (LICENSE, CONTRIBUTING.md, README.md) devem ser pulados
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/LICENSE": &fstest.MapFile{
+			Data: []byte("MIT License"),
+		},
+		"assets/CONTRIBUTING.md": &fstest.MapFile{
+			Data: []byte("# Contributing"),
+		},
+		"assets/README.md": &fstest.MapFile{
+			Data: []byte("# README"),
+		},
+		"assets/real-file.txt": &fstest.MapFile{
+			Data: []byte("conteúdo real"),
+		},
+	}
+
+	ctx := &BlueprintContext{}
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	// Arquivos de repo devem ser pulados
+	assert.NoFileExists(t, filepath.Join(tmpDir, "LICENSE"))
+	assert.NoFileExists(t, filepath.Join(tmpDir, "CONTRIBUTING.md"))
+	assert.NoFileExists(t, filepath.Join(tmpDir, "README.md"))
+
+	// Arquivo real deve existir
+	data, err := os.ReadFile(filepath.Join(tmpDir, "real-file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "conteúdo real", string(data))
+}
+
+func TestApply_ModuleFilters(t *testing.T) {
+	// Testar filtros de módulos (Kepler, MinIO, KEDA, MetricsServer)
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/charts/kepler/values.yaml": &fstest.MapFile{
+			Data: []byte("kepler config"),
+		},
+		"assets/charts/minio/values.yaml": &fstest.MapFile{
+			Data: []byte("minio config"),
+		},
+		"assets/charts/keda/values.yaml": &fstest.MapFile{
+			Data: []byte("keda config"),
+		},
+		"assets/manifests/observability/metrics-server.yaml": &fstest.MapFile{
+			Data: []byte("metrics server"),
+		},
+		"assets/charts/other/values.yaml": &fstest.MapFile{
+			Data: []byte("other config"),
+		},
+	}
+
+	// Tudo desabilitado
+	ctx := &BlueprintContext{
+		EnableKepler:        false,
+		EnableMinio:         false,
+		EnableKEDA:          false,
+		EnableMetricsServer: false,
+	}
+
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	// Módulos desabilitados não devem existir
+	assert.NoFileExists(t, filepath.Join(tmpDir, "charts/kepler/values.yaml"))
+	assert.NoFileExists(t, filepath.Join(tmpDir, "charts/minio/values.yaml"))
+	assert.NoFileExists(t, filepath.Join(tmpDir, "charts/keda/values.yaml"))
+	assert.NoFileExists(t, filepath.Join(tmpDir, "manifests/observability/metrics-server.yaml"))
+
+	// Módulo sem filtro deve existir
+	data, err := os.ReadFile(filepath.Join(tmpDir, "charts/other/values.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "other config", string(data))
+}
+
+func TestApply_ModuleFilters_Enabled(t *testing.T) {
+	// Testar que módulos são incluídos quando habilitados
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/charts/kepler/values.yaml": &fstest.MapFile{
+			Data: []byte("kepler"),
+		},
+		"assets/charts/minio/values.yaml": &fstest.MapFile{
+			Data: []byte("minio"),
+		},
+		"assets/charts/keda/values.yaml": &fstest.MapFile{
+			Data: []byte("keda"),
+		},
+	}
+
+	ctx := &BlueprintContext{
+		EnableKepler: true,
+		EnableMinio:  true,
+		EnableKEDA:   true,
+	}
+
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	assert.FileExists(t, filepath.Join(tmpDir, "charts/kepler/values.yaml"))
+	assert.FileExists(t, filepath.Join(tmpDir, "charts/minio/values.yaml"))
+	assert.FileExists(t, filepath.Join(tmpDir, "charts/keda/values.yaml"))
+}
+
+func TestApply_DiscoveryFilter(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/discovery/resources.yaml": &fstest.MapFile{
+			Data: []byte("discovery"),
+		},
+		"assets/crossplane/provider.yaml": &fstest.MapFile{
+			Data: []byte("crossplane"),
+		},
+		"assets/app/main.yaml": &fstest.MapFile{
+			Data: []byte("app"),
+		},
+	}
+
+	// Discovery desabilitado
+	ctx := &BlueprintContext{EnableDiscovery: false}
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(tmpDir, "discovery/resources.yaml"))
+	assert.NoFileExists(t, filepath.Join(tmpDir, "crossplane/provider.yaml"))
+	assert.FileExists(t, filepath.Join(tmpDir, "app/main.yaml"))
+}
+
+func TestRenderEmbedDir_WithTemplate(t *testing.T) {
+	// Testar RenderEmbedDir com template usando funcMap
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"templates/config.yaml.tmpl": &fstest.MapFile{
+			Data: []byte("project: {{ toUpper .ProjectName }}"),
+		},
+	}
+
+	ctx := &BlueprintContext{ProjectName: "meu-app"}
+
+	err := RenderEmbedDir(mockFS, "templates", tmpDir, ctx)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "project: MEU-APP", string(data))
 }

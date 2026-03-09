@@ -4,25 +4,31 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
-type RealClusterNetworkManager struct{}
+// RealClusterNetworkManager implementa ClusterNetworkManager usando shared.Runner
+type RealClusterNetworkManager struct {
+	Runner shared.Runner
+}
 
+// NewClusterNetworkAdapter cria um adaptador de rede com o runner real
 func NewClusterNetworkAdapter() *RealClusterNetworkManager {
-	return &RealClusterNetworkManager{}
+	return &RealClusterNetworkManager{
+		Runner: &shared.RealRunner{},
+	}
 }
 
 func (m *RealClusterNetworkManager) GetCurrentContext() (string, error) {
-	out, err := exec.Command("kubectl", "config", "current-context").Output()
+	out, err := m.Runner.RunCombinedOutput(context.Background(), "kubectl", "config", "current-context")
 	return strings.TrimSpace(string(out)), err
 }
 
 func (m *RealClusterNetworkManager) GetSecretValue(ctx context.Context, kubeContext, ns, secret, jsonPathKey string) (string, error) {
-	cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "-n", ns, "get", "secret", secret, fmt.Sprintf("-o=jsonpath={.data.%s}", jsonPathKey))
-	out, err := cmd.Output()
+	out, err := m.Runner.RunCombinedOutput(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "-n", ns, "get", "secret", secret, fmt.Sprintf("-o=jsonpath={.data.%s}", jsonPathKey))
 	if err != nil {
 		return "", err
 	}
@@ -31,7 +37,7 @@ func (m *RealClusterNetworkManager) GetSecretValue(ctx context.Context, kubeCont
 }
 
 func (m *RealClusterNetworkManager) HasService(ctx context.Context, kubeContext, ns, service string) bool {
-	err := exec.CommandContext(ctx, "kubectl", "--context", kubeContext, "-n", ns, "get", "svc", service).Run()
+	err := m.Runner.Run(ctx, "kubectl", "--context", kubeContext, "-n", ns, "get", "svc", service)
 	return err == nil
 }
 
@@ -41,11 +47,7 @@ func (m *RealClusterNetworkManager) PortForward(ctx context.Context, kubeContext
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "-n", ns, "port-forward", resource, ports)
-			cmd.Stdout = nil
-			cmd.Stderr = nil
-
-			if err := cmd.Run(); err != nil {
+			if err := m.Runner.Run(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "-n", ns, "port-forward", resource, ports); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -58,41 +60,45 @@ func (m *RealClusterNetworkManager) PortForward(ctx context.Context, kubeContext
 }
 
 func (m *RealClusterNetworkManager) CreateToken(ctx context.Context, kubeContext, ns, serviceAccount, duration string) (string, error) {
-	cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "create", "token", serviceAccount, "-n", ns, "--duration="+duration)
-	out, err := cmd.Output()
+	out, err := m.Runner.RunCombinedOutput(ctx, "kubectl", "--context", kubeContext, "--insecure-skip-tls-verify", "create", "token", serviceAccount, "-n", ns, "--duration="+duration)
 	return strings.TrimSpace(string(out)), err
 }
 
 func (m *RealClusterNetworkManager) KillPortForward(port string) {
-	_ = exec.Command("pkill", "-f", fmt.Sprintf("port-forward.*%s", port)).Run()
+	_ = m.Runner.Run(context.Background(), "pkill", "-f", fmt.Sprintf("port-forward.*%s", port))
 }
 
-// Docker implementation
-type DockerContainerManager struct{}
+// DockerContainerManager implementa LocalContainerManager usando shared.Runner
+type DockerContainerManager struct {
+	Runner shared.Runner
+}
 
+// NewContainerAdapter cria um adaptador de containers com o runner real
 func NewContainerAdapter() *DockerContainerManager {
-	return &DockerContainerManager{}
+	return &DockerContainerManager{
+		Runner: &shared.RealRunner{},
+	}
 }
 
 func (d *DockerContainerManager) IsAvailable() bool {
-	_, err := exec.LookPath("docker")
+	_, err := d.Runner.LookPath("docker")
 	return err == nil
 }
 
 func (d *DockerContainerManager) StartGrafana(ctx context.Context) error {
 	addHost := "--add-host=host.docker.internal:host-gateway"
 
-	_ = exec.CommandContext(ctx, "docker", "volume", "create", "yby-grafana-data").Run()
-	_ = exec.CommandContext(ctx, "docker", "rm", "-f", "yby-grafana").Run()
+	_ = d.Runner.Run(ctx, "docker", "volume", "create", "yby-grafana-data")
+	_ = d.Runner.Run(ctx, "docker", "rm", "-f", "yby-grafana")
 
-	cmd := exec.CommandContext(ctx, "docker", "run", "-d",
+	out, err := d.Runner.RunCombinedOutput(ctx, "docker", "run", "-d",
 		"--name", "yby-grafana",
 		"-p", "3001:3000",
 		"-v", "yby-grafana-data:/var/lib/grafana",
 		addHost,
 		"grafana/grafana:latest")
 
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if err != nil {
 		return fmt.Errorf("%s", string(out))
 	}
 	return nil

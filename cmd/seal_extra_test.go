@@ -1,9 +1,16 @@
 package cmd
 
 import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -168,4 +175,279 @@ func TestSealCmd_LongDescription(t *testing.T) {
 		"Descrição longa deveria mencionar SealedSecrets")
 	assert.Contains(t, sealCmd.Long, "kubeseal",
 		"Descrição longa deveria mencionar kubeseal")
+}
+
+// ========================================================
+// sealCmd.Run — testes de fluxo com mocks
+// ========================================================
+
+// captureOutput captura a saída padrão durante a execução de uma função
+func captureOutput(f func()) string {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	f()
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	return buf.String()
+}
+
+func TestSealCmd_KubectlNotFound(t *testing.T) {
+	origLookPath := lookPath
+	defer func() { lookPath = origLookPath }()
+
+	lookPath = func(file string) (string, error) {
+		if file == "kubectl" {
+			return "", fmt.Errorf("not found")
+		}
+		return "/usr/bin/" + file, nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "kubectl",
+		"Deveria mencionar kubectl na mensagem de erro")
+	assert.Contains(t, output, "não encontrado",
+		"Deveria informar que não foi encontrado")
+}
+
+func TestSealCmd_KubesealNotFound(t *testing.T) {
+	origLookPath := lookPath
+	defer func() { lookPath = origLookPath }()
+
+	lookPath = func(file string) (string, error) {
+		if file == "kubeseal" {
+			return "", fmt.Errorf("not found")
+		}
+		return "/usr/bin/" + file, nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "kubeseal",
+		"Deveria mencionar kubeseal na mensagem de erro")
+	assert.Contains(t, output, "não encontrado",
+		"Deveria informar que não foi encontrado")
+}
+
+func TestSealCmd_SurveyError(t *testing.T) {
+	origLookPath := lookPath
+	origSurveyAsk := surveyAsk
+	defer func() {
+		lookPath = origLookPath
+		surveyAsk = origSurveyAsk
+	}()
+
+	lookPath = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		return fmt.Errorf("prompt interrompido pelo usuário")
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "prompt interrompido pelo usuário",
+		"Deveria exibir o erro do survey")
+}
+
+func TestSealCmd_KubectlCreateFails(t *testing.T) {
+	teardown := mockExecCommand()
+	defer teardown()
+
+	origSurveyAsk := surveyAsk
+	defer func() { surveyAsk = origSurveyAsk }()
+
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		v := reflect.ValueOf(response).Elem()
+		v.FieldByName("Name").SetString("fail-secret")
+		v.FieldByName("Namespace").SetString("default")
+		v.FieldByName("Key").SetString("password")
+		v.FieldByName("Value").SetString("secret123")
+		return nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "Erro ao gerar secret",
+		"Deveria informar erro ao gerar secret via kubectl")
+}
+
+func TestSealCmd_KubesealFails(t *testing.T) {
+	// Configurar execCommand com mock customizado para kubeseal falhar
+	originalExecCommand := execCommand
+	originalLookPath := lookPath
+	origSurveyAsk := surveyAsk
+	defer func() {
+		execCommand = originalExecCommand
+		lookPath = originalLookPath
+		surveyAsk = origSurveyAsk
+	}()
+
+	lookPath = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		env := []string{"GO_WANT_HELPER_PROCESS=1"}
+		if name == "kubeseal" {
+			env = append(env, "GO_KUBESEAL_FAIL=1")
+		}
+		cmd.Env = env
+		return cmd
+	}
+
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		v := reflect.ValueOf(response).Elem()
+		v.FieldByName("Name").SetString("test-secret")
+		v.FieldByName("Namespace").SetString("default")
+		v.FieldByName("Key").SetString("password")
+		v.FieldByName("Value").SetString("secret123")
+		return nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "Erro ao selar secret",
+		"Deveria informar erro ao selar com kubeseal")
+	assert.Contains(t, output, "Dica",
+		"Deveria exibir dica sobre certificado/cluster")
+}
+
+func TestSealCmd_SurveySuccess(t *testing.T) {
+	teardown := mockExecCommand()
+	defer teardown()
+
+	origSurveyAsk := surveyAsk
+	origAskOne := askOne
+	defer func() {
+		surveyAsk = origSurveyAsk
+		askOne = origAskOne
+	}()
+
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		v := reflect.ValueOf(response).Elem()
+		v.FieldByName("Name").SetString("test-secret")
+		v.FieldByName("Namespace").SetString("default")
+		v.FieldByName("Key").SetString("password")
+		v.FieldByName("Value").SetString("secret123")
+		return nil
+	}
+
+	tmpDir := t.TempDir()
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		r := response.(*string)
+		*r = filepath.Join(tmpDir, "sealed-secret-test.yaml")
+		return nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "Gerando Secret",
+		"Deveria mostrar mensagem de geração")
+	assert.Contains(t, output, "Selando com Kubeseal",
+		"Deveria mostrar mensagem de selagem")
+}
+
+func TestSealCmd_SaveFileSuccess(t *testing.T) {
+	teardown := mockExecCommand()
+	defer teardown()
+
+	origSurveyAsk := surveyAsk
+	origAskOne := askOne
+	defer func() {
+		surveyAsk = origSurveyAsk
+		askOne = origAskOne
+	}()
+
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		v := reflect.ValueOf(response).Elem()
+		v.FieldByName("Name").SetString("test-secret")
+		v.FieldByName("Namespace").SetString("default")
+		v.FieldByName("Key").SetString("password")
+		v.FieldByName("Value").SetString("secret123")
+		return nil
+	}
+
+	tmpDir := t.TempDir()
+	savedPath := filepath.Join(tmpDir, "subdir", "sealed-secret-test.yaml")
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		r := response.(*string)
+		*r = savedPath
+		return nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "SealedSecret salvo em",
+		"Deveria confirmar salvamento do arquivo")
+	assert.Contains(t, output, savedPath,
+		"Deveria mostrar o caminho do arquivo salvo")
+
+	// Verificar que o arquivo foi realmente criado
+	_, err := os.Stat(savedPath)
+	assert.NoError(t, err, "O arquivo selado deveria existir em disco")
+
+	// Verificar conteúdo do arquivo
+	content, err := os.ReadFile(savedPath)
+	assert.NoError(t, err, "Deveria ser possível ler o arquivo salvo")
+	assert.NotEmpty(t, content, "O arquivo salvo não deveria estar vazio")
+}
+
+func TestSealCmd_SaveFileInvalidPath(t *testing.T) {
+	teardown := mockExecCommand()
+	defer teardown()
+
+	origSurveyAsk := surveyAsk
+	origAskOne := askOne
+	defer func() {
+		surveyAsk = origSurveyAsk
+		askOne = origAskOne
+	}()
+
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		v := reflect.ValueOf(response).Elem()
+		v.FieldByName("Name").SetString("test-secret")
+		v.FieldByName("Namespace").SetString("default")
+		v.FieldByName("Key").SetString("password")
+		v.FieldByName("Value").SetString("secret123")
+		return nil
+	}
+
+	// Caminho inválido: diretório que não pode ser criado
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		r := response.(*string)
+		*r = "/dev/null/impossivel/sealed.yaml"
+		return nil
+	}
+
+	output := captureOutput(func() {
+		sealCmd.Run(sealCmd, []string{})
+	})
+
+	assert.Contains(t, output, "Erro ao salvar arquivo",
+		"Deveria informar erro ao salvar em caminho inválido")
 }

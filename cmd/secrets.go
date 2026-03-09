@@ -12,6 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newSecretsService é a factory para criação do serviço de secrets (mockável em testes)
+var newSecretsService = func(r shared.Runner, fs shared.Filesystem) secrets.Service {
+	return secrets.NewService(r, fs)
+}
+
 // secretsCmd represents the secret command
 var secretsCmd = &cobra.Command{
 	Use:   "secret",
@@ -53,7 +58,7 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
-		svc := secrets.NewService(runner, fsys)
+		svc := newSecretsService(runner, fsys)
 
 		opts := secrets.Options{
 			Provider:   provider,
@@ -92,7 +97,7 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
-		svc := secrets.NewService(runner, fsys)
+		svc := newSecretsService(runner, fsys)
 
 		opts := secrets.Options{
 			OutputPath: outputFile,
@@ -121,7 +126,7 @@ Necessário para o ApplicationSet descobrir repositórios.`,
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
-		svc := secrets.NewService(runner, fsys)
+		svc := newSecretsService(runner, fsys)
 
 		opts := secrets.Options{Token: token}
 
@@ -154,7 +159,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especific
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
-		svc := secrets.NewService(runner, fsys)
+		svc := newSecretsService(runner, fsys)
 
 		opts := secrets.Options{OutputPath: outputFile}
 
@@ -194,7 +199,7 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
-		svc := secrets.NewService(runner, fsys)
+		svc := newSecretsService(runner, fsys)
 
 		opts := secrets.Options{OutputPath: inputFile}
 

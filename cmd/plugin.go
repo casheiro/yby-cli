@@ -5,10 +5,16 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/spf13/cobra"
 )
+
+// newPluginManager é a factory para criação do gerenciador de plugins (mockável em testes)
+var newPluginManager = func() *plugin.Manager {
+	return plugin.NewManager()
+}
 
 // pluginCmd represents the plugin command
 var pluginCmd = &cobra.Command{
@@ -25,7 +31,7 @@ var pluginListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Lista plugins instalados",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pm := plugin.NewManager()
+		pm := newPluginManager()
 		if err := pm.Discover(); err != nil {
 			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao descobrir plugins")
 		}
@@ -49,7 +55,7 @@ var pluginInstallCmd = &cobra.Command{
 	Short: "Instala um plugin a partir de um arquivo local ou nome (atlas, bard, sentinel)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pm := plugin.NewManager()
+		pm := newPluginManager()
 		// Version resolution
 		targetVersion := Version
 		if v, _ := cmd.Flags().GetString("version"); v != "" {
@@ -71,7 +77,7 @@ var pluginRemoveCmd = &cobra.Command{
 	Short:   "Remove um plugin instalado",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pm := plugin.NewManager()
+		pm := newPluginManager()
 		if err := pm.Remove(args[0]); err != nil {
 			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao remover plugin")
 		}
@@ -84,7 +90,7 @@ var pluginUpdateCmd = &cobra.Command{
 	Use:   "update [name]",
 	Short: "Atualiza um ou todos os plugins instalados",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pm := plugin.NewManager()
+		pm := newPluginManager()
 		// Ensure discovery happens
 		if err := pm.Discover(); err != nil {
 			fmt.Printf("⚠️  Erro ao descobrir plugins: %v\n", err)

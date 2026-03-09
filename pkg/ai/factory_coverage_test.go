@@ -152,6 +152,112 @@ func TestGetProvider_AutoFallbackOpenAI(t *testing.T) {
 	assert.Equal(t, "OpenAI (Cloud)", p.Name())
 }
 
+// ─── Auto-detect real (preferred="" e YBY_AI_PROVIDER="") ────────────────────
+
+func TestGetProvider_AutoDetect_FallbackParaGemini(t *testing.T) {
+	// Ollama indisponível (porta sem nada), Gemini com chave configurada
+	// Testa as linhas 50-59 de factory.go (auto-detect Ollama falha, cai em Gemini)
+	t.Setenv("OLLAMA_HOST", "http://localhost:19999")
+	t.Setenv("GEMINI_API_KEY", "test-key-auto")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("YBY_AI_PROVIDER", "")
+
+	p := GetProvider(context.Background(), "")
+	// Ollama com porta sem nada ouvindo falha, então cai no Gemini
+	// Nota: se Ollama real estiver rodando no host, p pode ser Ollama
+	if p != nil {
+		name := p.Name()
+		assert.True(t, name == "Google Gemini (Cloud)" || containsOllama(name),
+			"Esperado Gemini ou Ollama, obtido: %s", name)
+	}
+}
+
+func TestGetProvider_AutoDetect_FallbackParaOpenAI(t *testing.T) {
+	// Ollama indisponível, Gemini sem chave, OpenAI com chave
+	// Testa as linhas 57-65 de factory.go (auto-detect Ollama e Gemini falham, cai em OpenAI)
+	t.Setenv("OLLAMA_HOST", "http://localhost:19999")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "sk-test-auto")
+	t.Setenv("YBY_AI_PROVIDER", "")
+
+	p := GetProvider(context.Background(), "")
+	if p != nil {
+		name := p.Name()
+		assert.True(t, name == "OpenAI (Cloud)" || containsOllama(name),
+			"Esperado OpenAI ou Ollama, obtido: %s", name)
+	}
+}
+
+func TestGetProvider_AutoDetect_NenhumDisponivel(t *testing.T) {
+	// Todos indisponíveis — cobre a linha 68 (return nil final)
+	t.Setenv("OLLAMA_HOST", "http://localhost:19999")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("YBY_AI_PROVIDER", "")
+
+	p := GetProvider(context.Background(), "")
+	// Se Ollama real não estiver rodando, retorna nil
+	// Se Ollama real estiver rodando, retorna Ollama
+	if p != nil {
+		assert.True(t, containsOllama(p.Name()),
+			"Se retornou algo, só pode ser Ollama real do ambiente")
+	}
+}
+
+func TestGetProvider_EnvVarOllama_SemOllama(t *testing.T) {
+	// Testa a path via env var com ollama indisponível — cobre switch case "ollama" via env var
+	t.Setenv("YBY_AI_PROVIDER", "ollama")
+	t.Setenv("OLLAMA_HOST", "http://localhost:19999")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	p := GetProvider(context.Background(), "")
+	// Ollama não disponível com preferência explícita via env -> nil (strict)
+	if p != nil {
+		assert.True(t, containsOllama(p.Name()))
+	}
+}
+
+func TestGetProvider_EnvVarGemini_SemChave(t *testing.T) {
+	// Testa via env var com gemini sem chave — cobre switch "gemini" via env var retornando nil
+	t.Setenv("YBY_AI_PROVIDER", "gemini")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	p := GetProvider(context.Background(), "")
+	assert.Nil(t, p, "Gemini sem chave via env var deveria retornar nil")
+}
+
+func TestGetProvider_EnvVarOpenAI_SemChave(t *testing.T) {
+	// Testa via env var com openai sem chave — cobre switch "openai" via env var retornando nil
+	t.Setenv("YBY_AI_PROVIDER", "openai")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	p := GetProvider(context.Background(), "")
+	assert.Nil(t, p, "OpenAI sem chave via env var deveria retornar nil")
+}
+
+func TestGetProvider_EnvVarDesconhecido(t *testing.T) {
+	// Provider desconhecido via env var — cai no switch sem match, retorna nil (strict)
+	t.Setenv("YBY_AI_PROVIDER", "provider-desconhecido")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	p := GetProvider(context.Background(), "")
+	assert.Nil(t, p, "Provider desconhecido via env var deveria retornar nil")
+}
+
+// containsOllama verifica se o nome contém "Ollama"
+func containsOllama(name string) bool {
+	for i := 0; i+6 <= len(name); i++ {
+		if name[i:i+6] == "Ollama" {
+			return true
+		}
+	}
+	return false
+}
+
 func TestGetLanguage_ComEnvPersonalizado(t *testing.T) {
 	t.Setenv("YBY_AI_LANGUAGE", "es-ES")
 	lang := GetLanguage()

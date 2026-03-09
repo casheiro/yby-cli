@@ -13,6 +13,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newBootstrapClusterService permite substituição em testes
+var newBootstrapClusterService = func(runner shared.Runner, fs shared.Filesystem) *bootstrap.BootstrapService {
+	k8s := &bootstrap.RealK8sClient{Runner: runner}
+	return bootstrap.NewService(runner, fs, k8s)
+}
+
 var bootstrapClusterCmd = &cobra.Command{
 	Use:   "cluster",
 	Short: "Instala a stack GitOps (ArgoCD, Workflows) no cluster conectado",
@@ -43,9 +49,7 @@ var bootstrapClusterCmd = &cobra.Command{
 		// Inject Dependencies
 		runner := &shared.RealRunner{}
 		filesystem := &shared.RealFilesystem{}
-		k8s := &bootstrap.RealK8sClient{Runner: runner}
-
-		svc := bootstrap.NewService(runner, filesystem, k8s)
+		svc := newBootstrapClusterService(runner, filesystem)
 
 		opts := bootstrap.BootstrapOptions{
 			Root:        root,

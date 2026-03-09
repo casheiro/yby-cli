@@ -34,15 +34,14 @@ Atua no bootstrap, governança e operação assistida, complementando o uso do k
 	PersistentPreRun: initConfig,
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	// Dynamic Plugin Discovery
-	// We scan for plugins before executing the root command so they are available as subcommands.
-	pm := plugin.NewManager()
+// newRootPluginManager é uma factory mockável para testes
+var newRootPluginManager = plugin.NewManager
+
+// discoverPlugins escaneia e registra plugins como subcomandos do rootCmd.
+func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 	if err := pm.Discover(); err == nil {
 		for _, p := range pm.ListPlugins() {
-			// Check if plugin supports "command" hook
+			// Verifica se o plugin suporta o hook "command"
 			hasCommandHook := false
 			for _, h := range p.Hooks {
 				if h == "command" {
@@ -52,32 +51,57 @@ func Execute() {
 			}
 
 			if hasCommandHook {
-				// Avoid collision with existing commands
-				if _, _, err := rootCmd.Find([]string{p.Name}); err == nil {
+				// Evita colisão com comandos existentes
+				// Find retorna o root cmd sem erro quando subcomando não existe,
+				// então comparamos o cmd retornado com o root para detectar colisão real
+				if foundCmd, _, err := cmd.Find([]string{p.Name}); err == nil && foundCmd != cmd {
 					continue
 				}
 
-				// Register dynamic command
+				// Registra comando dinâmico
 				pluginName := p.Name
 				desc := p.Description
 				if desc == "" {
 					desc = fmt.Sprintf("Executa o plugin %s", pluginName)
 				}
-				cmd := &cobra.Command{
+				pluginCmd := &cobra.Command{
 					Use:                pluginName,
 					Short:              desc,
-					DisableFlagParsing: true, // Pass flags directly to plugin
-					RunE: func(cmd *cobra.Command, args []string) error {
+					DisableFlagParsing: true, // Passa flags diretamente ao plugin
+					RunE: func(c *cobra.Command, args []string) error {
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {
 							return errors.Wrap(err, errors.ErrCodePlugin, fmt.Sprintf("Erro ao executar plugin %s", pluginName))
 						}
 						return nil
 					},
 				}
-				rootCmd.AddCommand(cmd)
+				cmd.AddCommand(pluginCmd)
 			}
 		}
 	}
+}
+
+// handleExecutionError trata erros de execução, diferenciando YbyError de erros genéricos.
+func handleExecutionError(err error) {
+	var yerr *errors.YbyError
+	if stdErr.As(err, &yerr) {
+		if logLevelFlag == "debug" {
+			// Na flag verbose/debug, printa o stack trace verboso %+v
+			slog.Error("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
+		} else {
+			// Se for normal, printa só a mensagem controlada
+			slog.Error("Falha na execução", "code", yerr.Code, "message", yerr.Message)
+		}
+	} else {
+		slog.Error("Falha inesperada", "erro", err)
+	}
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	pm := newRootPluginManager()
+	discoverPlugins(rootCmd, pm)
 
 	start := time.Now()
 	err := rootCmd.Execute()
@@ -86,18 +110,7 @@ func Execute() {
 	telemetry.Flush()
 
 	if err != nil {
-		var yerr *errors.YbyError
-		if stdErr.As(err, &yerr) {
-			if logLevelFlag == "debug" {
-				// Na flag verbose/debug, printa o stack trace verboso %+v
-				slog.Error("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
-			} else {
-				// Se for normal, printa só a mensagem controlada
-				slog.Error("Falha na execução", "code", yerr.Code, "message", yerr.Message)
-			}
-		} else {
-			slog.Error("Falha inesperada", "erro", err)
-		}
+		handleExecutionError(err)
 		os.Exit(1)
 	}
 }

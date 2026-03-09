@@ -78,18 +78,20 @@ func init() {
 	rootCmd.AddCommand(upCmd)
 }
 
-func runLocalUp(ctx context.Context, root string) error {
-	// 1. Dependency Injection Setup
+// newLocalEnvironmentService cria o serviço de ambiente local com todas as dependências (mockável em testes)
+var newLocalEnvironmentService = func(root string) *environment.EnvironmentService {
 	runner := &shared.RealRunner{}
 	fs := &shared.RealFilesystem{}
 	cluster := &environment.K3dClusterManager{Runner: runner}
 	mirrorAdapter := environment.NewGitMirrorAdapter(root, runner)
-
-	// Bootstrap dependencies
 	k8s := &bootstrap.RealK8sClient{Runner: runner}
 	bs := bootstrap.NewService(runner, fs, k8s)
+	return environment.NewEnvironmentService(runner, fs, cluster, mirrorAdapter, bs)
+}
 
-	envSvc := environment.NewEnvironmentService(runner, fs, cluster, mirrorAdapter, bs)
+func runLocalUp(ctx context.Context, root string) error {
+	// 1. Dependency Injection Setup
+	envSvc := newLocalEnvironmentService(root)
 
 	// 2. Options Resolution
 	clusterName := os.Getenv("YBY_CLUSTER_NAME")

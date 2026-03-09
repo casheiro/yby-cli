@@ -685,3 +685,609 @@ func TestBuildContext_SemGithubOrg_NaoOffline(t *testing.T) {
 	// porque ProjectName é "test" (explícito), não deve pedir --project-name
 	assert.NoError(t, err)
 }
+
+// ========================================================
+// buildContext — cobertura da seção de IA interativa
+// ========================================================
+
+func TestBuildContext_InterativoComIAHabilitada(t *testing.T) {
+	// Testa o path interativo onde o usuário habilita IA,
+	// seleciona provider e fornece descrição.
+	// Cobre as linhas 455-488 de init.go
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/ai-test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "ai-test-project"
+			case strings.Contains(prompt.Message, "Descreva seu projeto"):
+				*(response.(*string)) = "Um gateway de pagamento seguro"
+			}
+		case *survey.Select:
+			switch {
+			case strings.Contains(prompt.Message, "Topologia"):
+				*(response.(*string)) = "standard"
+			case strings.Contains(prompt.Message, "Workflow"):
+				*(response.(*string)) = "gitflow"
+			case strings.Contains(prompt.Message, "Provedor de IA"):
+				*(response.(*string)) = "gemini"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			// Habilita IA e DevContainer
+			*(response.(*bool)) = true
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "", // Dispara modo interativo
+		Offline:        false,
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+
+	assert.Equal(t, "standard", ctx.Topology)
+	assert.Equal(t, "gitflow", ctx.WorkflowPattern)
+	assert.Equal(t, "ai-test-project", ctx.ProjectName)
+	assert.True(t, ctx.EnableDevContainer, "DevContainer deveria ser habilitado (Confirm=true)")
+}
+
+func TestBuildContext_InterativoIADesabilitada(t *testing.T) {
+	// Testa o path onde enableAI = false (usuário recusa) — não entra no bloco de seleção de provider
+	callCount := 0
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		callCount++
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "no-ai-project"
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "single"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			// Desabilita tudo (IA e DevContainer)
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+
+	assert.Equal(t, "single", ctx.Topology)
+	assert.Equal(t, "essential", ctx.WorkflowPattern)
+	assert.False(t, ctx.EnableDevContainer, "DevContainer deveria ser false (Confirm=false)")
+}
+
+func TestBuildContext_InterativoComAIProviderJaDefinido(t *testing.T) {
+	// Quando AIProvider já está definido via flag, não pergunta o Select de provider
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "ai-flag-project"
+			case strings.Contains(prompt.Message, "Descreva seu projeto"):
+				*(response.(*string)) = "Projeto com IA pré-configurada"
+			}
+		case *survey.Select:
+			switch {
+			case strings.Contains(prompt.Message, "Topologia"):
+				*(response.(*string)) = "standard"
+			case strings.Contains(prompt.Message, "Workflow"):
+				*(response.(*string)) = "essential"
+			case strings.Contains(prompt.Message, "Provedor de IA"):
+				// Este prompt NÃO deve ser chamado quando AIProvider já está definido
+				t.Error("Não deveria perguntar o provedor de IA quando já está definido via flag")
+				*(response.(*string)) = "auto"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			*(response.(*bool)) = true
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+		AIProvider:     "gemini", // Já definido via flag
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.Equal(t, "standard", ctx.Topology)
+	assert.NotNil(t, ctx)
+}
+
+func TestBuildContext_InterativoProviderAutoSelecionado(t *testing.T) {
+	// Quando o usuário seleciona "auto" no prompt de provider, AIProvider é resetado para ""
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "auto-ai-project"
+			case strings.Contains(prompt.Message, "Descreva seu projeto"):
+				*(response.(*string)) = "Projeto teste auto"
+			}
+		case *survey.Select:
+			switch {
+			case strings.Contains(prompt.Message, "Topologia"):
+				*(response.(*string)) = "standard"
+			case strings.Contains(prompt.Message, "Workflow"):
+				*(response.(*string)) = "essential"
+			case strings.Contains(prompt.Message, "Provedor de IA"):
+				*(response.(*string)) = "auto"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			*(response.(*bool)) = true
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.NotNil(t, ctx)
+	// AIProvider deve ter sido resetado para "" quando "auto" é selecionado
+	assert.Equal(t, "", o.AIProvider,
+		"AIProvider deveria ser '' após seleção de 'auto' no prompt")
+}
+
+func TestBuildContext_InterativoPromptTopologiaCancelado(t *testing.T) {
+	// Cancelamento no prompt de topologia (com TargetDir já fornecido)
+	originalAskOne := askOne
+	callIdx := 0
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		callIdx++
+		switch prompt := p.(type) {
+		case *survey.Input:
+			if strings.Contains(prompt.Message, "Onde deseja inicializar") {
+				*(response.(*string)) = "/tmp/test"
+				return nil
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				return fmt.Errorf("prompt cancelado")
+			}
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+	}
+
+	_, err := buildContext(o)
+	assert.Error(t, err, "Deveria falhar quando prompt de topologia é cancelado")
+}
+
+func TestBuildContext_InterativoPromptWorkflowCancelado(t *testing.T) {
+	// Cancelamento no prompt de workflow
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			if strings.Contains(prompt.Message, "Onde deseja inicializar") {
+				*(response.(*string)) = "."
+				return nil
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+				return nil
+			}
+			if strings.Contains(prompt.Message, "Workflow") {
+				return fmt.Errorf("prompt cancelado")
+			}
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+		Workflow:       "",
+	}
+
+	_, err := buildContext(o)
+	assert.Error(t, err, "Deveria falhar quando prompt de workflow é cancelado")
+}
+
+func TestBuildContext_InterativoPromptGitRepoCancelado(t *testing.T) {
+	// Cancelamento no prompt de Git Repo
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+				return nil
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				return fmt.Errorf("prompt cancelado")
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+				return nil
+			}
+			if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+				return nil
+			}
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+	}
+
+	_, err := buildContext(o)
+	assert.Error(t, err, "Deveria falhar quando prompt de Git repo é cancelado")
+}
+
+func TestBuildContext_InterativoPromptModulosCancelado(t *testing.T) {
+	// Cancelamento no prompt de módulos MultiSelect
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "test"
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			return fmt.Errorf("prompt cancelado")
+		case *survey.Confirm:
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+	}
+
+	_, err := buildContext(o)
+	assert.Error(t, err, "Deveria falhar quando prompt de módulos é cancelado")
+}
+
+func TestBuildContext_InterativoPromptDevContainerCancelado(t *testing.T) {
+	// Cancelamento no prompt de DevContainer (Confirm)
+	originalAskOne := askOne
+	confirmCount := 0
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "test"
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			confirmCount++
+			if strings.Contains(prompt.Message, "DevContainer") {
+				return fmt.Errorf("prompt cancelado")
+			}
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+	}
+
+	_, err := buildContext(o)
+	assert.Error(t, err, "Deveria falhar quando prompt de DevContainer é cancelado")
+}
+
+func TestBuildContext_InterativoComDevContainerJaDefinido(t *testing.T) {
+	// Quando IncludeDevContainer já é true via flag, não pergunta o Confirm
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "devcontainer-flag"
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			if strings.Contains(prompt.Message, "DevContainer") {
+				t.Error("Não deveria perguntar sobre DevContainer quando flag já está true")
+			}
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive:      false,
+		Topology:            "",
+		IncludeDevContainer: true, // Já definido
+		Offline:             true, // Para pular seção de IA
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.True(t, ctx.EnableDevContainer, "DevContainer deveria manter true da flag")
+}
+
+func TestBuildContext_InterativoKeplerJaHabilitado(t *testing.T) {
+	// Quando EnableKepler já é true, deve aparecer nos defaults do MultiSelect
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "kepler-test"
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			// Verifica que os defaults contêm Kepler
+			if prompt, ok := p.(*survey.MultiSelect); ok {
+				foundKepler := false
+				for _, d := range prompt.Default.([]string) {
+					if strings.Contains(d, "Kepler") {
+						foundKepler = true
+					}
+				}
+				assert.True(t, foundKepler, "Default do MultiSelect deveria conter Kepler")
+			}
+			*(response.(*[]string)) = []string{"Kepler (Eficiência Energética)"}
+		case *survey.Confirm:
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+		EnableKepler:   true,
+		Offline:        true,
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.True(t, ctx.EnableKepler)
+}
+
+func TestBuildContext_InterativoComGitRepoPreenchido(t *testing.T) {
+	// Quando GitRepo já está definido, não pergunta a URL — mas ajusta o defaultName
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				t.Error("Não deveria perguntar URL do repo quando já está definido")
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				// O default deveria ser derivado do git repo
+				*(response.(*string)) = prompt.Default
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+		GitRepo:        "https://github.com/org/meu-repo.git",
+		Offline:        true,
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.Equal(t, "meu-repo", ctx.ProjectName,
+		"ProjectName deveria ser derivado do GitRepo")
+}
+
+func TestBuildContext_InterativoComDomainEEmailCustom(t *testing.T) {
+	// Quando Domain e Email já foram customizados, não pergunta novamente
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "custom-domain-test"
+			case strings.Contains(prompt.Message, "Domínio Base"):
+				t.Error("Não deveria perguntar Domain quando já está customizado")
+			case strings.Contains(prompt.Message, "Email"):
+				t.Error("Não deveria perguntar Email quando já está customizado")
+			}
+		case *survey.Select:
+			if strings.Contains(prompt.Message, "Topologia") {
+				*(response.(*string)) = "standard"
+			} else if strings.Contains(prompt.Message, "Workflow") {
+				*(response.(*string)) = "essential"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			*(response.(*bool)) = false
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+		Domain:         "custom.example.com",
+		Email:          "admin@custom.example.com",
+		Offline:        true,
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.Equal(t, "custom.example.com", ctx.Domain)
+	assert.Equal(t, "admin@custom.example.com", ctx.Email)
+}
+
+func TestBuildContext_InterativoComDescriptionJaDefinida(t *testing.T) {
+	// Quando Description já está definida, não pergunta no prompt interativo de IA
+	originalAskOne := askOne
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		switch prompt := p.(type) {
+		case *survey.Input:
+			switch {
+			case strings.Contains(prompt.Message, "Onde deseja inicializar"):
+				*(response.(*string)) = "."
+			case strings.Contains(prompt.Message, "URL do repositório"):
+				*(response.(*string)) = "https://github.com/org/test.git"
+			case strings.Contains(prompt.Message, "Nome do Projeto"):
+				*(response.(*string)) = "desc-flag-test"
+			case strings.Contains(prompt.Message, "Descreva seu projeto"):
+				t.Error("Não deveria perguntar a descrição quando já está definida via flag")
+			}
+		case *survey.Select:
+			switch {
+			case strings.Contains(prompt.Message, "Topologia"):
+				*(response.(*string)) = "standard"
+			case strings.Contains(prompt.Message, "Workflow"):
+				*(response.(*string)) = "essential"
+			case strings.Contains(prompt.Message, "Provedor de IA"):
+				*(response.(*string)) = "auto"
+			}
+		case *survey.MultiSelect:
+			*(response.(*[]string)) = []string{}
+		case *survey.Confirm:
+			*(response.(*bool)) = true
+		}
+		return nil
+	}
+	defer func() { askOne = originalAskOne }()
+
+	o := &InitOptions{
+		NonInteractive: false,
+		Topology:       "",
+		Description:    "Projeto já descrito via flag",
+	}
+
+	ctx, err := buildContext(o)
+	require.NoError(t, err)
+	assert.NotNil(t, ctx)
+}

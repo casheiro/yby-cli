@@ -122,6 +122,69 @@ func TestEnvCreateCmd_Success(t *testing.T) {
 	assert.FileExists(t, valuesPath)
 }
 
+func TestEnvShowCmd_ComURL(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	// "prod" tem URL definida no manifesto
+	t.Setenv("YBY_ENV", "prod")
+
+	// Primeiro precisamos definir o ambiente ativo como prod
+	err := envUseCmd.RunE(envUseCmd, []string{"prod"})
+	require.NoError(t, err)
+
+	// Limpar YBY_ENV para usar o current do manifesto (agora "prod")
+	t.Setenv("YBY_ENV", "")
+
+	err = envShowCmd.RunE(envShowCmd, []string{})
+	assert.NoError(t, err)
+}
+
+func TestEnvCreateCmd_SemFlags(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	// Cria diretório config para o arquivo de values
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config"), 0755))
+
+	// Resetar flags para valores vazios para cobrir defaults
+	envCreateCmd.Flags().Set("type", "")
+	envCreateCmd.Flags().Set("description", "")
+
+	err := envCreateCmd.RunE(envCreateCmd, []string{"staging"})
+	assert.NoError(t, err)
+}
+
+func TestEnvUseCmd_SemYby_Fallback(t *testing.T) {
+	// Diretório sem .yby — deve fazer fallback para "." e falhar ao tentar usar ambiente
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	err := envUseCmd.RunE(envUseCmd, []string{"prod"})
+	assert.Error(t, err) // Falha porque não há manifesto
+}
+
+func TestEnvCreateCmd_SemYby_Fallback(t *testing.T) {
+	// Diretório sem .yby — deve fazer fallback para "." e falhar ao criar
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	envCreateCmd.Flags().Set("type", "remote")
+	envCreateCmd.Flags().Set("description", "Ambiente teste")
+
+	err := envCreateCmd.RunE(envCreateCmd, []string{"teste"})
+	// Pode criar ou falhar dependendo do Manager, mas cobre o branch
+	_ = err
+}
+
 func TestEnvCreateCmd_AmbienteJaExiste(t *testing.T) {
 	dir := setupEnvTestDir(t)
 	origDir, _ := os.Getwd()

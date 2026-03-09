@@ -32,6 +32,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// surveyAsk é uma variável para permitir mocking nos testes
+var surveyAsk = survey.Ask
+
 // sealCmd represents the seal command
 var sealCmd = &cobra.Command{
 	Use:   "seal",
@@ -92,7 +95,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 			},
 		}
 
-		err := survey.Ask(qs, &answers)
+		err := surveyAsk(qs, &answers)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
@@ -141,7 +144,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 			Default: filepath.Join(targetDir, filename),
 		}
 		var finalPath string
-		_ = survey.AskOne(pathPrompt, &finalPath)
+		_ = askOne(pathPrompt, &finalPath)
 
 		// Garantir diretório
 		_ = os.MkdirAll(filepath.Dir(finalPath), 0755)

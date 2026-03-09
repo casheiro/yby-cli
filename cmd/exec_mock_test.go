@@ -53,7 +53,26 @@ func TestHelperProcess(t *testing.T) {
 				os.Exit(1)
 			}
 		}
+		// Simular falha ao criar secret genérico quando nome é "fail-secret"
+		if len(args) >= 4 && args[0] == "create" && args[1] == "secret" && args[2] == "generic" {
+			if args[3] == "fail-secret" {
+				fmt.Fprintln(os.Stderr, "erro ao criar secret")
+				os.Exit(1)
+			}
+			// Sucesso: emitir YAML mock para o secret
+			fmt.Fprintln(os.Stdout, "apiVersion: v1\nkind: Secret\nmetadata:\n  name: test-secret")
+			return
+		}
 		// Mock success for kubectl by default
+		return
+	case "kubeseal":
+		// Se variável de ambiente indicar falha, simular erro
+		if os.Getenv("GO_KUBESEAL_FAIL") == "1" {
+			fmt.Fprintln(os.Stderr, "erro ao selar secret")
+			os.Exit(1)
+		}
+		// Sucesso: emitir YAML mock de sealed secret
+		fmt.Fprintln(os.Stdout, "apiVersion: bitnami.com/v1alpha1\nkind: SealedSecret\nmetadata:\n  name: sealed-test")
 		return
 	}
 }

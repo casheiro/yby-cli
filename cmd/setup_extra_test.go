@@ -145,6 +145,125 @@ func TestAttemptInstall_FalhaInstalacao(t *testing.T) {
 	})
 }
 
+// TestSetupCmd_DevProfile_FerramentasFaltando testa o caminho com ferramentas ausentes (sem prompt interativo)
+func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
+	originalLookPath := lookPath
+	originalExecCommand := execCommand
+	defer func() {
+		lookPath = originalLookPath
+		execCommand = originalExecCommand
+	}()
+
+	// Simula k3d e direnv ausentes
+	lookPath = func(file string) (string, error) {
+		if file == "k3d" || file == "direnv" {
+			return "", fmt.Errorf("not found: %s", file)
+		}
+		return "/usr/bin/" + file, nil
+	}
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+		return cmd
+	}
+
+	setupCmd.Flags().Set("profile", "dev")
+
+	// O comando não entra em pânico; survey.AskOne falha silenciosamente sem stdin
+	capturarStdout(t, func() {
+		err := setupCmd.RunE(setupCmd, []string{})
+		assert.NoError(t, err)
+	})
+}
+
+// TestSetupCmd_ServerProfile_FerramentasFaltando testa o perfil server com ferramentas ausentes
+func TestSetupCmd_ServerProfile_FerramentasFaltando(t *testing.T) {
+	originalLookPath := lookPath
+	originalExecCommand := execCommand
+	defer func() {
+		lookPath = originalLookPath
+		execCommand = originalExecCommand
+	}()
+
+	lookPath = func(file string) (string, error) {
+		if file == "helm" {
+			return "", fmt.Errorf("not found: %s", file)
+		}
+		return "/usr/bin/" + file, nil
+	}
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+		return cmd
+	}
+
+	setupCmd.Flags().Set("profile", "server")
+	defer setupCmd.Flags().Set("profile", "dev")
+
+	capturarStdout(t, func() {
+		err := setupCmd.RunE(setupCmd, []string{})
+		assert.NoError(t, err)
+	})
+}
+
+// TestConfigureDirenv_CriaEnvrc testa a criação do .envrc
+func TestConfigureDirenv_CriaEnvrc(t *testing.T) {
+	originalExecCommand := execCommand
+	defer func() { execCommand = originalExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+		return cmd
+	}
+
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	capturarStdout(t, func() {
+		configureDirenv()
+	})
+
+	// Verifica que o .envrc foi criado
+	assert.FileExists(t, dir+"/.envrc")
+}
+
+// TestConfigureDirenv_EnvrcJaExiste testa quando .envrc já existe
+func TestConfigureDirenv_EnvrcJaExiste(t *testing.T) {
+	originalExecCommand := execCommand
+	defer func() { execCommand = originalExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+		return cmd
+	}
+
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	// Cria .envrc antes
+	os.WriteFile(dir+"/.envrc", []byte("existente"), 0644)
+
+	capturarStdout(t, func() {
+		configureDirenv()
+	})
+
+	// Verifica que o conteúdo original foi preservado
+	data, _ := os.ReadFile(dir + "/.envrc")
+	assert.Equal(t, "existente", string(data))
+}
+
 func TestAttemptInstall_ListaVazia(t *testing.T) {
 	originalLookPath := lookPath
 	defer func() { lookPath = originalLookPath }()

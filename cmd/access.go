@@ -15,6 +15,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newNetworkAdapter cria o adaptador de rede do cluster (mockável em testes)
+var newNetworkAdapter = func() network.ClusterNetworkManager {
+	return network.NewClusterNetworkAdapter()
+}
+
+// newContainerAdapter cria o adaptador de containers locais (mockável em testes)
+var newContainerAdapter = func() network.LocalContainerManager {
+	return network.NewContainerAdapter()
+}
+
 // accessCmd represents the access command
 var accessCmd = &cobra.Command{
 	Use:   "access",
@@ -46,9 +56,9 @@ Você pode especificar um contexto (local/prod) com --context.`,
 
 		targetContext, _ := cmd.Flags().GetString("context")
 
-		// Dependency Injection
-		netAdapter := network.NewClusterNetworkAdapter()
-		containerAdapter := network.NewContainerAdapter()
+		// Dependency Injection (factories mockáveis)
+		netAdapter := newNetworkAdapter()
+		containerAdapter := newContainerAdapter()
 		accessSvc := network.NewAccessService(netAdapter, containerAdapter)
 
 		opts := network.AccessOptions{
