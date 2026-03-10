@@ -63,3 +63,4 @@ spec.md
 temp/
 
 reports/
+.devcontainer/
