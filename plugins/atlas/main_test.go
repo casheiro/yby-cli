@@ -231,6 +231,119 @@ func TestHookContext_DescobertaDeComponentes(t *testing.T) {
 	}
 }
 
+// TestHookContext_ComConfigExterna verifica que o hook "context" respeita
+// a configuração externa .yby/atlas.yaml quando presente.
+func TestHookContext_ComConfigExterna(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	// Preparar diretório com estrutura conhecida
+	tmpDir := t.TempDir()
+
+	// Criar .yby/atlas.yaml com ignores e regras customizadas
+	ybyDir := filepath.Join(tmpDir, ".yby")
+	if err := os.MkdirAll(ybyDir, 0755); err != nil {
+		t.Fatalf("falha ao criar diretório .yby: %v", err)
+	}
+	configContent := `ignores:
+  - ignorar-este
+rules:
+  - match_file: "custom.marker"
+    type: "lib"
+`
+	if err := os.WriteFile(filepath.Join(ybyDir, "atlas.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("falha ao criar atlas.yaml: %v", err)
+	}
+
+	// Criar componente customizado
+	customDir := filepath.Join(tmpDir, "minha-lib")
+	if err := os.MkdirAll(customDir, 0755); err != nil {
+		t.Fatalf("falha ao criar diretório: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(customDir, "custom.marker"), []byte(""), 0644); err != nil {
+		t.Fatalf("falha ao criar custom.marker: %v", err)
+	}
+
+	// Criar componente que deve ser ignorado
+	ignoredDir := filepath.Join(tmpDir, "ignorar-este", "service")
+	if err := os.MkdirAll(ignoredDir, 0755); err != nil {
+		t.Fatalf("falha ao criar diretório ignorado: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ignoredDir, "go.mod"), []byte("module ignorado\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar go.mod ignorado: %v", err)
+	}
+
+	req := plugin.PluginRequest{Hook: "context"}
+	reqJSON, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("falha ao serializar requisição: %v", err)
+	}
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar atlas context: %v", err)
+	}
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v\nSaída: %s", err, output)
+	}
+
+	if resp.Error != "" {
+		t.Fatalf("resposta contém erro: %s", resp.Error)
+	}
+
+	// Verificar que blueprint está presente
+	dataMap, ok := resp.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Data não é map[string]interface{}, tipo: %T", resp.Data)
+	}
+
+	blueprint, ok := dataMap["blueprint"]
+	if !ok {
+		t.Fatal("resposta não contém campo 'blueprint'")
+	}
+
+	bpMap, ok := blueprint.(map[string]interface{})
+	if !ok {
+		t.Fatalf("blueprint não é map[string]interface{}, tipo: %T", blueprint)
+	}
+
+	components, ok := bpMap["components"].([]interface{})
+	if !ok {
+		t.Fatalf("components não é slice, tipo: %T", bpMap["components"])
+	}
+
+	// Verificar que o componente customizado foi detectado
+	encontrouCustom := false
+	encontrouIgnorado := false
+	for _, c := range components {
+		comp, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		nome, _ := comp["name"].(string)
+		tipo, _ := comp["type"].(string)
+
+		if tipo == "lib" && nome == "minha-lib" {
+			encontrouCustom = true
+		}
+		if nome == "service" {
+			encontrouIgnorado = true
+		}
+	}
+
+	if !encontrouCustom {
+		t.Error("esperado componente do tipo 'lib' com nome 'minha-lib' (regra customizada)")
+	}
+	if encontrouIgnorado {
+		t.Error("componente no diretório 'ignorar-este' deveria ter sido ignorado")
+	}
+}
+
 // TestHookDesconhecido_RetornaErro verifica que um hook inválido retorna erro.
 func TestHookDesconhecido_RetornaErro(t *testing.T) {
 	binPath := helperBuildAtlas(t)

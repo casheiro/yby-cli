@@ -1,7 +1,10 @@
 package indexer
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSplitMarkdown(t *testing.T) {
@@ -55,5 +58,75 @@ Short.`
 
 	if len(chunks) != 2 {
 		t.Errorf("Expected 2 valid chunks (small one accepted > 10 chars), got %d", len(chunks))
+	}
+}
+
+// TestIndexManifest_SaveAndLoad verifica que o manifest pode ser salvo e carregado corretamente.
+func TestIndexManifest_SaveAndLoad(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx := &Indexer{RootDir: tmpDir}
+
+	manifest := &IndexManifest{
+		Files: map[string]IndexedFile{
+			"test.md": {SHA256: "abc123", IndexedAt: time.Now()},
+		},
+	}
+
+	err := idx.saveManifest(manifest)
+	if err != nil {
+		t.Fatalf("falha ao salvar manifest: %v", err)
+	}
+
+	loaded := idx.loadManifest()
+	if len(loaded.Files) != 1 {
+		t.Fatalf("esperado 1 arquivo no manifest, obtido %d", len(loaded.Files))
+	}
+	if loaded.Files["test.md"].SHA256 != "abc123" {
+		t.Errorf("hash esperado 'abc123', obtido %q", loaded.Files["test.md"].SHA256)
+	}
+}
+
+// TestFileHash_Deterministico verifica que o hash é determinístico para o mesmo conteúdo.
+func TestFileHash_Deterministico(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.txt")
+	os.WriteFile(path, []byte("conteúdo fixo"), 0644)
+
+	h1, err := fileHash(path)
+	if err != nil {
+		t.Fatalf("fileHash falhou: %v", err)
+	}
+	h2, _ := fileHash(path)
+	if h1 != h2 {
+		t.Error("hash deveria ser determinístico")
+	}
+}
+
+// TestFileHash_DiferenteParaConteudoDiferente verifica que conteúdos diferentes geram hashes diferentes.
+func TestFileHash_DiferenteParaConteudoDiferente(t *testing.T) {
+	tmpDir := t.TempDir()
+	path1 := filepath.Join(tmpDir, "a.txt")
+	path2 := filepath.Join(tmpDir, "b.txt")
+	os.WriteFile(path1, []byte("conteúdo A"), 0644)
+	os.WriteFile(path2, []byte("conteúdo B"), 0644)
+
+	h1, _ := fileHash(path1)
+	h2, _ := fileHash(path2)
+	if h1 == h2 {
+		t.Error("hashes deveriam ser diferentes para conteúdos diferentes")
+	}
+}
+
+// TestLoadManifest_ArquivoInexistente verifica que carregar de um arquivo inexistente retorna manifest vazio.
+func TestLoadManifest_ArquivoInexistente(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx := &Indexer{RootDir: tmpDir}
+
+	loaded := idx.loadManifest()
+	if loaded == nil {
+		t.Fatal("manifest não deveria ser nil")
+	}
+	if len(loaded.Files) != 0 {
+		t.Errorf("esperado 0 arquivos no manifest, obtido %d", len(loaded.Files))
 	}
 }

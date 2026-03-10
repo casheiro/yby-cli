@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// ---- Blueprint and Component types ----
+// ---- Blueprint e Component ----
 
 func TestBlueprint_Empty(t *testing.T) {
 	bp := &Blueprint{
@@ -14,10 +14,10 @@ func TestBlueprint_Empty(t *testing.T) {
 		Roots:      []string{"/project"},
 	}
 	if len(bp.Components) != 0 {
-		t.Errorf("expected no components, got %d", len(bp.Components))
+		t.Errorf("esperado nenhum componente, obtido %d", len(bp.Components))
 	}
 	if len(bp.Roots) != 1 || bp.Roots[0] != "/project" {
-		t.Errorf("expected roots [/project], got %v", bp.Roots)
+		t.Errorf("esperado roots [/project], obtido %v", bp.Roots)
 	}
 }
 
@@ -27,28 +27,34 @@ func TestComponent_Fields(t *testing.T) {
 		Type: "app",
 		Path: "/project/backend",
 		Tags: []string{"golang", "api"},
+		Metadata: map[string]string{
+			"module": "github.com/example/backend",
+		},
 	}
 	if c.Name != "backend" || c.Type != "app" {
-		t.Errorf("Component fields mismatch: %+v", c)
+		t.Errorf("campos do Component não correspondem: %+v", c)
 	}
 	if len(c.Tags) != 2 {
-		t.Errorf("expected 2 tags, got %d", len(c.Tags))
+		t.Errorf("esperado 2 tags, obtido %d", len(c.Tags))
+	}
+	if c.Metadata["module"] != "github.com/example/backend" {
+		t.Errorf("esperado metadata module, obtido %v", c.Metadata)
 	}
 }
 
-// ---- Scan Tests ----
+// ---- Testes do Scan ----
 
 func TestScan_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
 	if bp == nil {
-		t.Fatal("expected non-nil Blueprint")
+		t.Fatal("esperado Blueprint não-nulo")
 	}
 	if len(bp.Components) != 0 {
-		t.Errorf("expected no components in empty dir, got %d", len(bp.Components))
+		t.Errorf("esperado nenhum componente em dir vazio, obtido %d", len(bp.Components))
 	}
 }
 
@@ -56,15 +62,14 @@ func TestScan_WithGoModule(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "myservice")
 	os.MkdirAll(subDir, 0755)
-	// Create go.mod to trigger "app" detection
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myservice\n\ngo 1.21\n"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
 	if len(bp.Components) == 0 {
-		t.Error("expected at least 1 component (Go module), got 0")
+		t.Error("esperado pelo menos 1 componente (módulo Go), obtido 0")
 	}
 }
 
@@ -76,10 +81,10 @@ func TestScan_WithPackageJson(t *testing.T) {
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
 	if len(bp.Components) == 0 {
-		t.Error("expected at least 1 component (Node.js app), got 0")
+		t.Error("esperado pelo menos 1 componente (app Node.js), obtido 0")
 	}
 }
 
@@ -87,32 +92,29 @@ func TestScan_WithDockerfile(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "myservice")
 	os.MkdirAll(subDir, 0755)
-	// Dockerfile triggers "infra" detection
 	os.WriteFile(filepath.Join(subDir, "Dockerfile"), []byte("FROM alpine\n"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
 	if len(bp.Components) == 0 {
-		t.Error("expected at least 1 component (Dockerfile/infra), got 0")
+		t.Error("esperado pelo menos 1 componente (Dockerfile/infra), obtido 0")
 	}
 }
 
 func TestScan_IgnoredDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	// Create a go.mod inside node_modules (should be ignored)
 	ignoredDir := filepath.Join(tmpDir, "node_modules", "some-pkg")
 	os.MkdirAll(ignoredDir, 0755)
 	os.WriteFile(filepath.Join(ignoredDir, "go.mod"), []byte("module ignored"), 0644)
 
 	bp, err := Scan(tmpDir, []string{"node_modules"})
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
-	// Should have NO components because node_modules is ignored
 	if len(bp.Components) != 0 {
-		t.Errorf("expected 0 components (ignored dir), got %d", len(bp.Components))
+		t.Errorf("esperado 0 componentes (dir ignorado), obtido %d", len(bp.Components))
 	}
 }
 
@@ -120,16 +122,14 @@ func TestScan_NoDuplicates(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "myapi")
 	os.MkdirAll(subDir, 0755)
-	// Two files that match the same rule — should not create duplicates
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myapi"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
-	// Should have exactly 1 component
 	if len(bp.Components) != 1 {
-		t.Errorf("expected 1 component (no duplicates), got %d", len(bp.Components))
+		t.Errorf("esperado 1 componente (sem duplicatas), obtido %d", len(bp.Components))
 	}
 }
 
@@ -137,16 +137,208 @@ func TestScan_RootsField(t *testing.T) {
 	tmpDir := t.TempDir()
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
-		t.Fatalf("Scan failed: %v", err)
+		t.Fatalf("Scan falhou: %v", err)
 	}
 	if len(bp.Roots) != 1 || bp.Roots[0] != tmpDir {
-		t.Errorf("expected Roots=[%s], got %v", tmpDir, bp.Roots)
+		t.Errorf("esperado Roots=[%s], obtido %v", tmpDir, bp.Roots)
 	}
 }
 
 func TestScan_InvalidPath(t *testing.T) {
 	_, err := Scan("/nonexistent/path/xyz123", nil)
 	if err == nil {
-		t.Error("expected error for nonexistent path, got nil")
+		t.Error("esperado erro para caminho inexistente, obtido nil")
+	}
+}
+
+// ---- Novos testes: Helm, Kustomize, Dockerfile variante, go.mod metadata, relações ----
+
+func TestScan_WithChartYaml(t *testing.T) {
+	tmpDir := t.TempDir()
+	chartDir := filepath.Join(tmpDir, "meu-chart")
+	os.MkdirAll(chartDir, 0755)
+	os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: meu-chart\n"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, comp := range bp.Components {
+		if comp.Type == "helm" && comp.Name == "meu-chart" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Error("esperado componente do tipo 'helm' com nome 'meu-chart'")
+	}
+}
+
+func TestScan_WithKustomization(t *testing.T) {
+	tmpDir := t.TempDir()
+	kustomizeDir := filepath.Join(tmpDir, "overlays")
+	os.MkdirAll(kustomizeDir, 0755)
+	os.WriteFile(filepath.Join(kustomizeDir, "kustomization.yaml"), []byte("resources:\n- ../base\n"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, comp := range bp.Components {
+		if comp.Type == "kustomize" && comp.Name == "overlays" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Error("esperado componente do tipo 'kustomize' com nome 'overlays'")
+	}
+}
+
+func TestScan_WithDockerfileVariant(t *testing.T) {
+	tmpDir := t.TempDir()
+	serviceDir := filepath.Join(tmpDir, "api")
+	os.MkdirAll(serviceDir, 0755)
+	os.WriteFile(filepath.Join(serviceDir, "Dockerfile.prod"), []byte("FROM golang:1.21\n"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, comp := range bp.Components {
+		if comp.Type == "infra" && comp.Name == "api" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Error("esperado componente do tipo 'infra' para Dockerfile.prod")
+	}
+}
+
+func TestScan_GoModMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "meu-app")
+	os.MkdirAll(subDir, 0755)
+	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module github.com/exemplo/meu-app\n\ngo 1.21\n"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, comp := range bp.Components {
+		if comp.Type == "app" && comp.Name == "meu-app" {
+			if comp.Metadata == nil {
+				t.Error("esperado Metadata preenchido para componente Go")
+				break
+			}
+			if comp.Metadata["module"] != "github.com/exemplo/meu-app" {
+				t.Errorf("esperado module 'github.com/exemplo/meu-app', obtido %q", comp.Metadata["module"])
+			}
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Error("esperado componente 'meu-app' com metadata de módulo Go")
+	}
+}
+
+func TestScan_DetectsRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Criar componente app com go.mod que tem replace local
+	appDir := filepath.Join(tmpDir, "app")
+	libDir := filepath.Join(tmpDir, "lib")
+	os.MkdirAll(appDir, 0755)
+	os.MkdirAll(libDir, 0755)
+
+	os.WriteFile(filepath.Join(libDir, "go.mod"), []byte("module github.com/exemplo/lib\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte(
+		"module github.com/exemplo/app\n\ngo 1.21\n\nrequire github.com/exemplo/lib v0.0.0\n\nreplace github.com/exemplo/lib => ../lib\n",
+	), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.From == "app" && rel.To == "lib" && rel.Type == "imports" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'imports' de app para lib, relações encontradas: %+v", bp.Relations)
+	}
+}
+
+func TestScan_DetectsDockerfileRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Criar componente infra com Dockerfile que referencia outro diretório
+	appDir := filepath.Join(tmpDir, "app")
+	infraDir := filepath.Join(tmpDir, "infra")
+	os.MkdirAll(appDir, 0755)
+	os.MkdirAll(infraDir, 0755)
+
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM golang:1.21\nCOPY app/ /src/\n"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.From == "infra" && rel.To == "app" && rel.Type == "builds" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'builds' de infra para app, relações encontradas: %+v", bp.Relations)
+	}
+}
+
+func TestScan_DetectsHelmRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Criar chart Helm com dependência local
+	chartDir := filepath.Join(tmpDir, "charts", "main")
+	depDir := filepath.Join(tmpDir, "charts", "dep")
+	os.MkdirAll(chartDir, 0755)
+	os.MkdirAll(depDir, 0755)
+
+	os.WriteFile(filepath.Join(depDir, "Chart.yaml"), []byte("apiVersion: v2\nname: dep\n"), 0644)
+	os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(
+		"apiVersion: v2\nname: main\ndependencies:\n  - name: dep\n    repository: \"file://../dep\"\n",
+	), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.Type == "deploys" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'deploys' entre charts Helm, relações encontradas: %+v", bp.Relations)
 	}
 }

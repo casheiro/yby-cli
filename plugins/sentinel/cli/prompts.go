@@ -15,3 +15,10 @@ Schema:
   "kubectl_patch": "kubectl patch ..." (optional)
 }
 `
+
+// ScanSystemPrompt é o prompt de sistema para o scan de segurança.
+const ScanSystemPrompt = `Role: Senior Security Engineer specializing in Kubernetes.
+Task: Analyze the security findings from a Kubernetes namespace scan and provide consolidated recommendations.
+Input: A JSON array of SecurityFinding objects with fields: resource, namespace, type, category, description.
+Output: Concise, actionable recommendations in Portuguese (PT-BR) for fixing the identified security issues.
+Group recommendations by category. Be specific about what to change in the manifests.`

@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
@@ -12,16 +15,14 @@ import (
 func main() {
 	var req plugin.PluginRequest
 
-	// 1. Check for Environment Variable Protocol
+	// 1. Verificar protocolo via variável de ambiente
 	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
 		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
 			fail(fmt.Errorf("falha ao decodificar requisição do env: %w", err))
 		}
 	} else {
-		// 2. Fallback to Stdin
+		// 2. Fallback para stdin
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
-			// If running without input (manual run?), just print generic error or help
-			// But strictly speaking, it expects JSON.
 			fail(fmt.Errorf("falha ao decodificar requisição do stdin: %w", err))
 		}
 	}
@@ -35,27 +36,52 @@ func main() {
 			Hooks:       []string{"context", "manifest"},
 		})
 	case "context":
-		// Run discovery
+		// Executar descoberta
 		cwd, err := os.Getwd()
 		if err != nil {
 			fail(err)
 		}
 
-		// TODO: Load config from .yby/atlas.yaml if exists
+		cfg := loadConfig()
 		ignores := []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
+		var rules []discovery.Rule
+		if cfg != nil {
+			if len(cfg.Ignores) > 0 {
+				ignores = append(ignores, cfg.Ignores...)
+			}
+			rules = discovery.MergeRules(cfg.Rules)
+		} else {
+			rules = discovery.DefaultRules
+		}
 
-		blueprint, err := discovery.Scan(cwd, ignores)
+		blueprint, err := discovery.ScanWithRules(cwd, ignores, rules)
 		if err != nil {
 			fail(err)
 		}
 
-		// Return as ContextPatch
+		// Retornar como ContextPatch
 		respond(map[string]interface{}{
 			"blueprint": blueprint,
 		})
 	default:
 		fail(fmt.Errorf("hook desconhecido: %s", req.Hook))
 	}
+}
+
+// loadConfig carrega a configuração externa do Atlas a partir de .yby/atlas.yaml.
+// Retorna nil se o arquivo não existir ou não puder ser lido.
+func loadConfig() *discovery.AtlasConfig {
+	configPath := filepath.Join(".yby", "atlas.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil // Arquivo não existe, usar defaults
+	}
+	var cfg discovery.AtlasConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "aviso: erro ao ler .yby/atlas.yaml: %v\n", err)
+		return nil
+	}
+	return &cfg
 }
 
 func respond(data interface{}) {

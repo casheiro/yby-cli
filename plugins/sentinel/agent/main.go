@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
 )
 
-// Event structure from kubectl get events -o json (simplified)
+// K8sEvent representa um evento Kubernetes simplificado obtido via kubectl.
 type K8sEvent struct {
 	InvolvedObject struct {
 		Kind string `json:"kind"`
@@ -20,45 +21,40 @@ type K8sEvent struct {
 	Type    string `json:"type"`
 }
 
+// EventList representa uma lista de eventos Kubernetes.
 type EventList struct {
 	Items []K8sEvent `json:"items"`
 }
 
 func main() {
-	fmt.Println("🛡️  Iniciando Agente Sentinel...")
+	slog.Info("Iniciando Agente Sentinel")
 
-	// Ensure kubectl is available
+	// Verificar se kubectl está disponível
 	_, err := exec.LookPath("kubectl")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ kubectl não encontrado. O agente precisa do kubectl para interagir com o cluster.\n")
+		fmt.Fprintf(os.Stderr, "kubectl não encontrado. O agente precisa do kubectl para interagir com o cluster.\n")
 		os.Exit(1)
 	}
 
-	fmt.Println("👀 Monitorando Eventos Kubernetes por 'CrashLoopBackOff'...")
-
-	// Native implementation with client-go is better, but to keep "Integrity" without
-	// massive refactor of dependencies right now, we use a robust kubectl polling
-	// or watch wrapper. The "Shell" concept allows this.
-	//
-	// Robust approach: Run kubectl get events -w --all-namespaces
+	slog.Info("Monitorando eventos Kubernetes", "padrões", "CrashLoopBackOff, OOMKilled")
 
 	cmd := exec.Command("kubectl", "get", "events", "--all-namespaces", "--watch", "--output", "json")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		panic(err)
+		slog.Error("falha ao criar pipe de stdout", "erro", err)
+		fmt.Fprintf(os.Stderr, "erro fatal: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := cmd.Start(); err != nil {
-		panic(err)
+		slog.Error("falha ao iniciar kubectl", "erro", err)
+		fmt.Fprintf(os.Stderr, "erro fatal: %v\n", err)
+		os.Exit(1)
 	}
 
 	decoder := json.NewDecoder(stdout)
 	for {
-		// kubectl get events -o json --watch outputs stream of single JSON objects for modifications
-		// Note: The specific output format of kubectl watch json can vary (WatchEvent vs native object).
-		// Standard json output with watch wraps in {"type":"ADDED", "object": {...}}
-
 		var watchEvent struct {
 			Type   string   `json:"type"`
 			Object K8sEvent `json:"object"`
@@ -68,30 +64,28 @@ func main() {
 			if err == io.EOF {
 				break
 			}
-			// Tolerant decoding
+			// Decodificação tolerante a erros
 			continue
 		}
 
-		// Analysis Logic
 		go AnalyzeEvent(watchEvent.Object)
 	}
 
-	_ = cmd.Wait() // Should not reach here normally
+	_ = cmd.Wait()
 }
 
-// AnalyzeEvent checks if an event is critical. Returns true if critical.
+// AnalyzeEvent verifica se um evento é crítico. Retorna true se for crítico.
+// Caso o evento seja crítico, envia notificação via webhook (se configurado).
 func AnalyzeEvent(evt K8sEvent) bool {
-	// Simple Heuristic for now (Brain in the Shell logic)
-	// In a full implementation, this binary would forward to the CLI or central brain.
-	// We check for CrashLoopBackOff specifically.
 	isCritical := strings.Contains(evt.Message, "CrashLoopBackOff") ||
 		strings.Contains(evt.Reason, "CrashLoopBackOff") ||
 		strings.Contains(evt.Message, "OOMKilled") ||
 		strings.Contains(evt.Reason, "OOMKilled")
 
 	if isCritical {
-		fmt.Printf("🚨 DETECTED CRITICAL EVENT: Pod %s (%s)\n", evt.InvolvedObject.Name, evt.Message)
-		// Action: Could trigger webhook, call yby sentinel cli, etc.
+		slog.Warn("evento crítico detectado", "pod", evt.InvolvedObject.Name, "mensagem", evt.Message, "razão", evt.Reason)
+		// Notificar via webhook se configurado
+		notifyWebhook(evt)
 	}
 	return isCritical
 }

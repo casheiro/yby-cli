@@ -2,19 +2,36 @@ package indexer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 )
 
+// IndexManifest rastreia o estado de indexação de cada arquivo.
+type IndexManifest struct {
+	Files map[string]IndexedFile `json:"files"`
+}
+
+// IndexedFile registra o hash e timestamp de um arquivo indexado.
+type IndexedFile struct {
+	SHA256    string    `json:"sha256"`
+	IndexedAt time.Time `json:"indexed_at"`
+}
+
+const manifestFile = ".synapstor/.index_manifest.json"
+
 // Indexer manages the knowledge ingestion pipeline
 type Indexer struct {
-	Provider ai.Provider
-	RootDir  string
+	Provider    ai.Provider
+	RootDir     string
+	FullReindex bool
 }
 
 func NewIndexer(provider ai.Provider, rootDir string) *Indexer {
@@ -22,6 +39,45 @@ func NewIndexer(provider ai.Provider, rootDir string) *Indexer {
 		Provider: provider,
 		RootDir:  rootDir,
 	}
+}
+
+// loadManifest carrega o manifest de indexação do disco.
+func (i *Indexer) loadManifest() *IndexManifest {
+	data, err := os.ReadFile(filepath.Join(i.RootDir, manifestFile))
+	if err != nil {
+		return &IndexManifest{Files: make(map[string]IndexedFile)}
+	}
+	var m IndexManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return &IndexManifest{Files: make(map[string]IndexedFile)}
+	}
+	if m.Files == nil {
+		m.Files = make(map[string]IndexedFile)
+	}
+	return &m
+}
+
+// saveManifest persiste o manifest de indexação no disco.
+func (i *Indexer) saveManifest(m *IndexManifest) error {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(filepath.Join(i.RootDir, manifestFile))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(i.RootDir, manifestFile), data, 0644)
+}
+
+// fileHash calcula o hash SHA-256 de um arquivo.
+func fileHash(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(data)
+	return fmt.Sprintf("%x", h), nil
 }
 
 // Run executes the indexing pipeline
@@ -41,12 +97,33 @@ func (i *Indexer) Run(ctx context.Context) error {
 
 	fmt.Printf("📂 Encontrados %d arquivos. Processando chunks...\n", len(files))
 
-	// 2. Process Files -> Chunks
+	// 2. Carregar manifest para indexação incremental
+	manifest := i.loadManifest()
+	newManifest := &IndexManifest{Files: make(map[string]IndexedFile)}
+
+	// 3. Process Files -> Chunks
 	var allChunks []string
 	var allMetadatas []map[string]string
 	var allIDs []string
+	skipped := 0
 
 	for _, path := range files {
+		relPath, _ := filepath.Rel(i.RootDir, path)
+		hash, err := fileHash(path)
+		if err != nil {
+			fmt.Printf("⚠️  Erro ao calcular hash de %s: %v\n", relPath, err)
+			continue
+		}
+
+		// Verificar se já indexado e não mudou
+		if !i.FullReindex {
+			if existing, ok := manifest.Files[relPath]; ok && existing.SHA256 == hash {
+				newManifest.Files[relPath] = existing // Manter no novo manifest
+				skipped++
+				continue // Pular - já indexado
+			}
+		}
+
 		content, err := os.ReadFile(path)
 		if err != nil {
 			fmt.Printf("⚠️  Erro ao ler %s: %v\n", path, err)
@@ -55,7 +132,6 @@ func (i *Indexer) Run(ctx context.Context) error {
 
 		chunks := splitMarkdown(string(content))
 		baseName := filepath.Base(path)
-		relPath, _ := filepath.Rel(i.RootDir, path)
 
 		for idx, chunk := range chunks {
 			chunkID := fmt.Sprintf("%s#%d", relPath, idx)
@@ -65,8 +141,7 @@ func (i *Indexer) Run(ctx context.Context) error {
 				"filename": baseName,
 			}
 
-			// Extract title from chunk if possible
-			// Simple heuristic: first line starting with #
+			// Extrair título do chunk se possível
 			lines := strings.Split(chunk, "\n")
 			for _, line := range lines {
 				if strings.HasPrefix(line, "# ") {
@@ -79,19 +154,41 @@ func (i *Indexer) Run(ctx context.Context) error {
 			allMetadatas = append(allMetadatas, meta)
 			allIDs = append(allIDs, chunkID)
 		}
+
+		newManifest.Files[relPath] = IndexedFile{
+			SHA256:    hash,
+			IndexedAt: time.Now(),
+		}
 	}
 
-	// 3. Initialize Vector Store
+	if skipped > 0 {
+		fmt.Printf("⏭️  %d arquivos inalterados (pulados). Use --full para forçar reindexação.\n", skipped)
+	}
+
+	// 4. Se não há chunks novos, salvar manifest e retornar
+	if len(allChunks) == 0 {
+		if err := i.saveManifest(newManifest); err != nil {
+			fmt.Printf("⚠️  Erro ao salvar manifest de indexação: %v\n", err)
+		}
+		fmt.Println("✅ Nenhum arquivo novo ou modificado para indexar.")
+		return nil
+	}
+
+	// 5. Initialize Vector Store
 	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
 	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
 	if err != nil {
 		return fmt.Errorf("falha ao inicializar vector store: %w", err)
 	}
 
-	// 4. Index
-	// Batch processing could be done here if needed, but VectorStore/Provider handles it
+	// 6. Index
 	if err := vs.AddDocuments(ctx, allChunks, allMetadatas, allIDs); err != nil {
 		return err
+	}
+
+	// 7. Salvar manifest atualizado
+	if err := i.saveManifest(newManifest); err != nil {
+		fmt.Printf("⚠️  Erro ao salvar manifest de indexação: %v\n", err)
 	}
 
 	fmt.Printf("✅ Indexação concluída! %d fragmentos de conhecimento salvos em %s\n", len(allChunks), storePath)

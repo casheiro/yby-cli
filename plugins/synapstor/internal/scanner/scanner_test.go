@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -235,6 +236,66 @@ func TestScan_QueryCaseInsensitive(t *testing.T) {
 
 	if len(results) == 0 {
 		t.Error("esperado encontrar 'Config.yaml' com query 'CONFIG' (case-insensitive)")
+	}
+}
+
+// TestScan_SkipArquivosGrandes verifica que arquivos maiores que 1MB são ignorados.
+func TestScan_SkipArquivosGrandes(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Criar arquivo > 1MB
+	bigContent := make([]byte, 2*1024*1024) // 2MB
+	for i := range bigContent {
+		bigContent[i] = 'a'
+	}
+	os.WriteFile(filepath.Join(tmpDir, "big.txt"), bigContent, 0644)
+
+	results, err := Scan(tmpDir, "")
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	for _, r := range results {
+		if r.Path == "big.txt" {
+			t.Error("arquivo > 1MB não deveria ser incluído nos resultados")
+		}
+	}
+}
+
+// TestScan_LimiteMaxResultados verifica que no máximo 50 resultados são retornados.
+func TestScan_LimiteMaxResultados(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Criar 60 arquivos
+	for i := 0; i < 60; i++ {
+		os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("file%d.txt", i)), []byte("conteúdo"), 0644)
+	}
+
+	results, err := Scan(tmpDir, "")
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if len(results) > 50 {
+		t.Errorf("esperado no máximo 50 resultados, obtido %d", len(results))
+	}
+}
+
+// TestScan_PriorizaMatchNoNome verifica que resultados com match no nome
+// aparecem antes de resultados com match apenas no conteúdo.
+func TestScan_PriorizaMatchNoNome(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Arquivo com match no nome
+	os.WriteFile(filepath.Join(tmpDir, "kubernetes.txt"), []byte("irrelevante"), 0644)
+	// Arquivo com match apenas no conteúdo
+	os.WriteFile(filepath.Join(tmpDir, "outro.txt"), []byte("conteúdo sobre kubernetes"), 0644)
+
+	results, err := Scan(tmpDir, "kubernetes")
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("esperado pelo menos 2 resultados, obtido %d", len(results))
+	}
+	// O primeiro resultado deve ser o match por nome
+	if results[0].Path != "kubernetes.txt" {
+		t.Errorf("primeiro resultado deveria ser match por nome, obtido %q", results[0].Path)
 	}
 }
 
