@@ -119,7 +119,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&contextFlag, "context", "c", "", "Define o contexto de execução (ex: local, staging, prod)")
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "info", "Nível de log (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVar(&logFormatFlag, "log-format", "text", "Formato de log (text, json)")
-	rootCmd.Flags().BoolP("toggle", "t", false, "Mensagem de ajuda para alternância")
+
 }
 
 // initConfig reads in config file and ENV variables if set.

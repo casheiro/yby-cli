@@ -62,6 +62,8 @@ spec:
         path: /var/run/docker.sock
   
   # Step 2: Configurar Firewall
+  # NOTA DE SEGURANÇA: Este step requer privileged: true para configuração de UFW/iptables em VPS remoto.
+  # O acesso privilegiado é necessário para manipulação de regras de firewall no host.
   - name: firewall-config
     script:
       image: ubuntu:22.04
@@ -93,6 +95,7 @@ spec:
         echo "✅ Firewall configurado"
         ufw status verbose
       securityContext:
+        # Necessário para configuração de UFW/iptables no host VPS
         privileged: true
       volumeMounts:
       - name: host-etc
@@ -132,6 +135,7 @@ spec:
         
         echo "✅ System tuning aplicado"
       securityContext:
+        # Necessário para aplicar sysctl e limites no host VPS
         privileged: true
       volumeMounts:
       - name: host-etc
@@ -144,7 +148,7 @@ spec:
   # Step 4: Setup Monitoring (Placeholder - pode ser expandido)
   - name: monitoring-setup
     script:
-      image: bitnami/kubectl:latest
+      image: bitnami/kubectl:1.31
       command: [bash]
       source: |
         #!/bin/bash

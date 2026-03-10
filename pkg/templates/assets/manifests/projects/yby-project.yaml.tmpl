@@ -51,10 +51,46 @@ spec:
   # Recursos negados (por segurança)
   clusterResourceBlacklist: []
 
-  # Recursos de namespace permitidos (amplo para flexibilidade dentro dos namespaces autorizados)
+  # Recursos de namespace permitidos (restrito a tipos necessários para workloads e operações)
   namespaceResourceWhitelist:
-  - group: '*'
-    kind: '*'
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: PersistentVolumeClaim
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: StatefulSet
+  - group: batch
+    kind: Job
+  - group: batch
+    kind: CronJob
+  - group: networking.k8s.io
+    kind: Ingress
+  - group: networking.k8s.io
+    kind: NetworkPolicy
+  - group: autoscaling
+    kind: HorizontalPodAutoscaler
+  - group: bitnami.com
+    kind: SealedSecret
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+  - group: keda.sh
+    kind: ScaledObject
+  - group: argoproj.io
+    kind: EventSource
+  - group: argoproj.io
+    kind: Sensor
+  - group: argoproj.io
+    kind: EventBus
+  - group: argoproj.io
+    kind: WorkflowTemplate
+  - group: argoproj.io
+    kind: Workflow
     
   # Políticas de sincronização
   syncWindows: []

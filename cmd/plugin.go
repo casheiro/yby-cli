@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
@@ -44,7 +45,7 @@ var pluginListCmd = &cobra.Command{
 
 		fmt.Println("🔌 Plugins Instalados:")
 		for _, p := range plugins {
-			fmt.Printf("- %s (v%s): Hooks [%v]\n", p.Name, p.Version, p.Hooks)
+			fmt.Printf("- %s (v%s): Hooks [%s]\n", p.Name, p.Version, strings.Join(p.Hooks, ", "))
 		}
 		return nil
 	},
