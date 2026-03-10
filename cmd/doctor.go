@@ -24,7 +24,7 @@ var doctorCmd = &cobra.Command{
 	Long: `Verifica se as ferramentas necessárias (kubectl, helm, kubeseal) estão instaladas
 e se há conexão com o cluster Kubernetes configurado.`,
 	Example: `  yby doctor`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🩺  Yby Doctor - Verificação de Saúde"))
 		fmt.Println("----------------------------------------")
 
@@ -60,6 +60,8 @@ e se há conexão com o cluster Kubernetes configurado.`,
 		for _, crd := range report.CRDs {
 			printResult(crd)
 		}
+
+		return nil
 	},
 }
 

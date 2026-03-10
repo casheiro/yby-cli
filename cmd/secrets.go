@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/secrets"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ Uso: yby secret webhook github [my-secret-value]
 Se o valor não for fornecido, gera um aleatório.
 Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 	Args: cobra.RangeArgs(0, 2),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🔐 Webhook Secret"))
 
 		root, err := FindInfraRoot()
@@ -68,8 +69,7 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 
 		finalSecret, err := svc.GenerateWebhook(cmd.Context(), opts)
 		if err != nil {
-			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar webhook secret")
 		}
 
 		if opts.SecretVal == "" {
@@ -77,6 +77,7 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 			fmt.Printf("Segredo gerado: %s\n", finalSecret)
 		}
 		fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
+		return nil
 	},
 }
 
@@ -85,7 +86,7 @@ var minioSecretCmd = &cobra.Command{
 	Short: "Gera Sealed Secret do MinIO",
 	Long: `Gera credenciais aleatórias para o MinIO, cria o Secret e sela.
 Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🔐 MinIO Secret"))
 
 		root, err := FindInfraRoot()
@@ -106,11 +107,11 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 		fmt.Println("Gerando credenciais MinIO (User: admin)...")
 		_, err = svc.GenerateMinIO(cmd.Context(), opts)
 		if err != nil {
-			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret MinIO")
 		}
 
 		fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
+		return nil
 	},
 }
 
@@ -120,7 +121,7 @@ var githubTokenSecretCmd = &cobra.Command{
 	Long: `Cria o secret 'github-token' no namespace 'argocd' com o PAT do GitHub.
 Necessário para o ApplicationSet descobrir repositórios.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		token := args[0]
 		fmt.Println(titleStyle.Render("🔐 GitHub Token Secret"))
 
@@ -131,11 +132,11 @@ Necessário para o ApplicationSet descobrir repositórios.`,
 		opts := secrets.Options{Token: token}
 
 		if err := svc.CreateGitHubToken(cmd.Context(), opts); err != nil {
-			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar secret github-token")
 		}
 
 		fmt.Println(checkStyle.Render("✅ Secret github-token criado no namespace argocd."))
+		return nil
 	},
 }
 
@@ -144,7 +145,7 @@ var backupKeysCmd = &cobra.Command{
 	Short: "Backup da chave mestre do Sealed Secrets",
 	Long: `Faz backup da chave privada do Sealed Secrets (cuidado!).
 Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especificado.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🔐 Backup Sealed Secrets Keys"))
 
 		root, err := FindInfraRoot()
@@ -165,8 +166,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especific
 
 		keyName, err := svc.BackupKeys(cmd.Context(), opts)
 		if err != nil {
-			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha no backup de chaves Sealed Secrets")
 		}
 
 		fmt.Printf("Chave encontrada: %s\n", keyName)
@@ -174,6 +174,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especific
 		if len(args) == 0 {
 			fmt.Println(warningStyle.Render("⚠️  NÃO COLOQUE ESTE ARQUIVO NO GIT se for um repositório público!"))
 		}
+		return nil
 	},
 }
 
@@ -182,7 +183,7 @@ var restoreKeysCmd = &cobra.Command{
 	Short: "Restaura chave mestre do Sealed Secrets",
 	Long: `Aplica um backup de chave mestre e reinicia o controller.
 Default file: bootstrap/sealed-secrets-backup.yaml`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🔐 Restore Sealed Secrets Keys"))
 
 		root, err := FindInfraRoot()
@@ -204,11 +205,11 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 		opts := secrets.Options{OutputPath: inputFile}
 
 		if err := svc.RestoreKeys(cmd.Context(), opts); err != nil {
-			fmt.Println(crossStyle.Render(fmt.Sprintf("Erro: %v", err)))
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha na restauração de chaves Sealed Secrets")
 		}
 
 		fmt.Println(checkStyle.Render("✅ Chave restaurada e controller reiniciado."))
+		return nil
 	},
 }
 

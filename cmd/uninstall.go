@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -22,11 +23,10 @@ var uninstallCmd = &cobra.Command{
 	Long: `Remove o binário do Yby CLI do sistema.
 Esta ação é irreversível e removerá apenas o executável atual.
 Arquivos de configuração e dados em ~/.yby PAG não serã removidos automaticamente.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		exePath, err := osExecutable()
 		if err != nil {
-			fmt.Printf("%s Erro ao localizar o binário: %v\n", crossStyle.Render("❌"), err)
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao localizar o binário")
 		}
 
 		fmt.Println(titleStyle.Render("🗑️  Yby Uninstall"))
@@ -40,21 +40,21 @@ Arquivos de configuração e dados em ~/.yby PAG não serã removidos automatica
 
 		if response != "y" && response != "s" && response != "sim" && response != "yes" {
 			fmt.Println("Operação cancelada.")
-			return
+			return nil
 		}
 
 		fmt.Printf("Removendo %s... ", exePath)
 		if err := osRemove(exePath); err != nil {
-			fmt.Printf("\n%s Erro ao remover o arquivo: %v\n", crossStyle.Render("❌"), err)
 			// Dica caso seja erro de permissão
 			if strings.Contains(err.Error(), "permission denied") {
 				fmt.Println(grayStyle.Render("💡 Tente rodar com sudo: sudo yby uninstall"))
 			}
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao remover o binário")
 		}
 
 		fmt.Println("\n" + checkStyle.Render("✅ Yby CLI desinstalado com sucesso!"))
 		fmt.Println("Até logo! 👋")
+		return nil
 	},
 }
 

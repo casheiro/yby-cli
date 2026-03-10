@@ -83,8 +83,8 @@ func TestSealCmd_Estrutura(t *testing.T) {
 		t.Error("sealCmd.Long não deveria ser vazio")
 	}
 
-	if sealCmd.Run == nil {
-		t.Error("sealCmd.Run não deveria ser nil")
+	if sealCmd.RunE == nil {
+		t.Error("sealCmd.RunE não deveria ser nil")
 	}
 }
 

@@ -178,7 +178,7 @@ func TestDoctorCmd_ComMock_TodosSaudaveis(t *testing.T) {
 	}
 
 	saida := capturarStdout(t, func() {
-		doctorCmd.Run(doctorCmd, []string{})
+		_ = doctorCmd.RunE(doctorCmd, []string{})
 	})
 
 	assert.Contains(t, saida, "Memória")
@@ -215,7 +215,7 @@ func TestDoctorCmd_ComMock_ComFalhas(t *testing.T) {
 	}
 
 	saida := capturarStdout(t, func() {
-		doctorCmd.Run(doctorCmd, []string{})
+		_ = doctorCmd.RunE(doctorCmd, []string{})
 	})
 
 	assert.Contains(t, saida, "Não encontrado")
@@ -247,7 +247,7 @@ func TestDoctorCmd_ConectividadeSucesso(t *testing.T) {
 	}
 
 	saida := capturarStdout(t, func() {
-		doctorCmd.Run(doctorCmd, []string{})
+		_ = doctorCmd.RunE(doctorCmd, []string{})
 	})
 
 	// Quando conectividade OK, não deve mostrar "Falha ao conectar"
@@ -271,7 +271,7 @@ func TestDoctorCmd_ConectividadeFalha(t *testing.T) {
 	}
 
 	saida := capturarStdout(t, func() {
-		doctorCmd.Run(doctorCmd, []string{})
+		_ = doctorCmd.RunE(doctorCmd, []string{})
 	})
 
 	assert.Contains(t, saida, "Falha ao conectar")

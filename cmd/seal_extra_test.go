@@ -164,10 +164,9 @@ func TestValidateSecretKey_ChaveMuitoLonga(t *testing.T) {
 // sealCmd — verificação de estrutura
 // ========================================================
 
-func TestSealCmd_TemRunDefinido(t *testing.T) {
-	// Run (não RunE) deve estar definido
-	assert.NotNil(t, sealCmd.Run, "sealCmd.Run não deveria ser nil")
-	assert.Nil(t, sealCmd.RunE, "sealCmd.RunE deveria ser nil (usa Run)")
+func TestSealCmd_TemRunEDefinido(t *testing.T) {
+	// RunE deve estar definido
+	assert.NotNil(t, sealCmd.RunE, "sealCmd.RunE não deveria ser nil")
 }
 
 func TestSealCmd_LongDescription(t *testing.T) {
@@ -208,13 +207,12 @@ func TestSealCmd_KubectlNotFound(t *testing.T) {
 		return "/usr/bin/" + file, nil
 	}
 
-	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
-	})
+	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Contains(t, output, "kubectl",
+	assert.Error(t, err, "Deveria retornar erro quando kubectl não encontrado")
+	assert.Contains(t, err.Error(), "kubectl",
 		"Deveria mencionar kubectl na mensagem de erro")
-	assert.Contains(t, output, "não encontrado",
+	assert.Contains(t, err.Error(), "não encontrado",
 		"Deveria informar que não foi encontrado")
 }
 
@@ -229,13 +227,12 @@ func TestSealCmd_KubesealNotFound(t *testing.T) {
 		return "/usr/bin/" + file, nil
 	}
 
-	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
-	})
+	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Contains(t, output, "kubeseal",
+	assert.Error(t, err, "Deveria retornar erro quando kubeseal não encontrado")
+	assert.Contains(t, err.Error(), "kubeseal",
 		"Deveria mencionar kubeseal na mensagem de erro")
-	assert.Contains(t, output, "não encontrado",
+	assert.Contains(t, err.Error(), "não encontrado",
 		"Deveria informar que não foi encontrado")
 }
 
@@ -255,12 +252,11 @@ func TestSealCmd_SurveyError(t *testing.T) {
 		return fmt.Errorf("prompt interrompido pelo usuário")
 	}
 
-	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
-	})
+	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Contains(t, output, "prompt interrompido pelo usuário",
-		"Deveria exibir o erro do survey")
+	assert.Error(t, err, "Deveria retornar erro quando survey falha")
+	assert.Contains(t, err.Error(), "prompt interrompido pelo usuário",
+		"Deveria conter a mensagem de erro do survey")
 }
 
 func TestSealCmd_KubectlCreateFails(t *testing.T) {
@@ -279,11 +275,10 @@ func TestSealCmd_KubectlCreateFails(t *testing.T) {
 		return nil
 	}
 
-	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
-	})
+	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Contains(t, output, "Erro ao gerar secret",
+	assert.Error(t, err, "Deveria retornar erro ao gerar secret via kubectl")
+	assert.Contains(t, err.Error(), "falha ao gerar secret",
 		"Deveria informar erro ao gerar secret via kubectl")
 }
 
@@ -323,14 +318,11 @@ func TestSealCmd_KubesealFails(t *testing.T) {
 		return nil
 	}
 
-	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
-	})
+	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Contains(t, output, "Erro ao selar secret",
+	assert.Error(t, err, "Deveria retornar erro ao selar com kubeseal")
+	assert.Contains(t, err.Error(), "falha ao selar secret",
 		"Deveria informar erro ao selar com kubeseal")
-	assert.Contains(t, output, "Dica",
-		"Deveria exibir dica sobre certificado/cluster")
 }
 
 func TestSealCmd_SurveySuccess(t *testing.T) {
@@ -361,7 +353,7 @@ func TestSealCmd_SurveySuccess(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
+		_ = sealCmd.RunE(sealCmd, []string{})
 	})
 
 	assert.Contains(t, output, "Gerando Secret",
@@ -399,7 +391,7 @@ func TestSealCmd_SaveFileSuccess(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
+		_ = sealCmd.RunE(sealCmd, []string{})
 	})
 
 	assert.Contains(t, output, "SealedSecret salvo em",
@@ -444,10 +436,9 @@ func TestSealCmd_SaveFileInvalidPath(t *testing.T) {
 		return nil
 	}
 
-	output := captureOutput(func() {
-		sealCmd.Run(sealCmd, []string{})
-	})
+	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Contains(t, output, "Erro ao salvar arquivo",
+	assert.Error(t, err, "Deveria retornar erro ao salvar em caminho inválido")
+	assert.Contains(t, err.Error(), "falha ao salvar sealed secret",
 		"Deveria informar erro ao salvar em caminho inválido")
 }

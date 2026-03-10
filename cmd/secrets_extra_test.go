@@ -116,7 +116,7 @@ func TestWebhookSecretCmd_RunSuccess(t *testing.T) {
 
 	cmd := webhookSecretCmd
 	cmd.SetArgs([]string{"github", "meu-segredo"})
-	cmd.Run(cmd, []string{"github", "meu-segredo"})
+	_ = cmd.RunE(cmd, []string{"github", "meu-segredo"})
 	// Cobrir statements — o comando usa fmt.Println, saída vai para stdout
 }
 
@@ -129,7 +129,7 @@ func TestWebhookSecretCmd_RunSuccessSemSegredo(t *testing.T) {
 	t.Setenv("WEBHOOK_SECRET", "")
 
 	cmd := webhookSecretCmd
-	cmd.Run(cmd, []string{"github"})
+	_ = cmd.RunE(cmd, []string{"github"})
 }
 
 func TestWebhookSecretCmd_RunSuccessSemArgs(t *testing.T) {
@@ -140,7 +140,7 @@ func TestWebhookSecretCmd_RunSuccessSemArgs(t *testing.T) {
 	t.Setenv("WEBHOOK_SECRET", "env-secret")
 
 	cmd := webhookSecretCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 func TestWebhookSecretCmd_RunErro(t *testing.T) {
@@ -149,7 +149,7 @@ func TestWebhookSecretCmd_RunErro(t *testing.T) {
 	defer teardown()
 
 	cmd := webhookSecretCmd
-	cmd.Run(cmd, []string{"github", "meu-segredo"})
+	_ = cmd.RunE(cmd, []string{"github", "meu-segredo"})
 }
 
 // ========================================================
@@ -162,7 +162,7 @@ func TestMinioSecretCmd_RunSuccess(t *testing.T) {
 	defer teardown()
 
 	cmd := minioSecretCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 func TestMinioSecretCmd_RunErro(t *testing.T) {
@@ -171,7 +171,7 @@ func TestMinioSecretCmd_RunErro(t *testing.T) {
 	defer teardown()
 
 	cmd := minioSecretCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 // ========================================================
@@ -184,7 +184,7 @@ func TestGithubTokenSecretCmd_RunSuccess(t *testing.T) {
 	defer teardown()
 
 	cmd := githubTokenSecretCmd
-	cmd.Run(cmd, []string{"ghp_meutokenaqui"})
+	_ = cmd.RunE(cmd, []string{"ghp_meutokenaqui"})
 }
 
 func TestGithubTokenSecretCmd_RunErro(t *testing.T) {
@@ -193,7 +193,7 @@ func TestGithubTokenSecretCmd_RunErro(t *testing.T) {
 	defer teardown()
 
 	cmd := githubTokenSecretCmd
-	cmd.Run(cmd, []string{"ghp_meutokenaqui"})
+	_ = cmd.RunE(cmd, []string{"ghp_meutokenaqui"})
 }
 
 // ========================================================
@@ -206,7 +206,7 @@ func TestBackupKeysCmd_RunSuccess(t *testing.T) {
 	defer teardown()
 
 	cmd := backupKeysCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 func TestBackupKeysCmd_RunSuccessComPath(t *testing.T) {
@@ -215,7 +215,7 @@ func TestBackupKeysCmd_RunSuccessComPath(t *testing.T) {
 	defer teardown()
 
 	cmd := backupKeysCmd
-	cmd.Run(cmd, []string{"/tmp/backup.yaml"})
+	_ = cmd.RunE(cmd, []string{"/tmp/backup.yaml"})
 }
 
 func TestBackupKeysCmd_RunErro(t *testing.T) {
@@ -224,7 +224,7 @@ func TestBackupKeysCmd_RunErro(t *testing.T) {
 	defer teardown()
 
 	cmd := backupKeysCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 // ========================================================
@@ -237,7 +237,7 @@ func TestRestoreKeysCmd_RunSuccess(t *testing.T) {
 	defer teardown()
 
 	cmd := restoreKeysCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 func TestRestoreKeysCmd_RunSuccessComPath(t *testing.T) {
@@ -246,7 +246,7 @@ func TestRestoreKeysCmd_RunSuccessComPath(t *testing.T) {
 	defer teardown()
 
 	cmd := restoreKeysCmd
-	cmd.Run(cmd, []string{"/tmp/backup.yaml"})
+	_ = cmd.RunE(cmd, []string{"/tmp/backup.yaml"})
 }
 
 func TestRestoreKeysCmd_RunErro(t *testing.T) {
@@ -255,7 +255,7 @@ func TestRestoreKeysCmd_RunErro(t *testing.T) {
 	defer teardown()
 
 	cmd := restoreKeysCmd
-	cmd.Run(cmd, []string{})
+	_ = cmd.RunE(cmd, []string{})
 }
 
 // ========================================================

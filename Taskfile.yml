@@ -37,3 +37,9 @@ tasks:
     desc: Clean bin directory
     cmds:
       - rm -rf bin/
+
+  vuln:
+    desc: Verifica vulnerabilidades em dependências
+    cmds:
+      - go install golang.org/x/vuln/cmd/govulncheck@latest
+      - govulncheck ./...

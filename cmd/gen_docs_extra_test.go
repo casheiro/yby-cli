@@ -17,7 +17,7 @@ func TestGenDocsCmd_SemArgs(t *testing.T) {
 	defer os.Chdir(origDir)
 	os.Chdir(dir)
 
-	genDocsCmd.Run(genDocsCmd, []string{})
+	_ = genDocsCmd.RunE(genDocsCmd, []string{})
 
 	// Deve criar em ./docs/wiki/CLI-Reference.md
 	_, err := os.Stat(filepath.Join(dir, "docs", "wiki", "CLI-Reference.md"))
@@ -102,7 +102,7 @@ func TestWriteCommandDocs_ErroEscrita(t *testing.T) {
 // TestGenDocsCmd_ConteudoGerado verifica que o arquivo de referência contém conteúdo esperado
 func TestGenDocsCmd_ConteudoGerado(t *testing.T) {
 	dir := t.TempDir()
-	genDocsCmd.Run(genDocsCmd, []string{dir})
+	_ = genDocsCmd.RunE(genDocsCmd, []string{dir})
 
 	data, err := os.ReadFile(filepath.Join(dir, "CLI-Reference.md"))
 	require.NoError(t, err)

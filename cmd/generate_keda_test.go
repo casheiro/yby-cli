@@ -28,7 +28,7 @@ func TestGenerateKedaCmd(t *testing.T) {
 	// Since Run uses survey which requires TTY, we might fail if we don't provide all flags.
 	// We provided all flags so it should skip prompts.
 
-	kedaCmd.Run(kedaCmd, []string{})
+	_ = kedaCmd.RunE(kedaCmd, []string{})
 
 	// Restore
 	w.Close()
@@ -76,7 +76,7 @@ func TestGenerateKedaCmd_ValoresDiferentes(t *testing.T) {
 	kedaOpts.Replicas = "10"
 	kedaOpts.Timezone = "America/Sao_Paulo"
 
-	kedaCmd.Run(kedaCmd, []string{})
+	_ = kedaCmd.RunE(kedaCmd, []string{})
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -107,7 +107,7 @@ func TestGenerateKedaCmd_SaidaEhYAMLValido(t *testing.T) {
 	kedaOpts.Replicas = "1"
 	kedaOpts.Timezone = "UTC"
 
-	kedaCmd.Run(kedaCmd, []string{})
+	_ = kedaCmd.RunE(kedaCmd, []string{})
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -127,7 +127,7 @@ func TestGenerateKedaCmd_SaidaEhYAMLValido(t *testing.T) {
 func TestKedaCmd_Estrutura(t *testing.T) {
 	assert.Equal(t, "keda", kedaCmd.Use, "Use deveria ser 'keda'")
 	assert.NotEmpty(t, kedaCmd.Short, "Short não deveria ser vazio")
-	assert.NotNil(t, kedaCmd.Run, "Run não deveria ser nil")
+	assert.NotNil(t, kedaCmd.RunE, "RunE não deveria ser nil")
 }
 
 func TestKedaCmd_FlagsRegistradas(t *testing.T) {
@@ -169,4 +169,38 @@ func TestKedaCronTemplate_NaoEstaVazio(t *testing.T) {
 	assert.NotEmpty(t, kedaCronTemplate, "kedaCronTemplate não deveria estar vazio")
 	assert.Contains(t, kedaCronTemplate, "keda.sh/v1alpha1", "Template deveria conter apiVersion do KEDA")
 	assert.Contains(t, kedaCronTemplate, "ScaledObject", "Template deveria conter kind ScaledObject")
+}
+
+func TestKedaCmd_RunE_Exists(t *testing.T) {
+	assert.NotNil(t, kedaCmd.RunE, "kedaCmd deve usar RunE (sem panic)")
+	assert.Nil(t, kedaCmd.Run, "kedaCmd não deve usar Run")
+}
+
+func TestGenerateKedaCmd_Headless(t *testing.T) {
+	// Capturar stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Modo headless: apenas --deployment preenchido
+	kedaOpts.Name = ""
+	kedaOpts.Deployment = "my-app"
+	kedaOpts.Namespace = ""
+	kedaOpts.Schedule = "0 20 * * *"
+	kedaOpts.Replicas = "1"
+	kedaOpts.Timezone = "UTC"
+
+	err := kedaCmd.RunE(kedaCmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.NoError(t, err, "Modo headless não deve retornar erro")
+	assert.Contains(t, output, "name: scale-to-zero", "Default name deve ser 'scale-to-zero'")
+	assert.Contains(t, output, "namespace: default", "Default namespace deve ser 'default'")
+	assert.Contains(t, output, "name: my-app", "Deployment deve ser o passado por flag")
 }

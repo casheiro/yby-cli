@@ -36,7 +36,7 @@ func TestUninstallCmd_ExecutableError(t *testing.T) {
 
 	// Não deve entrar em pânico; apenas imprime o erro e retorna
 	assert.NotPanics(t, func() {
-		uninstallCmd.Run(uninstallCmd, []string{})
+		_ = uninstallCmd.RunE(uninstallCmd, []string{})
 	})
 }
 
@@ -51,7 +51,7 @@ func TestUninstallCmd_UserCancels(t *testing.T) {
 	stdinReader = strings.NewReader("n\n")
 
 	assert.NotPanics(t, func() {
-		uninstallCmd.Run(uninstallCmd, []string{})
+		_ = uninstallCmd.RunE(uninstallCmd, []string{})
 	})
 }
 
@@ -74,7 +74,7 @@ func TestUninstallCmd_UserConfirmsYes(t *testing.T) {
 	}
 	stdinReader = strings.NewReader("y\n")
 
-	uninstallCmd.Run(uninstallCmd, []string{})
+	_ = uninstallCmd.RunE(uninstallCmd, []string{})
 
 	assert.True(t, removeCalled, "osRemove deveria ter sido chamado")
 }
@@ -90,7 +90,7 @@ func TestUninstallCmd_UserConfirmsSim(t *testing.T) {
 	}
 	stdinReader = strings.NewReader("sim\n")
 
-	uninstallCmd.Run(uninstallCmd, []string{})
+	_ = uninstallCmd.RunE(uninstallCmd, []string{})
 
 	assert.True(t, removeCalled, "osRemove deveria aceitar 'sim' como confirmação PT-BR")
 }
@@ -106,7 +106,7 @@ func TestUninstallCmd_RemovePermissionDenied(t *testing.T) {
 
 	// Não deve entrar em pânico; imprime dica sobre sudo
 	assert.NotPanics(t, func() {
-		uninstallCmd.Run(uninstallCmd, []string{})
+		_ = uninstallCmd.RunE(uninstallCmd, []string{})
 	})
 }
 
@@ -121,7 +121,7 @@ func TestUninstallCmd_RemoveOtherError(t *testing.T) {
 
 	// Não deve entrar em pânico; imprime o erro sem dica de sudo
 	assert.NotPanics(t, func() {
-		uninstallCmd.Run(uninstallCmd, []string{})
+		_ = uninstallCmd.RunE(uninstallCmd, []string{})
 	})
 }
 
@@ -137,7 +137,7 @@ func TestUninstallCmd_UserConfirmsS(t *testing.T) {
 	// Testa a resposta "s" (atalho PT-BR)
 	stdinReader = strings.NewReader("s\n")
 
-	uninstallCmd.Run(uninstallCmd, []string{})
+	_ = uninstallCmd.RunE(uninstallCmd, []string{})
 
 	assert.True(t, removeCalled, "osRemove deveria aceitar 's' como confirmação")
 }
@@ -154,7 +154,7 @@ func TestUninstallCmd_UserConfirmsYES_CaseInsensitive(t *testing.T) {
 	// Testa maiúsculo — o código faz ToLower
 	stdinReader = strings.NewReader("YES\n")
 
-	uninstallCmd.Run(uninstallCmd, []string{})
+	_ = uninstallCmd.RunE(uninstallCmd, []string{})
 
 	assert.True(t, removeCalled, "osRemove deveria aceitar 'YES' (case insensitive)")
 }

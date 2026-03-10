@@ -46,6 +46,24 @@ func TestShouldSkip_CIWorkflows(t *testing.T) {
 			},
 			shouldSkip: false,
 		},
+		{
+			name: "Default to essential when EnableCI true but WorkflowPattern empty",
+			path: "assets/.github/workflows/essential/pr-main-checks.yaml.tmpl",
+			ctx: &BlueprintContext{
+				EnableCI:        true,
+				WorkflowPattern: "",
+			},
+			shouldSkip: false,
+		},
+		{
+			name: "Skip non-essential when WorkflowPattern empty",
+			path: "assets/.github/workflows/gitflow/release.yaml",
+			ctx: &BlueprintContext{
+				EnableCI:        true,
+				WorkflowPattern: "",
+			},
+			shouldSkip: true,
+		},
 	}
 
 	for _, tt := range tests {

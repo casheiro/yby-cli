@@ -7,7 +7,6 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // destroyCmd represents the destroy command
@@ -19,7 +18,10 @@ ATENÇÃO: Este comando é destrutivo e removerá o cluster criado pelo 'yby up'
 Não afeta ambientes remotos (dev/staging/prod) por segurança.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Safety Check: Only local allowed
-		env := viper.GetString("environment")
+		env := os.Getenv("YBY_ENV")
+		if env == "" {
+			env = contextFlag
+		}
 		if env != "" && env != "local" {
 			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("'yby destroy' só é permitido no ambiente local. Ambiente atual: %s", env))
 		}

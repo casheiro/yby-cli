@@ -13,7 +13,6 @@ import (
 	"github.com/casheiro/yby-cli/pkg/services/environment"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // upCmd represents the up command
@@ -52,7 +51,7 @@ Comportamento por Ambiente:
 		activeCtx, envDef, err := ctxManager.GetCurrent()
 
 		// Fallback specific for 'yby init' flow
-		targetEnv := viper.GetString("environment")
+		targetEnv := os.Getenv("YBY_ENV")
 		if targetEnv == "" {
 			if err == nil {
 				targetEnv = envDef.Type // Use type as env logic
@@ -112,7 +111,7 @@ func runLocalUp(ctx context.Context, root string) error {
 
 	// 4. Final status report
 	fmt.Println("")
-	statusCmd.Run(statusCmd, []string{})
+	_ = statusCmd.RunE(statusCmd, []string{})
 
 	// Maintain sync loop if context is active
 	// Note: StartSyncLoop is already started as a goroutine in Up() if local
@@ -127,6 +126,6 @@ func runRemoteUp(ctx context.Context, env string) error {
 	fmt.Println("   git push origin main")
 
 	// Delegate to status
-	statusCmd.Run(statusCmd, []string{})
+	_ = statusCmd.RunE(statusCmd, []string{})
 	return nil
 }

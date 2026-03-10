@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -42,18 +43,16 @@ var sealCmd = &cobra.Command{
 	Long: `Helper interativo para criar SealedSecrets.
 Coleta nome, namespace e dados, gera um Secret Kubernetes,
 sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("🔒 Yby Secret Seal - Criador de Segredos")
 		fmt.Println("---------------------------------------")
 
 		// Verificar dependências
 		if _, err := lookPath("kubectl"); err != nil {
-			fmt.Println("❌ Erro: 'kubectl' não encontrado.")
-			return
+			return errors.New(errors.ErrCodeCmdNotFound, "'kubectl' não encontrado")
 		}
 		if _, err := lookPath("kubeseal"); err != nil {
-			fmt.Println("❌ Erro: 'kubeseal' não encontrado.")
-			return
+			return errors.New(errors.ErrCodeCmdNotFound, "'kubeseal' não encontrado")
 		}
 
 		answers := struct {
@@ -97,8 +96,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 
 		err := surveyAsk(qs, &answers)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados do secret")
 		}
 
 		// 1. Gerar Secret (Dry Run)
@@ -111,8 +109,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 		var secretYaml bytes.Buffer
 		kubectlCmd.Stdout = &secretYaml
 		if err := kubectlCmd.Run(); err != nil {
-			fmt.Printf("❌ Erro ao gerar secret: %v\n", err)
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret")
 		}
 
 		// 2. Selar com Kubeseal
@@ -124,9 +121,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 		kubesealCmd.Stdout = &sealedYaml
 
 		if err := kubesealCmd.Run(); err != nil {
-			fmt.Printf("❌ Erro ao selar secret: %v\n", err)
-			fmt.Println("Dica: Verifique se você tem conexão com o cluster ou o certificado público.")
-			return
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")
 		}
 
 		// 3. Salvar Arquivo
@@ -150,12 +145,12 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 		_ = os.MkdirAll(filepath.Dir(finalPath), 0755)
 
 		if err := os.WriteFile(finalPath, sealedYaml.Bytes(), 0644); err != nil {
-			fmt.Printf("❌ Erro ao salvar arquivo: %v\n", err)
-			return
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar sealed secret")
 		}
 
 		fmt.Printf("\n✅ SealedSecret salvo em: %s\n", finalPath)
 		fmt.Println("👉 Próximo passo: Commit e Push para o GitOps aplicar.")
+		return nil
 	},
 }
 

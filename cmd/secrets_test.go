@@ -29,3 +29,23 @@ func TestRestoreKeysCmd_Structure(t *testing.T) {
 	assert.Equal(t, "restore [file]", restoreKeysCmd.Use)
 	assert.NotEmpty(t, restoreKeysCmd.Short)
 }
+
+func TestWebhookSecretCmd_RunE_Exists(t *testing.T) {
+	assert.NotNil(t, webhookSecretCmd.RunE, "webhookSecretCmd deve usar RunE")
+}
+
+func TestMinioSecretCmd_RunE_Exists(t *testing.T) {
+	assert.NotNil(t, minioSecretCmd.RunE, "minioSecretCmd deve usar RunE")
+}
+
+func TestGithubTokenSecretCmd_RunE_Exists(t *testing.T) {
+	assert.NotNil(t, githubTokenSecretCmd.RunE, "githubTokenSecretCmd deve usar RunE")
+}
+
+func TestBackupKeysCmd_RunE_Exists(t *testing.T) {
+	assert.NotNil(t, backupKeysCmd.RunE, "backupKeysCmd deve usar RunE")
+}
+
+func TestRestoreKeysCmd_RunE_Exists(t *testing.T) {
+	assert.NotNil(t, restoreKeysCmd.RunE, "restoreKeysCmd deve usar RunE")
+}

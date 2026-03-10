@@ -57,7 +57,7 @@ func TestWriteCommandDocs_WithChildren(t *testing.T) {
 func TestGenDocsCmd_Success(t *testing.T) {
 	dir := t.TempDir()
 	genDocsCmd.SetArgs([]string{dir})
-	genDocsCmd.Run(genDocsCmd, []string{dir})
+	_ = genDocsCmd.RunE(genDocsCmd, []string{dir})
 
 	// Verifica que o arquivo foi criado
 	_, err := os.Stat(filepath.Join(dir, "CLI-Reference.md"))

@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
@@ -176,7 +178,11 @@ Pré-requisitos (verificados automaticamente):
 		// 6. K3s
 		k3sToken := os.Getenv("K3S_TOKEN")
 		if k3sToken == "" {
-			k3sToken = fmt.Sprintf("yby-%d", time.Now().Unix())
+			tokenBytes := make([]byte, 32)
+			if _, err := rand.Read(tokenBytes); err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar token K3s seguro")
+			}
+			k3sToken = hex.EncodeToString(tokenBytes)
 		}
 
 		// 6. K3s Version Resolution
@@ -230,6 +236,7 @@ var k3sVersion string
 var vpsHost string
 var vpsUser string
 var vpsPort string
+var skipTLSVerify bool
 
 func init() {
 	bootstrapCmd.AddCommand(bootstrapVpsCmd)
@@ -238,6 +245,8 @@ func init() {
 	bootstrapVpsCmd.Flags().StringVar(&vpsUser, "user", "root", "Usuário SSH")
 	bootstrapVpsCmd.Flags().StringVar(&vpsPort, "port", "22", "Porta SSH")
 	bootstrapVpsCmd.Flags().Bool("local", false, "Executa o bootstrap na máquina local (auto-provisionamento)")
+	bootstrapVpsCmd.Flags().BoolVar(&skipTLSVerify, "skip-tls-verify", false,
+		"Desabilita verificação TLS do certificado do cluster (INSEGURO, usar apenas para debug)")
 }
 
 func runEx(e executor.Executor, name, script string) error {
@@ -280,7 +289,10 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 	os.Setenv("KUBECONFIG", tempFile.Name())
 	_ = execCommand("kubectl", "config", "rename-context", "default", clusterName).Run()
 	_ = execCommand("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
-	_ = execCommand("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
+	if skipTLSVerify {
+		slog.Warn("TLS verify desabilitado — conexão vulnerável a MITM", "host", host)
+		_ = execCommand("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
+	}
 	_ = execCommand("kubectl", "config", "rename-cluster", "default", clusterName).Run()
 	_ = execCommand("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
 	os.Unsetenv("KUBECONFIG")
@@ -318,5 +330,5 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, 0600)
 }

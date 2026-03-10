@@ -22,8 +22,14 @@ var (
 	crossStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red
 )
 
+// sshClient define a interface para o cliente SSH (permite mock em testes)
+type sshClient interface {
+	NewSession() (*ssh.Session, error)
+	Close() error
+}
+
 type SSHExecutor struct {
-	client *ssh.Client
+	client sshClient
 }
 
 func NewSSHExecutor(user, host, port string) (*SSHExecutor, error) {
