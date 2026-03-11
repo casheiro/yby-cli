@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"golang.org/x/sync/errgroup"
@@ -116,6 +117,7 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 	if err == nil {
 		fmt.Println("\n🔑 Token Headlamp (copie abaixo):")
 		fmt.Println(token)
+		slog.Debug("token gerado", "token_preview", maskToken(token))
 	}
 
 	fmt.Println("\nℹ️  Pressione Ctrl+C para encerrar os túneis...")
@@ -165,4 +167,11 @@ func (s *DefaultAccessService) getSecretKeys(ctx context.Context, targetContext,
 	user, _ := s.Network.GetSecretValue(ctx, targetContext, ns, secret, keyUser)
 	pass, _ := s.Network.GetSecretValue(ctx, targetContext, ns, secret, keyPass)
 	return user, pass
+}
+
+func maskToken(t string) string {
+	if len(t) <= 16 {
+		return "***"
+	}
+	return t[:8] + "***...**" + t[len(t)-8:]
 }

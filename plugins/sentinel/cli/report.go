@@ -65,5 +65,5 @@ func writeReport(content, filePath string) error {
 		fmt.Print(content)
 		return nil
 	}
-	return os.WriteFile(filePath, []byte(content), 0644)
+	return os.WriteFile(filePath, []byte(content), 0600)
 }

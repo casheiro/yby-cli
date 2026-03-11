@@ -2,28 +2,31 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVersionCmd_Estrutura(t *testing.T) {
 	assert.Equal(t, "version", versionCmd.Use, "Use deveria ser 'version'")
 	assert.NotEmpty(t, versionCmd.Short, "Short não deveria ser vazio")
 	assert.NotEmpty(t, versionCmd.Long, "Long não deveria ser vazio")
-	assert.NotNil(t, versionCmd.Run, "Run não deveria ser nil")
+	assert.NotNil(t, versionCmd.RunE, "RunE não deveria ser nil")
 }
 
 func TestVersionCmd_SaidaContemVersao(t *testing.T) {
-	// Capturar stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	versionCmd.Run(versionCmd, []string{})
+	err := versionCmd.RunE(versionCmd, []string{})
+	require.NoError(t, err)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -32,17 +35,16 @@ func TestVersionCmd_SaidaContemVersao(t *testing.T) {
 	io.Copy(&buf, r)
 	output := buf.String()
 
-	// Deve conter a versão (variável Version, default "dev")
 	assert.Contains(t, output, Version, "Saída deveria conter a versão")
 }
 
 func TestVersionCmd_SaidaContemOSArch(t *testing.T) {
-	// Capturar stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	versionCmd.Run(versionCmd, []string{})
+	err := versionCmd.RunE(versionCmd, []string{})
+	require.NoError(t, err)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -51,13 +53,11 @@ func TestVersionCmd_SaidaContemOSArch(t *testing.T) {
 	io.Copy(&buf, r)
 	output := buf.String()
 
-	// Deve conter OS e arch
 	expectedOSArch := runtime.GOOS + "/" + runtime.GOARCH
 	assert.Contains(t, output, expectedOSArch, "Saída deveria conter OS/ARCH")
 }
 
 func TestVersionCmd_SaidaComCommit(t *testing.T) {
-	// Salvar valores originais
 	originalCommit := commit
 	originalDate := date
 	defer func() {
@@ -65,16 +65,15 @@ func TestVersionCmd_SaidaComCommit(t *testing.T) {
 		date = originalDate
 	}()
 
-	// Definir commit e data para teste
 	commit = "abc1234"
 	date = "2025-01-01"
 
-	// Capturar stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	versionCmd.Run(versionCmd, []string{})
+	err := versionCmd.RunE(versionCmd, []string{})
+	require.NoError(t, err)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -98,12 +97,12 @@ func TestVersionCmd_SaidaSemCommitQuandoNone(t *testing.T) {
 	commit = "none"
 	date = "unknown"
 
-	// Capturar stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	versionCmd.Run(versionCmd, []string{})
+	err := versionCmd.RunE(versionCmd, []string{})
+	require.NoError(t, err)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -112,16 +111,14 @@ func TestVersionCmd_SaidaSemCommitQuandoNone(t *testing.T) {
 	io.Copy(&buf, r)
 	output := buf.String()
 
-	// Quando commit é "none", não deve incluir o hash
 	assert.NotContains(t, output, "(none)", "Saída não deveria conter '(none)' quando commit é 'none'")
-	// Quando date é "unknown", não deve incluir data
 	assert.NotContains(t, output, "compilado em unknown", "Saída não deveria conter data quando é 'unknown'")
 }
 
 func TestVersionCmd_NaoPanica(t *testing.T) {
 	assert.NotPanics(t, func() {
-		versionCmd.Run(versionCmd, []string{})
-	}, "versionCmd.Run não deveria causar panic")
+		_ = versionCmd.RunE(versionCmd, []string{})
+	}, "versionCmd.RunE não deveria causar panic")
 }
 
 func TestVersionCmd_EhSubcomandoDeRoot(t *testing.T) {
@@ -133,4 +130,33 @@ func TestVersionCmd_EhSubcomandoDeRoot(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "version deveria ser subcomando de rootCmd")
+}
+
+func TestVersionCmd_JSONOutput(t *testing.T) {
+	// Simular flag --log-format json no root
+	err := rootCmd.PersistentFlags().Set("log-format", "json")
+	require.NoError(t, err)
+	defer rootCmd.PersistentFlags().Set("log-format", "text")
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = versionCmd.RunE(versionCmd, []string{})
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	var info map[string]string
+	err = json.Unmarshal([]byte(strings.TrimSpace(output)), &info)
+	require.NoError(t, err, "output deve ser JSON válido com --log-format json")
+
+	assert.Equal(t, Version, info["version"])
+	assert.Equal(t, runtime.GOOS, info["os"])
+	assert.Equal(t, runtime.GOARCH, info["arch"])
 }

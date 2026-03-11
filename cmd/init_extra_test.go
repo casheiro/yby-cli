@@ -394,7 +394,7 @@ func TestBuildContext_SemGithubOrg_SemOffline(t *testing.T) {
 }
 
 func TestBuildContext_AmbienteDevComSingle(t *testing.T) {
-	// "dev" não existe na topologia "single" (que tem apenas "prod")
+	// "dev" não existe na topologia "single" (que tem apenas "local")
 	// Deve ser ajustado automaticamente
 	o := &InitOptions{
 		Topology:       "single",
@@ -409,8 +409,8 @@ func TestBuildContext_AmbienteDevComSingle(t *testing.T) {
 
 	assert.NotEqual(t, "dev", ctx.Environment,
 		"Ambiente deveria ser ajustado pois 'dev' não existe na topologia single")
-	assert.Equal(t, "prod", ctx.Environment,
-		"Ambiente deveria ser ajustado para 'prod' (primeiro da lista single)")
+	assert.Equal(t, "local", ctx.Environment,
+		"Ambiente deveria ser ajustado para 'local' (primeiro da lista single)")
 }
 
 func TestBuildContext_AmbienteProdValidoEmStandard(t *testing.T) {

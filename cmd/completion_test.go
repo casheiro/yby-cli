@@ -30,3 +30,9 @@ func TestCompletionCmd_Powershell(t *testing.T) {
 	err := completionCmd.RunE(completionCmd, []string{"powershell"})
 	require.NoError(t, err)
 }
+
+func TestCompletionCmd_ShellInvalido_RetornaErro(t *testing.T) {
+	err := completionCmd.RunE(completionCmd, []string{"invalid"})
+	require.Error(t, err, "shell inválido deve retornar erro")
+	require.Contains(t, err.Error(), "invalid", "erro deve mencionar o shell inválido")
+}

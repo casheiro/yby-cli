@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // Styles for consistent output (copying from cmd package or redefining)
@@ -41,12 +44,22 @@ func NewSSHExecutor(user, host, port string) (*SSHExecutor, error) {
 	}
 	agentClient := agent.NewClient(conn)
 
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("falha ao obter diretório home: %w", err)
+	}
+	knownHostsFile := filepath.Join(homedir, ".ssh", "known_hosts")
+	hostKeyCallback, err := knownhosts.New(knownHostsFile)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao carregar known_hosts; adicione o host com 'ssh-keyscan HOST >> ~/.ssh/known_hosts': %w", err)
+	}
+
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeysCallback(agentClient.Signers),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Simplificação MVP
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 
@@ -88,7 +101,8 @@ func (e *SSHExecutor) FetchFile(path string) ([]byte, error) {
 
 	var b bytes.Buffer
 	session.Stdout = &b
-	if err := session.Run("cat " + path); err != nil {
+	safeCmd := fmt.Sprintf("cat -- '%s'", strings.ReplaceAll(path, "'", "'\\''"))
+	if err := session.Run(safeCmd); err != nil {
 		return nil, err
 	}
 

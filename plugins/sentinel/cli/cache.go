@@ -74,5 +74,5 @@ func saveCache(namespace, podName, logs string, result AnalysisResult) {
 		return
 	}
 
-	_ = os.WriteFile(filepath.Join(cacheDir, key+".json"), data, 0644)
+	_ = os.WriteFile(filepath.Join(cacheDir, key+".json"), data, 0600)
 }

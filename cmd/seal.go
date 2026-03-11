@@ -144,7 +144,7 @@ sela usando 'kubeseal' e salva o arquivo YAML no local apropriado.`,
 		// Garantir diretório
 		_ = os.MkdirAll(filepath.Dir(finalPath), 0755)
 
-		if err := os.WriteFile(finalPath, sealedYaml.Bytes(), 0644); err != nil {
+		if err := os.WriteFile(finalPath, sealedYaml.Bytes(), 0600); err != nil {
 			return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar sealed secret")
 		}
 

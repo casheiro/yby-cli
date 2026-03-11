@@ -63,9 +63,9 @@ func TestEnvironmentsForTopology(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "Topologia single retorna apenas prod",
+			name:     "Topologia single retorna apenas local",
 			topology: "single",
-			expected: []string{"prod"},
+			expected: []string{"local"},
 		},
 		{
 			name:     "Topologia standard retorna local e prod",

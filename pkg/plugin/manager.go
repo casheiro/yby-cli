@@ -114,7 +114,7 @@ func (m *Manager) scanDirectory(dir string) error {
 		// Checking manifest is safer.
 		manifest, err := m.loadManifest(path)
 		if err != nil {
-			slog.Warn("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
+			slog.Debug("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
 			continue
 		}
 
@@ -816,13 +816,22 @@ func extractTarGz(r io.Reader, dest string) error {
 
 		target := filepath.Join(dest, header.Name)
 
+		// Prevenir Zip Slip: garantir que o destino está dentro de dest
+		cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
+		if !strings.HasPrefix(filepath.Clean(target)+string(os.PathSeparator), cleanDest) {
+			return fmt.Errorf("entrada inválida no tarball: %s", header.Name)
+		}
+
+		// Sanitizar permissões com máscara segura
+		safeMode := os.FileMode(header.Mode) & 0755
+
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, safeMode)
 			if err != nil {
 				return err
 			}

@@ -371,8 +371,8 @@ func TestBuildContext_Defaults(t *testing.T) {
 		t.Errorf("Domain = %s, want yby.local", ctx.Domain)
 	}
 
-	if ctx.Environment != "prod" {
-		t.Errorf("Environment = %s, want prod (adjusted for single topology)", ctx.Environment)
+	if ctx.Environment != "local" {
+		t.Errorf("Environment = %s, want local (adjusted for single topology)", ctx.Environment)
 	}
 
 	if ctx.Topology != "single" {
@@ -398,7 +398,7 @@ func TestBuildContext_TopologyEnvironments(t *testing.T) {
 		{
 			name:         "Single topology",
 			topology:     "single",
-			expectedEnvs: []string{"prod"},
+			expectedEnvs: []string{"local"},
 		},
 		{
 			name:         "Standard topology",
@@ -715,7 +715,7 @@ func TestBuildContext_NonInteractive_SemGitRepoSemProjectName(t *testing.T) {
 }
 
 func TestBuildContext_OfflineMode_AdicionaLocal(t *testing.T) {
-	// Topologia "single" normalmente só tem "prod", mas offline deve adicionar "local"
+	// Topologia "single" tem "local", offline garante que "local" está presente
 	o := &InitOptions{
 		Offline:        true,
 		Topology:       "single",
@@ -765,7 +765,7 @@ func TestBuildContext_OfflineMode_GithubOrgPadrao(t *testing.T) {
 }
 
 func TestBuildContext_AmbienteInvalidoAjustado(t *testing.T) {
-	// Topologia "single" tem ["prod"], se Environment="dev", deve ajustar
+	// Topologia "single" tem ["local"], se Environment="dev", deve ajustar
 	o := &InitOptions{
 		Topology:       "single",
 		Workflow:       "essential",

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 
@@ -159,7 +160,9 @@ func configureDirenv() {
 	// Create .envrc if not exists
 	if _, err := os.Stat(".envrc"); os.IsNotExist(err) {
 		content := "export KUBECONFIG=$(pwd)/.kube/config\necho \"☸️  Ambiente configurado: KUBECONFIG=./.kube/config\""
-		_ = os.WriteFile(".envrc", []byte(content), 0644)
+		if err := os.WriteFile(".envrc", []byte(content), 0600); err != nil {
+			slog.Warn("falha ao criar .envrc", "erro", err)
+		}
 		fmt.Println(checkStyle.Render(".envrc criado."))
 	}
 

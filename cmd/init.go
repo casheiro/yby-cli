@@ -607,7 +607,7 @@ func resolveTargetDir(targetDir string) string {
 func environmentsForTopology(topology string) []string {
 	switch topology {
 	case "single":
-		return []string{"prod"}
+		return []string{"local"}
 	case "standard":
 		return []string{"local", "prod"}
 	case "complete":
