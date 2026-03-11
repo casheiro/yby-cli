@@ -28,8 +28,10 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 					return true // Skip if it doesn't match the selected pattern
 				}
 			} else {
-				// Default behavior: skip if no pattern match
-				return true
+				// Quando nenhum padrão é selecionado, incluir apenas workflows essenciais
+				if !strings.Contains(path, "/essential") {
+					return true
+				}
 			}
 		}
 	}
@@ -66,7 +68,7 @@ func shouldSkip(path string, ctx *BlueprintContext) bool {
 		}
 	}
 	if !ctx.EnableMetricsServer {
-		if strings.Contains(path, "manifests/observability/metrics-server.yaml") {
+		if strings.Contains(path, "manifests/observability/metrics-server") {
 			return true
 		}
 	}

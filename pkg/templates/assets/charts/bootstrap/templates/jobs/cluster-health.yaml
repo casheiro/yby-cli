@@ -16,7 +16,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: health-check
-            image: bitnami/kubectl:latest
+            image: bitnami/kubectl:1.31
             command: [bash, -c]
             args:
             - |

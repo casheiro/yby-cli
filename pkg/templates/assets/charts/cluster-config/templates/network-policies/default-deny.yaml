@@ -8,4 +8,24 @@ spec:
   podSelector: {}
   policyTypes:
   - Ingress
+  - Egress
+---
+# Permite egress DNS para que pods possam resolver nomes
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
 {{- end -}}

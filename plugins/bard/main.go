@@ -2,15 +2,19 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -61,7 +65,7 @@ func handlePluginRequest(req plugin.PluginRequest) {
 }
 
 func startChat(ctxData map[string]interface{}) {
-	// Initialize AI
+	// Inicializar IA
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
@@ -69,28 +73,32 @@ func startChat(ctxData map[string]interface{}) {
 		os.Exit(1)
 	}
 
-	// 1. Initialize Vector Store (Read-Only access effectively)
+	// 1. Inicializar Vector Store (acesso somente leitura)
 	cwd, _ := os.Getwd()
 	storePath := filepath.Join(cwd, ".synapstor", ".index")
-	// Note: We initialize store. If it doesn't exist, search will just return empty or we handle error.
 	vectorStore, err := ai.NewVectorStore(ctx, storePath, provider)
 	if err != nil {
-		// Non-fatal, just means no long-term memory
-		// But in this architecture it's critical. Let's warn.
+		// Não fatal, apenas sem memória de longo prazo
 		fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("⚠️  Aviso: Memória semântica indisponível (%v)\n"), err)
 	}
 
-	// 2. Build Base Context from Payload (still useful for Blueprint/High-level)
+	// 2. Carregar configuração do Bard
+	bardCfg := loadBardConfig()
+
+	// 3. Carregar histórico de sessões anteriores
+	history := loadHistory()
+
+	// 4. Construir contexto base a partir do payload
 	overview, _ := ctxData["overview"].(string)
 	backlog, _ := ctxData["backlog"].(string)
 
 	blueprintSummary := "Nenhum blueprint disponível."
 	if bp, ok := ctxData["blueprint"]; ok {
-		bytes, _ := json.MarshalIndent(bp, "", "  ")
-		blueprintSummary = string(bytes)
+		bpBytes, _ := json.MarshalIndent(bp, "", "  ")
+		blueprintSummary = string(bpBytes)
 	}
 
-	// 3. Build Rich System Prompt
+	// 5. Construir system prompt enriquecido
 	contextBlock := fmt.Sprintf(`
 ## Project Overview
 %s
@@ -104,9 +112,20 @@ func startChat(ctxData map[string]interface{}) {
 
 	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
 
-	// UI Setup
+	// Injetar histórico de conversas anteriores
+	historyCtx := formatHistoryContext(history)
+	if historyCtx != "" {
+		systemPrompt += "\n\n" + historyCtx
+	}
+
+	// Injetar prompt extra da configuração
+	if bardCfg.SystemPromptExtra != "" {
+		systemPrompt += "\n\n" + bardCfg.SystemPromptExtra
+	}
+
+	// Configuração da UI
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
-	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair."))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair. '/clear' para limpar histórico."))
 
 	if vectorStore != nil {
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("🧠 Memória Semântica Ativa."))
@@ -128,40 +147,76 @@ func startChat(ctxData map[string]interface{}) {
 			continue
 		}
 
+		// Comando /clear para limpar histórico
+		if input == "/clear" {
+			clearHistory()
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("✅ Histórico limpo."))
+			continue
+		}
+
+		// Salvar mensagem do usuário antes da chamada IA
+		saveMessage("user", input)
+
 		fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Bard > "))
 
-		// 4. Smart Retrieval (Vector Search)
+		// 6. Recuperação inteligente (busca vetorial com threshold)
 		ukiContext := ""
 		if vectorStore != nil {
-			// Search for top 3 relevant chunks
-			results, err := vectorStore.Search(ctx, input, 3)
-			if err == nil && len(results) > 0 {
-				var sources []string
-				var sb strings.Builder
+			results, searchErr := vectorStore.Search(ctx, input, bardCfg.TopK)
+			if searchErr == nil && len(results) > 0 {
+				// Filtrar por threshold de relevância
+				filtered := filterByThreshold(results, bardCfg.RelevanceThreshold)
 
-				for _, res := range results {
-					sources = append(sources, fmt.Sprintf("%s (%.2f)", res.Metadata["filename"], res.Score))
-					sb.WriteString(fmt.Sprintf("\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content))
+				if len(filtered) > 0 {
+					var sources []string
+					var sb strings.Builder
+
+					for _, res := range filtered {
+						sources = append(sources, fmt.Sprintf("%s (%.2f)", res.Metadata["filename"], res.Score))
+						sb.WriteString(fmt.Sprintf("\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content))
+					}
+
+					ukiContext = sb.String()
+
+					// Exibir fontes na UI (sutil)
+					fmt.Printf(lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("240")).Render("\n(Consultando: %s)... "), strings.Join(sources, ", "))
 				}
-
-				ukiContext = sb.String()
-
-				// Show sources in UI (subtle)
-				fmt.Printf(lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("240")).Render("\n(Consultando: %s)... "), strings.Join(sources, ", "))
 			}
 		}
 
-		// 5. Final Answer
+		// 7. Resposta final com retry e captura de output
 		runInput := input
 		if ukiContext != "" {
 			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
 		}
 
-		err := provider.StreamCompletion(ctx, systemPrompt, runInput, os.Stdout)
-		if err != nil {
-			fmt.Printf("\nError: %v\n", err)
+		var responseBuf bytes.Buffer
+		writer := io.MultiWriter(os.Stdout, &responseBuf)
+
+		retryOpts := retry.Options{
+			InitialInterval:     2 * time.Second,
+			MaxInterval:         10 * time.Second,
+			MaxElapsedTime:      30 * time.Second,
+			RandomizationFactor: 0.3,
+			Multiplier:          2.0,
 		}
-		fmt.Println() // Newline after stream
+
+		attempt := 0
+		err := retry.Do(ctx, retryOpts, func() error {
+			attempt++
+			if attempt > 1 {
+				fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("\n🔄 Tentando novamente..."))
+				responseBuf.Reset()
+			}
+			return provider.StreamCompletion(ctx, systemPrompt, runInput, writer)
+		})
+
+		if err != nil {
+			fmt.Printf("\nErro: %v\n", err)
+		} else {
+			saveMessage("assistant", responseBuf.String())
+		}
+		fmt.Println() // Nova linha após o stream
 	}
 }
 

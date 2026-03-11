@@ -2,7 +2,7 @@
 
 > **Canonical Knowledge Source**
 > Este arquivo descreve a arquitetura, objetivos e identidade do projeto `yby-cli`.
-> **Última Atualização:** 2025-12-24
+> **Última Atualização:** 2026-03-11
 
 ## 1. Identidade
 **Slogan:** Platform Engineering & Infrastructure Assistant.
@@ -10,7 +10,7 @@
 **Maturidade:** **Active (Governed)** - Processos ágeis, mas exigência de UKI para mudanças semânticas.
 
 ## 2. Visão Técnica
-- **Linguagem:** Go (Golang) 1.22+.
+- **Linguagem:** Go (Golang) 1.24+.
 - **Principal Artefato:** Binário CLI `yby`.
 - **Dependências Chave:** `k3d`, `kubectl`, `helm`.
 - **Padrão de Release:** Semantic Versioning via Conventional Commits + GoReleaser.

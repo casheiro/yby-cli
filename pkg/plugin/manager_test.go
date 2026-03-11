@@ -1,6 +1,9 @@
 package plugin
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,5 +111,47 @@ image: nginx
 	// Ensure values made it into fullCtx
 	if val, ok := fullCtx.Values["image"]; !ok || val != "nginx" {
 		t.Errorf("expected fullCtx.Values['image'] = 'nginx', got %v", val)
+	}
+}
+
+func TestExtractTarGzZipSlip(t *testing.T) {
+	// Cria um tarball malicioso com entrada que escapa do diretório destino
+	dest, err := os.MkdirTemp("", "zipslip-dest-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dest)
+
+	// Cria o tarball em memória com entrada maliciosa "../escape"
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	// Entrada maliciosa: path com ../ que escapa do destino
+	hdr := &tar.Header{
+		Name:     "../escape_test_file",
+		Typeflag: tar.TypeReg,
+		Size:     5,
+		Mode:     0644,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("oops!")); err != nil {
+		t.Fatal(err)
+	}
+	tw.Close()
+	gw.Close()
+
+	err = extractTarGz(&buf, dest)
+	if err == nil {
+		t.Error("extractTarGz deveria retornar erro para entrada com Zip Slip")
+	}
+
+	// Verificar que o arquivo de escape não foi criado
+	escapePath := filepath.Join(filepath.Dir(dest), "escape_test_file")
+	if _, statErr := os.Stat(escapePath); statErr == nil {
+		t.Error("arquivo de escape não deveria ter sido criado fora do destino")
+		os.Remove(escapePath) // limpar
 	}
 }

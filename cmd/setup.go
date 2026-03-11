@@ -5,11 +5,12 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
-	"os/exec"
 	"runtime"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -23,15 +24,14 @@ rodar o ambiente de desenvolvimento localmente (kubectl, helm, k3d, direnv).
 Exemplo:
   yby setup
 `,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🚀 Yby Setup - Configuração de Ambiente"))
 		fmt.Println("---------------------------------------")
 
 		// 0. Detect Profile
 		profile, _ := cmd.Flags().GetString("profile")
 		if profile != "dev" && profile != "server" {
-			fmt.Println(crossStyle.Render("❌ Perfil inválido. Use 'dev' ou 'server'."))
-			os.Exit(1)
+			return errors.New(errors.ErrCodeValidation, "Perfil inválido. Use 'dev' ou 'server'")
 		}
 		fmt.Printf("🔧 Perfil selecionado: %s\n", profile)
 
@@ -64,7 +64,7 @@ Exemplo:
 
 		for _, t := range selectedTools {
 			fmt.Printf("%s Verificando %s... ", stepStyle.Render("🔍"), t.Name)
-			if _, err := exec.LookPath(t.Cmd); err != nil {
+			if _, err := lookPath(t.Cmd); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
 				missing = append(missing, t.Name)
 			} else {
@@ -77,7 +77,7 @@ Exemplo:
 			if profile == "dev" {
 				configureDirenv()
 			}
-			return
+			return nil
 		}
 
 		fmt.Println("\n" + warningStyle.Render("Algumas ferramentas estão faltando:"))
@@ -101,10 +101,11 @@ Exemplo:
 
 		// Always try to configure direnv if present and in dev mode
 		if profile == "dev" {
-			if _, err := exec.LookPath("direnv"); err == nil {
+			if _, err := lookPath("direnv"); err == nil {
 				configureDirenv()
 			}
 		}
+		return nil
 	},
 }
 
@@ -117,11 +118,11 @@ func attemptInstall(tools []string) {
 	fmt.Println(headerStyle.Render("📦 Instalando Dependências..."))
 
 	pkgManager := ""
-	if _, err := exec.LookPath("brew"); err == nil {
+	if _, err := lookPath("brew"); err == nil {
 		pkgManager = "brew"
-	} else if _, err := exec.LookPath("apt-get"); err == nil && runtime.GOOS == "linux" {
+	} else if _, err := lookPath("apt-get"); err == nil && runtime.GOOS == "linux" {
 		pkgManager = "apt"
-	} else if _, err := exec.LookPath("snap"); err == nil && runtime.GOOS == "linux" {
+	} else if _, err := lookPath("snap"); err == nil && runtime.GOOS == "linux" {
 		pkgManager = "snap" // Fallback but apt is preferred
 	}
 
@@ -132,16 +133,16 @@ func attemptInstall(tools []string) {
 
 	for _, tool := range tools {
 		fmt.Printf("Instalando %s via %s... ", tool, pkgManager)
-		var cmd *exec.Cmd
 
+		var cmd = execCommand("echo", "noop") // default
 		switch pkgManager {
 		case "brew":
-			cmd = exec.Command("brew", "install", tool)
+			cmd = execCommand("brew", "install", tool)
 		case "apt":
 			// Need sudo
-			cmd = exec.Command("sudo", "apt-get", "install", "-y", tool)
+			cmd = execCommand("sudo", "apt-get", "install", "-y", tool)
 		case "snap":
-			cmd = exec.Command("sudo", "snap", "install", tool)
+			cmd = execCommand("sudo", "snap", "install", tool)
 		}
 
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -159,10 +160,12 @@ func configureDirenv() {
 	// Create .envrc if not exists
 	if _, err := os.Stat(".envrc"); os.IsNotExist(err) {
 		content := "export KUBECONFIG=$(pwd)/.kube/config\necho \"☸️  Ambiente configurado: KUBECONFIG=./.kube/config\""
-		_ = os.WriteFile(".envrc", []byte(content), 0644)
+		if err := os.WriteFile(".envrc", []byte(content), 0600); err != nil {
+			slog.Warn("falha ao criar .envrc", "erro", err)
+		}
 		fmt.Println(checkStyle.Render(".envrc criado."))
 	}
 
-	_ = exec.Command("direnv", "allow").Run()
+	_ = execCommand("direnv", "allow").Run()
 	fmt.Println(checkStyle.Render("direnv allow executado."))
 }

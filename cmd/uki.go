@@ -12,8 +12,12 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
+
+// getAIProvider permite override em testes
+var getAIProvider = ai.GetProvider
 
 // ukiCmd represents the uki command
 var ukiCmd = &cobra.Command{
@@ -33,7 +37,7 @@ dentro do diretório .synapstor/.uki/.
 Exemplo:
   yby uki capture "Precisamos de uma política de retenção de logs de 30 dias para compliance PCI-DSS"
   yby uki capture --file minutas/reuniao-seguranca.txt`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
@@ -47,9 +51,7 @@ Exemplo:
 		// For now, simple arg.
 
 		if description == "" {
-			fmt.Println(crossStyle.Render("❌ Erro: Descrição necessária."))
-			fmt.Println("Uso: yby uki capture \"Descrição da necessidade ou decisão\"")
-			os.Exit(1)
+			return errors.New(errors.ErrCodeValidation, "Descrição necessária. Uso: yby uki capture \"Descrição da necessidade ou decisão\"")
 		}
 
 		fmt.Println(titleStyle.Render("🧠 Yby AI - Governance Capture"))
@@ -57,12 +59,10 @@ Exemplo:
 
 		// 2. Init AI
 		providerName, _ := cmd.Flags().GetString("ai-provider")
-		provider := ai.GetProvider(ctx, providerName)
+		provider := getAIProvider(ctx, providerName)
 
 		if provider == nil {
-			fmt.Println(crossStyle.Render("❌ Nenhum provedor de IA encontrado ou configurado."))
-			fmt.Println("Dica: Exporte OPENAI_API_KEY, GEMINI_API_KEY ou rode 'ollama serve'.")
-			os.Exit(1)
+			return errors.New(errors.ErrCodeConfig, "Nenhum provedor de IA encontrado. Dica: Exporte OPENAI_API_KEY, GEMINI_API_KEY ou rode 'ollama serve'")
 		}
 
 		fmt.Printf("%s Usando provedor: %s\n", checkStyle.String(), provider.Name())
@@ -71,20 +71,17 @@ Exemplo:
 		// 3. Generate
 		blueprint, err := provider.GenerateGovernance(ctx, description)
 		if err != nil {
-			fmt.Printf("%s Erro na geração: %v\n", crossStyle.String(), err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeExec, "Erro na geração AI")
 		}
 
 		// 4. Save Files
 		baseDir := ".synapstor"
 		// Ensure dirs exist
 		if err := os.MkdirAll(filepath.Join(baseDir, ".uki"), 0755); err != nil {
-			fmt.Printf("%s Falha ao criar diretório .uki: %v\n", crossStyle.String(), err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeIO, "Falha ao criar diretório .uki")
 		}
 		if err := os.MkdirAll(filepath.Join(baseDir, ".personas"), 0755); err != nil {
-			fmt.Printf("%s Falha ao criar diretório .personas: %v\n", crossStyle.String(), err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeIO, "Falha ao criar diretório .personas")
 		}
 
 		fmt.Println("")
@@ -114,6 +111,7 @@ Exemplo:
 
 		fmt.Println("")
 		fmt.Println(checkStyle.Render("✅ Governança capturada com sucesso!"))
+		return nil
 	},
 }
 

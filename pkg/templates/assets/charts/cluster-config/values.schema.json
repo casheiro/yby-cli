@@ -10,19 +10,13 @@
     "global": {
       "type": "object",
       "required": [
-        "environment",
         "domainBase"
       ],
       "properties": {
         "environment": {
           "type": "string",
-          "enum": [
-            "dev",
-            "staging",
-            "prod",
-            "local"
-          ],
-          "description": "Deployment environment"
+          "default": "dev",
+          "description": "Ambiente de deploy (provido via cluster-values)"
         },
         "domainBase": {
           "type": "string",

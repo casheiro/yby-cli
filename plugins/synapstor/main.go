@@ -9,46 +9,37 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/agent"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/indexer"
 )
 
 func main() {
-	var req plugin.PluginRequest
-
-	// 1. Check for Environment Variable Protocol
-	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
-		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
-			os.Exit(1)
-		}
-		handlePluginRequest(req)
-		return
-	}
-
-	// 2. Fallback to Stdin
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
-			handlePluginRequest(req)
+	// 1. Tentar inicializar via SDK (lê stdin/env var)
+	if err := sdk.Init(); err != nil {
+		// 2. Fallback: modo CLI direto (args na linha de comando)
+		if len(os.Args) > 1 {
+			cmd := os.Args[1]
+			args := os.Args[2:]
+			handlePluginRequest(plugin.PluginRequest{
+				Hook: "command",
+				Args: append([]string{cmd}, args...),
+			})
 			return
 		}
-	}
-
-	// 3. CLI Mode (Direct execution for testing or local usage)
-	if len(os.Args) > 1 {
-		// Mock command execution if arguments are present directly
-		cmd := os.Args[1]
-		args := os.Args[2:]
-		handlePluginRequest(plugin.PluginRequest{
-			Hook: "command",
-			Args: append([]string{cmd}, args...),
-		})
+		// Sem input via SDK nem CLI
+		printHelp()
 		return
 	}
 
-	// Fallback Help
-	printHelp()
+	// SDK inicializado com sucesso
+	hook := sdk.GetHook()
+	args := sdk.GetArgs()
+
+	handlePluginRequest(plugin.PluginRequest{
+		Hook: hook,
+		Args: args,
+	})
 }
 
 func handlePluginRequest(req plugin.PluginRequest) {
@@ -97,14 +88,20 @@ func handlePluginRequest(req plugin.PluginRequest) {
 				fmt.Printf("❌ Erro: %v\n", err)
 			}
 		case "index":
-			runIndex()
+			fullReindex := false
+			for _, a := range req.Args[1:] {
+				if a == "--full" {
+					fullReindex = true
+				}
+			}
+			runIndex(fullReindex)
 		default:
 			printHelp()
 		}
 	}
 }
 
-func runIndex() {
+func runIndex(fullReindex bool) {
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
@@ -114,6 +111,7 @@ func runIndex() {
 
 	cwd, _ := os.Getwd()
 	idx := indexer.NewIndexer(provider, cwd)
+	idx.FullReindex = fullReindex
 
 	if err := idx.Run(ctx); err != nil {
 		fmt.Printf("❌ Erro na indexação: %v\n", err)
@@ -130,5 +128,5 @@ func printHelp() {
 	fmt.Println("Synapstor Agent Commands:")
 	fmt.Println("  capture [text]  - Captura e estrutura conhecimento")
 	fmt.Println("  study [topic]   - Lê código e gera documentação")
-	fmt.Println("  index           - Atualiza índice de busca")
+	fmt.Println("  index [--full]  - Atualiza índice de busca (--full força reindexação completa)")
 }

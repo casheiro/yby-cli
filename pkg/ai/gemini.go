@@ -13,8 +13,9 @@ import (
 )
 
 type GeminiProvider struct {
-	APIKey string
-	Model  string
+	APIKey  string
+	Model   string
+	BaseURL string
 }
 
 func NewGeminiProvider() *GeminiProvider {
@@ -29,8 +30,9 @@ func NewGeminiProvider() *GeminiProvider {
 	}
 
 	return &GeminiProvider{
-		APIKey: apiKey,
-		Model:  model,
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: "https://generativelanguage.googleapis.com",
 	}
 }
 
@@ -72,7 +74,7 @@ type geminiResponse struct {
 }
 
 func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
+	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", p.BaseURL, p.Model, p.APIKey)
 
 	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", SystemPrompt, description)
 
@@ -131,7 +133,7 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 }
 
 func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.Model, p.APIKey)
+	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", p.BaseURL, p.Model, p.APIKey)
 
 	// Context + User Prompt
 	lang := GetLanguage()
@@ -235,7 +237,7 @@ func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 	}
 
 	embeddingModel := "text-embedding-004"
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchEmbedContents?key=%s", embeddingModel, p.APIKey)
+	url := fmt.Sprintf("%s/v1beta/models/%s:batchEmbedContents?key=%s", p.BaseURL, embeddingModel, p.APIKey)
 
 	const batchSize = 100
 	var allEmbeddings [][]float32

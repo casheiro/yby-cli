@@ -163,17 +163,76 @@ func (a *Agent) Study(query string) error {
 	return a.saveResponse(respJson, "Conhecimento Gerado!")
 }
 
+// validateResponse valida os campos obrigatórios da resposta da IA.
+func validateResponse(resp *SynapstorResponse) error {
+	if strings.TrimSpace(resp.Title) == "" {
+		return fmt.Errorf("campo 'title' está vazio")
+	}
+	if strings.TrimSpace(resp.Filename) == "" {
+		return fmt.Errorf("campo 'filename' está vazio")
+	}
+	if strings.TrimSpace(resp.Content) == "" {
+		return fmt.Errorf("campo 'content' está vazio")
+	}
+
+	// Normalizar filename para padrão UKI
+	if !strings.HasPrefix(resp.Filename, "UKI-") {
+		// Gerar nome normalizado
+		slug := strings.ToLower(strings.ReplaceAll(resp.Title, " ", "-"))
+		if len(slug) > 30 {
+			slug = slug[:30]
+		}
+		resp.Filename = fmt.Sprintf("UKI-%d-%s.md", time.Now().Unix(), slug)
+	}
+
+	// Garantir extensão .md
+	if !strings.HasSuffix(resp.Filename, ".md") {
+		resp.Filename += ".md"
+	}
+
+	return nil
+}
+
 func (a *Agent) saveResponse(respJson, successTitle string) error {
-	// Clean JSON
+	// Limpar JSON
 	cleanJson := strings.ReplaceAll(respJson, "```json", "")
 	cleanJson = strings.ReplaceAll(cleanJson, "```", "")
+	cleanJson = strings.TrimSpace(cleanJson)
 
 	var uki SynapstorResponse
 	if err := json.Unmarshal([]byte(cleanJson), &uki); err != nil {
 		return fmt.Errorf("falha ao parsear resposta da IA: %w\nResp (Raw): %s", err, respJson)
 	}
 
-	// Prepare paths
+	// Validar resposta
+	if err := validateResponse(&uki); err != nil {
+		// Tentar retry com prompt corretivo (1x)
+		fmt.Printf("⚠️  Resposta inválida: %v. Tentando corrigir...\n", err)
+		correctionPrompt := fmt.Sprintf(
+			"A resposta anterior teve o seguinte problema de validação: %v\n"+
+				"Corrija e reenvie no formato JSON correto com os campos: title, filename (formato UKI-TIMESTAMP-SLUG.md), content, summary.\n"+
+				"Resposta original:\n%s", err, cleanJson)
+
+		retryJson, retryErr := a.Provider.Completion(context.Background(), CaptureSystemPrompt, correctionPrompt)
+		if retryErr != nil {
+			return fmt.Errorf("falha na correção da IA: %w (erro original: %v)", retryErr, err)
+		}
+
+		retryClean := strings.ReplaceAll(retryJson, "```json", "")
+		retryClean = strings.ReplaceAll(retryClean, "```", "")
+		retryClean = strings.TrimSpace(retryClean)
+
+		if err := json.Unmarshal([]byte(retryClean), &uki); err != nil {
+			return fmt.Errorf("falha ao parsear resposta corrigida da IA: %w", err)
+		}
+
+		// Validar novamente (sem retry desta vez)
+		if err := validateResponse(&uki); err != nil {
+			return fmt.Errorf("resposta da IA continua inválida após correção: %w", err)
+		}
+	}
+
+	// Preparar diretórios e salvar arquivo
 	synapstorDir := filepath.Join(a.RootDir, ".synapstor", ".uki")
 	if err := os.MkdirAll(synapstorDir, 0755); err != nil {
 		return fmt.Errorf("falha ao criar diretório: %w", err)
@@ -187,8 +246,6 @@ func (a *Agent) saveResponse(respJson, successTitle string) error {
 	fmt.Printf("\n✅ %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render(successTitle))
 	fmt.Printf("📂 Arquivo: %s\n", uki.Filename)
 	fmt.Printf("📝 Título: %s\n", uki.Title)
-
-	// Trigger Index update (MVP: just log)
 	fmt.Println("🔄 Sugestão: Rode 'yby synapstor index' para atualizar o índice do Bard.")
 	return nil
 }

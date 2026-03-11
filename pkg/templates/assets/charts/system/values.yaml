@@ -7,9 +7,11 @@ cert-manager:
 argo-cd:
   configs:
     params:
-      server.insecure: true
+      # server.insecure é controlado pelo values de cada ambiente (values-{env}.yaml)
+      # NÃO definir aqui para evitar sobrescrever a configuração segura de staging/prod
+      server.insecure: false
 
 k3s:
-  version: v1.33.6+k3s1
+  version: v1.31.2+k3s1
   upgrade:
     enabled: true # Habilitar apenas quando quiser atualizar via GitOps

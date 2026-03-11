@@ -66,7 +66,7 @@ Utilizamos **automação total de releases** baseada no [Conventional Commits](h
 
 ## 🧪 Validando Localmente
 
-Pré-requisitos: [Go 1.22+](https://go.dev/doc/install).
+Pré-requisitos: [Go 1.24+](https://go.dev/doc/install).
 
 ```bash
 # Clone o repositório
@@ -76,10 +76,13 @@ cd yby-cli
 # Instale dependências
 go mod tidy
 
-# Rodar testes
-go test ./... -v
+# Rodar testes unitários
+task test
 
-# Rodar linter (se tiver golangci-lint instalado)
+# Rodar testes E2E (requer Docker)
+task test:e2e
+
+# Rodar linter
 golangci-lint run
 
 # Validar modo Server (Self-Provisioning)
