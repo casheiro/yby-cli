@@ -55,13 +55,18 @@ func TestDoctorService_Run(t *testing.T) {
 	mockRunner.On("RunCombinedOutput", ctx, "grep", []string{"MemTotal", "/proc/meminfo"}).Return([]byte("MemTotal: 16000000 kB\n"), nil)
 
 	// Tools exist
-	tools := []string{"kubectl", "helm", "kubeseal", "argocd", "git", "direnv"}
+	tools := []string{"kubectl", "helm", "argocd", "git", "direnv"}
 	for _, tool := range tools {
 		mockRunner.On("LookPath", tool).Return("/usr/bin/"+tool, nil)
 	}
 
 	// docker info success
 	mockRunner.On("Run", ctx, "docker", []string{"info"}).Return(nil)
+
+	// Ferramentas opcionais
+	mockRunner.On("LookPath", "kubeseal").Return("/usr/bin/kubeseal", nil)
+	mockRunner.On("LookPath", "sops").Return("/usr/bin/sops", nil)
+	mockRunner.On("LookPath", "age").Return("/usr/bin/age", nil)
 
 	// kubectl get nodes success
 	mockRunner.On("Run", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return(nil)
@@ -78,9 +83,9 @@ func TestDoctorService_Run(t *testing.T) {
 	assert.True(t, report.System[0].Status)
 	assert.Contains(t, report.System[0].Message, "16000000 kB")
 
-	assert.Len(t, report.Tools, 7)         // 6 path tools + 1 docker
+	assert.Len(t, report.Tools, 9)         // 5 obrigatórios + 1 docker + 3 opcionais
 	assert.True(t, report.Tools[0].Status) // kubectl
-	assert.True(t, report.Tools[6].Status) // docker
+	assert.True(t, report.Tools[5].Status) // docker
 
 	assert.Len(t, report.Cluster, 1)
 	assert.True(t, report.Cluster[0].Status)
@@ -100,10 +105,14 @@ func TestDoctorService_Failures(t *testing.T) {
 
 	mockRunner.On("LookPath", "kubectl").Return("", errors.New("not found"))
 	mockRunner.On("LookPath", "helm").Return("/usr/bin/helm", nil)
-	mockRunner.On("LookPath", "kubeseal").Return("", errors.New("not found"))
 	mockRunner.On("LookPath", "argocd").Return("", errors.New("not found"))
 	mockRunner.On("LookPath", "git").Return("", errors.New("not found"))
 	mockRunner.On("LookPath", "direnv").Return("", errors.New("not found"))
+
+	// Ferramentas opcionais
+	mockRunner.On("LookPath", "kubeseal").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "sops").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "age").Return("", errors.New("not found"))
 
 	mockRunner.On("Run", ctx, "docker", []string{"info"}).Return(errors.New("permission denied"))
 	mockRunner.On("Run", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return(errors.New("connection refused"))
@@ -119,7 +128,7 @@ func TestDoctorService_Failures(t *testing.T) {
 
 	assert.False(t, report.Tools[0].Status) // kubectl missing
 	assert.True(t, report.Tools[1].Status)  // helm found
-	assert.False(t, report.Tools[6].Status) // docker permission denied
+	assert.False(t, report.Tools[5].Status) // docker permission denied
 
 	assert.False(t, report.Cluster[0].Status)
 	assert.False(t, report.CRDs[0].Status)

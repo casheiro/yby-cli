@@ -22,6 +22,8 @@ type Service interface {
 	CreateGitHubToken(ctx context.Context, opts Options) error
 	BackupKeys(ctx context.Context, opts Options) (string, error)
 	RestoreKeys(ctx context.Context, opts Options) error
+	EncryptWithSOPS(ctx context.Context, ageRecipient string, secretYaml []byte, outputPath string) error
+	GenerateAgeKey(ctx context.Context, outputPath string) (string, error)
 }
 
 type secretsService struct {
@@ -158,6 +160,52 @@ func (s *secretsService) RestoreKeys(ctx context.Context, opts Options) error {
 	}
 
 	return nil
+}
+
+// EncryptWithSOPS encripta secretYaml usando SOPS + age e salva em outputPath.
+// Se ageRecipient for vazio, o SOPS usa .sops.yaml para determinar o destinatário.
+func (s *secretsService) EncryptWithSOPS(ctx context.Context, ageRecipient string, secretYaml []byte, outputPath string) error {
+	args := []string{"--encrypt", "--input-type", "yaml", "--output-type", "yaml"}
+	if ageRecipient != "" {
+		args = append(args, "--age", ageRecipient)
+	}
+
+	encrypted, err := s.runner.RunStdinOutput(ctx, string(secretYaml), "sops", args...)
+	if err != nil {
+		return fmt.Errorf("erro ao encriptar com sops: %w", err)
+	}
+
+	if err := s.fs.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("erro ao criar diretório: %w", err)
+	}
+
+	if err := s.fs.WriteFile(outputPath, encrypted, 0600); err != nil {
+		return fmt.Errorf("erro ao salvar arquivo: %w", err)
+	}
+
+	return nil
+}
+
+// GenerateAgeKey gera um par de chaves age e salva em outputPath.
+// Retorna a chave pública gerada.
+func (s *secretsService) GenerateAgeKey(ctx context.Context, outputPath string) (string, error) {
+	if err := s.fs.MkdirAll(filepath.Dir(outputPath), 0700); err != nil {
+		return "", fmt.Errorf("erro ao criar diretório para chave age: %w", err)
+	}
+
+	out, err := s.runner.RunCombinedOutput(ctx, "age-keygen", "-o", outputPath)
+	if err != nil {
+		return "", fmt.Errorf("erro ao gerar chave age: %w", err)
+	}
+
+	// age-keygen imprime "Public key: age1xxx..." na saída combinada
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "Public key: ") {
+			return strings.TrimPrefix(line, "Public key: "), nil
+		}
+	}
+
+	return "", fmt.Errorf("chave pública não encontrada na saída do age-keygen")
 }
 
 func (s *secretsService) sealAndSave(ctx context.Context, input []byte, outputFile string) error {

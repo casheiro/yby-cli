@@ -38,12 +38,17 @@ func (s *doctorService) Run(ctx context.Context) *DoctorReport {
 	// System Resources
 	report.System = append(report.System, s.checkSystemResources(ctx))
 
-	// Tools
-	tools := []string{"kubectl", "helm", "kubeseal", "argocd", "git", "direnv"}
+	// Tools obrigatórios
+	tools := []string{"kubectl", "helm", "argocd", "git", "direnv"}
 	for _, t := range tools {
 		report.Tools = append(report.Tools, s.checkTool(ctx, t))
 	}
 	report.Tools = append(report.Tools, s.checkDockerPermissions(ctx))
+
+	// Tools opcionais por estratégia de secrets
+	report.Tools = append(report.Tools, s.checkOptionalTool(ctx, "kubeseal", "Sealed Secrets"))
+	report.Tools = append(report.Tools, s.checkOptionalTool(ctx, "sops", "SOPS"))
+	report.Tools = append(report.Tools, s.checkOptionalTool(ctx, "age", "age (SOPS)"))
 
 	// Cluster
 	report.Cluster = append(report.Cluster, s.checkClusterConnection(ctx))
@@ -88,6 +93,14 @@ func (s *doctorService) checkClusterConnection(ctx context.Context) CheckResult 
 		return CheckResult{Name: "Conexão", Status: false, Message: "Falha ao conectar. Dica: Verifique seu KUBECONFIG ou se o cluster está rodando."}
 	}
 	return CheckResult{Name: "Conexão", Status: true, Message: "OK"}
+}
+
+func (s *doctorService) checkOptionalTool(ctx context.Context, name, label string) CheckResult {
+	path, err := s.runner.LookPath(name)
+	if err != nil {
+		return CheckResult{Name: label, Status: false, Message: "Não encontrado (opcional)"}
+	}
+	return CheckResult{Name: label, Status: true, Message: path}
 }
 
 func (s *doctorService) checkCRD(ctx context.Context, crdName, readableName string) CheckResult {

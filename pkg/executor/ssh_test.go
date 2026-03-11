@@ -130,14 +130,17 @@ func TestFetchFileCommandInjection_PathComAspasSimples(t *testing.T) {
 	assert.Error(t, err, "deve retornar erro sem sessão real")
 
 	// Validar diretamente a lógica de escape:
-	import_strings := fmt.Sprintf
-	_ = import_strings
-	safeCmd := fmt.Sprintf("cat -- '%s'", strings.ReplaceAll(maliciousPath, "'", "'\\''"))
+	escapedPath := strings.ReplaceAll(maliciousPath, "'", "'\\''")
+	safeCmd := fmt.Sprintf("cat -- '%s'", escapedPath)
 	capturedCmd = safeCmd
 
-	// O comando seguro não deve conter a sequência de injeção original não-escapada
-	assert.NotContains(t, capturedCmd, "'; rm -rf /; echo '",
-		"path injetado não deve aparecer sem escape no comando")
-	// Deve conter aspas simples escapadas
-	assert.Contains(t, capturedCmd, "\\'", "caracteres de aspas simples devem ser escapados")
+	// Cada aspas simples do path original deve ter sido escapada com '\''
+	assert.Contains(t, capturedCmd, "'\\''",
+		"aspas simples devem ser escapadas com mecanismo de shell quoting")
+	// O path escapado não deve ser igual ao path original (prova que houve escape)
+	assert.NotEqual(t, maliciousPath, escapedPath,
+		"o path escapado deve ser diferente do original")
+	// O comando deve começar com 'cat --' (uso seguro)
+	assert.True(t, strings.HasPrefix(capturedCmd, "cat -- '"),
+		"comando deve usar cat com -- para evitar interpretação de flags")
 }

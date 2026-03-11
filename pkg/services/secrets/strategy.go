@@ -2,6 +2,8 @@ package secrets
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
@@ -18,10 +20,12 @@ type SecretStrategy interface {
 
 // SecretOpts contém as opções para geração de um secret.
 type SecretOpts struct {
-	Name       string
-	Namespace  string
-	Data       map[string]string
-	OutputPath string
+	Name         string
+	Namespace    string
+	Data         map[string]string
+	OutputPath   string
+	AgeRecipient string // para estratégia SOPS: chave pública age (opcional se .sops.yaml existir)
+	StoreRef     string // para estratégia ESO: nome do ClusterSecretStore (padrão: cluster-secret-store)
 }
 
 // SealedSecretsStrategy implementa a estratégia SealedSecrets (Bitnami).
@@ -71,10 +75,43 @@ func (s *ExternalSecretsStrategy) ScaffoldTemplates() []string {
 	return []string{"external-secret"}
 }
 
-func (s *ExternalSecretsStrategy) GenerateSecret(_ context.Context, _ SecretOpts) error {
-	// ESO não gera secrets localmente — eles são referências a backends externos.
-	// O scaffold gera os ExternalSecret CRDs que apontam para o backend configurado.
-	return nil
+func (s *ExternalSecretsStrategy) GenerateSecret(_ context.Context, opts SecretOpts) error {
+	if opts.OutputPath == "" {
+		// ESO sem caminho de saída: apenas referência, nada a gerar localmente.
+		return nil
+	}
+
+	storeRef := opts.StoreRef
+	if storeRef == "" {
+		storeRef = "cluster-secret-store"
+	}
+
+	var dataSection string
+	for k, v := range opts.Data {
+		dataSection += fmt.Sprintf("  - secretKey: %s\n    remoteRef:\n      key: %s\n", k, v)
+	}
+
+	yaml := fmt.Sprintf(`apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: %s
+    kind: ClusterSecretStore
+  target:
+    name: %s
+    creationPolicy: Owner
+  data:
+%s`, opts.Name, opts.Namespace, storeRef, opts.Name, dataSection)
+
+	if err := s.fs.MkdirAll(filepath.Dir(opts.OutputPath), 0755); err != nil {
+		return fmt.Errorf("erro ao criar diretório: %w", err)
+	}
+
+	return s.fs.WriteFile(opts.OutputPath, []byte(yaml), 0644)
 }
 
 // SOPSStrategy implementa a estratégia SOPS + age.
@@ -94,10 +131,19 @@ func (s *SOPSStrategy) ScaffoldTemplates() []string {
 	return []string{"sops-secret"}
 }
 
-func (s *SOPSStrategy) GenerateSecret(_ context.Context, _ SecretOpts) error {
-	// SOPS encripta secrets no repositório Git com chave age.
-	// A geração real depende da chave age configurada.
-	return nil
+func (s *SOPSStrategy) GenerateSecret(ctx context.Context, opts SecretOpts) error {
+	args := []string{"create", "secret", "generic", opts.Name, "--namespace", opts.Namespace, "--dry-run=client", "-o", "yaml"}
+	for k, v := range opts.Data {
+		args = append(args, "--from-literal="+k+"="+v)
+	}
+
+	secretYaml, err := s.runner.RunCombinedOutput(ctx, "kubectl", args...)
+	if err != nil {
+		return fmt.Errorf("erro ao gerar secret com kubectl: %w", err)
+	}
+
+	svc := &secretsService{runner: s.runner, fs: s.fs}
+	return svc.EncryptWithSOPS(ctx, opts.AgeRecipient, secretYaml, opts.OutputPath)
 }
 
 // NewStrategy cria a estratégia de secrets apropriada com base no nome.

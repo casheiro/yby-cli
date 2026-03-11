@@ -57,3 +57,85 @@ func TestSealAndSave_WriteFileFalha(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "erro ao salvar arquivo")
 }
+
+// TestEncryptWithSOPS_Success cobre o fluxo feliz de EncryptWithSOPS
+func TestEncryptWithSOPS_Success(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "secret-yaml", "sops",
+		[]string{"--encrypt", "--input-type", "yaml", "--output-type", "yaml"}).
+		Return([]byte("encrypted"), nil)
+	fsys.On("MkdirAll", "/tmp", mock.Anything).Return(nil)
+	fsys.On("WriteFile", "/tmp/out.yaml", []byte("encrypted"), mock.Anything).Return(nil)
+
+	err := svc.EncryptWithSOPS(ctx, "", []byte("secret-yaml"), "/tmp/out.yaml")
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+// TestEncryptWithSOPS_ComRecipient verifica que --age é passado quando ageRecipient é informado
+func TestEncryptWithSOPS_ComRecipient(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "secret-yaml", "sops",
+		[]string{"--encrypt", "--input-type", "yaml", "--output-type", "yaml", "--age", "age1xxx"}).
+		Return([]byte("encrypted"), nil)
+	fsys.On("MkdirAll", "/tmp", mock.Anything).Return(nil)
+	fsys.On("WriteFile", "/tmp/out.yaml", []byte("encrypted"), mock.Anything).Return(nil)
+
+	err := svc.EncryptWithSOPS(ctx, "age1xxx", []byte("secret-yaml"), "/tmp/out.yaml")
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+// TestEncryptWithSOPS_SopsError cobre erro do sops
+func TestEncryptWithSOPS_SopsError(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	svc := NewService(runner, new(MockFS))
+
+	runner.On("RunStdinOutput", ctx, "data", "sops", mock.Anything).
+		Return(nil, errors.New("sops falhou"))
+
+	err := svc.EncryptWithSOPS(ctx, "", []byte("data"), "/tmp/out.yaml")
+	assert.ErrorContains(t, err, "sops")
+}
+
+// TestGenerateAgeKey_Success cobre geração de chave age
+func TestGenerateAgeKey_Success(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	fsys.On("MkdirAll", "/home/user/.sops", mock.Anything).Return(nil)
+	runner.On("RunCombinedOutput", ctx, "age-keygen",
+		[]string{"-o", "/home/user/.sops/age-key.txt"}).
+		Return([]byte("Public key: age1abc123\n"), nil)
+
+	pubKey, err := svc.GenerateAgeKey(ctx, "/home/user/.sops/age-key.txt")
+	assert.NoError(t, err)
+	assert.Equal(t, "age1abc123", pubKey)
+	runner.AssertExpectations(t)
+}
+
+// TestGenerateAgeKey_SemChavePublica cobre falha ao encontrar chave pública na saída
+func TestGenerateAgeKey_SemChavePublica(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(nil)
+	runner.On("RunCombinedOutput", ctx, "age-keygen", mock.Anything).
+		Return([]byte("saida sem chave publica"), nil)
+
+	_, err := svc.GenerateAgeKey(ctx, "/tmp/key.txt")
+	assert.ErrorContains(t, err, "chave pública não encontrada")
+}

@@ -122,8 +122,56 @@ func (s *BootstrapService) phaseSystemBootstrap(ctx context.Context, root, chart
 }
 
 func (s *BootstrapService) phaseSecrets(ctx context.Context, root, repoURL string) error {
-	// Placeholder for configureSecrets logic
+	strategy := s.detectSecretsStrategy(root)
+
+	switch strategy {
+	case "sops":
+		// Verificar se sops e age estão disponíveis
+		if _, err := s.Runner.LookPath("sops"); err != nil {
+			return fmt.Errorf("estratégia SOPS configurada, mas 'sops' não encontrado no PATH. Instale em: https://github.com/getsops/sops")
+		}
+		if _, err := s.Runner.LookPath("age"); err != nil {
+			return fmt.Errorf("estratégia SOPS configurada, mas 'age' não encontrado no PATH. Instale em: https://github.com/FiloSottile/age")
+		}
+	case "external-secrets":
+		// Verificar se há CRD do ESO instalado
+		_ = s.Runner.Run(ctx, "kubectl", "get", "crd", "externalsecrets.external-secrets.io")
+	default:
+		// sealed-secrets: verificar controller
+		_ = s.Runner.Run(ctx, "kubectl", "get", "deployment", "-n", "sealed-secrets", "sealed-secrets")
+	}
+
 	return nil
+}
+
+// detectSecretsStrategy lê a estratégia de secrets do blueprint do projeto.
+func (s *BootstrapService) detectSecretsStrategy(root string) string {
+	path := filepath.Join(root, ".yby", "blueprint.yaml")
+	data, err := s.FS.ReadFile(path)
+	if err != nil {
+		return "sealed-secrets"
+	}
+
+	var bp struct {
+		Prompts []struct {
+			ID      string      `yaml:"id"`
+			Default interface{} `yaml:"default"`
+		} `yaml:"prompts"`
+	}
+
+	if err := yaml.Unmarshal(data, &bp); err != nil {
+		return "sealed-secrets"
+	}
+
+	for _, p := range bp.Prompts {
+		if p.ID == "secrets.strategy" {
+			if val, ok := p.Default.(string); ok {
+				return val
+			}
+		}
+	}
+
+	return "sealed-secrets"
 }
 
 func (s *BootstrapService) phaseConfigBootstrap(ctx context.Context, root, repoURL, ctxFlag, envEnv string) error {

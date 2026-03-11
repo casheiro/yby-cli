@@ -39,6 +39,9 @@ func TestVersionCmd_SaidaContemVersao(t *testing.T) {
 }
 
 func TestVersionCmd_SaidaContemOSArch(t *testing.T) {
+	// Garante que log-format seja "text" para evitar saída JSON
+	_ = rootCmd.PersistentFlags().Set("log-format", "text")
+
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w

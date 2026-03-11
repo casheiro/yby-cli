@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/secrets"
@@ -213,6 +214,84 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 	},
 }
 
+var initSOPSCmd = &cobra.Command{
+	Use:   "init-sops",
+	Short: "Inicializa SOPS + age para o projeto",
+	Long: `Gera um par de chaves age e exibe a chave pública para configurar .sops.yaml.
+A chave privada é salva localmente e NUNCA deve ir para o Git.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println(titleStyle.Render("Inicializar SOPS + age"))
+
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = "."
+		}
+		keyPath := filepath.Join(homeDir, ".sops", "age-key.txt")
+
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := newSecretsService(runner, fsys)
+
+		publicKey, err := svc.GenerateAgeKey(cmd.Context(), keyPath)
+		if err != nil {
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar chave age")
+		}
+
+		fmt.Printf("Chave privada salva em: %s\n", keyPath)
+		fmt.Printf("\nChave pública age:\n  %s\n", publicKey)
+		fmt.Println("\nAdicione ao .sops.yaml do projeto:")
+		fmt.Printf("creation_rules:\n  - path_regex: \\.yaml$\n    age: %s\n", publicKey)
+		fmt.Println(warningStyle.Render("\nATENCAO: A chave privada NUNCA deve ir para o Git!"))
+		return nil
+	},
+}
+
+var initESOBackend string
+
+var initESOCmd = &cobra.Command{
+	Use:   "init-eso",
+	Short: "Gera scaffold do SecretStore para External Secrets Operator",
+	Long: `Gera o YAML de ClusterSecretStore para o backend especificado.
+Use com --backend: vault, aws, gcp, azure`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println(titleStyle.Render("Inicializar ESO - External Secrets Operator"))
+
+		if initESOBackend == "" {
+			return errors.New(errors.ErrCodeValidation, "backend obrigatório. Use: --backend vault|aws|gcp|azure")
+		}
+
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
+		}
+
+		backendOpts := secrets.BackendOpts{
+			Name:      initESOBackend,
+			Namespace: "external-secrets",
+		}
+
+		yamlContent, err := secrets.GenerateSecretStore(initESOBackend, backendOpts)
+		if err != nil {
+			return errors.Wrap(err, errors.ErrCodeValidation, "falha ao gerar SecretStore")
+		}
+
+		outputFile := JoinInfra(root, fmt.Sprintf("bootstrap/secret-store-%s.yaml", initESOBackend))
+		if err := os.MkdirAll(filepath.Dir(outputFile), 0755); err != nil {
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar diretório")
+		}
+		if err := os.WriteFile(outputFile, []byte(yamlContent), 0644); err != nil {
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar arquivo")
+		}
+
+		fmt.Printf("%s SecretStore salvo em: %s\n", checkStyle.String(), outputFile)
+		fmt.Println("\nProximos passos:")
+		fmt.Println("  1. Edite o arquivo gerado com os valores do seu ambiente")
+		fmt.Println("  2. Instale o External Secrets Operator no cluster")
+		fmt.Printf("  3. Aplique: kubectl apply -f %s\n", outputFile)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(secretsCmd)
 	secretsCmd.AddCommand(webhookSecretCmd)
@@ -220,4 +299,8 @@ func init() {
 	secretsCmd.AddCommand(githubTokenSecretCmd)
 	secretsCmd.AddCommand(backupKeysCmd)
 	secretsCmd.AddCommand(restoreKeysCmd)
+	secretsCmd.AddCommand(initSOPSCmd)
+	secretsCmd.AddCommand(initESOCmd)
+
+	initESOCmd.Flags().StringVar(&initESOBackend, "backend", "", "Backend ESO: vault, aws, gcp, azure")
 }

@@ -170,10 +170,10 @@ func TestSealCmd_TemRunEDefinido(t *testing.T) {
 }
 
 func TestSealCmd_LongDescription(t *testing.T) {
-	assert.Contains(t, sealCmd.Long, "SealedSecrets",
-		"Descrição longa deveria mencionar SealedSecrets")
-	assert.Contains(t, sealCmd.Long, "kubeseal",
-		"Descrição longa deveria mencionar kubeseal")
+	assert.Contains(t, sealCmd.Long, "secrets encriptados",
+		"Descrição longa deveria mencionar secrets encriptados")
+	assert.Contains(t, sealCmd.Long, "sealed-secrets",
+		"Descrição longa deveria mencionar sealed-secrets")
 }
 
 // ========================================================
