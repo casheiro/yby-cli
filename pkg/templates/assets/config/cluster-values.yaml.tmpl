@@ -1,16 +1,22 @@
 # ==============================================
 # Yby - Configuração do Cluster
 # ==============================================
+# IMPORTANTE: Este arquivo reflete o ambiente INICIAL do projeto ({{ .Environment }}).
+# Para ambientes superiores (staging, prod), use os values específicos em
+# config/values-{env}.yaml que sobrescrevem estas configurações via Helm merge.
+# ==============================================
 
 # Configuração do Argo CD (Bootstrap)
 # Estas chaves são usadas quando passamos este arquivo para o chart 'argo/argo-cd'
 server:
   service:
     type: ClusterIP
-  # Modo inseguro para acesso simples via port-forward
-  insecure: true
+  # Modo inseguro apenas para ambientes locais/dev (port-forward)
+  insecure: {{ if or (eq .Environment "local") (eq .Environment "dev") }}true{{ else }}false{{ end }}
+  {{- if or (eq .Environment "local") (eq .Environment "dev") }}
   extraArgs:
     - --insecure
+  {{- end }}
 
 # Configuração de Segurança (Hardening)
 security:
@@ -77,6 +83,10 @@ observability:
 
 kepler:
   enabled: {{ .EnableKepler }}
+
+# Autoscaling (KEDA)
+keda:
+  enabled: {{ .EnableKEDA }}
 
 # Armazenamento de Objetos (MinIO)
 storage:

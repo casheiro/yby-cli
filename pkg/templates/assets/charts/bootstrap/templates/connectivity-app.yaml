@@ -1,4 +1,4 @@
-{{- if or .Values.ingress.enabled .Values.ingress.tls.enabled }}
+{{- if or .Values.ingress.enabled (and .Values.ingress.tls .Values.ingress.tls.enabled) }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: {{ .Values.git.repoURL }}
     targetRevision: {{ .Values.git.targetRevision }}
-    path: charts/connectivity
+    path: {{ if .RepoRootPath }}{{ .RepoRootPath }}/{{ end }}charts/connectivity
     helm:
       valueFiles:
       {{- range $f := .Values.clusterConfig.valueFiles }}

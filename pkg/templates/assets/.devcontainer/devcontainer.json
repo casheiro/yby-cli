@@ -14,5 +14,5 @@
             ]
         }
     },
-    "postCreateCommand": "curl -sL https://github.com/casheiro/yby-cli/releases/latest/download/install.sh | bash"
+    "postCreateCommand": "curl -fsSL https://github.com/casheiro/yby-cli/releases/latest/download/install.sh -o /tmp/yby-install.sh && bash /tmp/yby-install.sh && rm -f /tmp/yby-install.sh"
 }

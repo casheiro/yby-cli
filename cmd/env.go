@@ -5,9 +5,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/casheiro/yby-cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,7 @@ var envListCmd = &cobra.Command{
   # Saída:
   # * local (local)
   #   prod (remote)`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		infraRoot, err := FindInfraRoot()
 		if err != nil {
 			infraRoot = "."
@@ -33,8 +33,7 @@ var envListCmd = &cobra.Command{
 		mgr := context.NewManager(infraRoot)
 		manifest, err := mgr.LoadManifest()
 		if err != nil {
-			fmt.Println("❌", err)
-			return
+			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao carregar manifesto de ambientes")
 		}
 
 		fmt.Println("Ambientes disponíveis:")
@@ -45,6 +44,7 @@ var envListCmd = &cobra.Command{
 			}
 			fmt.Printf("%s%s (%s): %s\n", prefix, name, env.Type, env.Description)
 		}
+		return nil
 	},
 }
 
@@ -55,7 +55,7 @@ var envUseCmd = &cobra.Command{
 	Example: `  yby env use prod
   # Atualiza automaticamente o contexto do kubectl e helm`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		infraRoot, err := FindInfraRoot()
 		if err != nil {
@@ -64,11 +64,11 @@ var envUseCmd = &cobra.Command{
 		mgr := context.NewManager(infraRoot)
 
 		if err := mgr.SetCurrent(name); err != nil {
-			fmt.Println("❌", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao definir ambiente ativo")
 		}
 
 		fmt.Printf("✅ Contexto alterado para '%s'\n", name)
+		return nil
 	},
 }
 
@@ -76,7 +76,7 @@ var envUseCmd = &cobra.Command{
 var envShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Mostra detalhes do ambiente atual",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		infraRoot, err := FindInfraRoot()
 		if err != nil {
 			infraRoot = "."
@@ -84,8 +84,7 @@ var envShowCmd = &cobra.Command{
 		mgr := context.NewManager(infraRoot)
 		name, env, err := mgr.GetCurrent()
 		if err != nil {
-			fmt.Println("❌", err)
-			return
+			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao obter detalhes do ambiente ativo")
 		}
 
 		fmt.Printf("Ambiente Ativo: %s\n", name)
@@ -94,6 +93,7 @@ var envShowCmd = &cobra.Command{
 		if env.URL != "" {
 			fmt.Printf("URL: %s\n", env.URL)
 		}
+		return nil
 	},
 }
 
@@ -104,7 +104,7 @@ var envCreateCmd = &cobra.Command{
 	Example: `  yby env create qa --type remote --description "Quality Assurance"
   # Cria config/values-qa.yaml e adiciona entry em .yby/environments.yaml`,
 	Args: cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := ""
 		if len(args) > 0 {
 			name = args[0]
@@ -117,7 +117,7 @@ var envCreateCmd = &cobra.Command{
 		if name == "" {
 			fmt.Print("Nome do ambiente (ex: qa, uat): ")
 			if _, err := fmt.Scanln(&name); err != nil {
-				return
+				return errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado")
 			}
 		}
 		if envType == "" {
@@ -139,12 +139,12 @@ var envCreateCmd = &cobra.Command{
 		}
 		mgr := context.NewManager(infraRoot)
 		if err := mgr.AddEnvironment(name, envType, description); err != nil {
-			fmt.Println("❌", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao criar ambiente")
 		}
 
 		fmt.Printf("✅ Ambiente '%s' criado com sucesso!\n", name)
 		fmt.Printf("   Arquivo de configuração: config/values-%s.yaml\n", name)
+		return nil
 	},
 }
 

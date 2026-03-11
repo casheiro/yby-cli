@@ -14,7 +14,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: webhook-info
-        image: bitnami/kubectl:latest
+        image: bitnami/kubectl:1.31
         command: [bash, -c]
         args:
         - |

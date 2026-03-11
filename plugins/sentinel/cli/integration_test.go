@@ -3,9 +3,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,7 +39,7 @@ func TestInvestigateCallsKubectl(t *testing.T) {
 	// Running locally without AI keys configured => returns "No AI provider" and exits early?
 	// Wait, the "kubectl logs" happens BEFORE AI check.
 
-	investigate("pod-123", "default")
+	investigate("pod-123", "default", "", "", false)
 }
 
 func TestHelperProcess(t *testing.T) {
@@ -84,4 +87,117 @@ func TestHelperProcess(t *testing.T) {
 	}
 
 	os.Exit(0)
+}
+
+func TestExportJSON_FormatoValido(t *testing.T) {
+	patch := "kubectl set resources..."
+	result := AnalysisResult{
+		RootCause:       "OOM",
+		TechnicalDetail: "Container excedeu limites de memória",
+		Confidence:      85,
+		SuggestedFix:    "Aumentar limits.memory",
+		KubectlPatch:    &patch,
+	}
+	content, err := exportJSON(result, "meu-pod", "default")
+	if err != nil {
+		t.Fatalf("exportJSON falhou: %v", err)
+	}
+	var report FullReport
+	if err := json.Unmarshal([]byte(content), &report); err != nil {
+		t.Fatalf("JSON inválido: %v", err)
+	}
+	if report.Metadata.Pod != "meu-pod" {
+		t.Errorf("pod esperado 'meu-pod', obtido %q", report.Metadata.Pod)
+	}
+	if report.Analysis.Confidence != 85 {
+		t.Errorf("confiança esperada 85, obtida %d", report.Analysis.Confidence)
+	}
+}
+
+func TestExportMarkdown_ContemSecoes(t *testing.T) {
+	patch := "kubectl patch..."
+	result := AnalysisResult{
+		RootCause:       "CrashLoop",
+		TechnicalDetail: "Falha de inicialização",
+		Confidence:      70,
+		SuggestedFix:    "Verificar configuração",
+		KubectlPatch:    &patch,
+	}
+	content := exportMarkdown(result, "pod-crash", "production")
+	if !strings.Contains(content, "# Relatório Sentinel") {
+		t.Error("markdown deveria conter título")
+	}
+	if !strings.Contains(content, "CrashLoop") {
+		t.Error("markdown deveria conter causa raiz")
+	}
+	if !strings.Contains(content, "kubectl patch") {
+		t.Error("markdown deveria conter comando sugerido")
+	}
+}
+
+func TestExportMarkdown_SemComandoOpcional(t *testing.T) {
+	result := AnalysisResult{
+		RootCause:       "Config inválida",
+		TechnicalDetail: "Variável de ambiente ausente",
+		Confidence:      90,
+		SuggestedFix:    "Adicionar env var",
+		KubectlPatch:    nil,
+	}
+	content := exportMarkdown(result, "pod-config", "default")
+	if strings.Contains(content, "Comando Sugerido") {
+		t.Error("markdown não deveria conter seção de comando quando KubectlPatch é nil")
+	}
+}
+
+func TestWriteReport_ParaArquivo(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "report.json")
+	err := writeReport(`{"test": true}`, filePath)
+	if err != nil {
+		t.Fatalf("writeReport falhou: %v", err)
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("falha ao ler arquivo: %v", err)
+	}
+	if string(data) != `{"test": true}` {
+		t.Errorf("conteúdo inesperado: %s", data)
+	}
+}
+
+func TestCacheKey_Deterministico(t *testing.T) {
+	key1 := cacheKey("default", "pod-1", "log line 1")
+	key2 := cacheKey("default", "pod-1", "log line 1")
+	if key1 != key2 {
+		t.Error("cacheKey deveria ser determinístico para os mesmos inputs")
+	}
+}
+
+func TestCacheKey_DiferenteParaInputsDiferentes(t *testing.T) {
+	key1 := cacheKey("default", "pod-1", "log A")
+	key2 := cacheKey("default", "pod-2", "log A")
+	if key1 == key2 {
+		t.Error("cacheKey deveria ser diferente para pods diferentes")
+	}
+}
+
+func TestSaveAndLoadCache(t *testing.T) {
+	// Override cacheDir usando chdir para diretório temporário
+	originalDir, _ := os.Getwd()
+	tmpDir := t.TempDir()
+	os.Chdir(tmpDir)
+	defer os.Chdir(originalDir)
+
+	result := AnalysisResult{
+		RootCause:  "teste",
+		Confidence: 80,
+	}
+	saveCache("default", "pod-test", "logs here", result)
+	cached, ok := loadCache("default", "pod-test", "logs here")
+	if !ok {
+		t.Fatal("esperava encontrar cache")
+	}
+	if cached.RootCause != "teste" {
+		t.Errorf("causa raiz esperada 'teste', obtida %q", cached.RootCause)
+	}
 }

@@ -4,11 +4,11 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"text/template"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +47,17 @@ spec:
 var kedaCmd = &cobra.Command{
 	Use:   "keda",
 	Short: "Gerar um KEDA ScaledObject (Cron)",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Modo headless: se deployment está preenchido por flag, aplicar defaults e pular prompts
+		if kedaOpts.Deployment != "" {
+			if kedaOpts.Name == "" {
+				kedaOpts.Name = "scale-to-zero"
+			}
+			if kedaOpts.Namespace == "" {
+				kedaOpts.Namespace = "default"
+			}
+		}
+
 		// Collect missing info via prompts
 		qs := []*survey.Question{}
 
@@ -94,8 +104,7 @@ var kedaCmd = &cobra.Command{
 		if len(qs) > 0 {
 			err := survey.Ask(qs, &answers)
 			if err != nil {
-				fmt.Println(err)
-				return
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
 			}
 		}
 
@@ -127,10 +136,10 @@ var kedaCmd = &cobra.Command{
 		}
 
 		t := template.Must(template.New("keda").Parse(kedaCronTemplate))
-		err := t.Execute(os.Stdout, data)
-		if err != nil {
-			panic(err)
+		if err := t.Execute(os.Stdout, data); err != nil {
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao renderizar template KEDA")
 		}
+		return nil
 	},
 }
 

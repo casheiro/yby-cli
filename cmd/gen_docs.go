@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
@@ -18,15 +19,14 @@ var genDocsCmd = &cobra.Command{
 	Short:  "Gera documentação Markdown para todos os comandos",
 	Hidden: true, // Internal tool only
 	Args:   cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		outputDir := "./docs/wiki"
 		if len(args) > 0 {
 			outputDir = args[0]
 		}
 
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			fmt.Printf("❌ Erro criando diretório de saída: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar diretório de saída")
 		}
 
 		outputFile := outputDir + "/CLI-Reference.md"
@@ -34,30 +34,27 @@ var genDocsCmd = &cobra.Command{
 
 		f, err := os.Create(outputFile)
 		if err != nil {
-			fmt.Printf("❌ Erro criando arquivo: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar arquivo de documentação")
 		}
 		defer f.Close()
 
 		// Write Header
 		if _, err := f.WriteString("# 📖 CLI Reference\n\n"); err != nil {
-			fmt.Printf("❌ Erro escrevendo no arquivo: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao escrever no arquivo")
 		}
 		if _, err := f.WriteString("Referência completa de todos os comandos do Yby CLI.\n\n"); err != nil {
-			fmt.Printf("❌ Erro escrevendo no arquivo: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao escrever no arquivo")
 		}
 
 		// Disable AutoGen tag globally
 		rootCmd.DisableAutoGenTag = true
 
 		if err := writeCommandDocs(f, rootCmd); err != nil {
-			fmt.Printf("❌ Erro gerando docs: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar documentação")
 		}
 
 		fmt.Println("✅ Documentação consolidada gerada com sucesso!")
+		return nil
 	},
 }
 

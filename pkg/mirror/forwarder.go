@@ -16,6 +16,60 @@ import (
 	"k8s.io/client-go/transport/spdy"
 )
 
+// PodLister abstrai a listagem de pods para permitir injeção em testes
+type PodLister interface {
+	ListPods(ctx context.Context, namespace string, labelSelector string) (*corev1.PodList, error)
+}
+
+// TunnelDialer abstrai a criação do túnel port-forward para permitir injeção em testes
+type TunnelDialer interface {
+	CreateTunnel(podName, namespace string, ports []string, stopCh, readyCh chan struct{}, out, errOut io.Writer) (PortForwardSession, error)
+}
+
+// PortForwardSession abstrai uma sessão de port-forward ativa
+type PortForwardSession interface {
+	ForwardPorts() error
+	GetPorts() ([]portforward.ForwardedPort, error)
+}
+
+// k8sPodLister implementa PodLister usando client-go real
+type k8sPodLister struct {
+	clientset *kubernetes.Clientset
+}
+
+func (l *k8sPodLister) ListPods(ctx context.Context, namespace string, labelSelector string) (*corev1.PodList, error) {
+	return l.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+}
+
+// k8sTunnelDialer implementa TunnelDialer usando client-go real
+type k8sTunnelDialer struct {
+	clientset *kubernetes.Clientset
+	config    *rest.Config
+}
+
+func (d *k8sTunnelDialer) CreateTunnel(podName, namespace string, ports []string, stopCh, readyCh chan struct{}, out, errOut io.Writer) (PortForwardSession, error) {
+	req := d.clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(namespace).
+		Name(podName).
+		SubResource("portforward")
+
+	transport, upgrader, err := spdy.RoundTripperFor(d.config)
+	if err != nil {
+		return nil, err
+	}
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
+
+	fw, err := portforward.New(dialer, ports, stopCh, readyCh, out, errOut)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create portforwarder: %w", err)
+	}
+
+	return fw, nil
+}
+
 // PortForwarder manages a port-forwarding session to a pod
 type PortForwarder struct {
 	Namespace  string
@@ -28,6 +82,10 @@ type PortForwarder struct {
 	clientset *kubernetes.Clientset
 	config    *rest.Config
 	out       io.Writer
+
+	// Interfaces injetáveis para testes
+	podLister    PodLister
+	tunnelDialer TunnelDialer
 }
 
 // NewPortForwarder creates a new PortForwarder instance
@@ -48,14 +106,16 @@ func NewPortForwarder(namespace, service string, targetPort int) (*PortForwarder
 	}
 
 	return &PortForwarder{
-		Namespace:  namespace,
-		Service:    service,
-		TargetPort: targetPort,
-		stopCh:     make(chan struct{}),
-		readyCh:    make(chan struct{}),
-		clientset:  clientset,
-		config:     config,
-		out:        io.Discard, // Default to silent
+		Namespace:    namespace,
+		Service:      service,
+		TargetPort:   targetPort,
+		stopCh:       make(chan struct{}),
+		readyCh:      make(chan struct{}),
+		clientset:    clientset,
+		config:       config,
+		out:          io.Discard,
+		podLister:    &k8sPodLister{clientset: clientset},
+		tunnelDialer: &k8sTunnelDialer{clientset: clientset, config: config},
 	}, nil
 }
 
@@ -63,15 +123,10 @@ func NewPortForwarder(namespace, service string, targetPort int) (*PortForwarder
 // It returns the assigned local port once the tunnel is ready.
 func (pf *PortForwarder) Start(ctx context.Context) (int, error) {
 	// 1. Find the Pod
-	// We assume the service name corresponds to a label app=<service> which is standard in yby templates
-	pods, err := pf.clientset.CoreV1().Pods(pf.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("app.kubernetes.io/name=%s", pf.Service), // Try standard label first
-	})
+	pods, err := pf.podLister.ListPods(ctx, pf.Namespace, fmt.Sprintf("app.kubernetes.io/name=%s", pf.Service))
 	if err != nil || len(pods.Items) == 0 {
 		// Fallback to simpler label
-		pods, err = pf.clientset.CoreV1().Pods(pf.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("app=%s", pf.Service),
-		})
+		pods, err = pf.podLister.ListPods(ctx, pf.Namespace, fmt.Sprintf("app=%s", pf.Service))
 		if err != nil {
 			return 0, fmt.Errorf("failed to list pods for service %s: %w", pf.Service, err)
 		}
@@ -92,37 +147,22 @@ func (pf *PortForwarder) Start(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("no running pods found for service %s", pf.Service)
 	}
 
-	// 2. Build URL
-	req := pf.clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Namespace(pf.Namespace).
-		Name(targetPod.Name).
-		SubResource("portforward")
+	// 2. Configure and create tunnel
+	ports := []string{fmt.Sprintf("%d:%d", pf.LocalPort, pf.TargetPort)}
 
-	transport, upgrader, err := spdy.RoundTripperFor(pf.config)
+	fw, err := pf.tunnelDialer.CreateTunnel(targetPod.Name, pf.Namespace, ports, pf.stopCh, pf.readyCh, pf.out, os.Stderr)
 	if err != nil {
 		return 0, err
 	}
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
 
-	// 3. Configure PortForwarder
-	// 0 means random port
-	ports := []string{fmt.Sprintf("%d:%d", pf.LocalPort, pf.TargetPort)}
-
-	fw, err := portforward.New(dialer, ports, pf.stopCh, pf.readyCh, pf.out, os.Stderr)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create portforwarder: %w", err)
-	}
-
-	// 4. Run in goroutine
+	// 3. Run in goroutine
 	go func() {
 		if err := fw.ForwardPorts(); err != nil {
 			// This will happen when Stop() is called, so we can ignore it or log it
-			// fmt.Printf("PortForwarding terminated: %v\n", err)
 		}
 	}()
 
-	// 5. Wait for Ready
+	// 4. Wait for Ready
 	select {
 	case <-pf.readyCh:
 		// Get the assigned port

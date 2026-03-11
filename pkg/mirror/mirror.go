@@ -3,10 +3,9 @@ package mirror
 import (
 	"context"
 	"fmt"
-	"io"
-	"os/exec"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -16,33 +15,58 @@ var (
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // Red
 )
 
+// Forwarder define a interface para port-forwarding de pods K8s
+type Forwarder interface {
+	Start(ctx context.Context) (int, error)
+	Stop()
+}
+
+// ForwarderFactory cria instâncias de Forwarder
+type ForwarderFactory func(namespace, service string, targetPort int) (Forwarder, error)
+
+// defaultForwarderFactory usa NewPortForwarder real
+func defaultForwarderFactory(namespace, service string, targetPort int) (Forwarder, error) {
+	return NewPortForwarder(namespace, service, targetPort)
+}
+
 // MirrorManager handles the in-cluster Git mirror for Hybrid GitOps
 type MirrorManager struct {
 	LocalPath string // Path to the local git repo (e.g. ".")
 	Namespace string
+	Runner    shared.Runner
 
-	// PortForwarder instance for local access
-	forwarder *PortForwarder
+	// ForwarderFactory permite injetar factory customizada para testes
+	ForwarderFactory ForwarderFactory
+
+	// Forwarder instance for local access
+	forwarder Forwarder
 	localPort int
 }
 
-func NewManager(localPath string) *MirrorManager {
+func NewManager(localPath string, runner shared.Runner) *MirrorManager {
 	return &MirrorManager{
-		LocalPath: localPath,
-		Namespace: "yby-system",
+		LocalPath:        localPath,
+		Namespace:        "yby-system",
+		Runner:           runner,
+		ForwarderFactory: defaultForwarderFactory,
 	}
 }
 
 // EnsureGitServer deploys the git-server to the cluster if not present
 func (m *MirrorManager) EnsureGitServer() error {
 	// 1. Create Namespace
-	if err := runKubectl("create", "namespace", m.Namespace, "--dry-run=client", "-o", "yaml", "|", "kubectl", "apply", "-f", "-"); err != nil {
+	nsManifest := fmt.Sprintf(`
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+`, m.Namespace)
+
+	if err := m.Runner.RunStdin(context.Background(), nsManifest, "kubectl", "apply", "-f", "-"); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// 2. Apply Manifests (Deployment + Service)
-	// BUG-008 Fix: Service exposes port 9418, targetPort 9418
-	// BUG-010 Fix: git init --bare --initial-branch=main
 	manifest := fmt.Sprintf(`
 apiVersion: apps/v1
 kind: Deployment
@@ -71,11 +95,9 @@ spec:
           mkdir -p /git/repo.git
           if [ ! -d "/git/repo.git/HEAD" ]; then
             git init --bare --initial-branch=main /git/repo.git
-            # Allow anonymous push (safe for localhost-only access via forwarder)
             git config --file /git/repo.git/config http.receivepack true
             touch /git/repo.git/git-daemon-export-ok
           fi
-          # Start git daemon with verbose logging
           exec git daemon --verbose --base-path=/git --export-all --enable=receive-pack
         ports:
         - containerPort: 9418
@@ -102,22 +124,12 @@ spec:
     protocol: TCP
 `, m.Namespace, m.Namespace)
 
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	go func() {
-		defer stdin.Close()
-		io.WriteString(stdin, manifest)
-	}()
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to apply git-server manifests: %s: %w", out, err)
+	if err := m.Runner.RunStdin(context.Background(), manifest, "kubectl", "apply", "-f", "-"); err != nil {
+		return fmt.Errorf("failed to apply git-server manifests: %w", err)
 	}
 
 	// Wait for rollout
-	if err := runKubectl("rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s"); err != nil {
+	if err := m.Runner.Run(context.Background(), "kubectl", "rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s"); err != nil {
 		return fmt.Errorf("git-server failed to start: %w", err)
 	}
 
@@ -125,9 +137,13 @@ spec:
 }
 
 // SetupTunnel establishes the port-forward tunnel
-// MUST be called before Sync() or StartSyncLoop() in local environment
 func (m *MirrorManager) SetupTunnel(ctx context.Context) error {
-	pf, err := NewPortForwarder(m.Namespace, "git-server", 9418)
+	factory := m.ForwarderFactory
+	if factory == nil {
+		factory = defaultForwarderFactory
+	}
+
+	pf, err := factory(m.Namespace, "git-server", 9418)
 	if err != nil {
 		return fmt.Errorf("failed to create port forwarder: %w", err)
 	}
@@ -149,30 +165,22 @@ func (m *MirrorManager) Sync() error {
 		return fmt.Errorf("tunnel not established. Call SetupTunnel() first")
 	}
 
-	// Git push to localhost
-	// git push git://localhost:<port>/repo.git HEAD:main --force
 	remoteURL := fmt.Sprintf("git://localhost:%d/repo.git", m.localPort)
 
-	// Ensure we are pushing to main
-	cmd := exec.Command("git", "push", remoteURL, "HEAD:main", "--force")
-	cmd.Dir = m.LocalPath
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git push failed: %s: %w", out, err)
+	if err := m.Runner.Run(context.Background(), "git", "push", remoteURL, "HEAD:main", "--force"); err != nil {
+		return fmt.Errorf("git push failed: %w", err)
 	}
 
 	return nil
 }
 
 // StartSyncLoop watches for changes and syncs automatically
-// This blocks until context is cancelled
 func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second) // Poll every 5s
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	fmt.Println(stepStyle.Render("🔄 Auto-sync enabled. Watching for changes..."))
 
-	// Initial sync
 	if err := m.Sync(); err != nil {
 		fmt.Println(errorStyle.Render(fmt.Sprintf("❌ Initial Sync Failed: %v", err)))
 	} else {
@@ -187,27 +195,9 @@ func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
 			}
 			return
 		case <-ticker.C:
-			// Optimization: Check if there are changes to commit/push?
-			// For now, to keep it "Zero Config", we push whatever committed state implies?
-			// The original "yby dev" promise was "commit -> sync".
-			// So we blindly try to push HEAD. If it's up to date, git handles it gracefully.
 			if err := m.Sync(); err != nil {
-				// Don't spam terminal on "Everything up-to-date" or transient errors?
-				// Actually git push returns 0 if up to date.
-				// If it fails, likely connectivity or non-fast-forward (we use force).
 				fmt.Println(errorStyle.Render(fmt.Sprintf("⚠️ Sync Error: %v", err)))
-
-				// Self-healing: Try to restart tunnel if broken?
-				// Implement implementation logic here if needed.
 			}
 		}
 	}
-}
-
-func runKubectl(args ...string) error {
-	cmd := exec.Command("kubectl", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-	return nil
 }

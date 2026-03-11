@@ -22,7 +22,7 @@ spec:
   
   - name: resource-validation
     script:
-      image: bitnami/kubectl:latest
+      image: bitnami/kubectl:1.31
       command: [bash]
       source: |
         #!/bin/bash
@@ -45,7 +45,7 @@ spec:
   
   - name: network-validation
     script:
-      image: bitnami/kubectl:latest
+      image: bitnami/kubectl:1.31
       command: [bash]
       source: |
         #!/bin/bash
@@ -65,7 +65,7 @@ spec:
   
   - name: security-validation
     script:
-      image: bitnami/kubectl:latest
+      image: bitnami/kubectl:1.31
       command: [bash]
       source: |
         #!/bin/bash

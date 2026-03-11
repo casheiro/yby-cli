@@ -78,19 +78,18 @@ storage:
       buckets: []
 
 validation:
-  enabled: false # hooks de validação de referências a Secrets
+  enabled: true # hooks de validação de referências a Secrets
 
 #
 # Ecofuturismo & Observabilidade
 #
 kepler:
-  enabled: true
+  enabled: false # Habilitado apenas quando selecionado via --enable-kepler; sobrescrito pelos values de ambiente
   serviceMonitor:
     enabled: false # Habilitar se usar Prometheus Operator
 
 keda:
-  enabled: true
-  # Default configuration is sufficient for basic usage
+  enabled: false # Habilitado apenas quando selecionado via --enable-keda; sobrescrito pelos values de ambiente
 
 
 
@@ -100,7 +99,7 @@ observability:
 # Configuração de Segurança
 security:
   networkPolicy:
-    enabled: false # Habilitar com cuidado após configurar policies de allow
+    enabled: true # Alinhado com cluster-values.yaml — bloqueia tráfego por padrão
 
 # Configuração do Subchart MinIO
 minio:

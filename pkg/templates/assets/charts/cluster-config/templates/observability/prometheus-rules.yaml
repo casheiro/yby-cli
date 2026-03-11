@@ -1,0 +1,58 @@
+{{- if eq .Values.observability.mode "prometheus" }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: yby-cluster-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: yby-cluster-alerts
+    app.kubernetes.io/managed-by: yby
+    release: prometheus
+spec:
+  groups:
+  - name: yby.pod.rules
+    rules:
+    - alert: PodCrashLooping
+      expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 0
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pod {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }} está reiniciando continuamente"
+        description: "O pod {{ "{{" }} $labels.pod {{ "}}" }} no namespace {{ "{{" }} $labels.namespace {{ "}}" }} reiniciou {{ "{{" }} $value | humanize {{ "}}" }} vezes nos últimos 15 minutos."
+
+    - alert: PodNotReady
+      expr: |
+        min_over_time(
+          sum by (namespace, pod) (
+            kube_pod_status_phase{phase=~"Pending|Unknown"}
+          )[15m:]
+        ) > 0
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pod {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }} não está pronto"
+        description: "O pod {{ "{{" }} $labels.pod {{ "}}" }} no namespace {{ "{{" }} $labels.namespace {{ "}}" }} não está em estado Ready há mais de 15 minutos."
+
+  - name: yby.node.rules
+    rules:
+    - alert: NodeNotReady
+      expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Nó {{ "{{" }} $labels.node {{ "}}" }} não está pronto"
+        description: "O nó {{ "{{" }} $labels.node {{ "}}" }} está com status NotReady há mais de 10 minutos."
+
+    - alert: HighMemoryUsage
+      expr: |
+        (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Uso de memória alto no nó {{ "{{" }} $labels.instance {{ "}}" }}"
+        description: "O nó {{ "{{" }} $labels.instance {{ "}}" }} está usando {{ "{{" }} $value | humanize {{ "}}" }}% de memória há mais de 10 minutos."
+{{- end }}

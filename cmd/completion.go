@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -38,8 +40,10 @@ PowerShell:
 			return cmd.Root().GenFishCompletion(os.Stdout, true)
 		case "powershell":
 			return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+		default:
+			return errors.New(errors.ErrCodeValidation,
+				fmt.Sprintf("shell inválido: %q. Shells suportados: bash, zsh, fish, powershell", args[0]))
 		}
-		return nil
 	},
 }
 

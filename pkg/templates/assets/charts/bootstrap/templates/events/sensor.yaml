@@ -95,7 +95,7 @@ spec:
                     
               - name: analyze-infrastructure-changes
                 script:
-                  image: alpine/git:latest
+                  image: alpine/git:2.43
                   command: [sh]
                   source: |
                     echo "🔍 Analisando mudanças na infraestrutura..."
@@ -114,7 +114,7 @@ spec:
                     
               - name: lint-infrastructure
                 script:
-                  image: alpine/git:latest
+                  image: alpine/git:2.43
                   command: [sh]
                   source: |
                     echo "🔍 Executando lint básico..."
@@ -125,7 +125,7 @@ spec:
                   
               - name: test-in-staging
                 script:
-                  image: bitnami/kubectl:latest
+                  image: bitnami/kubectl:1.31
                   command: [sh]
                   source: |
                     echo "🧪 Testando em staging..."
@@ -134,7 +134,7 @@ spec:
                     
               - name: deploy-infrastructure
                 script:
-                  image: argoproj/argocd:latest
+                  image: argoproj/argocd:v2.13.3
                   command: [sh]
                   source: |
                     echo "🚀 Deploy infraestrutura..."
@@ -148,7 +148,7 @@ spec:
                     
               - name: verify-infrastructure
                 script:
-                  image: bitnami/kubectl:latest
+                  image: bitnami/kubectl:1.31
                   command: [sh]
                   source: |
                     echo "✅ Verificação pós-deploy..."
@@ -156,7 +156,7 @@ spec:
                   
               - name: notify-deployment-result
                 script:
-                  image: curlimages/curl:latest
+                  image: curlimages/curl:8.11.1
                   command: [sh]
                   source: |
                     echo "📢 Notificando resultado..."

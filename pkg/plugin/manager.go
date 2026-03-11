@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,9 +15,16 @@ import (
 	"strings"
 
 	projectContext "github.com/casheiro/yby-cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"sigs.k8s.io/yaml"
 )
+
+// httpGet é uma variável para permitir mock em testes (substitui http.Get)
+var httpGet = http.Get
+
+// releaseBaseURL é a URL base para download de plugins nativos (mockável em testes)
+var releaseBaseURL = "https://github.com/casheiro/yby-cli/releases/download"
 
 // Manager orchestrates plugin discovery and execution.
 type Manager struct {
@@ -106,7 +114,7 @@ func (m *Manager) scanDirectory(dir string) error {
 		// Checking manifest is safer.
 		manifest, err := m.loadManifest(path)
 		if err != nil {
-			fmt.Printf("⚠️  Pulando candidato a plugin inválido %s: %v\n", entry.Name(), err)
+			slog.Debug("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
 			continue
 		}
 
@@ -158,7 +166,7 @@ func (m *Manager) GetAssets() []string {
 
 		resp, err := m.executor.Run(context.Background(), p.Path, PluginRequest{Hook: "assets"})
 		if err != nil {
-			fmt.Printf("⚠️  Hook de assets do Plugin %s falhou: %v\n", p.Manifest.Name, err)
+			slog.Warn("Hook de assets do Plugin falhou", "plugin", p.Manifest.Name, "error", err)
 			continue
 		}
 
@@ -207,7 +215,7 @@ func (m *Manager) ExecuteContextHook(ctx *scaffold.BlueprintContext) error {
 
 		resp, err := m.executor.Run(context.Background(), p.Path, req)
 		if err != nil {
-			fmt.Printf("⚠️  Hook de contexto do Plugin %s falhou: %v\n", p.Manifest.Name, err)
+			slog.Warn("Hook de contexto do Plugin falhou", "plugin", p.Manifest.Name, "error", err)
 			continue
 		}
 
@@ -248,7 +256,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	cwd, _ := os.Getwd()
 	coreCtx, err := projectContext.GetCoreContext(cwd)
 	if err != nil {
-		fmt.Printf("⚠️  Aviso: Falha ao carregar contexto core: %v\n", err)
+		slog.Warn("Falha ao carregar contexto core", "error", err)
 		// Fallback to empty core context
 		coreCtx = &projectContext.CoreContext{
 			ProjectName: "unknown",
@@ -274,7 +282,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	// 3. Resolve Environment & Infrastructure, and 4. Apply Context Hooks
 	fullCtx, _, err := m.BuildPluginContext(coreCtx, blueprintCtx, cwd)
 	if err != nil {
-		fmt.Printf("⚠️  Erro ao construir contexto do plugin: %v\n", err)
+		slog.Warn("Erro ao construir contexto do plugin", "error", err)
 	}
 
 	// Converter struct FullContext para map
@@ -288,7 +296,7 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 		Context: fullCtxMap,
 	}
 
-	fmt.Printf("🚀 Executing plugin: %s\n", pluginName)
+	slog.Debug("Executing plugin", "plugin", pluginName)
 	return m.executor.RunInteractive(context.Background(), targetPlugin.Path, req)
 }
 
@@ -313,7 +321,7 @@ func (m *Manager) BuildPluginContext(coreCtx *projectContext.CoreContext, bluepr
 						valuesMap = v
 					} else {
 						// Log only?
-						fmt.Printf("⚠️  Falha ao carregar values (%s): %v\n", envDef.Values, err)
+						slog.Warn("Falha ao carregar values do ambiente", "file", envDef.Values, "error", err)
 					}
 				}
 
@@ -567,7 +575,7 @@ func (m *Manager) installNative(name, version string) error {
 	if !strings.HasPrefix(tag, "v") {
 		tag = "v" + tag
 	}
-	url := fmt.Sprintf("https://github.com/casheiro/yby-cli/releases/download/%s/%s", tag, filename)
+	url := fmt.Sprintf("%s/%s/%s", releaseBaseURL, tag, filename)
 
 	fmt.Printf("⬇️  Baixando plugin %s de %s...\n", name, url)
 
@@ -578,10 +586,22 @@ func (m *Manager) installNative(name, version string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Download
-	resp, err := http.Get(url)
+	// Download with retry
+	var resp *http.Response
+	err = retry.DoWithDefault(context.Background(), func() error {
+		var errGet error
+		resp, errGet = httpGet(url)
+		if errGet != nil {
+			return errGet
+		}
+		if resp.StatusCode >= 500 {
+			resp.Body.Close()
+			return fmt.Errorf("server error: %d", resp.StatusCode)
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("falha ao baixar plugin: %w", err)
+		return fmt.Errorf("falha ao baixar plugin após tentativas: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -663,10 +683,22 @@ func (m *Manager) installFromURL(url string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Download
-	resp, err := http.Get(url)
+	// Download with retry
+	var resp *http.Response
+	err = retry.DoWithDefault(context.Background(), func() error {
+		var errGet error
+		resp, errGet = httpGet(url)
+		if errGet != nil {
+			return errGet
+		}
+		if resp.StatusCode >= 500 {
+			resp.Body.Close()
+			return fmt.Errorf("server error: %d", resp.StatusCode)
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("falha ao baixar plugin: %w", err)
+		return fmt.Errorf("falha ao baixar plugin após tentativas: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -784,13 +816,22 @@ func extractTarGz(r io.Reader, dest string) error {
 
 		target := filepath.Join(dest, header.Name)
 
+		// Prevenir Zip Slip: garantir que o destino está dentro de dest
+		cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
+		if !strings.HasPrefix(filepath.Clean(target)+string(os.PathSeparator), cleanDest) {
+			return fmt.Errorf("entrada inválida no tarball: %s", header.Name)
+		}
+
+		// Sanitizar permissões com máscara segura
+		safeMode := os.FileMode(header.Mode) & 0755
+
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, safeMode)
 			if err != nil {
 				return err
 			}

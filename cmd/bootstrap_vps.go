@@ -5,15 +5,17 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/executor"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -36,7 +38,7 @@ Pré-requisitos (verificados automaticamente):
 
   # Provisionar máquina local (laptop/desktop)
   yby bootstrap vps --local`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Provisionamento de VPS"))
 		fmt.Println("---------------------------------------")
 
@@ -94,8 +96,7 @@ Pré-requisitos (verificados automaticamente):
 			}
 
 			if host == "" {
-				fmt.Println(crossStyle.Render("❌ Erro: Host não definido. Use --host."))
-				return
+				return errors.New(errors.ErrCodeValidation, "Host não definido. Use --host.")
 			}
 
 			fmt.Printf("%s Conectando a %s@%s:%s...\n", stepStyle.Render("📡"), user, host, port)
@@ -105,8 +106,7 @@ Pré-requisitos (verificados automaticamente):
 				var err error
 				execClient, err = executor.NewSSHExecutor(user, host, port)
 				if err != nil {
-					fmt.Printf("%s Erro na conexão SSH: %v\n", crossStyle.String(), err)
-					return
+					return errors.Wrap(err, errors.ErrCodeUnreachable, "Erro na conexão SSH")
 				}
 			}
 		}
@@ -116,8 +116,7 @@ Pré-requisitos (verificados automaticamente):
 			fmt.Println(checkStyle.Render("✅ Conexão SSH estabelecida!"))
 		}
 
-		// 3. Pre-flight Checks
-		runEx(execClient, "Verificando Requisitos Mínimos", `
+		if err := runEx(execClient, "Verificando Requisitos Mínimos", `
 			TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
 			# 4GB ~ 4000000 kB. Warning if < 3.8GB to be safe
 			if [ "$TOTAL_MEM_KB" -lt 3800000 ]; then
@@ -128,10 +127,12 @@ Pré-requisitos (verificados automaticamente):
 			else
 				echo "✅ Memória OK: "$((TOTAL_MEM_KB/1024))" MB"
 			fi
-		`)
+		`); err != nil {
+			return err
+		}
 
 		// 4. Preparar Servidor
-		runEx(execClient, "Atualizando sistema e instalando dependências", `
+		if err := runEx(execClient, "Atualizando sistema e instalando dependências", `
 			export DEBIAN_FRONTEND=noninteractive
 			apt-get update -qq
 			if ! command -v curl >/dev/null; then apt-get install -y -qq curl; fi
@@ -139,10 +140,12 @@ Pré-requisitos (verificados automaticamente):
 			timedatectl set-timezone America/Sao_Paulo
 			swapoff -a
 			sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
-		`)
+		`); err != nil {
+			return err
+		}
 
 		// 4. Firewall
-		runEx(execClient, "Configurando Firewall (UFW)", `
+		if err := runEx(execClient, "Configurando Firewall (UFW)", `
 			ufw --force reset
 			ufw default deny incoming
 			ufw default allow outgoing
@@ -154,10 +157,12 @@ Pré-requisitos (verificados automaticamente):
 			ufw allow 12000/tcp
 			ufw allow 8472/udp
 			ufw --force enable
-		`)
+		`); err != nil {
+			return err
+		}
 
 		// 5. Docker
-		runEx(execClient, "Instalando Docker", `
+		if err := runEx(execClient, "Instalando Docker", `
 			if ! command -v docker >/dev/null 2>&1; then
 				curl -fsSL https://get.docker.com -o get-docker.sh
 				sh get-docker.sh
@@ -166,12 +171,18 @@ Pré-requisitos (verificados automaticamente):
 			else
 				echo "Docker já instalado"
 			fi
-		`)
+		`); err != nil {
+			return err
+		}
 
 		// 6. K3s
 		k3sToken := os.Getenv("K3S_TOKEN")
 		if k3sToken == "" {
-			k3sToken = fmt.Sprintf("yby-%d", time.Now().Unix())
+			tokenBytes := make([]byte, 32)
+			if _, err := rand.Read(tokenBytes); err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar token K3s seguro")
+			}
+			k3sToken = hex.EncodeToString(tokenBytes)
 		}
 
 		// 6. K3s Version Resolution
@@ -199,23 +210,25 @@ Pré-requisitos (verificados automaticamente):
 
 		fmt.Printf("📦 Versão K3s alvo: %s\n", k3sVersion)
 
-		runEx(execClient, "Instalando K3s", fmt.Sprintf(`
+		if err := runEx(execClient, "Instalando K3s", fmt.Sprintf(`
 			if ! command -v k3s >/dev/null 2>&1; then
 				curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="%s" K3S_TOKEN="%s" sh -s - server --cluster-init --write-kubeconfig-mode=644 --tls-san %s
 			else
 				echo "K3s já instalado"
 			fi
-		`, k3sVersion, k3sToken, host))
+		`, k3sVersion, k3sToken, host)); err != nil {
+			return err
+		}
 
 		// 7. Fetch Kubeconfig
 		fmt.Println(stepStyle.Render("🔄 Configurando acesso local (kubeconfig)..."))
 		if err := fetchKubeconfig(execClient, host); err != nil {
-			fmt.Printf("%s Erro ao configurar kubeconfig: %v\n", crossStyle.String(), err)
-			return
+			return errors.Wrap(err, errors.ErrCodeConfig, "Erro ao configurar kubeconfig")
 		}
 
 		fmt.Println("\n" + checkStyle.Render("🎉 Bootstrap VPS concluído com sucesso!"))
 		fmt.Println("👉 Próximo passo: 'yby bootstrap cluster' para instalar a stack GitOps.")
+		return nil
 	},
 }
 
@@ -223,6 +236,7 @@ var k3sVersion string
 var vpsHost string
 var vpsUser string
 var vpsPort string
+var skipTLSVerify bool
 
 func init() {
 	bootstrapCmd.AddCommand(bootstrapVpsCmd)
@@ -231,12 +245,15 @@ func init() {
 	bootstrapVpsCmd.Flags().StringVar(&vpsUser, "user", "root", "Usuário SSH")
 	bootstrapVpsCmd.Flags().StringVar(&vpsPort, "port", "22", "Porta SSH")
 	bootstrapVpsCmd.Flags().Bool("local", false, "Executa o bootstrap na máquina local (auto-provisionamento)")
+	bootstrapVpsCmd.Flags().BoolVar(&skipTLSVerify, "skip-tls-verify", false,
+		"Desabilita verificação TLS do certificado do cluster (INSEGURO, usar apenas para debug)")
 }
 
-func runEx(e executor.Executor, name, script string) {
+func runEx(e executor.Executor, name, script string) error {
 	if err := e.Run(name, script); err != nil {
-		os.Exit(1)
+		return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro executando %s", name))
 	}
+	return nil
 }
 
 func fetchKubeconfig(e executor.Executor, host string) error {
@@ -270,11 +287,14 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 
 	// 2. Renomear Contexto
 	os.Setenv("KUBECONFIG", tempFile.Name())
-	_ = exec.Command("kubectl", "config", "rename-context", "default", clusterName).Run()
-	_ = exec.Command("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
-	_ = exec.Command("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
-	_ = exec.Command("kubectl", "config", "rename-cluster", "default", clusterName).Run()
-	_ = exec.Command("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
+	_ = execCommand("kubectl", "config", "rename-context", "default", clusterName).Run()
+	_ = execCommand("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
+	if skipTLSVerify {
+		slog.Warn("TLS verify desabilitado — conexão vulnerável a MITM", "host", host)
+		_ = execCommand("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
+	}
+	_ = execCommand("kubectl", "config", "rename-cluster", "default", clusterName).Run()
+	_ = execCommand("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
 	os.Unsetenv("KUBECONFIG")
 
 	// 3. Merge
@@ -288,7 +308,7 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 		_ = copyFile(mainConfigPath, mainConfigPath+".bak")
 	}
 
-	cmd := exec.Command("kubectl", "config", "view", "--flatten")
+	cmd := execCommand("kubectl", "config", "view", "--flatten")
 	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s:%s", mainConfigPath, tempFile.Name()))
 
 	var merged bytes.Buffer
@@ -310,5 +330,5 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, 0600)
 }

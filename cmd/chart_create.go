@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
@@ -15,7 +16,7 @@ var chartCreateCmd = &cobra.Command{
 	Use:   "create [NAME]",
 	Short: "Cria um novo Helm Chart otimizado para a stack Yby",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		targetDir := "."
 		if len(args) > 1 {
@@ -47,8 +48,7 @@ var chartCreateCmd = &cobra.Command{
 
 		dest := filepath.Join(targetDir, "charts", name)
 		if _, err := os.Stat(dest); !os.IsNotExist(err) {
-			fmt.Printf("❌ Diretório %s já existe.\n", dest)
-			os.Exit(1)
+			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("❌ Diretório %s já existe", dest))
 		}
 
 		// Ensure charts dir
@@ -57,11 +57,11 @@ var chartCreateCmd = &cobra.Command{
 		// Manual Walk and Render
 		err := scaffold.RenderEmbedDir(templates.Assets, "assets/charts/app-template", dest, ctx)
 		if err != nil {
-			fmt.Printf("❌ Erro ao criar chart: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeScaffold, "Erro ao criar chart")
 		}
 
 		fmt.Printf("✅ Chart '%s' criado em ./charts/%s\n", name, name)
+		return nil
 	},
 }
 

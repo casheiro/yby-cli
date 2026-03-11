@@ -6,8 +6,8 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ var validateCmd = &cobra.Command{
 que os charts Helm estão válidos antes do commit.
 
 Equivalente ao antigo 'make validate'.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println(titleStyle.Render("🔍 Yby Validate - Validação de Charts"))
 		fmt.Println("---------------------------------------")
 
@@ -36,15 +36,21 @@ Equivalente ao antigo 'make validate'.`,
 
 		fmt.Println(headerStyle.Render("0️⃣  Resolvendo Dependências..."))
 		for _, chart := range charts {
-			runCommand("helm", "dependency", "build", chart)
+			fmt.Printf("%s Executando: helm dependency build %s\n", grayStyle.Render("Exec >"), chart)
+			runCmd := execCommand("helm", "dependency", "build", chart)
+			runCmd.Stdout = os.Stdout
+			runCmd.Stderr = os.Stderr
+			if err := runCmd.Run(); err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro ao atualizar subcharts de %s", chart))
+			}
 		}
 
 		fmt.Println("\n" + headerStyle.Render("1️⃣  Helm Lint..."))
 		for _, chart := range charts {
 			fmt.Printf("Linting em %s... ", chart)
-			if err := exec.Command("helm", "lint", chart).Run(); err != nil {
+			if err := execCommand("helm", "lint", chart).Run(); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
-				os.Exit(1)
+				return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro no lint do chart %s", chart))
 			}
 			fmt.Printf("%s\n", checkStyle.String())
 		}
@@ -60,16 +66,17 @@ Equivalente ao antigo 'make validate'.`,
 			name := "release-name" // dummy name
 			fmt.Printf("Gerando template de %s... ", chart)
 			// Silent output unless error
-			cmd := exec.Command("helm", "template", name, chart, "-f", valuesFile)
+			cmd := execCommand("helm", "template", name, chart, "-f", valuesFile)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				fmt.Printf("%s\n", crossStyle.String())
 				fmt.Println(string(out))
-				os.Exit(1)
+				return errors.Wrap(err, errors.ErrCodeManifest, fmt.Sprintf("Erro na renderização do template %s", chart))
 			}
 			fmt.Printf("%s\n", checkStyle.String())
 		}
 
 		fmt.Println("\n" + checkStyle.Render("✨ Validação concluída com sucesso!"))
+		return nil
 	},
 }
 
