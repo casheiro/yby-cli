@@ -13,12 +13,16 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/filesystem"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 )
+
+// Allow mocking for tests
+var askOne = survey.AskOne
 
 // InitOptions holds the flags for headless mode
 type InitOptions struct {
@@ -38,6 +42,9 @@ type InitOptions struct {
 	Email       string
 	Environment string
 
+	// Secrets
+	SecretsStrategy string
+
 	// Modules
 	EnableKepler        bool
 	EnableMinio         bool
@@ -47,6 +54,7 @@ type InitOptions struct {
 	// Modes
 	Offline        bool
 	NonInteractive bool
+	Force          bool
 }
 
 var opts InitOptions
@@ -61,6 +69,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Habilitar geração de CI/CD")
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
+	initCmd.Flags().BoolVar(&opts.Force, "force", false, "Sobrescrever projeto existente sem confirmação")
 
 	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
@@ -71,6 +80,8 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
+
+	initCmd.Flags().StringVar(&opts.SecretsStrategy, "secrets-strategy", "external-secrets", "Estratégia de secrets: sealed-secrets, external-secrets, sops")
 
 	initCmd.Flags().BoolVar(&opts.EnableKepler, "enable-kepler", false, "Habilitar módulo Kepler")
 	initCmd.Flags().BoolVar(&opts.EnableMinio, "enable-minio", false, "Habilitar módulo MinIO")
@@ -91,7 +102,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
   # AI-Native Initialization
   yby init --description "A secure payment gateway for crypto assets"`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
 		// 1. Build Context (Merge Flags + Prompts)
@@ -111,20 +122,40 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			}
 		}
 
-		ctx := buildContext(&opts)
+		ctx, errCtx := buildContext(&opts)
+		if errCtx != nil {
+			return errCtx
+		}
 
 		// Hook: context (Enrich BlueprintContext)
 		if err := pm.ExecuteContextHook(ctx); err != nil {
 			fmt.Printf("⚠️  Erro no hook 'context' dos plugins: %v\n", err)
 		}
 
+		// 1.5 Detecção de init duplo
+		targetDir := resolveTargetDir(opts.TargetDir)
+		blueprintPath := filepath.Join(targetDir, ".yby", "blueprint.yaml")
+		if _, err := os.Stat(blueprintPath); err == nil {
+			// Projeto já inicializado
+			if opts.Force {
+				fmt.Println("⚠️  Projeto Yby já inicializado. Sobrescrevendo (--force).")
+			} else if opts.NonInteractive {
+				return errors.New(errors.ErrCodeValidation,
+					"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
+			} else {
+				var confirm bool
+				confirmPrompt := &survey.Confirm{
+					Message: "⚠️  Projeto Yby já inicializado neste diretório. Deseja sobrescrever?",
+					Default: false,
+				}
+				if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
+					return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+				}
+			}
+		}
+
 		// 2. Execute Scaffold
 		fmt.Println("🚀 Gerando arquivos...")
-
-		targetDir := "."
-		if opts.TargetDir != "" {
-			targetDir = opts.TargetDir
-		}
 
 		// Prepare CompositeFS
 		// Layers: [Plugins Assets...] + [Core Embed Assets]
@@ -155,8 +186,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		compositeFS := filesystem.NewCompositeFS(layers...)
 
 		if err := scaffold.Apply(targetDir, ctx, compositeFS); err != nil {
-			fmt.Printf("❌ Erro ao gerar scaffold: %v\n", err)
-			os.Exit(1)
+			return errors.Wrap(err, errors.ErrCodeManifest, "Erro ao gerar scaffold")
 		}
 
 		// 2.5 Generative AI Layer
@@ -216,31 +246,24 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			fmt.Println("    Verifique se o Ollama está rodando ou se as chaves de API (GEMINI_API_KEY, OPENAI_API_KEY) estão definidas.")
 		}
 
-		// 3. Post-Scaffold: Generate Values Files for Environments
-		baseValues := filepath.Join(targetDir, "config/cluster-values.yaml")
-		// Verify if scaffold created baseValues
-		if _, err := os.Stat(baseValues); err == nil {
-			for _, env := range ctx.Environments {
-				target := filepath.Join(targetDir, fmt.Sprintf("config/values-%s.yaml", env))
-				if _, err := os.Stat(target); os.IsNotExist(err) {
-					// Copy content
-					if content, err := os.ReadFile(baseValues); err == nil {
-						// Simple replace if needed, or just clone
-						// For local env, we might want to override things?
-						// For now, clone is better than nothing.
-						_ = os.WriteFile(target, content, 0644)
-						fmt.Printf("   📄 Generated Config: %s\n", target)
-					}
-				}
+		// 3. Post-Scaffold: Generate Values Files for Environments (diferenciados)
+		for _, env := range ctx.Environments {
+			target := filepath.Join(targetDir, fmt.Sprintf("config/values-%s.yaml", env))
+			if _, err := os.Stat(target); os.IsNotExist(err) {
+				content := scaffold.RenderEnvironmentValues(ctx, env)
+				_ = os.MkdirAll(filepath.Dir(target), 0755)
+				_ = os.WriteFile(target, []byte(content), 0644)
+				fmt.Printf("   📄 Generated Config: %s\n", target)
 			}
 		}
 
 		fmt.Println("✅ Projeto inicializado com sucesso!")
 		fmt.Println("   próximo passo: 'yby env list'")
+		return nil
 	},
 }
 
-func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
+func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 	ctx := &scaffold.BlueprintContext{
 		GitRepoURL:          flags.GitRepo,
 		GitBranch:           flags.GitBranch,
@@ -253,6 +276,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 		EnableMinio:         flags.EnableMinio,
 		EnableKEDA:          flags.EnableKEDA,
 		EnableMetricsServer: flags.EnableMetricsServer,
+		SecretsStrategy:     flags.SecretsStrategy,
 		Topology:            flags.Topology,
 		WorkflowPattern:     flags.Workflow,
 
@@ -313,26 +337,9 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 	if flags.NonInteractive {
 		// VALIDATION MODE
-		missing := []string{}
-		if ctx.Topology == "" {
-			missing = append(missing, "--topology")
-		}
-		if ctx.WorkflowPattern == "" {
-			missing = append(missing, "--workflow")
-		}
-		// If NOT offline, Git Repo is usually required or at least we warn?
-		// Actually, resolveProjectName handles default if git repo is missing.
-		// So strictness depends on use case. Let's enforce ProjectName if GitRepo is missing.
-		if ctx.GitRepoURL == "" && !flags.Offline {
-			// In interactive we ask. In non-interactive, if ProjectName is also missing, we can't derive it.
-			if ctx.ProjectName == "yby-project" && flags.ProjectName == "" {
-				missing = append(missing, "--project-name OR --git-repo")
-			}
-		}
-
+		missing := validateNonInteractiveFlags(ctx, flags)
 		if len(missing) > 0 {
-			fmt.Printf("❌ Erro: Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s\n", strings.Join(missing, ", "))
-			os.Exit(1)
+			return nil, errors.New(errors.ErrCodeValidation, fmt.Sprintf("Modo --non-interactive ativo, mas argumentos obrigatórios estão faltando: %s", strings.Join(missing, ", ")))
 		}
 		interactive = false
 	} else {
@@ -352,9 +359,8 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "Diretório onde os arquivos serão criados. Se não existir, será criado.",
 			}
 			var dir string
-			if err := survey.AskOne(prompt, &dir); err != nil {
-				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+			if err := askOne(prompt, &dir); err != nil {
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 			flags.TargetDir = dir
 		}
@@ -367,9 +373,8 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "single: Apenas 1 env. standard: Local+Prod. complete: Local+Dev+Staging+Prod",
 				Default: "standard",
 			}
-			if err := survey.AskOne(prompt, &ctx.Topology); err != nil {
-				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+			if err := askOne(prompt, &ctx.Topology); err != nil {
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 		}
 
@@ -381,9 +386,8 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Help:    "essential: Apenas checks básica. gitflow: Release automatizado. trunkbased: CD rápido.",
 				Default: "gitflow",
 			}
-			if err := survey.AskOne(prompt, &ctx.WorkflowPattern); err != nil {
-				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+			if err := askOne(prompt, &ctx.WorkflowPattern); err != nil {
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 		}
 
@@ -397,9 +401,8 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 					Message: "Qual a URL do repositório Git?",
 					Help:    "Se não tiver um ainda, deixe em branco para usar um placeholder ou gerar localmente.",
 				}
-				if err := survey.AskOne(prompt, &ctx.GitRepoURL); err != nil {
-					fmt.Println("❌ Cancelado")
-					os.Exit(1)
+				if err := askOne(prompt, &ctx.GitRepoURL); err != nil {
+					return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 				}
 			}
 		}
@@ -415,7 +418,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			Default: defaultName,
 			Help:    "Identificador único usado em namespaces e resources.",
 		}
-		_ = survey.AskOne(promptName, &ctx.ProjectName)
+		_ = askOne(promptName, &ctx.ProjectName)
 
 		// Ask for Project Details (Domain / Email)
 		if ctx.Domain == "yby.local" { // Check if default
@@ -423,7 +426,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Defina o Domínio Base do Cluster:",
 				Default: "yby.local",
 			}
-			_ = survey.AskOne(prompt, &ctx.Domain)
+			_ = askOne(prompt, &ctx.Domain)
 		}
 
 		if ctx.Email == "admin@yby.local" { // Check if default
@@ -431,7 +434,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Email para Admin/Certificados:",
 				Default: "admin@yby.local",
 			}
-			_ = survey.AskOne(prompt, &ctx.Email)
+			_ = askOne(prompt, &ctx.Email)
 		}
 
 		// Modules Selection (MultiSelect)
@@ -448,30 +451,12 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 			Default: defaults,
 			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
 		}
-		if err := survey.AskOne(promptModules, &selectedModules); err != nil {
-			fmt.Println("❌ Cancelado")
-			os.Exit(1)
+		if err := askOne(promptModules, &selectedModules); err != nil {
+			return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 		}
 
-		// Map Selection back to Context
-		ctx.EnableKepler = false
-		ctx.EnableMinio = false
-		ctx.EnableKEDA = false
-		ctx.EnableMetricsServer = false
-		for _, m := range selectedModules {
-			if strings.Contains(m, "Kepler") {
-				ctx.EnableKepler = true
-			}
-			if strings.Contains(m, "MinIO") {
-				ctx.EnableMinio = true
-			}
-			if strings.Contains(m, "KEDA") {
-				ctx.EnableKEDA = true
-			}
-			if strings.Contains(m, "Observability") {
-				ctx.EnableMetricsServer = true
-			}
-		}
+		// Mapeia a seleção de volta para o contexto
+		ctx.EnableKepler, ctx.EnableMinio, ctx.EnableKEDA, ctx.EnableMetricsServer = mapModuleSelection(selectedModules)
 
 		// Ask for DevContainer
 		if !flags.IncludeDevContainer {
@@ -479,9 +464,8 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Message: "Deseja incluir configuração de DevContainer (.devcontainer)?",
 				Default: true,
 			}
-			if err := survey.AskOne(prompt, &ctx.EnableDevContainer); err != nil {
-				fmt.Println("❌ Cancelado")
-				os.Exit(1)
+			if err := askOne(prompt, &ctx.EnableDevContainer); err != nil {
+				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 		}
 
@@ -495,7 +479,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 				Default: true,
 				Help:    "Gera documentação técnica, decisões de arquitetura e personas baseada na descrição do projeto.",
 			}
-			_ = survey.AskOne(promptAI, &enableAI)
+			_ = askOne(promptAI, &enableAI)
 
 			if enableAI {
 				// Provider Selection
@@ -506,7 +490,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 						Default: "auto",
 						Help:    "auto: Tenta Ollama local, depois chaves de API (Gemini/OpenAI).",
 					}
-					_ = survey.AskOne(promptProvider, &flags.AIProvider)
+					_ = askOne(promptProvider, &flags.AIProvider)
 					// If user selects "auto", we leave it empty string for factory defaults, or "auto"
 					if flags.AIProvider == "auto" {
 						flags.AIProvider = ""
@@ -519,7 +503,7 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 						Message: "📝 Descreva seu projeto (em linguagem natural):",
 						Help:    "Ex: 'Um gateway de pagamento para criptoativos focado em segurança'. A IA detectará o idioma.",
 					}
-					_ = survey.AskOne(promptDesc, &flags.Description)
+					_ = askOne(promptDesc, &flags.Description)
 				}
 			}
 		}
@@ -527,72 +511,32 @@ func buildContext(flags *InitOptions) *scaffold.BlueprintContext {
 
 	// Post-Validation / Defaults
 
-	// Calculate Environments list based on Topology
-	switch ctx.Topology {
-	case "single":
-		ctx.Environments = []string{"prod"}
-	case "standard":
-		ctx.Environments = []string{"local", "prod"}
-	case "complete":
-		ctx.Environments = []string{"local", "dev", "staging", "prod"}
-	default:
-		ctx.Environments = []string{"local"}
+	// Sanitizar project name em modo interativo
+	if interactive && ctx.ProjectName != "" {
+		ctx.ProjectName = scaffold.SanitizeProjectName(ctx.ProjectName)
 	}
 
-	// Fix for Offline Mode in 'single' topology:
-	// If offline is enabled, we assume the user wants to test locally even if topology is single.
-	// OR we force 'local' environment to be present.
-	// But 'single' usually means just one env (production).
-	// The test uses 'single' but expects 'values-local.yaml'.
-	// This implies the test setup might be flawed for 'single', OR 'offline' implies 'local' capabilities.
-	// To pass the test without changing the test logic (which mocks user intent),
-	// if Offline is true, we ensure 'local' is available or we treat 'dev' as local?
-	// Actually, the test explicitly checks for ".yby/config/values-local.yaml".
-	//
-	// If the user runs `yby init --offline --topology single --env dev`,
-	// and if `single` -> `prod` only.
-	// Then `dev` is invalid.
-	//
-	// Let's modify the behavior: If Offline is set, we ensure `local` environment is present
-	// so the user can run `yby dev`.
+	// Validar contexto (project-name, domain, email, git-repo, topology, workflow)
+	if err := scaffold.ValidateContext(ctx); err != nil {
+		return nil, err
+	}
+
+	// Calcula lista de ambientes baseada na topologia
+	ctx.Environments = environmentsForTopology(ctx.Topology)
+
+	// Modo offline: garante que "local" está presente
 	if flags.Offline {
-		hasLocal := false
-		for _, e := range ctx.Environments {
-			if e == "local" {
-				hasLocal = true
-				break
-			}
-		}
-		if !hasLocal {
-			// Prepend local for offline dev support
-			ctx.Environments = append([]string{"local"}, ctx.Environments...)
-		}
+		ctx.Environments = ensureLocalEnvironment(ctx.Environments)
 	}
 
-	// Phase 3 Fix: Ensure 'current' environment (ctx.Environment) is in the list
-	// If not, fallback to the first environment in the list (or 'prod' if present)
-	isValidEnv := false
-	for _, env := range ctx.Environments {
-		if env == ctx.Environment {
-			isValidEnv = true
-			break
-		}
+	// Valida se o ambiente atual existe na topologia
+	newEnv, valid := validateEnvironment(ctx.Environment, ctx.Environments)
+	if !valid {
+		fmt.Printf("⚠️  Ambiente inicial '%s' não existe na topologia '%s'. Ajustando para '%s'.\n", ctx.Environment, ctx.Topology, newEnv)
+		ctx.Environment = newEnv
 	}
 
-	if !isValidEnv {
-		if len(ctx.Environments) > 0 {
-			// Prefer 'prod' if available and current was invalid
-			// Or just pick the first one.
-			// Let's pick the last one (usually prod) for single/standard?
-			// Actually, for 'standard' (local, prod), if user asked for 'dev', maybe they meant local?
-			// Safest bet: Pick the first one (usually local or prod).
-			newEnv := ctx.Environments[0]
-			fmt.Printf("⚠️  Ambiente inicial '%s' não existe na topologia '%s'. Ajustando para '%s'.\n", ctx.Environment, ctx.Topology, newEnv)
-			ctx.Environment = newEnv
-		}
-	}
-
-	return ctx
+	return ctx, nil
 }
 
 func resolveProjectName(flags *InitOptions) string {
@@ -648,6 +592,111 @@ func extractGithubOrg(repoURL string) string {
 		return parts[0] // Org is the first part
 	}
 	return ""
+}
+
+// resolveTargetDir retorna o diretório alvo para o scaffold.
+// Se o TargetDir das opções estiver vazio, retorna ".".
+func resolveTargetDir(targetDir string) string {
+	if targetDir != "" {
+		return targetDir
+	}
+	return "."
+}
+
+// environmentsForTopology retorna a lista de ambientes baseada na topologia informada.
+func environmentsForTopology(topology string) []string {
+	switch topology {
+	case "single":
+		return []string{"local"}
+	case "standard":
+		return []string{"local", "prod"}
+	case "complete":
+		return []string{"local", "dev", "staging", "prod"}
+	default:
+		return []string{"local"}
+	}
+}
+
+// ensureLocalEnvironment garante que o ambiente "local" está presente na lista,
+// adicionando-o ao início caso não exista. Usado no modo offline.
+func ensureLocalEnvironment(envs []string) []string {
+	for _, e := range envs {
+		if e == "local" {
+			return envs
+		}
+	}
+	return append([]string{"local"}, envs...)
+}
+
+// validateEnvironment verifica se o ambiente atual é válido para a topologia.
+// Se não for, retorna o primeiro ambiente da lista e found=false.
+func validateEnvironment(env string, envs []string) (string, bool) {
+	for _, e := range envs {
+		if e == env {
+			return env, true
+		}
+	}
+	if len(envs) > 0 {
+		return envs[0], false
+	}
+	return env, false
+}
+
+// mapModuleSelection converte a lista de seleções do prompt MultiSelect
+// em flags booleanas de módulos.
+func mapModuleSelection(selectedModules []string) (kepler, minio, keda, metricsServer bool) {
+	for _, m := range selectedModules {
+		if strings.Contains(m, "Kepler") {
+			kepler = true
+		}
+		if strings.Contains(m, "MinIO") {
+			minio = true
+		}
+		if strings.Contains(m, "KEDA") {
+			keda = true
+		}
+		if strings.Contains(m, "Observability") {
+			metricsServer = true
+		}
+	}
+	return
+}
+
+// validateNonInteractiveFlags valida que os campos obrigatórios estão presentes
+// no modo não-interativo. Retorna a lista de flags faltantes.
+func validateNonInteractiveFlags(ctx *scaffold.BlueprintContext, flags *InitOptions) []string {
+	missing := []string{}
+	if ctx.Topology == "" {
+		missing = append(missing, "--topology")
+	}
+	if ctx.WorkflowPattern == "" {
+		missing = append(missing, "--workflow")
+	}
+	if ctx.GitRepoURL == "" && !flags.Offline {
+		if ctx.ProjectName == "yby-project" && flags.ProjectName == "" {
+			missing = append(missing, "--project-name OR --git-repo")
+		}
+	}
+	return missing
+}
+
+// resolveAIFilePath determina o caminho completo para um arquivo gerado por IA.
+// Arquivos .github são colocados na raiz do repositório Git, não dentro do targetDir.
+func resolveAIFilePath(filePath, targetDir, gitRoot string) string {
+	fullPath := filepath.Join(targetDir, filePath)
+
+	if strings.HasPrefix(filePath, ".github") {
+		if gitRoot != "" {
+			return filepath.Join(gitRoot, filePath)
+		}
+		if targetDir != "." && targetDir != "" {
+			// Sem gitRoot, usa o diretório de trabalho atual
+			// (nesta função pura, retornamos apenas baseado no targetDir)
+			return filePath // retorna o caminho relativo ao CWD
+		}
+	}
+
+	return fullPath
 }
 
 // inferContext populates AI-related context fields based on heuristics

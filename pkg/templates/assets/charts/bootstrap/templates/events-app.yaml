@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: {{ .Values.git.repoURL }}
     targetRevision: {{ .Values.git.targetRevision }}
-    path: charts/events
+    path: {{ if .RepoRootPath }}{{ .RepoRootPath }}/{{ end }}charts/events
     helm:
       valueFiles:
       {{- range $f := .Values.clusterConfig.valueFiles }}
@@ -21,7 +21,7 @@ spec:
       {{- end }}
   destination:
     server: https://kubernetes.default.svc
-    namespace: argo-events
+    namespace: events
   syncPolicy:
     automated:
       prune: true

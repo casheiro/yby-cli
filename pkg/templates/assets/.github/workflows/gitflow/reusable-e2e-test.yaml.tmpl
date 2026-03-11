@@ -25,9 +25,6 @@ jobs:
         env:
           GH_TOKEN: ${{ "{{" }} secrets.GITHUB_TOKEN {{ "}}" }}
 
-      - name: 🔧 Install k3d
-        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-
       - name: ⚡ Setup K3d Cluster
         run: k3d cluster create {{ .ProjectName }}-ci-test --wait
 

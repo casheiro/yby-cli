@@ -25,6 +25,9 @@ export default {
         'subject-full-stop': [0], // Disable full-stop check (allow periods at end)
         'header-max-length': [0], // Disable header max length check
         'footer-max-line-length': [0], // Disable footer line length check
-        'body-max-line-length': [0] // Disable body line length check
+        'body-max-line-length': [0], // Disable body line length check
+        'type-empty': [0], // Disable type-empty check (allow commits without conventional type)
+        'subject-empty': [0], // Disable subject-empty check
+        'body-leading-blank': [0] // Disable body-leading-blank check
     }
 };

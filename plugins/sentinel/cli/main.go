@@ -77,60 +77,126 @@ func handlePluginRequest() {
 			Hooks:       []string{"command"},
 		})
 	case "command":
-		// Expect "yby sentinel investigate [pod-name] [flags]"
-		// Flags: -n/--namespace
-		var podName, namespace string
 		args := sdk.GetArgs() // Use SDK args
 
-		// Parser simples de argumentos
-		if len(args) > 0 {
-			if args[0] == "investigate" {
-				// Remove o comando "investigate" da lista para processar o resto
-				remainingArgs := args[1:]
-
-				for i := 0; i < len(remainingArgs); i++ {
-					arg := remainingArgs[i]
-
-					// Verifica flags de namespace
-					if arg == "-n" || arg == "--namespace" {
-						if i+1 < len(remainingArgs) {
-							namespace = remainingArgs[i+1]
-							i++ // Avança o próximo, pois já foi consumido como valor
-						}
-						continue
-					}
-
-					// Se não é flag e podName ainda está vazio, deve ser o nome do pod
-					if !strings.HasPrefix(arg, "-") && podName == "" {
-						podName = arg
-					}
-				}
-			}
-		}
-
-		// Fallback to Context if needed
-		ctx := sdk.GetFullContext()
-		if podName == "" && ctx != nil {
-			if p, ok := ctx.Data["pod"]; ok {
-				podName = fmt.Sprintf("%v", p)
-			}
-		}
-
-		// Priority: Flag > Values > Context > Default
-		if namespace == "" {
-			if ctx != nil && ctx.Infra.Namespace != "" {
-				namespace = ctx.Infra.Namespace
-			} else {
-				namespace = "default"
-			}
-		}
-
-		if podName == "" {
-			fmt.Println("❌ Nome do Pod é obrigatório. Uso: yby sentinel investigate <pod> [-n namespace]")
+		if len(args) == 0 {
+			fmt.Println("❌ Subcomando obrigatório. Uso: yby sentinel <investigate|scan> [flags]")
 			return
 		}
 
-		investigate(podName, namespace)
+		switch args[0] {
+		case "investigate":
+			// Expect "yby sentinel investigate [pod-name] [flags]"
+			// Flags: -n/--namespace, -o/--output, -f/--file, --no-cache
+			var podName, namespace, outputFormat, outputFile string
+			var noCache bool
+			remainingArgs := args[1:]
+
+			for i := 0; i < len(remainingArgs); i++ {
+				arg := remainingArgs[i]
+
+				// Verifica flags de namespace
+				if arg == "-n" || arg == "--namespace" {
+					if i+1 < len(remainingArgs) {
+						namespace = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+
+				// Flag de formato de saída
+				if arg == "--output" || arg == "-o" {
+					if i+1 < len(remainingArgs) {
+						outputFormat = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+
+				// Flag de arquivo de saída
+				if arg == "--file" || arg == "-f" {
+					if i+1 < len(remainingArgs) {
+						outputFile = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+
+				// Flag para desabilitar cache
+				if arg == "--no-cache" {
+					noCache = true
+					continue
+				}
+
+				// Se não é flag e podName ainda está vazio, deve ser o nome do pod
+				if !strings.HasPrefix(arg, "-") && podName == "" {
+					podName = arg
+				}
+			}
+
+			// Fallback to Context if needed
+			ctx := sdk.GetFullContext()
+			if podName == "" && ctx != nil {
+				if p, ok := ctx.Data["pod"]; ok {
+					podName = fmt.Sprintf("%v", p)
+				}
+			}
+
+			// Priority: Flag > Values > Context > Default
+			if namespace == "" {
+				if ctx != nil && ctx.Infra.Namespace != "" {
+					namespace = ctx.Infra.Namespace
+				} else {
+					namespace = "default"
+				}
+			}
+
+			if podName == "" {
+				fmt.Println("❌ Nome do Pod é obrigatório. Uso: yby sentinel investigate <pod> [-n namespace]")
+				return
+			}
+
+			investigate(podName, namespace, outputFormat, outputFile, noCache)
+
+		case "scan":
+			// Expect "yby sentinel scan [-n namespace] [-o format] [-f file]"
+			var namespace, outputFormat, outputFile string
+			remainingArgs := args[1:]
+
+			for i := 0; i < len(remainingArgs); i++ {
+				arg := remainingArgs[i]
+				if arg == "-n" || arg == "--namespace" {
+					if i+1 < len(remainingArgs) {
+						namespace = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+				if arg == "--output" || arg == "-o" {
+					if i+1 < len(remainingArgs) {
+						outputFormat = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+				if arg == "--file" || arg == "-f" {
+					if i+1 < len(remainingArgs) {
+						outputFile = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+			}
+
+			if namespace == "" {
+				namespace = "default"
+			}
+
+			scanNamespace(namespace, outputFormat, outputFile)
+
+		default:
+			fmt.Printf("❌ Subcomando desconhecido: %s. Uso: yby sentinel <investigate|scan> [flags]\n", args[0])
+		}
 	default:
 		// Se rodar sem hook mas com args via main, talvez seja uso direto?
 		if len(os.Args) > 1 {
@@ -142,7 +208,7 @@ func handlePluginRequest() {
 	}
 }
 
-func investigate(podName, namespace string) {
+func investigate(podName, namespace, outputFormat, outputFile string, noCache bool) {
 	// Configuração de Estilo
 	width := 80 // Largura confortável para leitura
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Padding(0, 1)
@@ -180,6 +246,15 @@ func investigate(podName, namespace string) {
 	} else {
 		logsStr = string(podLogs)
 		fmt.Println("\r✅ Logs coletados")
+	}
+
+	// Verificar cache antes de continuar a coleta
+	if !noCache {
+		if cached, ok := loadCache(namespace, podName, logsStr); ok {
+			fmt.Println("\n📦 Resultado do cache (use --no-cache para forçar re-análise)")
+			renderResult(*cached, podName, namespace, outputFormat, outputFile, width, titleStyle, boxStyle, labelStyle)
+			return
+		}
 	}
 
 	// 2. Get Events via client-go
@@ -266,7 +341,49 @@ func investigate(podName, namespace string) {
 		return
 	}
 
-	// Render Result
+	// Salvar no cache
+	saveCache(namespace, podName, logsStr, result)
+
+	// Renderizar resultado (visual ou exportar)
+	renderResult(result, podName, namespace, outputFormat, outputFile, width, titleStyle, boxStyle, labelStyle)
+}
+
+// renderResult lida com a renderização visual ou exportação do resultado da análise.
+func renderResult(result AnalysisResult, podName, namespace, outputFormat, outputFile string, width int, titleStyle, boxStyle, labelStyle lipgloss.Style) {
+	// Exportar relatório se formato especificado
+	if outputFormat != "" {
+		switch outputFormat {
+		case "json":
+			content, err := exportJSON(result, podName, namespace)
+			if err != nil {
+				fmt.Printf("❌ Erro ao exportar JSON: %v\n", err)
+				return
+			}
+			if err := writeReport(content, outputFile); err != nil {
+				fmt.Printf("❌ Erro ao escrever relatório: %v\n", err)
+				return
+			}
+			if outputFile != "" {
+				fmt.Printf("✅ Relatório JSON salvo em %s\n", outputFile)
+			}
+		case "markdown":
+			content := exportMarkdown(result, podName, namespace)
+			if err := writeReport(content, outputFile); err != nil {
+				fmt.Printf("❌ Erro ao escrever relatório: %v\n", err)
+				return
+			}
+			if outputFile != "" {
+				fmt.Printf("✅ Relatório Markdown salvo em %s\n", outputFile)
+			}
+		default:
+			fmt.Printf("⚠️  Formato de saída desconhecido: %s. Usando formato visual padrão.\n", outputFormat)
+		}
+		if outputFormat == "json" || outputFormat == "markdown" {
+			return // Não renderizar visual
+		}
+	}
+
+	// Renderização visual padrão
 	var sb strings.Builder
 
 	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Width(width-4).Render(fmt.Sprintf("\n🚨 Causa Raiz: %s", result.RootCause)) + "\n")
