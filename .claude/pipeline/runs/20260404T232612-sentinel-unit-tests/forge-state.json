@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "run_id": "20260404T232612-sentinel-unit-tests",
+  "run_dir": ".claude/pipeline/runs/20260404T232612-sentinel-unit-tests",
+  "profile": "fast",
+  "tema": "Plugin sentinel sem testes unitários — cache.go, report.go e scan.go não têm testes individuais. preciso que analise e veja como fazer para criar os testes necessários para que o plugin tenha testes unitários adequados",
+  "slug": "sentinel-unit-tests",
+  "started_at": "2026-04-04T23:26:12.38888416Z",
+  "current_phase": "document",
+  "current_cycle": "",
+  "current_target": "T004",
+  "phases_completed": [
+    "fast-temper",
+    "hammer",
+    "hone",
+    "document"
+  ],
+  "artifact_path": "",
+  "spec_dir": "agile/planning/sentinel-unit-tests",
+  "plan_path": "",
+  "iteration": 10,
+  "total_cost_usd": 16.511301999999997,
+  "total_tokens": {
+    "input": 418,
+    "output": 102289,
+    "cache_read": 5531531,
+    "cache_write": 468776
+  },
+  "consecutive_failures": 0,
+  "quality_checks": {
+    "total": 7,
+    "approved": 7,
+    "approved_with_retry": 1
+  },
+  "circuit_breakers": {
+    "triggers": 0,
+    "last_trigger_reason": ""
+  },
+  "tasks_executed": 4,
+  "tasks_skipped": 0,
+  "tasks_failed": 0
+}
