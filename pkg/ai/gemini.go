@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -101,12 +102,8 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		// Read body for error details
-		buf := new(bytes.Buffer)
-		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("gemini retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
-		}
-		return nil, fmt.Errorf("gemini retornou status: %d - %s", resp.StatusCode, buf.String())
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var gResp geminiResponse
@@ -148,66 +145,92 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 				},
 			},
 		},
-		// No specific response mime type force, let it be text
 	}
 
-	// Retry Configuration
-	const maxRetries = 3
-	const baseDelay = 2 * time.Second
+	jsonBody, _ := json.Marshal(reqBody)
+	client := http.Client{Timeout: 60 * time.Second}
 
-	var lastErr error
-	var gResp geminiResponse
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("falha ao chamar gemini: %w", err)
+	}
+	defer resp.Body.Close()
 
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		jsonBody, _ := json.Marshal(reqBody)
-		client := http.Client{Timeout: 60 * time.Second}
-
-		resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-		if err != nil {
-			lastErr = fmt.Errorf("falha ao chamar gemini: %w", err)
-			time.Sleep(baseDelay * time.Duration(1<<attempt)) // Exponential Backoff
-			continue
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == 200 {
-			// Success!
-			if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
-				return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
-			}
-			if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
-				return "", fmt.Errorf("resposta vazia do gemini")
-			}
-			return gResp.Candidates[0].Content.Parts[0].Text, nil
-		}
-
-		// Handle Errors
+	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		bodyString := string(bodyBytes)
-		lastErr = fmt.Errorf("gemini returned status: %d - %s", resp.StatusCode, bodyString)
-
-		// Retry only on 503 (Unavailable) or 429 (Too Many Requests)
-		if resp.StatusCode == 503 || resp.StatusCode == 429 {
-			fmt.Printf("\r⚠️  Gemini ocupado (Status %d). Tentando novamente em %d segundos (Tentativa %d/%d)...\n", resp.StatusCode, int(baseDelay.Seconds())*(1<<attempt), attempt+1, maxRetries)
-			time.Sleep(baseDelay * time.Duration(1<<attempt))
-			continue
-		}
-
-		// If it's another error (400, 401, 500), fail immediately
-		break
+		return "", &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(bodyBytes)}
 	}
 
-	return "", lastErr
+	var gResp geminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
+		return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
+	}
+
+	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("resposta vazia do gemini")
+	}
+
+	return gResp.Candidates[0].Content.Parts[0].Text, nil
 }
 
 func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
-	// Fallback to non-streaming for now to satisfy interface
-	text, err := p.Completion(ctx, systemPrompt, userPrompt)
-	if err != nil {
-		return err
+	lang := GetLanguage()
+	systemPrompt = fmt.Sprintf("%s\n\n(IMPORTANT: You MUST output your analysis/response entirely in %s language, maintaining the JSON structure if requested.)", systemPrompt, lang)
+	fullPrompt := fmt.Sprintf("%s\n\nUSER PROMPT: %s", systemPrompt, userPrompt)
+
+	reqBody := geminiRequest{
+		Contents: []geminiContent{
+			{Parts: []geminiPart{{Text: fullPrompt}}},
+		},
 	}
-	_, err = io.WriteString(out, text)
-	return err
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("falha ao serializar request gemini: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s",
+		p.BaseURL, p.Model, p.APIKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("falha ao criar request de streaming gemini: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := http.Client{} // sem timeout para streaming
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("falha ao chamar streaming gemini: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(body)}
+	}
+
+	// Parser SSE — Gemini retorna data: {json}\n\n (sem sentinel [DONE], termina com EOF)
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+
+		var chunk geminiResponse
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // pular linhas mal-formadas
+		}
+		if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
+			text := chunk.Candidates[0].Content.Parts[0].Text
+			if _, err := io.WriteString(out, text); err != nil {
+				return err
+			}
+		}
+	}
+	return scanner.Err()
 }
 
 type geminiEmbeddingRequest struct {
@@ -274,7 +297,7 @@ func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		resp.Body.Close()
 
 		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("gemini embeddings status: %d - %s", resp.StatusCode, string(body))
+			return nil, &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(body)}
 		}
 
 		var batchResp geminiBatchEmbeddingResponse

@@ -212,7 +212,7 @@ func TestOllamaProvider_GenerateGovernance_Error(t *testing.T) {
 
 	_, err := provider.GenerateGovernance(context.Background(), "teste")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 func TestOllamaProvider_GenerateGovernance_MalformedJSON(t *testing.T) {
@@ -267,7 +267,7 @@ func TestOllamaProvider_Completion_Error(t *testing.T) {
 
 	_, err := provider.Completion(context.Background(), "system", "user")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // ─── Testes de StreamCompletion ─────────────────────────────────────────────
@@ -312,7 +312,7 @@ func TestOllamaProvider_StreamCompletion_Error(t *testing.T) {
 	var buf bytes.Buffer
 	err := provider.StreamCompletion(context.Background(), "system", "user", &buf)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // ─── Testes de EmbedDocuments ───────────────────────────────────────────────
@@ -354,5 +354,5 @@ func TestOllamaProvider_EmbedDocuments_Error(t *testing.T) {
 
 	_, err := provider.EmbedDocuments(context.Background(), []string{"texto"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
