@@ -303,7 +303,11 @@ environments:
 
 	// Test Case 1: Add new environment
 	t.Run("AddNew", func(t *testing.T) {
-		err := m.AddEnvironment("qa", "remote", "QA Environment")
+		env := Environment{
+			Type:        "remote",
+			Description: "QA Environment",
+		}
+		err := m.AddEnvironment("qa", env, "")
 		if err != nil {
 			t.Fatalf("AddEnvironment failed: %v", err)
 		}
@@ -334,9 +338,66 @@ environments:
 
 	// Test Case 2: Add duplicate environment
 	t.Run("AddDuplicate", func(t *testing.T) {
-		err := m.AddEnvironment("local", "local", "Duplicate")
+		env := Environment{
+			Type:        "local",
+			Description: "Duplicate",
+		}
+		err := m.AddEnvironment("local", env, "")
 		if err == nil {
 			t.Error("Expected error when adding duplicate environment")
+		}
+	})
+
+	// Test Case 3: Add with custom valuesContent
+	t.Run("AddWithValuesContent", func(t *testing.T) {
+		customContent := "# Custom values\nserver:\n  port: 8080\n"
+		env := Environment{
+			Type:        "remote",
+			Description: "Staging Environment",
+		}
+		err := m.AddEnvironment("staging", env, customContent)
+		if err != nil {
+			t.Fatalf("AddEnvironment failed: %v", err)
+		}
+
+		// Verifica que o conteúdo customizado foi escrito
+		valuesFile := filepath.Join(tmpDir, "config", "values-staging.yaml")
+		data, err := os.ReadFile(valuesFile)
+		if err != nil {
+			t.Fatalf("Falha ao ler arquivo de values: %v", err)
+		}
+		if string(data) != customContent {
+			t.Errorf("Expected custom content, got '%s'", string(data))
+		}
+	})
+
+	// Test Case 4: Add with KubeContext and Namespace
+	t.Run("AddWithKubeFields", func(t *testing.T) {
+		env := Environment{
+			Type:        "remote",
+			Description: "UAT Environment",
+			KubeContext: "uat-cluster",
+			Namespace:   "uat-ns",
+		}
+		err := m.AddEnvironment("uat", env, "")
+		if err != nil {
+			t.Fatalf("AddEnvironment failed: %v", err)
+		}
+
+		manifest, err := m.LoadManifest()
+		if err != nil {
+			t.Fatalf("LoadManifest failed: %v", err)
+		}
+
+		uat, ok := manifest.Environments["uat"]
+		if !ok {
+			t.Fatal("Expected 'uat' environment to exist")
+		}
+		if uat.KubeContext != "uat-cluster" {
+			t.Errorf("Expected KubeContext='uat-cluster', got '%s'", uat.KubeContext)
+		}
+		if uat.Namespace != "uat-ns" {
+			t.Errorf("Expected Namespace='uat-ns', got '%s'", uat.Namespace)
 		}
 	})
 }

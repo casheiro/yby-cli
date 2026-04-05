@@ -4,10 +4,13 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
+	gocontext "context"
 	"fmt"
 
-	"github.com/casheiro/yby-cli/pkg/context"
+	ybycontext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +33,7 @@ var envListCmd = &cobra.Command{
 		if err != nil {
 			infraRoot = "."
 		}
-		mgr := context.NewManager(infraRoot)
+		mgr := ybycontext.NewManager(infraRoot)
 		manifest, err := mgr.LoadManifest()
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao carregar manifesto de ambientes")
@@ -61,13 +64,29 @@ var envUseCmd = &cobra.Command{
 		if err != nil {
 			infraRoot = "."
 		}
-		mgr := context.NewManager(infraRoot)
+		mgr := ybycontext.NewManager(infraRoot)
 
 		if err := mgr.SetCurrent(name); err != nil {
 			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao definir ambiente ativo")
 		}
 
 		fmt.Printf("✅ Contexto alterado para '%s'\n", name)
+
+		// Integração com kubectl context
+		manifest, err := mgr.LoadManifest()
+		if err == nil {
+			if env, ok := manifest.Environments[name]; ok {
+				if env.KubeContext != "" {
+					runner := &shared.RealRunner{}
+					if err := runner.Run(gocontext.Background(), "kubectl", "config", "use-context", env.KubeContext); err != nil {
+						fmt.Printf("⚠️  Falha ao trocar kubectl context: %v\n", err)
+					} else {
+						fmt.Printf("   kubectl context: %s\n", env.KubeContext)
+					}
+				}
+			}
+		}
+
 		return nil
 	},
 }
@@ -81,7 +100,7 @@ var envShowCmd = &cobra.Command{
 		if err != nil {
 			infraRoot = "."
 		}
-		mgr := context.NewManager(infraRoot)
+		mgr := ybycontext.NewManager(infraRoot)
 		name, env, err := mgr.GetCurrent()
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao obter detalhes do ambiente ativo")
@@ -130,20 +149,71 @@ var envCreateCmd = &cobra.Command{
 
 		infraRoot, err := FindInfraRoot()
 		if err != nil {
-			// Fallback or error? For create, maybe fallback to "." is okay?
-			// But consistency suggests we should know where we are.
-			// Let's print warning and use "." or just fail if strict.
-			// The original code used ".", so let's default to "." if not found,
-			// BUT if we want P5 support, we ideally want to find it.
 			infraRoot = "."
 		}
-		mgr := context.NewManager(infraRoot)
-		if err := mgr.AddEnvironment(name, envType, description); err != nil {
+
+		kubeContext, _ := cmd.Flags().GetString("kube-context")
+		namespace, _ := cmd.Flags().GetString("namespace")
+
+		// Gera values estruturados a partir do project manifest, se disponível
+		var valuesContent string
+		if manifest, err := scaffold.LoadProjectManifest(infraRoot); err == nil {
+			bpCtx := scaffold.ManifestToContext(manifest)
+			valuesContent = scaffold.RenderEnvironmentValues(bpCtx, name)
+		}
+
+		env := ybycontext.Environment{
+			Type:        envType,
+			Description: description,
+			KubeContext: kubeContext,
+			Namespace:   namespace,
+		}
+
+		mgr := ybycontext.NewManager(infraRoot)
+		if err := mgr.AddEnvironment(name, env, valuesContent); err != nil {
 			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao criar ambiente")
 		}
 
 		fmt.Printf("✅ Ambiente '%s' criado com sucesso!\n", name)
 		fmt.Printf("   Arquivo de configuração: config/values-%s.yaml\n", name)
+
+		// Validação de integridade após criação
+		warnings, err := mgr.ValidateIntegrity()
+		if err == nil && len(warnings) > 0 {
+			fmt.Println("⚠️  Problemas encontrados:")
+			for _, w := range warnings {
+				fmt.Printf("   - %s\n", w)
+			}
+		}
+
+		return nil
+	},
+}
+
+// env check
+var envCheckCmd = &cobra.Command{
+	Use:   "check",
+	Short: "Valida integridade dos ambientes configurados",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		infraRoot, err := FindInfraRoot()
+		if err != nil {
+			infraRoot = "."
+		}
+		mgr := ybycontext.NewManager(infraRoot)
+
+		warnings, err := mgr.ValidateIntegrity()
+		if err != nil {
+			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao validar integridade dos ambientes")
+		}
+
+		if len(warnings) == 0 {
+			fmt.Println("✅ Todos os ambientes estão íntegros.")
+		} else {
+			fmt.Println("⚠️  Problemas encontrados:")
+			for _, w := range warnings {
+				fmt.Printf("   - %s\n", w)
+			}
+		}
 		return nil
 	},
 }
@@ -154,7 +224,10 @@ func init() {
 	envCmd.AddCommand(envUseCmd)
 	envCmd.AddCommand(envShowCmd)
 	envCmd.AddCommand(envCreateCmd)
+	envCmd.AddCommand(envCheckCmd)
 
 	envCreateCmd.Flags().String("type", "", "Tipo do ambiente (local/remote)")
 	envCreateCmd.Flags().String("description", "", "Descrição do ambiente")
+	envCreateCmd.Flags().String("kube-context", "", "Contexto kubectl associado ao ambiente")
+	envCreateCmd.Flags().String("namespace", "", "Namespace padrão do ambiente")
 }

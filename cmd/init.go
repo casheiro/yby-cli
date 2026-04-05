@@ -156,6 +156,13 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			}
 		}
 
+		// 1.6 Carregar manifest anterior como defaults (se existir e não for --force puro)
+		if existingManifest, err := scaffold.LoadProjectManifest(targetDir); err == nil {
+			defaults := scaffold.ManifestToContext(existingManifest)
+			scaffold.MergeContextDefaults(ctx, defaults)
+			fmt.Println("📋 Configurações anteriores carregadas como base.")
+		}
+
 		// 2. Execute Scaffold
 		fmt.Println("🚀 Gerando arquivos...")
 
@@ -296,6 +303,11 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			} else {
 				fmt.Println("✅ Charts validados com sucesso!")
 			}
+		}
+
+		// 5. Persistir Project Manifest (.yby/project.yaml)
+		if err := scaffold.SaveProjectManifest(targetDir, ctx); err != nil {
+			fmt.Printf("⚠️  Falha ao salvar project manifest: %v\n", err)
 		}
 
 		fmt.Println("✅ Projeto inicializado com sucesso!")
