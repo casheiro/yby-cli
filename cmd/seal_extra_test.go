@@ -2,15 +2,18 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/services/secrets"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -196,6 +199,40 @@ func captureOutput(f func()) string {
 	return buf.String()
 }
 
+// mockSealDeps configura lookPath, surveyAsk e newSecretsService para testes do seal.
+// Retorna a função de teardown.
+func mockSealDeps(runner *testutil.MockRunner, fs *testutil.MockFilesystem) func() {
+	origLookPath := lookPath
+	origSurveyAsk := surveyAsk
+	origFactory := newSecretsService
+
+	lookPath = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+
+	newSecretsService = func(r shared.Runner, f shared.Filesystem) secrets.Service {
+		return secrets.NewService(runner, fs)
+	}
+
+	return func() {
+		lookPath = origLookPath
+		surveyAsk = origSurveyAsk
+		newSecretsService = origFactory
+	}
+}
+
+// mockSurveyAnswers configura surveyAsk para preencher respostas do seal
+func mockSurveyAnswers(name, namespace, key, value string) {
+	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
+		v := reflect.ValueOf(response).Elem()
+		v.FieldByName("Name").SetString(name)
+		v.FieldByName("Namespace").SetString(namespace)
+		v.FieldByName("Key").SetString(key)
+		v.FieldByName("Value").SetString(value)
+		return nil
+	}
+}
+
 func TestSealCmd_KubectlNotFound(t *testing.T) {
 	origLookPath := lookPath
 	defer func() { lookPath = origLookPath }()
@@ -260,20 +297,20 @@ func TestSealCmd_SurveyError(t *testing.T) {
 }
 
 func TestSealCmd_KubectlCreateFails(t *testing.T) {
-	teardown := mockExecCommand()
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if name == "kubectl" {
+				return nil, fmt.Errorf("kubectl create failed")
+			}
+			return []byte(""), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{}
+
+	teardown := mockSealDeps(runner, fs)
 	defer teardown()
 
-	origSurveyAsk := surveyAsk
-	defer func() { surveyAsk = origSurveyAsk }()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("fail-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
-	}
+	mockSurveyAnswers("fail-secret", "default", "password", "secret123")
 
 	err := sealCmd.RunE(sealCmd, []string{})
 
@@ -283,38 +320,29 @@ func TestSealCmd_KubectlCreateFails(t *testing.T) {
 }
 
 func TestSealCmd_KubesealFails(t *testing.T) {
-	// Configurar execCommand com mock customizado para kubeseal falhar
-	originalExecCommand := execCommand
-	originalLookPath := lookPath
-	origSurveyAsk := surveyAsk
-	defer func() {
-		execCommand = originalExecCommand
-		lookPath = originalLookPath
-		surveyAsk = origSurveyAsk
-	}()
-
-	lookPath = func(file string) (string, error) {
-		return "/usr/bin/" + file, nil
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			if name == "kubeseal" {
+				return nil, fmt.Errorf("kubeseal failed")
+			}
+			return []byte("sealed"), nil
+		},
 	}
+	fs := &testutil.MockFilesystem{}
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		env := []string{"GO_WANT_HELPER_PROCESS=1"}
-		if name == "kubeseal" {
-			env = append(env, "GO_KUBESEAL_FAIL=1")
-		}
-		cmd.Env = env
-		return cmd
-	}
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
 
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
+	mockSurveyAnswers("test-secret", "default", "password", "secret123")
+
+	origAskOne := askOne
+	defer func() { askOne = origAskOne }()
+	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
+		r := response.(*string)
+		*r = "/tmp/sealed-test.yaml"
 		return nil
 	}
 
@@ -326,24 +354,26 @@ func TestSealCmd_KubesealFails(t *testing.T) {
 }
 
 func TestSealCmd_SurveySuccess(t *testing.T) {
-	teardown := mockExecCommand()
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-content"), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{
+		MkdirAllFunc:  func(path string, perm os.FileMode) error { return nil },
+		WriteFileFunc: func(name string, data []byte, perm os.FileMode) error { return nil },
+	}
+
+	teardown := mockSealDeps(runner, fs)
 	defer teardown()
 
-	origSurveyAsk := surveyAsk
-	origAskOne := askOne
-	defer func() {
-		surveyAsk = origSurveyAsk
-		askOne = origAskOne
-	}()
+	mockSurveyAnswers("test-secret", "default", "password", "secret123")
 
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
-	}
+	origAskOne := askOne
+	defer func() { askOne = origAskOne }()
 
 	tmpDir := t.TempDir()
 	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
@@ -363,27 +393,33 @@ func TestSealCmd_SurveySuccess(t *testing.T) {
 }
 
 func TestSealCmd_SaveFileSuccess(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
-	origSurveyAsk := surveyAsk
-	origAskOne := askOne
-	defer func() {
-		surveyAsk = origSurveyAsk
-		askOne = origAskOne
-	}()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
-	}
-
 	tmpDir := t.TempDir()
 	savedPath := filepath.Join(tmpDir, "subdir", "sealed-secret-test.yaml")
+
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-content"), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{
+		MkdirAllFunc: func(path string, perm os.FileMode) error {
+			return os.MkdirAll(path, perm)
+		},
+		WriteFileFunc: func(name string, data []byte, perm os.FileMode) error {
+			return os.WriteFile(name, data, perm)
+		},
+	}
+
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
+
+	mockSurveyAnswers("test-secret", "default", "password", "secret123")
+
+	origAskOne := askOne
+	defer func() { askOne = origAskOne }()
 	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
 		r := response.(*string)
 		*r = savedPath
@@ -410,25 +446,30 @@ func TestSealCmd_SaveFileSuccess(t *testing.T) {
 }
 
 func TestSealCmd_SaveFileInvalidPath(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
-	origSurveyAsk := surveyAsk
-	origAskOne := askOne
-	defer func() {
-		surveyAsk = origSurveyAsk
-		askOne = origAskOne
-	}()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-content"), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{
+		MkdirAllFunc: func(path string, perm os.FileMode) error {
+			return os.MkdirAll(path, perm)
+		},
+		WriteFileFunc: func(name string, data []byte, perm os.FileMode) error {
+			return os.WriteFile(name, data, perm)
+		},
 	}
 
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
+
+	mockSurveyAnswers("test-secret", "default", "password", "secret123")
+
+	origAskOne := askOne
+	defer func() { askOne = origAskOne }()
 	// Caminho inválido: diretório que não pode ser criado
 	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
 		r := response.(*string)
@@ -439,6 +480,6 @@ func TestSealCmd_SaveFileInvalidPath(t *testing.T) {
 	err := sealCmd.RunE(sealCmd, []string{})
 
 	assert.Error(t, err, "Deveria retornar erro ao salvar em caminho inválido")
-	assert.Contains(t, err.Error(), "falha ao salvar sealed secret",
-		"Deveria informar erro ao salvar em caminho inválido")
+	assert.Contains(t, err.Error(), "falha ao selar secret",
+		"Deveria informar erro ao selar em caminho inválido")
 }

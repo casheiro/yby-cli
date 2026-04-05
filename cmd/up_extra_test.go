@@ -21,6 +21,7 @@ type mockClusterManager struct {
 	existsFunc func(ctx context.Context, name string) (bool, error)
 	createFunc func(ctx context.Context, name string, configFile string) error
 	startFunc  func(ctx context.Context, name string) error
+	deleteFunc func(ctx context.Context, name string) error
 }
 
 func (m *mockClusterManager) Exists(ctx context.Context, name string) (bool, error) {
@@ -40,6 +41,13 @@ func (m *mockClusterManager) Create(ctx context.Context, name string, configFile
 func (m *mockClusterManager) Start(ctx context.Context, name string) error {
 	if m.startFunc != nil {
 		return m.startFunc(ctx, name)
+	}
+	return nil
+}
+
+func (m *mockClusterManager) Delete(ctx context.Context, name string) error {
+	if m.deleteFunc != nil {
+		return m.deleteFunc(ctx, name)
 	}
 	return nil
 }
@@ -79,12 +87,20 @@ func (m *mockMirrorService) StartSyncLoop(ctx context.Context) {
 }
 
 type mockBootstrapService struct {
-	runFunc func(ctx context.Context, opts bootstrap.BootstrapOptions) error
+	runFunc         func(ctx context.Context, opts bootstrap.BootstrapOptions) error
+	waitHealthyFunc func(ctx context.Context, name, namespace string, timeoutSeconds int) error
 }
 
 func (m *mockBootstrapService) Run(ctx context.Context, opts bootstrap.BootstrapOptions) error {
 	if m.runFunc != nil {
 		return m.runFunc(ctx, opts)
+	}
+	return nil
+}
+
+func (m *mockBootstrapService) WaitHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error {
+	if m.waitHealthyFunc != nil {
+		return m.waitHealthyFunc(ctx, name, namespace, timeoutSeconds)
 	}
 	return nil
 }
@@ -114,7 +130,7 @@ func newUpMockFs() shared.Filesystem {
 // ========================================================
 
 func TestRunLocalUp_ErroNoLookPath(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -142,7 +158,7 @@ func TestRunLocalUp_ErroNoLookPath(t *testing.T) {
 }
 
 func TestRunLocalUp_ClusterExisteStartFalha(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -171,7 +187,7 @@ func TestRunLocalUp_ClusterExisteStartFalha(t *testing.T) {
 }
 
 func TestRunLocalUp_ClusterNaoExisteCriacaoFalha(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -206,7 +222,7 @@ func TestRunLocalUp_ClusterNaoExisteCriacaoFalha(t *testing.T) {
 // ========================================================
 
 func TestRunLocalUp_Sucesso(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -245,7 +261,7 @@ func TestRunLocalUp_Sucesso(t *testing.T) {
 }
 
 func TestRunLocalUp_Sucesso_ComClusterName(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	t.Setenv("YBY_CLUSTER_NAME", "custom-cluster")

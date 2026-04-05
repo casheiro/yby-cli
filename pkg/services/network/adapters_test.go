@@ -213,3 +213,81 @@ func TestDockerContainerManager_StartGrafana_Error(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "erro: porta já em uso")
 }
+
+// --- Testes para construtores ---
+
+func TestNewClusterNetworkAdapter(t *testing.T) {
+	adapter := NewClusterNetworkAdapter()
+
+	assert.NotNil(t, adapter, "deve retornar um adaptador não-nil")
+	assert.NotNil(t, adapter.Runner, "deve inicializar o Runner")
+}
+
+func TestNewContainerAdapter(t *testing.T) {
+	adapter := NewContainerAdapter()
+
+	assert.NotNil(t, adapter, "deve retornar um adaptador não-nil")
+	assert.NotNil(t, adapter.Runner, "deve inicializar o Runner")
+}
+
+// --- Testes adicionais para PortForward ---
+
+func TestRealClusterNetworkManager_PortForward_Success(t *testing.T) {
+	// Testa o cenário de sucesso na primeira tentativa
+	mock := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
+	}
+	mgr := &RealClusterNetworkManager{Runner: mock}
+
+	err := mgr.PortForward(context.Background(), "k3d-yby", "argocd", "svc/argocd-server", "8080:443")
+
+	assert.NoError(t, err, "deve retornar nil quando o port-forward tem sucesso na primeira tentativa")
+}
+
+func TestRealClusterNetworkManager_PortForward_RetryThenContextCanceled(t *testing.T) {
+	// Testa o cenário: falha no Run, ctx cancelado durante retry (evita time.Sleep)
+	ctx, cancel := context.WithCancel(context.Background())
+	callCount := 0
+
+	mock := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			callCount++
+			if callCount == 1 {
+				// Primeira chamada falha; cancela o contexto para que o loop saia no próximo select
+				cancel()
+				return fmt.Errorf("conexão recusada")
+			}
+			return nil
+		},
+	}
+	mgr := &RealClusterNetworkManager{Runner: mock}
+
+	err := mgr.PortForward(ctx, "k3d-yby", "argocd", "svc/argocd-server", "8080:443")
+
+	assert.ErrorIs(t, err, context.Canceled, "deve retornar erro de contexto cancelado após falha com retry")
+	assert.Equal(t, 1, callCount, "deve ter chamado Run apenas uma vez antes do cancelamento")
+}
+
+func TestRealClusterNetworkManager_PortForward_RetryThenSuccess(t *testing.T) {
+	// Testa o cenário: falha na primeira tentativa, faz retry com sleep, sucesso na segunda
+	// Usa contexto sem cancelamento para exercitar o caminho time.Sleep + continue
+	callCount := 0
+
+	mock := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			callCount++
+			if callCount == 1 {
+				return fmt.Errorf("conexão recusada")
+			}
+			return nil
+		},
+	}
+	mgr := &RealClusterNetworkManager{Runner: mock}
+
+	err := mgr.PortForward(context.Background(), "k3d-yby", "argocd", "svc/argocd-server", "8080:443")
+
+	assert.NoError(t, err, "deve ter sucesso após retry")
+	assert.Equal(t, 2, callCount, "deve ter chamado Run duas vezes (falha + sucesso)")
+}

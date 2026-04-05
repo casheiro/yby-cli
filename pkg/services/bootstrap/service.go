@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -26,10 +27,11 @@ func NewService(r shared.Runner, f shared.Filesystem, k K8sClient) *BootstrapSer
 }
 
 type BootstrapOptions struct {
-	Root        string
-	RepoURL     string
-	Context     string
-	Environment string
+	Root         string
+	RepoURL      string
+	Context      string
+	Environment  string
+	PlainSecrets bool
 }
 
 func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error {
@@ -59,7 +61,7 @@ func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error
 	}
 
 	// 4. Fase 2: Configuração de Segredos
-	if err := s.phaseSecrets(ctx, opts.Root, finalRepo); err != nil {
+	if err := s.phaseSecrets(ctx, opts.Root, finalRepo, opts.PlainSecrets); err != nil {
 		return err
 	}
 
@@ -121,7 +123,12 @@ func (s *BootstrapService) phaseSystemBootstrap(ctx context.Context, root, chart
 	})
 }
 
-func (s *BootstrapService) phaseSecrets(ctx context.Context, root, repoURL string) error {
+func (s *BootstrapService) phaseSecrets(ctx context.Context, root, repoURL string, plainSecrets bool) error {
+	if plainSecrets {
+		slog.Warn("Modo plain-secrets ativo — secrets NÃO serão encriptados (apenas para dev local)")
+		return nil
+	}
+
 	strategy := s.detectSecretsStrategy(root)
 
 	switch strategy {
@@ -197,6 +204,11 @@ func (s *BootstrapService) phaseConfigBootstrap(ctx context.Context, root, repoU
 	}
 
 	return nil
+}
+
+// WaitHealthy aguarda uma Application do ArgoCD ficar com status Healthy.
+func (s *BootstrapService) WaitHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error {
+	return s.K8s.WaitApplicationHealthy(ctx, name, namespace, timeoutSeconds)
 }
 
 func (s *BootstrapService) getRepoURLFromBlueprint(root string) string {

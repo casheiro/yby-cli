@@ -77,6 +77,9 @@ func (m *MockK8sClient) ApplyManifest(ctx context.Context, path string, namespac
 	return nil
 }
 func (m *MockK8sClient) PatchApplication(ctx context.Context, n, ns, p string) error { return nil }
+func (m *MockK8sClient) WaitApplicationHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error {
+	return nil
+}
 
 // Tests
 

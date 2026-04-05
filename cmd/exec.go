@@ -4,8 +4,5 @@ import (
 	"os/exec"
 )
 
-// execCommand is a variable to allow mocking in tests
-var execCommand = exec.Command
-
-// lookPath is a variable to allow mocking in tests
+// lookPath é uma variável para permitir mocking em testes
 var lookPath = exec.LookPath

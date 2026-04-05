@@ -33,6 +33,11 @@ func (k *K3dClusterManager) Start(ctx context.Context, name string) error {
 	return k.Runner.Run(ctx, "k3d", "cluster", "start", name)
 }
 
+// Delete remove um cluster k3d pelo nome
+func (k *K3dClusterManager) Delete(ctx context.Context, name string) error {
+	return k.Runner.Run(ctx, "k3d", "cluster", "delete", name)
+}
+
 // GitMirrorAdapter adapts pkg/mirror.MirrorManager to MirrorService interface
 type GitMirrorAdapter struct {
 	manager *mirror.MirrorManager

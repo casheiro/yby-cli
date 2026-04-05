@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewAccessService(t *testing.T) {
@@ -137,4 +139,37 @@ func TestDefaultAccessService_Run_TokenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error (token error is soft), got: %v", err)
 	}
+}
+
+// --- Testes para maskToken ---
+
+func TestMaskToken_LongerThan16(t *testing.T) {
+	// Token longo deve mostrar primeiros 8 e últimos 8 caracteres
+	token := "abcdefghijklmnopqrstuvwxyz"
+	result := maskToken(token)
+
+	assert.Equal(t, "abcdefgh***...**stuvwxyz", result, "deve mascarar o meio do token")
+}
+
+func TestMaskToken_Exactly16(t *testing.T) {
+	// Token com exatamente 16 caracteres deve ser totalmente mascarado
+	token := "1234567890123456"
+	result := maskToken(token)
+
+	assert.Equal(t, "***", result, "deve retornar *** para token com 16 caracteres")
+}
+
+func TestMaskToken_ShortString(t *testing.T) {
+	// Token curto (< 8 chars) deve ser totalmente mascarado
+	token := "abc"
+	result := maskToken(token)
+
+	assert.Equal(t, "***", result, "deve retornar *** para string curta")
+}
+
+func TestMaskToken_Empty(t *testing.T) {
+	// String vazia deve ser totalmente mascarada
+	result := maskToken("")
+
+	assert.Equal(t, "***", result, "deve retornar *** para string vazia")
 }

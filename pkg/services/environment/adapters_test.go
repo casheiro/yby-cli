@@ -128,6 +128,39 @@ func TestK3dClusterManager_Start_Error(t *testing.T) {
 	assert.ErrorIs(t, err, expectedErr)
 }
 
+// --- Testes para K3dClusterManager.Delete ---
+
+func TestK3dClusterManager_Delete_Success(t *testing.T) {
+	var capturedArgs []string
+	mock := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			capturedArgs = append([]string{name}, args...)
+			return nil
+		},
+	}
+	mgr := &K3dClusterManager{Runner: mock}
+
+	err := mgr.Delete(context.Background(), "my-cluster")
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"k3d", "cluster", "delete", "my-cluster"}, capturedArgs,
+		"deve executar 'k3d cluster delete <nome>'")
+}
+
+func TestK3dClusterManager_Delete_Error(t *testing.T) {
+	expectedErr := fmt.Errorf("falha ao deletar cluster")
+	mock := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return expectedErr
+		},
+	}
+	mgr := &K3dClusterManager{Runner: mock}
+
+	err := mgr.Delete(context.Background(), "my-cluster")
+
+	assert.ErrorIs(t, err, expectedErr)
+}
+
 // --- Teste para GitMirrorAdapter ---
 
 func TestNewGitMirrorAdapter(t *testing.T) {
