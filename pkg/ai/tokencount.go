@@ -20,7 +20,7 @@ func EstimateTokens(text string) int {
 
 // ModelMetadata armazena metadados de um modelo de IA.
 type ModelMetadata struct {
-	Name         string
+	Name          string
 	ContextWindow int // limite de tokens da context window
 }
 
@@ -34,18 +34,18 @@ var knownModels = map[string]ModelMetadata{
 	"gpt-3.5-turbo": {Name: "gpt-3.5-turbo", ContextWindow: 16_385},
 
 	// Google Gemini
-	"gemini-2.5-flash":   {Name: "gemini-2.5-flash", ContextWindow: 1_000_000},
-	"gemini-2.5-pro":     {Name: "gemini-2.5-pro", ContextWindow: 1_000_000},
-	"gemini-2.0-flash":   {Name: "gemini-2.0-flash", ContextWindow: 1_000_000},
-	"gemini-1.5-flash":   {Name: "gemini-1.5-flash", ContextWindow: 1_000_000},
-	"gemini-1.5-pro":     {Name: "gemini-1.5-pro", ContextWindow: 2_000_000},
+	"gemini-2.5-flash": {Name: "gemini-2.5-flash", ContextWindow: 1_000_000},
+	"gemini-2.5-pro":   {Name: "gemini-2.5-pro", ContextWindow: 1_000_000},
+	"gemini-2.0-flash": {Name: "gemini-2.0-flash", ContextWindow: 1_000_000},
+	"gemini-1.5-flash": {Name: "gemini-1.5-flash", ContextWindow: 1_000_000},
+	"gemini-1.5-pro":   {Name: "gemini-1.5-pro", ContextWindow: 2_000_000},
 
 	// Ollama (modelos comuns — limites variam por quantização)
-	"llama3":   {Name: "llama3", ContextWindow: 8_192},
-	"llama3.1": {Name: "llama3.1", ContextWindow: 128_000},
-	"mistral":  {Name: "mistral", ContextWindow: 32_768},
-	"mixtral":  {Name: "mixtral", ContextWindow: 32_768},
-	"codellama":{Name: "codellama", ContextWindow: 16_384},
+	"llama3":    {Name: "llama3", ContextWindow: 8_192},
+	"llama3.1":  {Name: "llama3.1", ContextWindow: 128_000},
+	"mistral":   {Name: "mistral", ContextWindow: 32_768},
+	"mixtral":   {Name: "mixtral", ContextWindow: 32_768},
+	"codellama": {Name: "codellama", ContextWindow: 16_384},
 }
 
 const defaultContextWindow = 8_192

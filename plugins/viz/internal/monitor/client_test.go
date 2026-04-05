@@ -16,9 +16,9 @@ type FakeClient struct {
 }
 
 func (f *FakeClient) GetPods() ([]Pod, error)               { return f.pods, f.err }
-func (f *FakeClient) GetDeployments() ([]Deployment, error)  { return f.deployments, f.err }
-func (f *FakeClient) GetServices() ([]Service, error)        { return f.services, f.err }
-func (f *FakeClient) GetNodes() ([]Node, error)              { return f.nodes, f.err }
+func (f *FakeClient) GetDeployments() ([]Deployment, error) { return f.deployments, f.err }
+func (f *FakeClient) GetServices() ([]Service, error)       { return f.services, f.err }
+func (f *FakeClient) GetNodes() ([]Node, error)             { return f.nodes, f.err }
 
 // TestClientInterface verifica que FakeClient satisfaz a interface Client.
 func TestClientInterface(t *testing.T) {

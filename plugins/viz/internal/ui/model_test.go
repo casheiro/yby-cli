@@ -19,9 +19,9 @@ type MockClient struct {
 }
 
 func (m *MockClient) GetPods() ([]monitor.Pod, error)               { return m.Pods, m.Err }
-func (m *MockClient) GetDeployments() ([]monitor.Deployment, error)  { return m.Deployments, m.Err }
-func (m *MockClient) GetServices() ([]monitor.Service, error)        { return m.Services, m.Err }
-func (m *MockClient) GetNodes() ([]monitor.Node, error)              { return m.Nodes, m.Err }
+func (m *MockClient) GetDeployments() ([]monitor.Deployment, error) { return m.Deployments, m.Err }
+func (m *MockClient) GetServices() ([]monitor.Service, error)       { return m.Services, m.Err }
+func (m *MockClient) GetNodes() ([]monitor.Node, error)             { return m.Nodes, m.Err }
 
 // --- Testes de criação do Model ---
 
@@ -85,10 +85,7 @@ func TestModel_Update_TabNavigation(t *testing.T) {
 	model := NewModel(client)
 
 	// Tab avança para próxima aba
-	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-	// KeyMsg com string "tab" precisa usar o tipo correto
-	// Vamos usar KeyTab diretamente
-	newModel, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m := newModel.(Model)
 
 	if m.activeTab != TabDeployments {

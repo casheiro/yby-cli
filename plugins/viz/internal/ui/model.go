@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type tickMsg time.Time

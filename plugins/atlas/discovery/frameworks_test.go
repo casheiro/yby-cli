@@ -9,10 +9,10 @@ import (
 // TestDetectGoFramework verifica detecção de frameworks Go via go.mod.
 func TestDetectGoFramework(t *testing.T) {
 	tests := []struct {
-		name      string
-		content   string
-		wantLang  string
-		wantFW    string
+		name     string
+		content  string
+		wantLang string
+		wantFW   string
 	}{
 		{
 			name:     "gin detectado",
