@@ -312,6 +312,60 @@ func TestScan_DetectsDockerfileRelations(t *testing.T) {
 	}
 }
 
+func TestScan_DetectsLanguageAndFramework(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Go com Gin
+	goDir := filepath.Join(tmpDir, "api-go")
+	os.MkdirAll(goDir, 0755)
+	os.WriteFile(filepath.Join(goDir, "go.mod"), []byte(
+		"module myapi\n\ngo 1.21\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+	), 0644)
+
+	// Node.js com Express
+	nodeDir := filepath.Join(tmpDir, "api-node")
+	os.MkdirAll(nodeDir, 0755)
+	os.WriteFile(filepath.Join(nodeDir, "package.json"), []byte(
+		`{"name":"api-node","dependencies":{"express":"^4.18.0"}}`,
+	), 0644)
+
+	// Dockerfile (sem linguagem/framework)
+	infraDir := filepath.Join(tmpDir, "infra")
+	os.MkdirAll(infraDir, 0755)
+	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM alpine\n"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	for _, comp := range bp.Components {
+		switch comp.Name {
+		case "api-go":
+			if comp.Language != "go" {
+				t.Errorf("api-go: Language = %q, esperado %q", comp.Language, "go")
+			}
+			if comp.Framework != "gin" {
+				t.Errorf("api-go: Framework = %q, esperado %q", comp.Framework, "gin")
+			}
+		case "api-node":
+			if comp.Language != "nodejs" {
+				t.Errorf("api-node: Language = %q, esperado %q", comp.Language, "nodejs")
+			}
+			if comp.Framework != "express" {
+				t.Errorf("api-node: Framework = %q, esperado %q", comp.Framework, "express")
+			}
+		case "infra":
+			if comp.Language != "" {
+				t.Errorf("infra: Language = %q, esperado vazio", comp.Language)
+			}
+			if comp.Framework != "" {
+				t.Errorf("infra: Framework = %q, esperado vazio", comp.Framework)
+			}
+		}
+	}
+}
+
 func TestScan_DetectsHelmRelations(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -184,10 +184,22 @@ func startChat(ctxData map[string]interface{}) {
 			}
 		}
 
-		// 7. Resposta final com retry e captura de output
+		// 7. Ajustar contextos ao orçamento de tokens
+		truncatedHistory, truncatedRAG := TruncateToFit(
+			bardCfg.MaxTokens, systemPrompt, input, historyCtx, ukiContext,
+		)
+
+		// Reconstruir system prompt com histórico truncado
+		if truncatedHistory != historyCtx {
+			// Substituir o bloco de histórico no system prompt
+			currentPrompt := strings.ReplaceAll(systemPrompt, historyCtx, truncatedHistory)
+			systemPrompt = currentPrompt
+		}
+
+		// 8. Resposta final com retry e captura de output
 		runInput := input
-		if ukiContext != "" {
-			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
+		if truncatedRAG != "" {
+			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", truncatedRAG, input)
 		}
 
 		var responseBuf bytes.Buffer

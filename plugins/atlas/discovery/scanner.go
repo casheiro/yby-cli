@@ -72,6 +72,11 @@ func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, err
 					}
 				}
 
+				// Detectar linguagem e framework a partir do conteúdo do arquivo
+				fw := DetectFramework(path)
+				comp.Language = fw.Language
+				comp.Framework = fw.Framework
+
 				bp.Components = append(bp.Components, comp)
 			}
 		}

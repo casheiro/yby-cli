@@ -25,9 +25,12 @@ func NewGeminiProvider() *GeminiProvider {
 		return nil
 	}
 
-	model := os.Getenv("GEMINI_MODEL")
-	if model == "" {
-		model = "gemini-2.5-flash" // Fallback to stable v1.0 Pro if not specified
+	// Precedência: config global > GEMINI_MODEL env var > default
+	model := "gemini-2.5-flash"
+	if override := getConfiguredModel(); override != "" {
+		model = override
+	} else if envModel := os.Getenv("GEMINI_MODEL"); envModel != "" {
+		model = envModel
 	}
 
 	return &GeminiProvider{

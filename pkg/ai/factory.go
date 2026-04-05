@@ -5,15 +5,30 @@ import (
 	"os"
 	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/casheiro/yby-cli/pkg/retry"
 )
 
-// GetLanguage returns the configured AI language or defaults to pt-BR
+// GetLanguage retorna o idioma configurado para IA.
+// Usa config global que já aplica precedência: env > arquivo > default (pt-BR).
 func GetLanguage() string {
-	if lang := os.Getenv("YBY_AI_LANGUAGE"); lang != "" {
-		return lang
+	cfg, err := config.Load()
+	if err != nil || cfg.AI.Language == "" {
+		if lang := os.Getenv("YBY_AI_LANGUAGE"); lang != "" {
+			return lang
+		}
+		return "pt-BR"
 	}
-	return "pt-BR"
+	return cfg.AI.Language
+}
+
+// getConfiguredModel retorna o modelo configurado globalmente, ou vazio se não definido.
+func getConfiguredModel() string {
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	return cfg.AI.Model
 }
 
 // GetProvider returns the requested AI provider or defaults to the best available.
@@ -32,17 +47,17 @@ func GetProvider(ctx context.Context, preferred string) Provider {
 		case "ollama":
 			p := NewOllamaProvider()
 			if p.IsAvailable(ctx) {
-				return wrapWithRetry(p)
+				return wrapProvider(p, p.Model)
 			}
 		case "gemini":
 			p := NewGeminiProvider()
 			if p != nil && p.IsAvailable(ctx) {
-				return wrapWithRetry(p)
+				return wrapProvider(p, p.Model)
 			}
 		case "openai":
 			p := NewOpenAIProvider()
 			if p != nil && p.IsAvailable(ctx) {
-				return wrapWithRetry(p)
+				return wrapProvider(p, p.Model)
 			}
 		}
 		// Se a preferencia explicita nao esta disponivel, retorna nil (Strict)
@@ -52,28 +67,29 @@ func GetProvider(ctx context.Context, preferred string) Provider {
 	// 2. Auto-Detect: Preferir inferencia local (privacidade e custo)
 	ollama := NewOllamaProvider()
 	if ollama.IsAvailable(ctx) {
-		return wrapWithRetry(ollama)
+		return wrapProvider(ollama, ollama.Model)
 	}
 
 	// 3. Google Gemini (rapido e tier gratuito generoso)
 	gemini := NewGeminiProvider()
 	if gemini != nil && gemini.IsAvailable(ctx) {
-		return wrapWithRetry(gemini)
+		return wrapProvider(gemini, gemini.Model)
 	}
 
 	// 4. OpenAI (padrao)
 	openai := NewOpenAIProvider()
 	if openai != nil && openai.IsAvailable(ctx) {
-		return wrapWithRetry(openai)
+		return wrapProvider(openai, openai.Model)
 	}
 
 	return nil
 }
 
-// wrapWithRetry envolve um Provider com retry automatico via backoff exponencial.
-func wrapWithRetry(p Provider) Provider {
+// wrapProvider encadeia os decorators: provider -> TokenAwareProvider -> RetryProvider.
+func wrapProvider(p Provider, model string) Provider {
 	if p == nil {
 		return nil
 	}
-	return NewRetryProvider(p, retry.DefaultOptions(), nil)
+	tokenAware := NewTokenAwareProvider(p, model)
+	return NewRetryProvider(tokenAware, retry.DefaultOptions(), nil)
 }

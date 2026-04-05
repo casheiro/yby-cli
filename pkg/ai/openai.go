@@ -24,10 +24,14 @@ func NewOpenAIProvider() *OpenAIProvider {
 		return nil
 	}
 
-	// Support Anthropic/Other via Compatible Base URL if needed, but defaults to OpenAI
+	model := "gpt-4o-mini" // Default: rápido e econômico
+	if override := getConfiguredModel(); override != "" {
+		model = override
+	}
+
 	return &OpenAIProvider{
 		APIKey:  apiKey,
-		Model:   "gpt-4o-mini", // Smart and fast
+		Model:   model,
 		BaseURL: "https://api.openai.com/v1",
 	}
 }

@@ -45,6 +45,46 @@ func TestMatch_TableDriven(t *testing.T) {
 			filename: "kustomization.yaml",
 			want:     "kustomize",
 		},
+		{
+			name:     "pyproject.toml deve retornar tipo app",
+			filename: "pyproject.toml",
+			want:     "app",
+		},
+		{
+			name:     "requirements.txt deve retornar tipo app",
+			filename: "requirements.txt",
+			want:     "app",
+		},
+		{
+			name:     "pom.xml deve retornar tipo app",
+			filename: "pom.xml",
+			want:     "app",
+		},
+		{
+			name:     "build.gradle deve retornar tipo app",
+			filename: "build.gradle",
+			want:     "app",
+		},
+		{
+			name:     "Cargo.toml deve retornar tipo app",
+			filename: "Cargo.toml",
+			want:     "app",
+		},
+		{
+			name:     "MyApp.csproj deve retornar tipo app (glob *.csproj)",
+			filename: "MyApp.csproj",
+			want:     "app",
+		},
+		{
+			name:     "docker-compose.yml deve retornar tipo infra",
+			filename: "docker-compose.yml",
+			want:     "infra",
+		},
+		{
+			name:     "docker-compose.yaml deve retornar tipo infra",
+			filename: "docker-compose.yaml",
+			want:     "infra",
+		},
 
 		// Correspondências negativas — arquivos desconhecidos
 		{
@@ -70,11 +110,6 @@ func TestMatch_TableDriven(t *testing.T) {
 		{
 			name:     "go.sum não deve corresponder",
 			filename: "go.sum",
-			want:     "",
-		},
-		{
-			name:     "docker-compose.yml não deve corresponder",
-			filename: "docker-compose.yml",
 			want:     "",
 		},
 		{

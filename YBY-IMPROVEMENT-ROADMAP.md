@@ -48,7 +48,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 **Solucao:** Extrair logica de retry do Gemini em middleware generico e aplicar a todos os providers.
 
-### 1.3 Sem token counting nem context window management
+### 1.3 Sem token counting nem context window management [CONCLUIDO em 2026-04-05]
 
 **Problema:** Nenhum provider verifica se o prompt cabe no context window antes de enviar.
 
@@ -68,7 +68,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 **Solucao:** Implementar circuit breaker pattern com adaptive backoff.
 
-### 1.5 Modelos hardcoded
+### 1.5 Modelos hardcoded [CONCLUIDO em 2026-04-05]
 
 **Problema:** OpenAI usa `gpt-4o-mini` fixo. Ollama pega o primeiro modelo disponivel. So Gemini permite override via `GEMINI_MODEL`.
 
@@ -125,7 +125,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 **Localizacao:** `plugins/atlas/`
 **Estado:** Funcional. Discovery de componentes e relacoes via hooks context/manifest. Testes reais.
 
-### 2.1 Cobertura limitada de linguagens
+### 2.1 Cobertura limitada de linguagens [CONCLUIDO em 2026-04-05]
 
 **Problema:** Regras de discovery so detectam Go (`go.mod`), Node (`package.json`), Helm (`Chart.yaml`), Kustomize, Docker.
 
@@ -172,7 +172,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 **Localizacao:** `plugins/bard/`
 **Estado:** Funcional. Chat TUI com RAG via Synapstor vector store. Historico persistido. Multi-provider.
 
-### 3.1 Sem token counting
+### 3.1 Sem token counting [CONCLUIDO em 2026-04-05]
 
 **Problema:** Bard envia system prompt + historico + contexto RAG + pergunta sem verificar se cabe no context window.
 
@@ -249,7 +249,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 **Solucao:** Implementar TF-IDF ou BM25 basico para scoring de relevancia.
 
-### 4.3 Sem comando `search` no CLI
+### 4.3 Sem comando `search` no CLI [CONCLUIDO em 2026-04-05]
 
 **Problema:** O vector store existe e funciona mas nao ha CLI para busca direta.
 
@@ -286,7 +286,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 **Solucao:** Adicionar views para: Deployments (replicas), Services (endpoints), Ingresses, Nodes (capacity), Jobs, StatefulSets.
 
-### 5.2 Sem metricas de recursos
+### 5.2 Sem metricas de recursos [CONCLUIDO em 2026-04-05]
 
 **Problema:** CPU mostra "N/A" sempre. Sem memoria, rede ou disco.
 
@@ -367,7 +367,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 ## 7. CLI UX e Comandos
 
-### 7.1 Comando `yby logs` documentado mas nao implementado
+### 7.1 Comando `yby logs` documentado mas nao implementado [CONCLUIDO em 2026-04-05]
 
 **Problema:** `docs/wiki/CLI-Reference.md` menciona `yby logs` mas o comando nao existe.
 
@@ -397,7 +397,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 **Solucao:** Adicionar Examples com cenarios reais.
 
-### 7.4 Erros genericos sem sugestoes de fix
+### 7.4 Erros genericos sem sugestoes de fix [CONCLUIDO em 2026-04-05]
 
 **Problema:** Muitos erros retornam mensagem tecnica sem sugerir o que o usuario pode fazer.
 
@@ -497,7 +497,7 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 ## 11. Configuracao Global
 
-### 11.1 Sem arquivo de configuracao global
+### 11.1 Sem arquivo de configuracao global [CONCLUIDO em 2026-04-05]
 
 **Problema:** Nao existe `~/.yby/config.yaml` para configuracoes persistentes do CLI.
 
@@ -522,17 +522,17 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 ### P1 — Importantes (impactam experiencia significativamente)
 
-| # | Area | Melhoria | Impacto |
-|---|------|----------|---------|
-| 1.3 | IA | Token counting | Overflow silencioso, custos |
-| 1.5 | IA | Model selection configuravel | Impossivel usar modelos especificos |
-| 2.1 | Atlas | Mais linguagens (Python, Java, Rust) | Projetos nao-Go/Node ignorados |
-| 3.1 | Bard | Token counting | Prompts truncados |
-| 4.3 | Synapstor | Comando search | Conhecimento inacessivel diretamente |
-| 5.2 | Viz | Metricas CPU/Memory | Dashboard sem dados de recursos |
-| 7.1 | CLI | Implementar yby logs | Documentacao inconsistente |
-| 7.4 | CLI | Sugestoes de fix nos erros | UX de erro ruim |
-| 11.1 | Config | Arquivo ~/.yby/config.yaml | Flags repetitivas |
+| # | Area | Melhoria | Impacto | Status |
+|---|------|----------|---------|--------|
+| 1.3 | IA | Token counting | Overflow silencioso, custos | ✅ |
+| 1.5 | IA | Model selection configuravel | Impossivel usar modelos especificos | ✅ |
+| 2.1 | Atlas | Mais linguagens (Python, Java, Rust) | Projetos nao-Go/Node ignorados | ✅ |
+| 3.1 | Bard | Token counting | Prompts truncados | ✅ |
+| 4.3 | Synapstor | Comando search | Conhecimento inacessivel diretamente | ✅ |
+| 5.2 | Viz | Metricas CPU/Memory | Dashboard sem dados de recursos | ✅ |
+| 7.1 | CLI | Implementar yby logs | Documentacao inconsistente | ✅ |
+| 7.4 | CLI | Sugestoes de fix nos erros | UX de erro ruim | ✅ |
+| 11.1 | Config | Arquivo ~/.yby/config.yaml | Flags repetitivas | ✅ |
 
 ### P2 — Melhorias (qualidade de vida)
 
@@ -561,4 +561,4 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 ---
 
-*Ultima atualizacao: 2026-04-05 — auditoria completa do codebase*
+*Ultima atualizacao: 2026-04-05 — 9 itens P1 concluidos (1.3, 1.5, 2.1, 3.1, 4.3, 5.2, 7.1, 7.4, 11.1)*
