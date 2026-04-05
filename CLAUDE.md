@@ -52,8 +52,10 @@ pkg/              → Lógica de negócio e utilitários:
     environment/  → Orquestração do "up" (k3d local vs. remote) — usa ClusterManager, MirrorService
     network/      → Port-forward e credenciais — usa ClusterNetworkManager, LocalContainerManager
     secrets/      → Gestão de secrets
+    logs/         → Serviço de logs de pods (wrapper kubectl logs com detecção de namespace)
     doctor/       → Diagnósticos
     shared/       → Interfaces Runner/Filesystem + adaptadores reais (RealRunner, RealFilesystem)
+  config/         → Configuração global (~/.yby/config.yaml), carregamento com precedência flags > env > config > defaults
   ai/             → Providers de IA (Ollama > Gemini > OpenAI), factory com auto-detect, vector store
   plugin/         → Sistema de plugins: Manager (discover/install), Executor, Types (manifesto/request/response)
   context/        → Contexto de projeto (CoreContext via Synapstor/README) e ambientes (.yby/environments.yaml)
@@ -90,6 +92,8 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 - `errors.New(code, message)` — erro sem causa
 - `errors.Wrap(cause, code, message)` — wrapping com causa
 - `.WithContext(key, value)` — adiciona contexto diagnóstico
+- `.WithHint(hint)` — adiciona sugestão de correção exibida ao usuário (ex: "Rode 'yby doctor' para verificar dependências")
+- Registry de hints automáticos em `pkg/errors/hints.go` — mapeia códigos de erro para sugestões padrão
 - Códigos: `ERR_IO`, `ERR_NETWORK_TIMEOUT`, `ERR_CLUSTER_OFFLINE`, `ERR_PLUGIN`, `ERR_VALIDATION`, `ERR_CONFIG`, `ERR_SCAFFOLD_FAILED`, etc.
 
 ### Padrão de Serviços
@@ -98,11 +102,27 @@ Todos os serviços usam **injeção de dependência via construtor** com as inte
 
 ### IA
 
-Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem: Ollama (local) → Gemini → OpenAI. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`).
+Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem: Ollama (local) → Gemini → OpenAI. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`). Modelo selecionável via `YBY_AI_MODEL` (aplica-se a qualquer provider). `TokenAwareProvider` é um decorator que valida se o prompt cabe no context window antes de enviar, com contagem de tokens via `pkg/ai/tokencount.go`.
 
 ### Configuração de Ambientes
 
 Arquivo `.yby/environments.yaml` define ambientes (local/remote) com tipo, valores, kubeconfig e namespace. Contexto ativo via flag `--context` ou env var `YBY_ENV`.
+
+### Configuração Global
+
+Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
+- `ai.provider` — provider de IA preferido (ollama, gemini, openai)
+- `ai.model` — modelo específico (ex: gpt-4-turbo, gemini-pro)
+- `ai.language` — idioma das respostas de IA (padrão: pt-BR)
+- `log.level` — nível de log (debug, info, warn, error)
+- `log.format` — formato de log (text, json)
+- `telemetry.enabled` — habilita/desabilita coleta de métricas
+
+**Precedência:** flags > variáveis de ambiente > config.yaml > defaults
+
+### Comando `yby logs`
+
+`yby logs [pod] [-n namespace] [--follow] [--tail N]` — wrapper inteligente para visualização de logs de pods. Detecta namespace automaticamente a partir do contexto ativo. Implementado em `cmd/logs.go` com serviço em `pkg/services/logs/`.
 
 ## Convenções
 

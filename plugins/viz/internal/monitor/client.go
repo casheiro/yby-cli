@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,20 +48,87 @@ func NewK8sClient() (*K8sClient, error) {
 	return &K8sClient{clientset: clientset}, nil
 }
 
-// GetPods lista todos os pods de todos os namespaces
+// podMetricsResult representa a resposta da API de métricas de pods.
+type podMetricsResult struct {
+	Items []struct {
+		Metadata struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+		Containers []struct {
+			Usage struct {
+				CPU    string `json:"cpu"`
+				Memory string `json:"memory"`
+			} `json:"usage"`
+		} `json:"containers"`
+	} `json:"items"`
+}
+
+// podMetricsKey gera uma chave única para identificar um pod nas métricas.
+func podMetricsKey(namespace, name string) string {
+	return namespace + "/" + name
+}
+
+// fetchPodMetrics busca métricas de CPU e memória do metrics-server.
+// Retorna um mapa de "namespace/name" -> {cpu, memory}. Falha silenciosamente.
+func (c *K8sClient) fetchPodMetrics() map[string][2]string {
+	result := make(map[string][2]string)
+
+	data, err := c.clientset.RESTClient().
+		Get().
+		AbsPath("/apis/metrics.k8s.io/v1beta1/pods").
+		DoRaw(context.Background())
+	if err != nil {
+		return result // metrics-server indisponível
+	}
+
+	var metrics podMetricsResult
+	if err := json.Unmarshal(data, &metrics); err != nil {
+		return result
+	}
+
+	for _, item := range metrics.Items {
+		var totalCPU, totalMem string
+		if len(item.Containers) > 0 {
+			totalCPU = item.Containers[0].Usage.CPU
+			totalMem = item.Containers[0].Usage.Memory
+		}
+		key := podMetricsKey(item.Metadata.Namespace, item.Metadata.Name)
+		result[key] = [2]string{totalCPU, totalMem}
+	}
+
+	return result
+}
+
+// GetPods lista todos os pods de todos os namespaces com métricas de CPU e memória.
 func (c *K8sClient) GetPods() ([]Pod, error) {
 	list, err := c.clientset.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
 
+	// Buscar métricas (fallback graceful se metrics-server indisponível)
+	metrics := c.fetchPodMetrics()
+
 	var pods []Pod
 	for _, p := range list.Items {
+		cpu := "N/A"
+		memory := "N/A"
+		key := podMetricsKey(p.Namespace, p.Name)
+		if m, ok := metrics[key]; ok {
+			if m[0] != "" {
+				cpu = m[0]
+			}
+			if m[1] != "" {
+				memory = m[1]
+			}
+		}
 		pods = append(pods, Pod{
 			Name:      p.Name,
 			Namespace: p.Namespace,
 			Status:    string(p.Status.Phase),
-			CPU:       "N/A", // Requer metrics-server
+			CPU:       cpu,
+			Memory:    memory,
 		})
 	}
 	return pods, nil

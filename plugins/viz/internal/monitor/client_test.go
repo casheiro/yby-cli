@@ -33,8 +33,8 @@ func TestClientInterface(t *testing.T) {
 func TestFakeClient_GetPods_Sucesso(t *testing.T) {
 	fake := &FakeClient{
 		pods: []Pod{
-			{Name: "nginx-abc123", Namespace: "default", Status: "Running", CPU: "10m"},
-			{Name: "redis-xyz789", Namespace: "cache", Status: "Running", CPU: "5m"},
+			{Name: "nginx-abc123", Namespace: "default", Status: "Running", CPU: "10m", Memory: "64Mi"},
+			{Name: "redis-xyz789", Namespace: "cache", Status: "Running", CPU: "5m", Memory: "32Mi"},
 		},
 	}
 
@@ -99,6 +99,7 @@ func TestPodStruct(t *testing.T) {
 		Namespace: "producao",
 		Status:    "Running",
 		CPU:       "100m",
+		Memory:    "128Mi",
 	}
 
 	if pod.Name != "meu-app-abc123" {
@@ -112,6 +113,9 @@ func TestPodStruct(t *testing.T) {
 	}
 	if pod.CPU != "100m" {
 		t.Errorf("cpu esperado '100m', obtido '%s'", pod.CPU)
+	}
+	if pod.Memory != "128Mi" {
+		t.Errorf("memory esperado '128Mi', obtido '%s'", pod.Memory)
 	}
 }
 
@@ -135,6 +139,7 @@ func TestPodStatus(t *testing.T) {
 				Namespace: "default",
 				Status:    tt.status,
 				CPU:       "N/A",
+				Memory:    "N/A",
 			}
 
 			if pod.Status != tt.status {

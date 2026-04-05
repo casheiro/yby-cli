@@ -299,7 +299,7 @@ func TestModel_View_Pods(t *testing.T) {
 	client := &MockClient{}
 	model := NewModel(client)
 	model.pods = []monitor.Pod{
-		{Name: "nginx-pod", Status: "Running", Namespace: "default", CPU: "10m"},
+		{Name: "nginx-pod", Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi"},
 	}
 
 	view := model.View()

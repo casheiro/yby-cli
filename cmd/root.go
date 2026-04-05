@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/plugin"
@@ -82,18 +83,22 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 }
 
 // handleExecutionError trata erros de execução, diferenciando YbyError de erros genéricos.
+// Exibe hints (sugestões de correção) quando disponíveis.
 func handleExecutionError(err error) {
 	var yerr *errors.YbyError
 	if stdErr.As(err, &yerr) {
 		if logLevelFlag == "debug" {
-			// Na flag verbose/debug, printa o stack trace verboso %+v
 			slog.Error("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
 		} else {
-			// Se for normal, printa só a mensagem controlada
 			slog.Error("Falha na execução", "code", yerr.Code, "message", yerr.Message)
+		}
+		// Exibe hint do erro ou do registry padrão
+		if hint := yerr.GetHint(); hint != "" {
+			slog.Info("Dica", "sugestão", hint)
 		}
 	} else {
 		slog.Error("Falha inesperada", "erro", err)
+		slog.Info("Dica", "sugestão", errors.GenericHint)
 	}
 }
 
@@ -122,16 +127,34 @@ func init() {
 
 }
 
-// initConfig reads in config file and ENV variables if set.
+// initConfig carrega a configuração global e inicializa o logger.
+// Precedência: flags > env vars > config file > defaults.
 func initConfig(cmd *cobra.Command, args []string) {
-	// Initialize Global Logger
+	// Carrega configuração global (~/.yby/config.yaml + env vars + defaults)
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Warn("Falha ao carregar configuração global, usando defaults", "erro", err)
+		cfg = config.DefaultConfig()
+	}
+
+	// Flags sobrescrevem config/env (só se foram explicitamente informadas)
+	logLevel := cfg.Log.Level
+	if cmd.Flags().Changed("log-level") {
+		logLevel = logLevelFlag
+	}
+
+	logFormat := cfg.Log.Format
+	if cmd.Flags().Changed("log-format") {
+		logFormat = logFormatFlag
+	}
+
+	// Inicializa logger global
 	logger.InitGlobal(logger.Config{
-		Level:  logLevelFlag,
-		Format: logFormatFlag,
+		Level:  logLevel,
+		Format: logFormat,
 	})
 
-	// If context flag is set, we override using the standard Env Var mechanism
-	// capable of being read by pkg/context
+	// Se a flag --context foi informada, propaga via env var para pkg/context
 	if contextFlag != "" {
 		os.Setenv("YBY_ENV", contextFlag)
 	}

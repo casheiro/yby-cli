@@ -6,6 +6,7 @@ type Pod struct {
 	Namespace string
 	Status    string
 	CPU       string
+	Memory    string
 }
 
 // Deployment representa um deployment Kubernetes

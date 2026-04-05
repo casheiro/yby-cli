@@ -87,6 +87,12 @@ func handlePluginRequest(req plugin.PluginRequest) {
 			if err := agt.Study(query); err != nil {
 				fmt.Printf("❌ Erro: %v\n", err)
 			}
+		case "search":
+			if len(req.Args) < 2 {
+				fmt.Println("❌ Uso: yby synapstor search \"sua consulta\" [--top-k N]")
+				return
+			}
+			runSearch(req.Args[1:])
 		case "index":
 			fullReindex := false
 			for _, a := range req.Args[1:] {
@@ -126,7 +132,8 @@ func respond(data interface{}) {
 
 func printHelp() {
 	fmt.Println("Synapstor Agent Commands:")
-	fmt.Println("  capture [text]  - Captura e estrutura conhecimento")
-	fmt.Println("  study [topic]   - Lê código e gera documentação")
-	fmt.Println("  index [--full]  - Atualiza índice de busca (--full força reindexação completa)")
+	fmt.Println("  capture [text]        - Captura e estrutura conhecimento")
+	fmt.Println("  study [topic]         - Lê código e gera documentação")
+	fmt.Println("  search [query]        - Busca semântica no índice de conhecimento [--top-k N]")
+	fmt.Println("  index [--full]        - Atualiza índice de busca (--full força reindexação completa)")
 }

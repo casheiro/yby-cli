@@ -13,9 +13,10 @@ import (
 )
 
 type OllamaProvider struct {
-	BaseURL   string
-	Model     string
-	Endpoints []string
+	BaseURL         string
+	Model           string
+	Endpoints       []string
+	modelConfigured bool // true quando o modelo foi definido via config/usuário (pula auto-detect)
 }
 
 func NewOllamaProvider() *OllamaProvider {
@@ -39,10 +40,18 @@ func NewOllamaProvider() *OllamaProvider {
 		candidates = append(candidates, fmt.Sprintf("http://%s:11434", wslHost))
 	}
 
+	model := "llama3"
+	modelConfigured := false
+	if override := getConfiguredModel(); override != "" {
+		model = override
+		modelConfigured = true
+	}
+
 	return &OllamaProvider{
-		BaseURL:   "", // Will be resolved in IsAvailable
-		Model:     "llama3",
-		Endpoints: candidates,
+		BaseURL:         "", // Será resolvido em IsAvailable
+		Model:           model,
+		Endpoints:       candidates,
+		modelConfigured: modelConfigured,
 	}
 }
 
@@ -144,9 +153,10 @@ type ollamaResponse struct {
 }
 
 func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
-	// Auto-detect model if possible
-	if err := p.resolveModel(ctx); err != nil {
-		return nil, fmt.Errorf("verificação de modelo ollama falhou: %w", err)
+	if !p.modelConfigured {
+		if err := p.resolveModel(ctx); err != nil {
+			return nil, fmt.Errorf("verificação de modelo ollama falhou: %w", err)
+		}
 	}
 
 	reqBody := ollamaRequest{
@@ -190,9 +200,10 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 }
 
 func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
-	// Auto-detect model if possible
-	if err := p.resolveModel(ctx); err != nil {
-		return "", fmt.Errorf("verificação de modelo ollama falhou: %w", err)
+	if !p.modelConfigured {
+		if err := p.resolveModel(ctx); err != nil {
+			return "", fmt.Errorf("verificação de modelo ollama falhou: %w", err)
+		}
 	}
 
 	reqBody := ollamaRequest{
@@ -225,9 +236,10 @@ func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPromp
 }
 
 func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
-	// Auto-detect model if possible
-	if err := p.resolveModel(ctx); err != nil {
-		return fmt.Errorf("verificação de modelo ollama falhou: %w", err)
+	if !p.modelConfigured {
+		if err := p.resolveModel(ctx); err != nil {
+			return fmt.Errorf("verificação de modelo ollama falhou: %w", err)
+		}
 	}
 
 	reqBody := ollamaRequest{
@@ -281,8 +293,10 @@ type ollamaEmbeddingResponse struct {
 }
 
 func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
-	if err := p.resolveModel(ctx); err != nil {
-		return nil, err
+	if !p.modelConfigured {
+		if err := p.resolveModel(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	results := make([][]float32, len(texts))

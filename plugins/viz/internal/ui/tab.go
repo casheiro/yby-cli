@@ -53,7 +53,7 @@ func renderPodTable(pods []monitor.Pod) string {
 		return "  Nenhum pod encontrado.\n"
 	}
 	var sb strings.Builder
-	sb.WriteString(headerStyle.Render(fmt.Sprintf("  %-30s %-15s %-15s %s", "NOME", "STATUS", "CPU", "NAMESPACE")) + "\n")
+	sb.WriteString(headerStyle.Render(fmt.Sprintf("  %-30s %-15s %-12s %-12s %s", "NOME", "STATUS", "CPU", "MEMÓRIA", "NAMESPACE")) + "\n")
 	for _, pod := range pods {
 		icon := "●"
 		style := runningStyle
@@ -61,8 +61,8 @@ func renderPodTable(pods []monitor.Pod) string {
 			icon = "✖"
 			style = errorStyle
 		}
-		sb.WriteString(fmt.Sprintf("  %s %-30s %-15s %-15s %s\n",
-			style.Render(icon), pod.Name, style.Render(pod.Status), pod.CPU, pod.Namespace))
+		sb.WriteString(fmt.Sprintf("  %s %-30s %-15s %-12s %-12s %s\n",
+			style.Render(icon), pod.Name, style.Render(pod.Status), pod.CPU, pod.Memory, pod.Namespace))
 	}
 	return sb.String()
 }
