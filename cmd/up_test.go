@@ -28,3 +28,10 @@ func TestUpCmd_Structure(t *testing.T) {
 	assert.Contains(t, upCmd.Aliases, "dev")
 	assert.NotEmpty(t, upCmd.Short)
 }
+
+func TestUpCmd_PlainSecretsFlag(t *testing.T) {
+	flag := upCmd.Flags().Lookup("plain-secrets")
+	assert.NotNil(t, flag, "flag --plain-secrets deveria existir")
+	assert.Equal(t, "false", flag.DefValue, "valor padrão deveria ser false")
+	assert.NotEmpty(t, flag.Usage)
+}

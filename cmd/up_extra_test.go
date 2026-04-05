@@ -87,12 +87,20 @@ func (m *mockMirrorService) StartSyncLoop(ctx context.Context) {
 }
 
 type mockBootstrapService struct {
-	runFunc func(ctx context.Context, opts bootstrap.BootstrapOptions) error
+	runFunc         func(ctx context.Context, opts bootstrap.BootstrapOptions) error
+	waitHealthyFunc func(ctx context.Context, name, namespace string, timeoutSeconds int) error
 }
 
 func (m *mockBootstrapService) Run(ctx context.Context, opts bootstrap.BootstrapOptions) error {
 	if m.runFunc != nil {
 		return m.runFunc(ctx, opts)
+	}
+	return nil
+}
+
+func (m *mockBootstrapService) WaitHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error {
+	if m.waitHealthyFunc != nil {
+		return m.waitHealthyFunc(ctx, name, namespace, timeoutSeconds)
 	}
 	return nil
 }

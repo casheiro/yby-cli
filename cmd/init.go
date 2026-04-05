@@ -17,6 +17,8 @@ import (
 	"github.com/casheiro/yby-cli/pkg/filesystem"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/services/validate"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 )
@@ -254,6 +256,45 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 				_ = os.MkdirAll(filepath.Dir(target), 0755)
 				_ = os.WriteFile(target, []byte(content), 0644)
 				fmt.Printf("   📄 Generated Config: %s\n", target)
+			}
+		}
+
+		// 4. Validação pós-scaffold (apenas warnings, não bloqueia)
+		fmt.Println("\n🔍 Validando charts gerados...")
+		runner := &shared.RealRunner{}
+		helmRunner := &validate.RealHelmRunner{Runner: runner}
+		validateSvc := validate.NewService(helmRunner)
+
+		chartCandidates := []string{
+			filepath.Join(targetDir, "charts/system"),
+			filepath.Join(targetDir, "charts/bootstrap"),
+			filepath.Join(targetDir, "charts/cluster-config"),
+		}
+
+		// Filtrar apenas charts que existem
+		var existingCharts []string
+		for _, c := range chartCandidates {
+			if _, err := os.Stat(filepath.Join(c, "Chart.yaml")); err == nil {
+				existingCharts = append(existingCharts, c)
+			}
+		}
+
+		if len(existingCharts) > 0 {
+			valuesFile := filepath.Join(targetDir, "config/cluster-values.yaml")
+			report, err := validateSvc.Run(bgCtx, existingCharts, valuesFile)
+			if err != nil || !report.Success {
+				fmt.Printf("⚠️  Validação detectou problemas (não bloqueante):\n")
+				if err != nil {
+					fmt.Printf("   %v\n", err)
+				}
+				for _, cr := range report.Charts {
+					if cr.Error != "" {
+						fmt.Printf("   %s: %s\n", cr.Chart, cr.Error)
+					}
+				}
+				fmt.Println("   Execute 'yby validate' para detalhes completos.")
+			} else {
+				fmt.Println("✅ Charts validados com sucesso!")
 			}
 		}
 

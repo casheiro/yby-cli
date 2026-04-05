@@ -166,7 +166,7 @@ func TestBootstrapService_PhaseConfigBootstrap_Local(t *testing.T) {
 func TestBootstrapService_PhaseSecrets_Default(t *testing.T) {
 	// Sem blueprint → detectSecretsStrategy retorna "sealed-secrets" (branch default)
 	svc := NewService(&MockRunner{}, &MockFilesystem{}, &MockK8sClient{})
-	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git", false)
 	if err != nil {
 		t.Errorf("phaseSecrets default: erro inesperado: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestBootstrapService_PhaseSecrets_SOPS_Success(t *testing.T) {
 	}
 	svc := NewService(runner, fsys, &MockK8sClient{})
 
-	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git", false)
 	if err != nil {
 		t.Errorf("phaseSecrets sops sucesso: erro inesperado: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestBootstrapService_PhaseSecrets_SOPS_MissingSops(t *testing.T) {
 	}
 	svc := NewService(runner, fsys, &MockK8sClient{})
 
-	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git", false)
 	if err == nil {
 		t.Error("esperava erro quando sops não está instalado, mas obteve nil")
 	}
@@ -242,7 +242,7 @@ func TestBootstrapService_PhaseSecrets_SOPS_MissingAge(t *testing.T) {
 	}
 	svc := NewService(runner, fsys, &MockK8sClient{})
 
-	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git", false)
 	if err == nil {
 		t.Error("esperava erro quando age não está instalado, mas obteve nil")
 	}
@@ -269,13 +269,60 @@ func TestBootstrapService_PhaseSecrets_ExternalSecrets(t *testing.T) {
 	}
 	svc := NewService(runner, fsys, &MockK8sClient{})
 
-	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git", false)
 	if err != nil {
 		t.Errorf("phaseSecrets external-secrets: erro inesperado: %v", err)
 	}
 	if !kubectlCalled {
 		t.Error("esperava chamada kubectl get crd para external-secrets")
 	}
+}
+
+func TestBootstrapService_PhaseSecrets_PlainSecrets_PulaVerificacao(t *testing.T) {
+	// Com plainSecrets=true, phaseSecrets deve retornar nil sem verificar ferramentas
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	// Runner que falha em tudo — se phaseSecrets chamar algo, o teste quebra
+	runner := &lookPathSelectiveRunner{
+		available: map[string]bool{},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git", true)
+	assert.NoError(t, err, "plainSecrets=true deve pular toda verificação de secrets")
+}
+
+func TestBootstrapService_Run_PlainSecrets_PulaPhaseSecrets(t *testing.T) {
+	// Com PlainSecrets=true, Run deve pular a fase de secrets mesmo com sops configurado e ausente
+	t.Setenv("GITHUB_REPO", "https://github.com/org/repo.git")
+
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	// sops e age ausentes — sem PlainSecrets falharia
+	runner := &lookPathSelectiveRunner{
+		available: map[string]bool{"kubectl": true, "helm": true},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.Run(context.Background(), BootstrapOptions{
+		Root:         "/tmp/infra",
+		Context:      "local",
+		Environment:  "local",
+		PlainSecrets: true,
+	})
+	assert.NoError(t, err, "PlainSecrets=true deve pular phaseSecrets sem erro")
 }
 
 func TestBootstrapService_DetectSecretsStrategy_FileNotFound(t *testing.T) {
