@@ -81,12 +81,21 @@ func (s *EnvironmentService) runLocalUp(ctx context.Context, opts UpOptions) err
 	// 4. Bootstrap
 	fmt.Println("🛠️  Executando Bootstrap...")
 	bsOpts := bootstrap.BootstrapOptions{
-		Root:        opts.Root,
-		Context:     "local",
-		Environment: "local",
+		Root:         opts.Root,
+		Context:      "local",
+		Environment:  "local",
+		PlainSecrets: opts.PlainSecrets,
 	}
 	if err := s.Bootstrap.Run(ctx, bsOpts); err != nil {
 		return fmt.Errorf("falha no bootstrap: %w", err)
+	}
+
+	// 4.5 Aguardar convergência do ArgoCD
+	fmt.Println("⏳ Aguardando ArgoCD convergir...")
+	if err := s.Bootstrap.WaitHealthy(ctx, "root-app", "argocd", 180); err != nil {
+		fmt.Printf("⚠️  Timeout aguardando convergência: %v\n", err)
+		fmt.Println("   O cluster pode levar mais tempo para convergir. Verifique com 'yby status'.")
+		// NÃO retorna erro — o cluster pode convergir depois
 	}
 
 	// 5. Start Sync Loop (Async)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -157,25 +158,12 @@ func TestGeminiCompletion_HTTPTest_InvalidJSON(t *testing.T) {
 
 func TestGeminiStreamCompletion_HTTPTest_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := geminiResponse{
-			Candidates: []struct {
-				Content struct {
-					Parts []struct {
-						Text string `json:"text"`
-					} `json:"parts"`
-				} `json:"content"`
-			}{
-				{Content: struct {
-					Parts []struct {
-						Text string `json:"text"`
-					} `json:"parts"`
-				}{Parts: []struct {
-					Text string `json:"text"`
-				}{{Text: "resposta do teste"}}}},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		assert.Contains(t, r.URL.Path, "streamGenerateContent")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Simular SSE com um chunk
+		chunk := `{"candidates":[{"content":{"parts":[{"text":"resposta do teste"}]}}]}`
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 	}))
 	defer server.Close()
 
@@ -358,4 +346,65 @@ func TestNewGeminiProvider_DefaultModel(t *testing.T) {
 	p := NewGeminiProvider()
 	require.NotNil(t, p)
 	assert.Equal(t, "gemini-2.5-flash", p.Model)
+}
+
+// ─── Testes de streaming SSE real ──────────────────────────────────────────────
+
+func TestGeminiStreamCompletion_SSE_MultipleChunks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "streamGenerateContent")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		chunks := []string{
+			`{"candidates":[{"content":{"parts":[{"text":"Ola "}]}}]}`,
+			`{"candidates":[{"content":{"parts":[{"text":"mundo "}]}}]}`,
+			`{"candidates":[{"content":{"parts":[{"text":"cruel"}]}}]}`,
+		}
+		for _, c := range chunks {
+			fmt.Fprintf(w, "data: %s\n\n", c)
+		}
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	var buf bytes.Buffer
+	err := p.StreamCompletion(context.Background(), "system", "user", &buf)
+	require.NoError(t, err)
+	assert.Equal(t, "Ola mundo cruel", buf.String())
+}
+
+func TestGeminiStreamCompletion_SSE_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte("rate limited"))
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	var buf bytes.Buffer
+	err := p.StreamCompletion(context.Background(), "system", "user", &buf)
+	require.Error(t, err)
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, 429, apiErr.StatusCode)
+	assert.Equal(t, "gemini", apiErr.Provider)
+}
+
+func TestGeminiStreamCompletion_SSE_MalformedData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Linha com JSON invalido seguida de chunk valido
+		fmt.Fprintf(w, "data: {json invalido}\n\n")
+		fmt.Fprintf(w, "data: %s\n\n", `{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}`)
+	}))
+	defer server.Close()
+
+	p := newTestGeminiProvider(server.URL)
+	var buf bytes.Buffer
+	err := p.StreamCompletion(context.Background(), "system", "user", &buf)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", buf.String())
 }

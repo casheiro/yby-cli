@@ -29,6 +29,10 @@ var newContainerAdapter = func() network.LocalContainerManager {
 var accessCmd = &cobra.Command{
 	Use:   "access",
 	Short: "Abre túneis de acesso aos serviços do cluster",
+	Example: `  yby access
+  yby access --context prod
+  # Abre túnel para o ArgoCD
+  yby access --context local`,
 	Long: `Estabelece conexões seguras (port-forward) para os serviços disponíveis:
 - Argo CD
 - MinIO (se detectado)

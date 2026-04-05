@@ -3,8 +3,10 @@ package mirror
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -19,6 +21,7 @@ var (
 type Forwarder interface {
 	Start(ctx context.Context) (int, error)
 	Stop()
+	HealthCheck(ctx context.Context) error
 }
 
 // ForwarderFactory cria instâncias de Forwarder
@@ -41,6 +44,9 @@ type MirrorManager struct {
 	// Forwarder instance for local access
 	forwarder Forwarder
 	localPort int
+
+	// healthInterval define o intervalo entre verificações de saúde (padrão 10s)
+	healthInterval time.Duration
 }
 
 func NewManager(localPath string, runner shared.Runner) *MirrorManager {
@@ -174,19 +180,70 @@ func (m *MirrorManager) Sync() error {
 	return nil
 }
 
-// StartSyncLoop watches for changes and syncs automatically
-func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+// reconnect reconecta o port-forward com retry exponencial
+func (m *MirrorManager) reconnect(ctx context.Context) error {
+	fmt.Println(stepStyle.Render("🔄 Reconectando port-forward..."))
+	slog.Info("iniciando reconexão do port-forward", "namespace", m.Namespace)
 
-	fmt.Println(stepStyle.Render("🔄 Auto-sync enabled. Watching for changes..."))
-
-	if err := m.Sync(); err != nil {
-		fmt.Println(errorStyle.Render(fmt.Sprintf("❌ Initial Sync Failed: %v", err)))
-	} else {
-		fmt.Println(successStyle.Render("✅ Initial Sync Complete"))
+	if m.forwarder != nil {
+		m.forwarder.Stop()
+		m.forwarder = nil
+		m.localPort = 0
 	}
 
+	return retry.Do(ctx, retry.Options{
+		InitialInterval:     2 * time.Second,
+		MaxInterval:         30 * time.Second,
+		MaxElapsedTime:      5 * time.Minute,
+		RandomizationFactor: 0.3,
+		Multiplier:          2.0,
+	}, func() error {
+		err := m.SetupTunnel(ctx)
+		if err != nil {
+			slog.Warn("tentativa de reconexão falhou", "error", err)
+			fmt.Println(errorStyle.Render(fmt.Sprintf("⚠️  Tentativa de reconexão falhou: %v", err)))
+		}
+		return err
+	})
+}
+
+// backoffDelay calcula o delay com backoff exponencial para erros consecutivos de sync
+func (m *MirrorManager) backoffDelay(errs int) time.Duration {
+	base := 5 * time.Second
+	shift := errs
+	if shift > 5 {
+		shift = 5
+	}
+	delay := base * time.Duration(1<<shift)
+	if delay > 3*time.Minute {
+		delay = 3 * time.Minute
+	}
+	return delay
+}
+
+// StartSyncLoop monitora mudanças e sincroniza automaticamente com health check e backoff
+func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
+	syncInterval := 5 * time.Second
+	healthInterval := m.healthInterval
+	if healthInterval == 0 {
+		healthInterval = 10 * time.Second
+	}
+
+	syncTicker := time.NewTicker(syncInterval)
+	healthTicker := time.NewTicker(healthInterval)
+	defer syncTicker.Stop()
+	defer healthTicker.Stop()
+
+	fmt.Println(stepStyle.Render("🔄 Auto-sync habilitado..."))
+
+	// Sync inicial
+	if err := m.Sync(); err != nil {
+		fmt.Println(errorStyle.Render(fmt.Sprintf("❌ Sync inicial falhou: %v", err)))
+	} else {
+		fmt.Println(successStyle.Render("✅ Sync inicial completo"))
+	}
+
+	var consecutiveErrs int
 	for {
 		select {
 		case <-ctx.Done():
@@ -194,9 +251,34 @@ func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
 				m.forwarder.Stop()
 			}
 			return
-		case <-ticker.C:
+
+		case <-healthTicker.C:
+			if m.forwarder != nil {
+				if err := m.forwarder.HealthCheck(ctx); err != nil {
+					slog.Warn("health check falhou, iniciando reconexão", "error", err)
+					fmt.Println(errorStyle.Render("⚠️  Conexão perdida, reconectando..."))
+					if err := m.reconnect(ctx); err != nil {
+						slog.Error("reconexão falhou definitivamente", "error", err)
+						fmt.Println(errorStyle.Render("❌ Reconexão falhou: " + err.Error()))
+					} else {
+						fmt.Println(successStyle.Render("✅ Reconectado com sucesso"))
+						consecutiveErrs = 0
+					}
+				}
+			}
+
+		case <-syncTicker.C:
 			if err := m.Sync(); err != nil {
-				fmt.Println(errorStyle.Render(fmt.Sprintf("⚠️ Sync Error: %v", err)))
+				consecutiveErrs++
+				delay := m.backoffDelay(consecutiveErrs)
+				slog.Warn("sync falhou", "erros_consecutivos", consecutiveErrs, "proximo_em", delay, "error", err)
+				fmt.Println(errorStyle.Render(fmt.Sprintf("⚠️ Erro de sync (tentativa %d, próximo em %s): %v", consecutiveErrs, delay, err)))
+				syncTicker.Reset(delay)
+			} else {
+				if consecutiveErrs > 0 {
+					syncTicker.Reset(syncInterval)
+				}
+				consecutiveErrs = 0
 			}
 		}
 	}

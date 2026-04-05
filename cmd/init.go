@@ -17,6 +17,8 @@ import (
 	"github.com/casheiro/yby-cli/pkg/filesystem"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/services/validate"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 )
@@ -55,6 +57,7 @@ type InitOptions struct {
 	Offline        bool
 	NonInteractive bool
 	Force          bool
+	Update         bool
 }
 
 var opts InitOptions
@@ -70,6 +73,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 	initCmd.Flags().BoolVar(&opts.Force, "force", false, "Sobrescrever projeto existente sem confirmação")
+	initCmd.Flags().BoolVar(&opts.Update, "update", false, "Atualiza scaffold preservando alterações do usuário")
 
 	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
@@ -103,6 +107,12 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
   # AI-Native Initialization
   yby init --description "A secure payment gateway for crypto assets"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validação: --update e --force são mutuamente exclusivos
+		if opts.Update && opts.Force {
+			return errors.New(errors.ErrCodeValidation,
+				"--update e --force são mutuamente exclusivos. Use --update para merge ou --force para sobrescrever")
+		}
+
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
 		// 1. Build Context (Merge Flags + Prompts)
@@ -152,6 +162,25 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 					return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
 				}
 			}
+		}
+
+		// 1.6 Carregar manifest anterior como defaults (se existir e não for --force puro)
+		var existingManifest *scaffold.ProjectManifest
+		if m, err := scaffold.LoadProjectManifest(targetDir); err == nil {
+			existingManifest = m
+			defaults := scaffold.ManifestToContext(existingManifest)
+			scaffold.MergeContextDefaults(ctx, defaults)
+			fmt.Println("📋 Configurações anteriores carregadas como base.")
+		}
+
+		// 1.7 Fluxo --update: merge inteligente preservando alterações do usuário
+		if opts.Update {
+			if existingManifest == nil {
+				return errors.New(errors.ErrCodeValidation,
+					"--update requer um projeto já inicializado com manifest (.yby/project.yaml)")
+			}
+
+			return runUpdateFlow(targetDir, ctx, existingManifest, &opts)
 		}
 
 		// 2. Execute Scaffold
@@ -255,6 +284,50 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 				_ = os.WriteFile(target, []byte(content), 0644)
 				fmt.Printf("   📄 Generated Config: %s\n", target)
 			}
+		}
+
+		// 4. Validação pós-scaffold (apenas warnings, não bloqueia)
+		fmt.Println("\n🔍 Validando charts gerados...")
+		runner := &shared.RealRunner{}
+		helmRunner := &validate.RealHelmRunner{Runner: runner}
+		validateSvc := validate.NewService(helmRunner)
+
+		chartCandidates := []string{
+			filepath.Join(targetDir, "charts/system"),
+			filepath.Join(targetDir, "charts/bootstrap"),
+			filepath.Join(targetDir, "charts/cluster-config"),
+		}
+
+		// Filtrar apenas charts que existem
+		var existingCharts []string
+		for _, c := range chartCandidates {
+			if _, err := os.Stat(filepath.Join(c, "Chart.yaml")); err == nil {
+				existingCharts = append(existingCharts, c)
+			}
+		}
+
+		if len(existingCharts) > 0 {
+			valuesFile := filepath.Join(targetDir, "config/cluster-values.yaml")
+			report, err := validateSvc.Run(bgCtx, existingCharts, valuesFile)
+			if err != nil || !report.Success {
+				fmt.Printf("⚠️  Validação detectou problemas (não bloqueante):\n")
+				if err != nil {
+					fmt.Printf("   %v\n", err)
+				}
+				for _, cr := range report.Charts {
+					if cr.Error != "" {
+						fmt.Printf("   %s: %s\n", cr.Chart, cr.Error)
+					}
+				}
+				fmt.Println("   Execute 'yby validate' para detalhes completos.")
+			} else {
+				fmt.Println("✅ Charts validados com sucesso!")
+			}
+		}
+
+		// 5. Persistir Project Manifest (.yby/project.yaml)
+		if err := scaffold.SaveProjectManifest(targetDir, ctx); err != nil {
+			fmt.Printf("⚠️  Falha ao salvar project manifest: %v\n", err)
 		}
 
 		fmt.Println("✅ Projeto inicializado com sucesso!")
@@ -725,4 +798,91 @@ func inferContext(ctx *scaffold.BlueprintContext) {
 	if ctx.Topology == "complete" {
 		ctx.ImpactLevel += " (Enterprise Topology)"
 	}
+}
+
+// runUpdateFlow executa o fluxo de --update: gera scaffold em tmpdir, computa merge plan e aplica.
+func runUpdateFlow(targetDir string, ctx *scaffold.BlueprintContext, manifest *scaffold.ProjectManifest, flags *InitOptions) error {
+	fmt.Println("🔄 Modo Update: analisando alterações...")
+
+	// 1. Gerar scaffold em diretório temporário
+	tmpDir, err := os.MkdirTemp("", "yby-update-*")
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeIO, "erro ao criar diretório temporário para update")
+	}
+	defer os.RemoveAll(tmpDir)
+
+	layers := []fs.FS{templates.Assets}
+	compositeFS := filesystem.NewCompositeFS(layers...)
+
+	if err := scaffold.Apply(tmpDir, ctx, compositeFS); err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao gerar scaffold para comparação")
+	}
+
+	// 2. Computar plano de merge
+	manifestHashes := manifest.Spec.FileHashes
+	if manifestHashes == nil {
+		manifestHashes = make(map[string]string)
+	}
+
+	plan, err := scaffold.ComputeMergePlan(manifestHashes, targetDir, tmpDir)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao computar plano de merge")
+	}
+
+	// 3. Exibir resumo do plano
+	summary := plan.Summary()
+	fmt.Println("\nPlano de Merge:")
+	if n := summary[scaffold.ActionNone]; n > 0 {
+		fmt.Printf("  %d arquivos sem alterações\n", n)
+	}
+	if n := summary[scaffold.ActionUpdate]; n > 0 {
+		fmt.Printf("  %d arquivos a atualizar\n", n)
+	}
+	if n := summary[scaffold.ActionPreserve]; n > 0 {
+		fmt.Printf("  %d arquivos preservados\n", n)
+	}
+	if n := summary[scaffold.ActionConflict]; n > 0 {
+		fmt.Printf("  %d conflitos detectados\n", n)
+	}
+	if n := summary[scaffold.ActionNew]; n > 0 {
+		fmt.Printf("  %d arquivos novos\n", n)
+	}
+
+	// Se não há nada a fazer, sair cedo
+	totalChanges := summary[scaffold.ActionUpdate] + summary[scaffold.ActionConflict] + summary[scaffold.ActionNew]
+	if totalChanges == 0 {
+		fmt.Println("\n✅ Nenhuma alteração necessária. Projeto já está atualizado.")
+		return nil
+	}
+
+	// 4. Confirmar com o usuário
+	if !flags.NonInteractive {
+		var confirm bool
+		confirmPrompt := &survey.Confirm{
+			Message: "Deseja aplicar o plano de merge?",
+			Default: true,
+		}
+		if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
+			return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+		}
+	}
+
+	// 5. Aplicar plano com resolver de conflitos
+	resolver := &scaffold.NonInteractiveResolver{Strategy: "conflict-markers"}
+	if err := scaffold.ApplyMergePlan(plan, targetDir, tmpDir, resolver); err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao aplicar plano de merge")
+	}
+
+	// 6. Salvar manifest com novos hashes
+	newHashes, err := scaffold.ComputeDirHashes(targetDir)
+	if err != nil {
+		fmt.Printf("⚠️  Falha ao computar hashes pós-merge: %v\n", err)
+	} else {
+		if err := scaffold.SaveProjectManifest(targetDir, ctx, newHashes); err != nil {
+			fmt.Printf("⚠️  Falha ao salvar project manifest: %v\n", err)
+		}
+	}
+
+	fmt.Println("✅ Scaffold atualizado com sucesso!")
+	return nil
 }

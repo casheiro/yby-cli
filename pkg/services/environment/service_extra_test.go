@@ -124,6 +124,36 @@ func TestEnvironmentService_Up_BootstrapError(t *testing.T) {
 	}
 }
 
+func TestEnvironmentService_Up_PlainSecrets_PropagarParaBootstrap(t *testing.T) {
+	var receivedPlainSecrets bool
+	cluster := &MockClusterManager{
+		ExistsFunc: func(ctx context.Context, name string) (bool, error) { return true, nil },
+		StartFunc:  func(ctx context.Context, name string) error { return nil },
+	}
+	mirror := &MockMirrorService{}
+	bs := &MockBootstrapService{
+		RunFunc: func(ctx context.Context, opts bootstrap.BootstrapOptions) error {
+			receivedPlainSecrets = opts.PlainSecrets
+			return nil
+		},
+	}
+	runner := &MockRunner{}
+	svc := NewEnvironmentService(runner, nil, cluster, mirror, bs)
+
+	err := svc.Up(context.Background(), UpOptions{
+		Root:         "/tmp/infra",
+		Environment:  "local",
+		ClusterName:  "yby-test",
+		PlainSecrets: true,
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !receivedPlainSecrets {
+		t.Error("PlainSecrets deveria ser propagado para BootstrapOptions")
+	}
+}
+
 func TestEnvironmentService_Up_Remote(t *testing.T) {
 	runner := &MockRunner{}
 	svc := NewEnvironmentService(runner, nil, nil, nil, nil)

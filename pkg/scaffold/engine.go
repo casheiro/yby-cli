@@ -116,6 +116,22 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 	return nil
 }
 
+// ApplyWithTracking executa o scaffold e retorna um mapa de hashes dos arquivos gerados.
+// Similar a Apply(), mas computa o hash SHA-256 de cada arquivo escrito no disco.
+func ApplyWithTracking(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) (map[string]string, error) {
+	if err := Apply(targetDir, ctx, sourceFS); err != nil {
+		return nil, err
+	}
+
+	// Computar hashes de todos os arquivos gerados no targetDir
+	hashes, err := ComputeDirHashes(targetDir)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao computar hashes dos arquivos gerados: %w", err)
+	}
+
+	return hashes, nil
+}
+
 // RenderEmbedDir walks a specific directory in sourceFS and renders it to destDir
 func RenderEmbedDir(sourceFS fs.FS, embedPath, destDir string, ctx *BlueprintContext) error {
 	return fs.WalkDir(sourceFS, embedPath, func(path string, d fs.DirEntry, err error) error {

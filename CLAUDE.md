@@ -52,8 +52,10 @@ pkg/              → Lógica de negócio e utilitários:
     environment/  → Orquestração do "up" (k3d local vs. remote) — usa ClusterManager, MirrorService
     network/      → Port-forward e credenciais — usa ClusterNetworkManager, LocalContainerManager
     secrets/      → Gestão de secrets
+    logs/         → Serviço de logs de pods (wrapper kubectl logs com detecção de namespace)
     doctor/       → Diagnósticos
     shared/       → Interfaces Runner/Filesystem + adaptadores reais (RealRunner, RealFilesystem)
+  config/         → Configuração global (~/.yby/config.yaml), carregamento com precedência flags > env > config > defaults
   ai/             → Providers de IA (Ollama > Gemini > OpenAI), factory com auto-detect, vector store
   plugin/         → Sistema de plugins: Manager (discover/install), Executor, Types (manifesto/request/response)
   context/        → Contexto de projeto (CoreContext via Synapstor/README) e ambientes (.yby/environments.yaml)
@@ -63,7 +65,7 @@ pkg/              → Lógica de negócio e utilitários:
   mirror/         → Git mirror server no cluster + túnel + sync loop
   retry/          → Exponential backoff (cenkalti/backoff)
   logger/         → slog estruturado (text/json)
-  telemetry/      → Coleta de métricas por comando
+  telemetry/      → Coleta de métricas por comando, persistência em ~/.yby/telemetry.jsonl
   filesystem/     → Composite FS (overlay de múltiplos fs.FS)
   testutil/       → MockRunner, MockFilesystem, exec_mock
 
@@ -90,6 +92,8 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 - `errors.New(code, message)` — erro sem causa
 - `errors.Wrap(cause, code, message)` — wrapping com causa
 - `.WithContext(key, value)` — adiciona contexto diagnóstico
+- `.WithHint(hint)` — adiciona sugestão de correção exibida ao usuário (ex: "Rode 'yby doctor' para verificar dependências")
+- Registry de hints automáticos em `pkg/errors/hints.go` — mapeia códigos de erro para sugestões padrão
 - Códigos: `ERR_IO`, `ERR_NETWORK_TIMEOUT`, `ERR_CLUSTER_OFFLINE`, `ERR_PLUGIN`, `ERR_VALIDATION`, `ERR_CONFIG`, `ERR_SCAFFOLD_FAILED`, etc.
 
 ### Padrão de Serviços
@@ -98,11 +102,71 @@ Todos os serviços usam **injeção de dependência via construtor** com as inte
 
 ### IA
 
-Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem: Ollama (local) → Gemini → OpenAI. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`).
+Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem: Ollama (local) → Gemini → OpenAI. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`). Modelo selecionável via `YBY_AI_MODEL` (aplica-se a qualquer provider).
+
+**Cadeia de decorators** (aplicados em `wrapProvider`):
+```
+Raw Provider → CachedEmbeddingProvider → TokenAwareProvider → CostTrackingProvider → RateLimitProvider → RetryProvider
+```
+
+- `CachedEmbeddingProvider` — cache LRU (SHA-256 key, 1000 entries, TTL 1h) para embeddings, evita chamadas redundantes
+- `TokenAwareProvider` — valida se o prompt cabe no context window antes de enviar (estimativa ~4 chars/token)
+- `CostTrackingProvider` — extrai `usage` (prompt_tokens, completion_tokens) das respostas OpenAI/Gemini e loga custo estimado via `slog.Info("ai.usage", ...)`
+- `RateLimitProvider` — token bucket (`golang.org/x/time/rate`) + circuit breaker (closed/open/half-open). Respeita header `Retry-After`. Config: `ai.rate_limit.requests_per_second`
+- `RetryProvider` — retry com backoff exponencial (cenkalti/backoff) para erros 429/502/503
+
+**VectorStore** (`pkg/ai/vector_store.go`): wrapper ChromemDB com `AddDocuments`, `Search`, `DeleteDocuments`, `DeleteByMetadata`, `Count`. O indexer do Synapstor usa `DeleteByMetadata` para limpar embeddings de arquivos removidos durante reindexação.
+
+**Ollama batch embeddings**: usa `/api/embed` (batch nativo, Ollama v0.5+) com fallback automático para `/api/embeddings` (sequencial) em versões antigas.
 
 ### Configuração de Ambientes
 
 Arquivo `.yby/environments.yaml` define ambientes (local/remote) com tipo, valores, kubeconfig e namespace. Contexto ativo via flag `--context` ou env var `YBY_ENV`.
+
+### Configuração Global
+
+Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
+- `ai.provider` — provider de IA preferido (ollama, gemini, openai)
+- `ai.model` — modelo específico (ex: gpt-4-turbo, gemini-pro)
+- `ai.language` — idioma das respostas de IA (padrão: pt-BR)
+- `log.level` — nível de log (debug, info, warn, error)
+- `log.format` — formato de log (text, json)
+- `telemetry.enabled` — habilita/desabilita coleta de métricas
+
+**Precedência:** flags > variáveis de ambiente > config.yaml > defaults
+
+### Comando `yby logs`
+
+`yby logs [pod] [-n namespace] [--follow] [--tail N]` — wrapper inteligente para visualização de logs de pods. Detecta namespace automaticamente a partir do contexto ativo. Implementado em `cmd/logs.go` com serviço em `pkg/services/logs/`.
+
+### Comando `yby upgrade`
+
+`yby upgrade [--check] [--force] [--version <tag>]` — self-update do CLI via GitHub releases. Verifica checksum SHA256, faz rollback em caso de falha. Implementado em `cmd/upgrade.go`.
+
+### Comando `yby telemetry export`
+
+`yby telemetry export` — exporta eventos de telemetria persistidos em `~/.yby/telemetry.jsonl` para stdout. Implementado em `cmd/telemetry.go`.
+
+### Scaffold Merge (`yby init --update`)
+
+`yby init --update` faz merge inteligente entre templates novos e customizações do usuário, usando hash tracking (SHA-256) no manifest (`.yby/project.yaml`). Mutuamente exclusivo com `--force`. Resolve conflitos interativamente (survey) ou com marcadores estilo Git (`--non-interactive`). Implementado em `pkg/scaffold/merge.go`.
+
+### Plugin Bard — Sessões e Modo Batch
+
+- **Sessões**: histórico com `SessionID` por invocação. Comandos `/sessions` (lista) e `/session <id>` (carrega). Backward-compatible com JSONL existente.
+- **Modo batch**: detecta non-TTY via `golang.org/x/term`. Processa uma pergunta por linha do stdin, output em stdout sem styling. Suporta `echo "pergunta" | yby bard`.
+
+### Plugin Atlas — Detecção Expandida
+
+- **Ignores**: comparação por segmento de path (`ShouldIgnore`) em vez de `strings.Contains`
+- **Relações**: parsers para Go imports, Docker FROM multi-stage, Helm deps remotas, package.json file:/workspace: refs
+- **BM25**: scoring de relevância no scanner do Synapstor (`ScanWithScoring`) com fallback para Contains
+
+### Plugin Viz — Filtros e Resiliência
+
+- **Filtros**: namespace (`/`), label (`L`), status (`S`) com filtro server-side via `ListFilter`
+- **Reconexão**: `RetryClient` com backoff exponencial, preserva último estado durante reconexão
+- **Scroll**: PgUp/PgDn, Home/End, indicador de posição na status bar
 
 ## Convenções
 

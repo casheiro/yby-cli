@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -30,8 +31,18 @@ func main() {
 		Use:   "viz",
 		Short: "Yby Viz - Observability TUI",
 		Run: func(cmd *cobra.Command, args []string) {
-			// Inicia o programa Bubbletea com o modelo definido em internal/ui
-			p := tea.NewProgram(ui.NewModel())
+			client, err := monitor.NewK8sClient()
+			if err != nil {
+				// Passa nil para mostrar mensagem de erro na TUI
+				p := tea.NewProgram(ui.NewModel(nil), tea.WithAltScreen())
+				if _, err := p.Run(); err != nil {
+					fmt.Printf("Ops, ocorreu um erro: %v", err)
+					os.Exit(1)
+				}
+				return
+			}
+			retryClient := monitor.NewRetryClient(client)
+			p := tea.NewProgram(ui.NewModel(retryClient), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				fmt.Printf("Ops, ocorreu um erro: %v", err)
 				os.Exit(1)

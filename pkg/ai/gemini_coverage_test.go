@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -235,7 +236,7 @@ func TestGeminiProvider_Completion_EmptyParts(t *testing.T) {
 // ─── StreamCompletion — cenários adicionais de cobertura ────────────────────
 
 func TestGeminiProvider_StreamCompletion_HTTPError(t *testing.T) {
-	// StreamCompletion delega para Completion, então um 500 propaga o erro
+	// Servidor retorna 500 — streaming deve propagar como APIError
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("server error"))
@@ -251,17 +252,12 @@ func TestGeminiProvider_StreamCompletion_HTTPError(t *testing.T) {
 }
 
 func TestGeminiProvider_StreamCompletion_SuccessCompleto(t *testing.T) {
-	// Verifica que StreamCompletion escreve corretamente no writer
+	// Verifica que StreamCompletion SSE escreve corretamente no writer
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		resp := map[string]interface{}{
-			"candidates": []map[string]interface{}{
-				{"content": map[string]interface{}{
-					"parts": []map[string]interface{}{{"text": "stream output completo"}},
-				}},
-			},
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		chunk := `{"candidates":[{"content":{"parts":[{"text":"stream output completo"}]}}]}`
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
 	}))
 	defer server.Close()
 

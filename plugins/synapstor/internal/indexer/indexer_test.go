@@ -117,6 +117,38 @@ func TestFileHash_DiferenteParaConteudoDiferente(t *testing.T) {
 	}
 }
 
+// TestIndexReport_ZeroValues verifica que um IndexReport recém-criado tem valores zerados.
+func TestIndexReport_ZeroValues(t *testing.T) {
+	report := &IndexReport{}
+	if report.FilesScanned != 0 || report.FilesSkipped != 0 ||
+		report.ChunksGenerated != 0 || report.EmbeddingsCreated != 0 {
+		t.Error("esperado todos os campos do IndexReport zerados")
+	}
+	if report.Duration != 0 {
+		t.Error("esperado Duration zerado")
+	}
+}
+
+// TestRun_SemArquivos verifica que Run retorna report com zero arquivos e sem erro.
+func TestRun_SemArquivos(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx := &Indexer{RootDir: tmpDir}
+
+	report, err := idx.Run(nil)
+	if err != nil {
+		t.Fatalf("Run falhou: %v", err)
+	}
+	if report == nil {
+		t.Fatal("report não deveria ser nil")
+	}
+	if report.FilesScanned != 0 {
+		t.Errorf("esperado 0 arquivos escaneados, obtido %d", report.FilesScanned)
+	}
+	if report.Duration <= 0 {
+		t.Error("esperado Duration positivo")
+	}
+}
+
 // TestLoadManifest_ArquivoInexistente verifica que carregar de um arquivo inexistente retorna manifest vazio.
 func TestLoadManifest_ArquivoInexistente(t *testing.T) {
 	tmpDir := t.TempDir()

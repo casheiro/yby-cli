@@ -9,23 +9,6 @@ import (
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
-type Options struct {
-	Provider   string
-	SecretVal  string
-	OutputPath string
-	Token      string
-}
-
-type Service interface {
-	GenerateWebhook(ctx context.Context, opts Options) (string, error)
-	GenerateMinIO(ctx context.Context, opts Options) (string, error)
-	CreateGitHubToken(ctx context.Context, opts Options) error
-	BackupKeys(ctx context.Context, opts Options) (string, error)
-	RestoreKeys(ctx context.Context, opts Options) error
-	EncryptWithSOPS(ctx context.Context, ageRecipient string, secretYaml []byte, outputPath string) error
-	GenerateAgeKey(ctx context.Context, outputPath string) (string, error)
-}
-
 type secretsService struct {
 	runner shared.Runner
 	fs     shared.Filesystem
@@ -206,6 +189,36 @@ func (s *secretsService) GenerateAgeKey(ctx context.Context, outputPath string) 
 	}
 
 	return "", fmt.Errorf("chave pública não encontrada na saída do age-keygen")
+}
+
+// GenerateSecretYAML gera um Secret Kubernetes em formato YAML via dry-run.
+func (s *secretsService) GenerateSecretYAML(ctx context.Context, name, namespace, key, value string) ([]byte, error) {
+	out, err := s.runner.RunCombinedOutput(ctx, "kubectl", "create", "secret", "generic", name,
+		"--namespace", namespace,
+		fmt.Sprintf("--from-literal=%s=%s", key, value),
+		"--dry-run=client", "-o", "yaml")
+	if err != nil {
+		return nil, fmt.Errorf("falha ao gerar secret YAML: %w", err)
+	}
+	return out, nil
+}
+
+// SealWithKubeseal encripta secretYAML com kubeseal e salva em outputPath.
+func (s *secretsService) SealWithKubeseal(ctx context.Context, secretYAML []byte, outputPath string) error {
+	sealedYaml, err := s.runner.RunStdinOutput(ctx, string(secretYAML), "kubeseal", "--format", "yaml")
+	if err != nil {
+		return fmt.Errorf("erro ao executar kubeseal: %w", err)
+	}
+
+	if err := s.fs.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("erro ao criar diretório: %w", err)
+	}
+
+	if err := s.fs.WriteFile(outputPath, sealedYaml, 0600); err != nil {
+		return fmt.Errorf("erro ao salvar sealed secret: %w", err)
+	}
+
+	return nil
 }
 
 func (s *secretsService) sealAndSave(ctx context.Context, input []byte, outputFile string) error {

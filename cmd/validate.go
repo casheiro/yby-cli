@@ -7,9 +7,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/services/validate"
 	"github.com/spf13/cobra"
 )
+
+// newValidateService permite substituicao em testes.
+var newValidateService = func(r shared.Runner) validate.Service {
+	helm := &validate.RealHelmRunner{Runner: r}
+	return validate.NewService(helm)
+}
 
 // validateCmd represents the validate command
 var validateCmd = &cobra.Command{
@@ -34,50 +41,65 @@ Equivalente ao antigo 'make validate'.`,
 			JoinInfra(root, "charts/cluster-config"),
 		}
 
-		fmt.Println(headerStyle.Render("0️⃣  Resolvendo Dependências..."))
-		for _, chart := range charts {
-			fmt.Printf("%s Executando: helm dependency build %s\n", grayStyle.Render("Exec >"), chart)
-			runCmd := execCommand("helm", "dependency", "build", chart)
-			runCmd.Stdout = os.Stdout
-			runCmd.Stderr = os.Stderr
-			if err := runCmd.Run(); err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro ao atualizar subcharts de %s", chart))
-			}
-		}
-
-		fmt.Println("\n" + headerStyle.Render("1️⃣  Helm Lint..."))
-		for _, chart := range charts {
-			fmt.Printf("Linting em %s... ", chart)
-			if err := execCommand("helm", "lint", chart).Run(); err != nil {
-				fmt.Printf("%s\n", crossStyle.String())
-				return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro no lint do chart %s", chart))
-			}
-			fmt.Printf("%s\n", checkStyle.String())
-		}
-
-		fmt.Println("\n" + headerStyle.Render("2️⃣  Verificação de Template Helm (Simulação)..."))
 		valuesFile := JoinInfra(root, "config/cluster-values.yaml")
-		// Fallback for location (if running from cli/)
+		// Fallback para localizacao alternativa (ex: executando de cli/)
 		if _, err := os.Stat(valuesFile); os.IsNotExist(err) {
 			valuesFile = "../config/cluster-values.yaml"
 		}
 
-		for _, chart := range charts {
-			name := "release-name" // dummy name
-			fmt.Printf("Gerando template de %s... ", chart)
-			// Silent output unless error
-			cmd := execCommand("helm", "template", name, chart, "-f", valuesFile)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				fmt.Printf("%s\n", crossStyle.String())
-				fmt.Println(string(out))
-				return errors.Wrap(err, errors.ErrCodeManifest, fmt.Sprintf("Erro na renderização do template %s", chart))
-			}
-			fmt.Printf("%s\n", checkStyle.String())
+		runner := &shared.RealRunner{}
+		svc := newValidateService(runner)
+
+		report, err := svc.Run(cmd.Context(), charts, valuesFile)
+
+		// Renderizar resultados por etapa
+		renderValidateReport(report)
+
+		if err != nil {
+			return err
 		}
 
 		fmt.Println("\n" + checkStyle.Render("✨ Validação concluída com sucesso!"))
 		return nil
 	},
+}
+
+// renderValidateReport exibe o resultado de cada etapa de validacao.
+func renderValidateReport(report *validate.ValidateReport) {
+	if report == nil {
+		return
+	}
+
+	fmt.Println(headerStyle.Render("0️⃣  Resolvendo Dependências..."))
+	for _, c := range report.Charts {
+		if c.DepsOK {
+			fmt.Printf("%s Dependências resolvidas: %s %s\n", grayStyle.Render("Exec >"), c.Chart, checkStyle.String())
+		} else if c.Error != "" {
+			fmt.Printf("%s Dependências: %s %s\n", grayStyle.Render("Exec >"), c.Chart, crossStyle.String())
+			return
+		}
+	}
+
+	fmt.Println("\n" + headerStyle.Render("1️⃣  Helm Lint..."))
+	for _, c := range report.Charts {
+		if c.LintOK {
+			fmt.Printf("Linting em %s... %s\n", c.Chart, checkStyle.String())
+		} else if c.Error != "" {
+			fmt.Printf("Linting em %s... %s\n", c.Chart, crossStyle.String())
+			return
+		}
+	}
+
+	fmt.Println("\n" + headerStyle.Render("2️⃣  Verificação de Template Helm (Simulação)..."))
+	for _, c := range report.Charts {
+		if c.TemplateOK {
+			fmt.Printf("Gerando template de %s... %s\n", c.Chart, checkStyle.String())
+		} else if c.Error != "" {
+			fmt.Printf("Gerando template de %s... %s\n", c.Chart, crossStyle.String())
+			fmt.Println(c.Error)
+			return
+		}
+	}
 }
 
 func init() {

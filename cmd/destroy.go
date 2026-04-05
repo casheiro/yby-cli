@@ -5,9 +5,16 @@ import (
 	"os"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/services/environment"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 
 	"github.com/spf13/cobra"
 )
+
+// newDestroyClusterManager cria o ClusterManager para o comando destroy (mockável em testes)
+var newDestroyClusterManager = func() environment.ClusterManager {
+	return &environment.K3dClusterManager{Runner: &shared.RealRunner{}}
+}
 
 // destroyCmd represents the destroy command
 var destroyCmd = &cobra.Command{
@@ -33,17 +40,12 @@ Não afeta ambientes remotos (dev/staging/prod) por segurança.`,
 
 		fmt.Printf("💣 Destruindo cluster '%s'...\n", clusterName)
 
-		// Run k3d delete
-		c := execCommand("k3d", "cluster", "delete", clusterName)
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-
-		if err := c.Run(); err != nil {
-			fmt.Printf("❌ Erro ao destruir cluster: %v\n", err)
+		cluster := newDestroyClusterManager()
+		if err := cluster.Delete(cmd.Context(), clusterName); err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "Erro ao destruir cluster")
-		} else {
-			fmt.Println("✅ Cluster removido com sucesso.")
 		}
+
+		fmt.Println("✅ Cluster removido com sucesso.")
 		return nil
 	},
 }

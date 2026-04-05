@@ -22,9 +22,7 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -110,21 +108,19 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados do secret")
 		}
 
-		// 1. Gerar Secret (Dry Run)
-		fmt.Println("Gerando Secret...")
-		kubectlCmd := execCommand("kubectl", "create", "secret", "generic", answers.Name,
-			"--namespace", answers.Namespace,
-			fmt.Sprintf("--from-literal=%s=%s", answers.Key, answers.Value),
-			"--dry-run=client", "-o", "yaml")
+		// 1. Criar serviço e gerar Secret (Dry Run)
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := newSecretsService(runner, fsys)
 
-		var secretYaml bytes.Buffer
-		kubectlCmd.Stdout = &secretYaml
-		if err := kubectlCmd.Run(); err != nil {
+		fmt.Println("Gerando Secret...")
+		secretYaml, err := svc.GenerateSecretYAML(cmd.Context(), answers.Name, answers.Namespace, answers.Key, answers.Value)
+		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret")
 		}
 
-		root, err := FindInfraRoot()
-		if err != nil {
+		root, errRoot := FindInfraRoot()
+		if errRoot != nil {
 			root = "."
 		}
 
@@ -141,11 +137,7 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			var finalPath string
 			_ = askOne(pathPrompt, &finalPath)
 
-			runner := &shared.RealRunner{}
-			fsys := &shared.RealFilesystem{}
-			svc := newSecretsService(runner, fsys)
-
-			if err := svc.EncryptWithSOPS(cmd.Context(), "", secretYaml.Bytes(), finalPath); err != nil {
+			if err := svc.EncryptWithSOPS(cmd.Context(), "", secretYaml, finalPath); err != nil {
 				return errors.Wrap(err, errors.ErrCodeExec, "falha ao encriptar secret com SOPS")
 			}
 
@@ -153,18 +145,8 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			fmt.Println("Proximo passo: Commit e Push para o GitOps aplicar.")
 			fmt.Println("Para decriptar no cluster: sops --decrypt " + finalPath + " | kubectl apply -f -")
 		} else {
-			// 2b. Selar com Kubeseal (comportamento original)
+			// 2b. Selar com Kubeseal
 			fmt.Println("Selando com Kubeseal...")
-			kubesealCmd := execCommand("kubeseal", "--format", "yaml")
-			kubesealCmd.Stdin = &secretYaml
-
-			var sealedYaml bytes.Buffer
-			kubesealCmd.Stdout = &sealedYaml
-
-			if err := kubesealCmd.Run(); err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")
-			}
-
 			filename := fmt.Sprintf("sealed-secret-%s.yaml", answers.Name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/events")
 
@@ -175,10 +157,8 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			var finalPath string
 			_ = askOne(pathPrompt, &finalPath)
 
-			_ = os.MkdirAll(filepath.Dir(finalPath), 0755)
-
-			if err := os.WriteFile(finalPath, sealedYaml.Bytes(), 0600); err != nil {
-				return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar sealed secret")
+			if err := svc.SealWithKubeseal(cmd.Context(), secretYaml, finalPath); err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")
 			}
 
 			fmt.Printf("\nSealedSecret salvo em: %s\n", finalPath)

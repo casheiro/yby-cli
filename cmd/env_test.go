@@ -198,3 +198,61 @@ func TestEnvCreateCmd_AmbienteJaExiste(t *testing.T) {
 	err := envCreateCmd.RunE(envCreateCmd, []string{"local"})
 	assert.Error(t, err)
 }
+
+func TestEnvCreateCmd_ComKubeContext(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config"), 0755))
+
+	envCreateCmd.Flags().Set("type", "remote")
+	envCreateCmd.Flags().Set("description", "Ambiente de UAT")
+	envCreateCmd.Flags().Set("kube-context", "uat-cluster")
+	envCreateCmd.Flags().Set("namespace", "uat-ns")
+
+	err := envCreateCmd.RunE(envCreateCmd, []string{"uat"})
+	assert.NoError(t, err)
+
+	// Limpa flags para não afetar outros testes
+	envCreateCmd.Flags().Set("kube-context", "")
+	envCreateCmd.Flags().Set("namespace", "")
+}
+
+func TestEnvCheckCmd_Integro(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	// Cria os arquivos de values referenciados no manifesto
+	configDir := filepath.Join(dir, "config")
+	require.NoError(t, os.MkdirAll(configDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "values-local.yaml"), []byte("# local"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "values-prod.yaml"), []byte("# prod"), 0644))
+
+	err := envCheckCmd.RunE(envCheckCmd, []string{})
+	assert.NoError(t, err)
+}
+
+func TestEnvCheckCmd_ComProblemas(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	// Não cria os arquivos de values — deve reportar problemas
+	err := envCheckCmd.RunE(envCheckCmd, []string{})
+	assert.NoError(t, err) // O comando não retorna erro, apenas lista warnings
+}
+
+func TestEnvCheckCmd_SemManifesto(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	err := envCheckCmd.RunE(envCheckCmd, []string{})
+	assert.Error(t, err)
+}
