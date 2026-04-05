@@ -167,7 +167,8 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("ollama retornou status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var oResp ollamaResponse
@@ -211,7 +212,8 @@ func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("ollama retornou status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var oResp ollamaResponse
@@ -248,7 +250,8 @@ func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("ollama returned status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	decoder := json.NewDecoder(resp.Body)
@@ -299,7 +302,8 @@ func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		defer resp.Body.Close()
 
 		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("ollama embedding status: %d", resp.StatusCode)
+			body, _ := io.ReadAll(resp.Body)
+			return nil, &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
 		}
 
 		var oResp ollamaEmbeddingResponse

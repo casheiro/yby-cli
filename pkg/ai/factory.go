@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"strings"
+
+	"github.com/casheiro/yby-cli/pkg/retry"
 )
 
 // GetLanguage returns the configured AI language or defaults to pt-BR
@@ -30,40 +32,48 @@ func GetProvider(ctx context.Context, preferred string) Provider {
 		case "ollama":
 			p := NewOllamaProvider()
 			if p.IsAvailable(ctx) {
-				return p
+				return wrapWithRetry(p)
 			}
 		case "gemini":
 			p := NewGeminiProvider()
 			if p != nil && p.IsAvailable(ctx) {
-				return p
+				return wrapWithRetry(p)
 			}
 		case "openai":
 			p := NewOpenAIProvider()
 			if p != nil && p.IsAvailable(ctx) {
-				return p
+				return wrapWithRetry(p)
 			}
 		}
-		// If explicit preference is not available, return nil (Strict)
+		// Se a preferencia explicita nao esta disponivel, retorna nil (Strict)
 		return nil
 	}
 
-	// 2. Auto-Detect: Prefer Local Inference (Privacy & Cost)
+	// 2. Auto-Detect: Preferir inferencia local (privacidade e custo)
 	ollama := NewOllamaProvider()
 	if ollama.IsAvailable(ctx) {
-		return ollama
+		return wrapWithRetry(ollama)
 	}
 
-	// 3. Google Gemini (Fast & Generous Free Tier)
+	// 3. Google Gemini (rapido e tier gratuito generoso)
 	gemini := NewGeminiProvider()
 	if gemini != nil && gemini.IsAvailable(ctx) {
-		return gemini
+		return wrapWithRetry(gemini)
 	}
 
-	// 4. OpenAI (Standard)
+	// 4. OpenAI (padrao)
 	openai := NewOpenAIProvider()
 	if openai != nil && openai.IsAvailable(ctx) {
-		return openai
+		return wrapWithRetry(openai)
 	}
 
 	return nil
+}
+
+// wrapWithRetry envolve um Provider com retry automatico via backoff exponencial.
+func wrapWithRetry(p Provider) Provider {
+	if p == nil {
+		return nil
+	}
+	return NewRetryProvider(p, retry.DefaultOptions(), nil)
 }

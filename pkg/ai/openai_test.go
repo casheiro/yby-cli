@@ -154,7 +154,7 @@ func TestOpenAIProvider_Completion_Error(t *testing.T) {
 
 	_, err := provider.Completion(context.Background(), "system", "user")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // ─── Testes de StreamCompletion ─────────────────────────────────────────────
@@ -194,7 +194,7 @@ func TestOpenAIProvider_StreamCompletion_Status500(t *testing.T) {
 	var buf bytes.Buffer
 	err := provider.StreamCompletion(context.Background(), "system", "user", &buf)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // ─── Testes de EmbedDocuments ───────────────────────────────────────────────
@@ -233,5 +233,5 @@ func TestOpenAIProvider_EmbedDocuments_Error(t *testing.T) {
 
 	_, err := provider.EmbedDocuments(context.Background(), []string{"texto"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }

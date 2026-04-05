@@ -84,11 +84,8 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		buf := new(bytes.Buffer)
-		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("openai retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
-		}
-		return nil, fmt.Errorf("openai retornou status: %d - %s", resp.StatusCode, buf.String())
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &APIError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var oResp openAIResponse
@@ -136,7 +133,8 @@ func (p *OpenAIProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("openai retornou status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", &APIError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var oResp openAIResponse
@@ -181,7 +179,8 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("openai returned status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return &APIError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	// Simple SSE Parser
@@ -265,7 +264,8 @@ func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("openai embeddings status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &APIError{Provider: "openai", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var oResp openAIEmbeddingResponse

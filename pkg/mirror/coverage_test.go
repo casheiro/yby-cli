@@ -18,9 +18,10 @@ import (
 
 // mockForwarder implementa a interface Forwarder para testes
 type mockForwarder struct {
-	startFunc func(ctx context.Context) (int, error)
-	stopFunc  func()
-	stopped   bool
+	startFunc       func(ctx context.Context) (int, error)
+	stopFunc        func()
+	healthCheckFunc func(ctx context.Context) error
+	stopped         bool
 }
 
 func (m *mockForwarder) Start(ctx context.Context) (int, error) {
@@ -35,6 +36,13 @@ func (m *mockForwarder) Stop() {
 	if m.stopFunc != nil {
 		m.stopFunc()
 	}
+}
+
+func (m *mockForwarder) HealthCheck(ctx context.Context) error {
+	if m.healthCheckFunc != nil {
+		return m.healthCheckFunc(ctx)
+	}
+	return nil
 }
 
 // --- Testes para SetupTunnel com ForwarderFactory mockada ---
@@ -1046,4 +1054,285 @@ func TestSync_UsaComandoCorreto(t *testing.T) {
 	assert.True(t, strings.HasPrefix(capturedArgs[1], "git://localhost:7777/"))
 	assert.Equal(t, "HEAD:main", capturedArgs[2])
 	assert.Equal(t, "--force", capturedArgs[3])
+}
+
+// --- Testes para backoffDelay ---
+
+func TestBackoffDelay(t *testing.T) {
+	m := &MirrorManager{}
+
+	tests := []struct {
+		name    string
+		errs    int
+		wantMin time.Duration
+		wantMax time.Duration
+	}{
+		{
+			name:    "1 erro consecutivo",
+			errs:    1,
+			wantMin: 10 * time.Second,
+			wantMax: 10 * time.Second,
+		},
+		{
+			name:    "2 erros consecutivos",
+			errs:    2,
+			wantMin: 20 * time.Second,
+			wantMax: 20 * time.Second,
+		},
+		{
+			name:    "3 erros consecutivos",
+			errs:    3,
+			wantMin: 40 * time.Second,
+			wantMax: 40 * time.Second,
+		},
+		{
+			name:    "5 erros consecutivos",
+			errs:    5,
+			wantMin: 160 * time.Second,
+			wantMax: 160 * time.Second,
+		},
+		{
+			name:    "6 erros — cap em shift=5",
+			errs:    6,
+			wantMin: 160 * time.Second,
+			wantMax: 160 * time.Second,
+		},
+		{
+			name:    "10 erros — cap em 3min",
+			errs:    10,
+			wantMin: 160 * time.Second,
+			wantMax: 160 * time.Second,
+		},
+		{
+			name:    "0 erros — base sem shift",
+			errs:    0,
+			wantMin: 5 * time.Second,
+			wantMax: 5 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			delay := m.backoffDelay(tt.errs)
+			assert.GreaterOrEqual(t, delay, tt.wantMin, "delay deve ser >= mínimo esperado")
+			assert.LessOrEqual(t, delay, 3*time.Minute, "delay nunca deve exceder 3 minutos")
+		})
+	}
+}
+
+// --- Testes para reconnect ---
+
+func TestReconnect_Sucesso(t *testing.T) {
+	callCount := 0
+	mf := &mockForwarder{
+		startFunc: func(ctx context.Context) (int, error) {
+			return 54321, nil
+		},
+	}
+
+	runner := &MockRunner{}
+	m := NewManager("/repo", runner)
+	m.forwarder = mf
+	m.localPort = 12345
+
+	m.ForwarderFactory = func(namespace, service string, targetPort int) (Forwarder, error) {
+		callCount++
+		if callCount == 1 {
+			return nil, errors.New("falha temporária")
+		}
+		newMf := &mockForwarder{
+			startFunc: func(ctx context.Context) (int, error) {
+				return 55555, nil
+			},
+		}
+		return newMf, nil
+	}
+
+	ctx := context.Background()
+	err := m.reconnect(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 55555, m.localPort, "deve ter a nova porta após reconexão")
+	assert.True(t, mf.stopped, "forwarder antigo deve ter sido parado")
+}
+
+func TestReconnect_FalhaDefinitiva(t *testing.T) {
+	mf := &mockForwarder{}
+	runner := &MockRunner{}
+	m := NewManager("/repo", runner)
+	m.forwarder = mf
+	m.localPort = 12345
+
+	m.ForwarderFactory = func(namespace, service string, targetPort int) (Forwarder, error) {
+		return nil, errors.New("falha permanente")
+	}
+
+	// Usar contexto com timeout curto para não esperar 5min
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := m.reconnect(ctx)
+	require.Error(t, err, "deve falhar quando todas as tentativas falham")
+	assert.True(t, mf.stopped, "forwarder antigo deve ter sido parado")
+}
+
+func TestReconnect_SemForwarderAnterior(t *testing.T) {
+	runner := &MockRunner{}
+	m := NewManager("/repo", runner)
+	// Sem forwarder atribuído
+	m.forwarder = nil
+	m.localPort = 0
+
+	m.ForwarderFactory = func(namespace, service string, targetPort int) (Forwarder, error) {
+		return &mockForwarder{
+			startFunc: func(ctx context.Context) (int, error) {
+				return 44444, nil
+			},
+		}, nil
+	}
+
+	ctx := context.Background()
+	err := m.reconnect(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 44444, m.localPort)
+}
+
+// --- Testes para StartSyncLoop com health check ---
+
+func TestStartSyncLoop_HealthCheckFalha_Reconecta(t *testing.T) {
+	healthCheckCalled := false
+	reconnectCalled := false
+
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
+	}
+
+	mf := &mockForwarder{
+		healthCheckFunc: func(ctx context.Context) error {
+			healthCheckCalled = true
+			return errors.New("conexão perdida")
+		},
+	}
+
+	m := &MirrorManager{
+		Namespace:      "test-ns",
+		Runner:         runner,
+		localPort:      12345,
+		forwarder:      mf,
+		healthInterval: 50 * time.Millisecond, // intervalo curto para teste rápido
+	}
+
+	// Factory que simula reconexão bem-sucedida
+	m.ForwarderFactory = func(namespace, service string, targetPort int) (Forwarder, error) {
+		reconnectCalled = true
+		return &mockForwarder{
+			startFunc: func(ctx context.Context) (int, error) {
+				return 55555, nil
+			},
+		}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		m.StartSyncLoop(ctx)
+		close(done)
+	}()
+
+	// Aguardar tempo suficiente para o health ticker disparar
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	assert.True(t, healthCheckCalled, "health check deve ter sido chamado")
+	assert.True(t, reconnectCalled, "reconnect deve ter sido chamado após health check falhar")
+}
+
+func TestStartSyncLoop_BackoffEmErrosConsecutivos(t *testing.T) {
+	syncCount := 0
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			syncCount++
+			return errors.New("falha persistente no push")
+		},
+	}
+
+	m := &MirrorManager{
+		Namespace:      "test-ns",
+		Runner:         runner,
+		localPort:      12345,
+		healthInterval: 1 * time.Hour, // desabilitar health check para este teste
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		m.StartSyncLoop(ctx)
+		close(done)
+	}()
+
+	// Aguardar sync inicial + possivelmente 1 tick
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Deve ter executado pelo menos o sync inicial (que falha)
+	assert.GreaterOrEqual(t, syncCount, 1, "deve ter tentado pelo menos o sync inicial")
+}
+
+// --- Testes para PortForwarder.HealthCheck ---
+
+func TestPortForwarder_HealthCheck_SemHealthChecker(t *testing.T) {
+	pf := &PortForwarder{
+		Namespace:     "test-ns",
+		Service:       "git-server",
+		TargetPort:    9418,
+		LocalPort:     12345,
+		stopCh:        make(chan struct{}),
+		readyCh:       make(chan struct{}),
+		healthChecker: nil,
+	}
+
+	ctx := context.Background()
+	err := pf.HealthCheck(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "health checker não configurado")
+}
+
+func TestPortForwarder_HealthCheck_ComHealthChecker(t *testing.T) {
+	// Mock do HealthChecker
+	mockHC := &mockHealthChecker{
+		checkFunc: func(ctx context.Context, localPort int) error {
+			return nil
+		},
+	}
+
+	pf := &PortForwarder{
+		Namespace:     "test-ns",
+		Service:       "git-server",
+		TargetPort:    9418,
+		LocalPort:     12345,
+		stopCh:        make(chan struct{}),
+		readyCh:       make(chan struct{}),
+		healthChecker: mockHC,
+	}
+
+	ctx := context.Background()
+	err := pf.HealthCheck(ctx)
+	require.NoError(t, err)
+}
+
+// mockHealthChecker implementa HealthChecker para testes
+type mockHealthChecker struct {
+	checkFunc func(ctx context.Context, localPort int) error
+}
+
+func (m *mockHealthChecker) Check(ctx context.Context, localPort int) error {
+	if m.checkFunc != nil {
+		return m.checkFunc(ctx, localPort)
+	}
+	return nil
 }
