@@ -114,6 +114,11 @@ func Execute() {
 	telemetry.Record("yby-cli", time.Since(start), err)
 	telemetry.Flush()
 
+	cfg := config.Get()
+	if flushErr := telemetry.FlushToFile(cfg.Telemetry.Enabled); flushErr != nil {
+		slog.Debug("Falha ao persistir telemetria", "erro", flushErr)
+	}
+
 	if err != nil {
 		handleExecutionError(err)
 		os.Exit(1)

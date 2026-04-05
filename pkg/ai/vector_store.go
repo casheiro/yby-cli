@@ -117,6 +117,27 @@ func (vs *VectorStore) Search(ctx context.Context, query string, topK int) ([]Un
 	return docs, nil
 }
 
+// DeleteDocuments remove documentos do store pelos IDs informados.
+func (vs *VectorStore) DeleteDocuments(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return vs.collection.Delete(ctx, nil, nil, ids...)
+}
+
+// DeleteByMetadata remove documentos que correspondem aos metadados informados.
+func (vs *VectorStore) DeleteByMetadata(ctx context.Context, where map[string]string) error {
+	if len(where) == 0 {
+		return nil
+	}
+	return vs.collection.Delete(ctx, where, nil)
+}
+
+// Count retorna o número de documentos na coleção.
+func (vs *VectorStore) Count() int {
+	return vs.collection.Count()
+}
+
 // UnknownDocument is a generic structure for retrieved data.
 // We avoid importing plugin-specific types here to keep pkg/ai independent.
 type UnknownDocument struct {

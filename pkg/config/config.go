@@ -11,11 +11,17 @@ import (
 	"github.com/spf13/viper"
 )
 
+// RateLimitConfig armazena configuração de rate limiting para IA.
+type RateLimitConfig struct {
+	RequestsPerSecond float64 `mapstructure:"requests_per_second"`
+}
+
 // AIConfig armazena configuração do subsistema de IA.
 type AIConfig struct {
-	Provider string `mapstructure:"provider"`
-	Model    string `mapstructure:"model"`
-	Language string `mapstructure:"language"`
+	Provider  string          `mapstructure:"provider"`
+	Model     string          `mapstructure:"model"`
+	Language  string          `mapstructure:"language"`
+	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 }
 
 // LogConfig armazena configuração de logging.

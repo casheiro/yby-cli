@@ -18,10 +18,10 @@ type MockClient struct {
 	Err         error
 }
 
-func (m *MockClient) GetPods() ([]monitor.Pod, error)               { return m.Pods, m.Err }
-func (m *MockClient) GetDeployments() ([]monitor.Deployment, error) { return m.Deployments, m.Err }
-func (m *MockClient) GetServices() ([]monitor.Service, error)       { return m.Services, m.Err }
-func (m *MockClient) GetNodes() ([]monitor.Node, error)             { return m.Nodes, m.Err }
+func (m *MockClient) GetPods(_ monitor.ListFilter) ([]monitor.Pod, error)               { return m.Pods, m.Err }
+func (m *MockClient) GetDeployments(_ monitor.ListFilter) ([]monitor.Deployment, error) { return m.Deployments, m.Err }
+func (m *MockClient) GetServices(_ monitor.ListFilter) ([]monitor.Service, error)       { return m.Services, m.Err }
+func (m *MockClient) GetNodes(_ monitor.ListFilter) ([]monitor.Node, error)             { return m.Nodes, m.Err }
 
 // --- Testes de criação do Model ---
 
@@ -148,6 +148,13 @@ func TestModel_Update_NumberKeys(t *testing.T) {
 func TestModel_Update_Scroll(t *testing.T) {
 	client := &MockClient{}
 	model := NewModel(client)
+	// Definir height pequeno e conteúdo suficiente para permitir scroll
+	model.height = 10
+	for i := 0; i < 20; i++ {
+		model.pods = append(model.pods, monitor.Pod{
+			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi",
+		})
+	}
 
 	// Scroll para baixo com j
 	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -188,6 +195,12 @@ func TestModel_Update_Scroll(t *testing.T) {
 func TestModel_Update_TabResetScroll(t *testing.T) {
 	client := &MockClient{}
 	model := NewModel(client)
+	model.height = 10
+	for i := 0; i < 20; i++ {
+		model.pods = append(model.pods, monitor.Pod{
+			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi",
+		})
+	}
 
 	// Scrollar
 	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})

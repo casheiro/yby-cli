@@ -6,6 +6,63 @@ import (
 	"testing"
 )
 
+// ---- ShouldIgnore ----
+
+func TestShouldIgnore(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		ignores []string
+		want    bool
+	}{
+		{
+			name:    "diretório vendor é ignorado",
+			path:    "vendor/pkg/foo.go",
+			ignores: []string{"vendor"},
+			want:    true,
+		},
+		{
+			name:    "my-vendor-lib NÃO é ignorado",
+			path:    "my-vendor-lib/main.go",
+			ignores: []string{"vendor"},
+			want:    false,
+		},
+		{
+			name:    "node_modules é ignorado",
+			path:    "a/b/node_modules/c.js",
+			ignores: []string{"node_modules"},
+			want:    true,
+		},
+		{
+			name:    "my-node_modules-lib NÃO é ignorado",
+			path:    "my-node_modules-lib/x.go",
+			ignores: []string{"node_modules"},
+			want:    false,
+		},
+		{
+			name:    "sem ignores retorna false",
+			path:    "vendor/foo.go",
+			ignores: nil,
+			want:    false,
+		},
+		{
+			name:    "múltiplos ignores",
+			path:    "src/dist/bundle.js",
+			ignores: []string{"vendor", "node_modules", "dist"},
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ShouldIgnore(tt.path, tt.ignores)
+			if got != tt.want {
+				t.Errorf("ShouldIgnore(%q, %v) = %v, esperado %v", tt.path, tt.ignores, got, tt.want)
+			}
+		})
+	}
+}
+
 // ---- Blueprint e Component ----
 
 func TestBlueprint_Empty(t *testing.T) {
@@ -363,6 +420,151 @@ func TestScan_DetectsLanguageAndFramework(t *testing.T) {
 				t.Errorf("infra: Framework = %q, esperado vazio", comp.Framework)
 			}
 		}
+	}
+}
+
+func TestScan_DetectsGoImportRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Criar módulo raiz
+	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/exemplo/monorepo\n\ngo 1.21\n"), 0644)
+
+	// Criar lib com go.mod
+	libDir := filepath.Join(tmpDir, "lib")
+	os.MkdirAll(libDir, 0755)
+	os.WriteFile(filepath.Join(libDir, "go.mod"), []byte("module github.com/exemplo/monorepo/lib\n\ngo 1.21\n"), 0644)
+
+	// Criar app que importa lib
+	appDir := filepath.Join(tmpDir, "app")
+	os.MkdirAll(appDir, 0755)
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/monorepo/app\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(appDir, "main.go"), []byte(`package main
+
+import (
+	"fmt"
+	"github.com/exemplo/monorepo/lib"
+)
+
+func main() {
+	fmt.Println(lib.Hello())
+}
+`), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.From == "app" && rel.To == "lib" && rel.Type == "imports" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'imports' de app para lib via Go imports, relações encontradas: %+v", bp.Relations)
+	}
+}
+
+func TestScan_DetectsDockerFromRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Criar componente app
+	appDir := filepath.Join(tmpDir, "app")
+	os.MkdirAll(appDir, 0755)
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.21\n"), 0644)
+
+	// Criar componente infra com COPY --from referenciando componente
+	infraDir := filepath.Join(tmpDir, "infra")
+	os.MkdirAll(infraDir, 0755)
+	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte(`FROM golang:1.21 AS builder
+RUN go build -o /bin/app .
+FROM alpine AS runtime
+COPY --from=builder /bin/app /usr/local/bin/
+COPY --from=app ./dist /app/
+`), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.From == "infra" && rel.To == "app" && rel.Type == "builds" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'builds' de infra para app via COPY --from, relações encontradas: %+v", bp.Relations)
+	}
+}
+
+func TestScan_DetectsHelmRemoteRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	chartDir := filepath.Join(tmpDir, "charts", "myapp")
+	os.MkdirAll(chartDir, 0755)
+	os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(`apiVersion: v2
+name: myapp
+dependencies:
+  - name: redis
+    repository: "https://charts.bitnami.com/bitnami"
+    version: "17.0.0"
+`), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.Type == "depends" && rel.To == "https://charts.bitnami.com/bitnami" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'depends' para repositório remoto Helm, relações encontradas: %+v", bp.Relations)
+	}
+}
+
+func TestScan_DetectsPackageJsonRelations(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Criar lib local
+	libDir := filepath.Join(tmpDir, "shared-lib")
+	os.MkdirAll(libDir, 0755)
+	os.WriteFile(filepath.Join(libDir, "package.json"), []byte(`{"name":"shared-lib"}`), 0644)
+
+	// Criar app com dependência local
+	appDir := filepath.Join(tmpDir, "webapp")
+	os.MkdirAll(appDir, 0755)
+	os.WriteFile(filepath.Join(appDir, "package.json"), []byte(`{
+		"name": "webapp",
+		"dependencies": {
+			"shared-lib": "file:../shared-lib",
+			"express": "^4.18.0"
+		}
+	}`), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	encontrado := false
+	for _, rel := range bp.Relations {
+		if rel.From == "webapp" && rel.To == "shared-lib" && rel.Type == "imports" {
+			encontrado = true
+			break
+		}
+	}
+	if !encontrado {
+		t.Errorf("esperado relação 'imports' de webapp para shared-lib via package.json, relações encontradas: %+v", bp.Relations)
 	}
 }
 

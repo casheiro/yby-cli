@@ -38,4 +38,14 @@ var (
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#666666")).
 			MarginTop(1)
+
+	// filterStyle estiliza indicadores de filtro ativo na status bar
+	filterStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#7D56F4")).
+			Bold(true)
+
+	// reconnectingStyle estiliza o indicador de reconexão
+	reconnectingStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFD700")).
+				Bold(true)
 )

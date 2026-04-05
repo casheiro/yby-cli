@@ -57,6 +57,7 @@ type InitOptions struct {
 	Offline        bool
 	NonInteractive bool
 	Force          bool
+	Update         bool
 }
 
 var opts InitOptions
@@ -72,6 +73,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 	initCmd.Flags().BoolVar(&opts.Force, "force", false, "Sobrescrever projeto existente sem confirmação")
+	initCmd.Flags().BoolVar(&opts.Update, "update", false, "Atualiza scaffold preservando alterações do usuário")
 
 	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
@@ -105,6 +107,12 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
   # AI-Native Initialization
   yby init --description "A secure payment gateway for crypto assets"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validação: --update e --force são mutuamente exclusivos
+		if opts.Update && opts.Force {
+			return errors.New(errors.ErrCodeValidation,
+				"--update e --force são mutuamente exclusivos. Use --update para merge ou --force para sobrescrever")
+		}
+
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
 		// 1. Build Context (Merge Flags + Prompts)
@@ -157,10 +165,22 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 		}
 
 		// 1.6 Carregar manifest anterior como defaults (se existir e não for --force puro)
-		if existingManifest, err := scaffold.LoadProjectManifest(targetDir); err == nil {
+		var existingManifest *scaffold.ProjectManifest
+		if m, err := scaffold.LoadProjectManifest(targetDir); err == nil {
+			existingManifest = m
 			defaults := scaffold.ManifestToContext(existingManifest)
 			scaffold.MergeContextDefaults(ctx, defaults)
 			fmt.Println("📋 Configurações anteriores carregadas como base.")
+		}
+
+		// 1.7 Fluxo --update: merge inteligente preservando alterações do usuário
+		if opts.Update {
+			if existingManifest == nil {
+				return errors.New(errors.ErrCodeValidation,
+					"--update requer um projeto já inicializado com manifest (.yby/project.yaml)")
+			}
+
+			return runUpdateFlow(targetDir, ctx, existingManifest, &opts)
 		}
 
 		// 2. Execute Scaffold
@@ -778,4 +798,91 @@ func inferContext(ctx *scaffold.BlueprintContext) {
 	if ctx.Topology == "complete" {
 		ctx.ImpactLevel += " (Enterprise Topology)"
 	}
+}
+
+// runUpdateFlow executa o fluxo de --update: gera scaffold em tmpdir, computa merge plan e aplica.
+func runUpdateFlow(targetDir string, ctx *scaffold.BlueprintContext, manifest *scaffold.ProjectManifest, flags *InitOptions) error {
+	fmt.Println("🔄 Modo Update: analisando alterações...")
+
+	// 1. Gerar scaffold em diretório temporário
+	tmpDir, err := os.MkdirTemp("", "yby-update-*")
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeIO, "erro ao criar diretório temporário para update")
+	}
+	defer os.RemoveAll(tmpDir)
+
+	layers := []fs.FS{templates.Assets}
+	compositeFS := filesystem.NewCompositeFS(layers...)
+
+	if err := scaffold.Apply(tmpDir, ctx, compositeFS); err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao gerar scaffold para comparação")
+	}
+
+	// 2. Computar plano de merge
+	manifestHashes := manifest.Spec.FileHashes
+	if manifestHashes == nil {
+		manifestHashes = make(map[string]string)
+	}
+
+	plan, err := scaffold.ComputeMergePlan(manifestHashes, targetDir, tmpDir)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao computar plano de merge")
+	}
+
+	// 3. Exibir resumo do plano
+	summary := plan.Summary()
+	fmt.Println("\nPlano de Merge:")
+	if n := summary[scaffold.ActionNone]; n > 0 {
+		fmt.Printf("  %d arquivos sem alterações\n", n)
+	}
+	if n := summary[scaffold.ActionUpdate]; n > 0 {
+		fmt.Printf("  %d arquivos a atualizar\n", n)
+	}
+	if n := summary[scaffold.ActionPreserve]; n > 0 {
+		fmt.Printf("  %d arquivos preservados\n", n)
+	}
+	if n := summary[scaffold.ActionConflict]; n > 0 {
+		fmt.Printf("  %d conflitos detectados\n", n)
+	}
+	if n := summary[scaffold.ActionNew]; n > 0 {
+		fmt.Printf("  %d arquivos novos\n", n)
+	}
+
+	// Se não há nada a fazer, sair cedo
+	totalChanges := summary[scaffold.ActionUpdate] + summary[scaffold.ActionConflict] + summary[scaffold.ActionNew]
+	if totalChanges == 0 {
+		fmt.Println("\n✅ Nenhuma alteração necessária. Projeto já está atualizado.")
+		return nil
+	}
+
+	// 4. Confirmar com o usuário
+	if !flags.NonInteractive {
+		var confirm bool
+		confirmPrompt := &survey.Confirm{
+			Message: "Deseja aplicar o plano de merge?",
+			Default: true,
+		}
+		if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
+			return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+		}
+	}
+
+	// 5. Aplicar plano com resolver de conflitos
+	resolver := &scaffold.NonInteractiveResolver{Strategy: "conflict-markers"}
+	if err := scaffold.ApplyMergePlan(plan, targetDir, tmpDir, resolver); err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao aplicar plano de merge")
+	}
+
+	// 6. Salvar manifest com novos hashes
+	newHashes, err := scaffold.ComputeDirHashes(targetDir)
+	if err != nil {
+		fmt.Printf("⚠️  Falha ao computar hashes pós-merge: %v\n", err)
+	} else {
+		if err := scaffold.SaveProjectManifest(targetDir, ctx, newHashes); err != nil {
+			fmt.Printf("⚠️  Falha ao salvar project manifest: %v\n", err)
+		}
+	}
+
+	fmt.Println("✅ Scaffold atualizado com sucesso!")
+	return nil
 }

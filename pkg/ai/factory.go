@@ -85,11 +85,26 @@ func GetProvider(ctx context.Context, preferred string) Provider {
 	return nil
 }
 
-// wrapProvider encadeia os decorators: provider -> TokenAwareProvider -> RetryProvider.
+// wrapProvider encadeia os decorators na ordem:
+// Raw -> CachedEmbedding -> TokenAware -> CostTracking -> RateLimit -> Retry.
 func wrapProvider(p Provider, model string) Provider {
 	if p == nil {
 		return nil
 	}
-	tokenAware := NewTokenAwareProvider(p, model)
-	return NewRetryProvider(tokenAware, retry.DefaultOptions(), nil)
+	cached := NewCachedEmbeddingProvider(p, defaultEmbeddingCacheSize, defaultEmbeddingCacheTTL)
+	tokenAware := NewTokenAwareProvider(cached, model)
+	costTracking := NewCostTrackingProvider(tokenAware, model)
+	rps := getRateLimitConfig(p.Name())
+	rateLimited := NewRateLimitProvider(costTracking, rps)
+	return NewRetryProvider(rateLimited, retry.DefaultOptions(), nil)
+}
+
+// getRateLimitConfig retorna a taxa de req/s para o provider,
+// priorizando configuração do usuário sobre o default.
+func getRateLimitConfig(providerName string) float64 {
+	cfg, err := config.Load()
+	if err == nil && cfg.AI.RateLimit.RequestsPerSecond > 0 {
+		return cfg.AI.RateLimit.RequestsPerSecond
+	}
+	return getDefaultRateForProvider(providerName)
 }

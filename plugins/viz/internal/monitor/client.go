@@ -12,12 +12,18 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// ListFilter contém filtros para listagem de recursos
+type ListFilter struct {
+	Namespace     string
+	LabelSelector string
+}
+
 // Client define a interface para acessar recursos Kubernetes
 type Client interface {
-	GetPods() ([]Pod, error)
-	GetDeployments() ([]Deployment, error)
-	GetServices() ([]Service, error)
-	GetNodes() ([]Node, error)
+	GetPods(filter ListFilter) ([]Pod, error)
+	GetDeployments(filter ListFilter) ([]Deployment, error)
+	GetServices(filter ListFilter) ([]Service, error)
+	GetNodes(filter ListFilter) ([]Node, error)
 }
 
 // K8sClient conecta ao cluster real
@@ -100,9 +106,14 @@ func (c *K8sClient) fetchPodMetrics() map[string][2]string {
 	return result
 }
 
-// GetPods lista todos os pods de todos os namespaces com métricas de CPU e memória.
-func (c *K8sClient) GetPods() ([]Pod, error) {
-	list, err := c.clientset.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
+// GetPods lista pods com filtros opcionais de namespace e label.
+func (c *K8sClient) GetPods(filter ListFilter) ([]Pod, error) {
+	opts := metav1.ListOptions{}
+	if filter.LabelSelector != "" {
+		opts.LabelSelector = filter.LabelSelector
+	}
+	ns := filter.Namespace
+	list, err := c.clientset.CoreV1().Pods(ns).List(context.Background(), opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
@@ -134,9 +145,14 @@ func (c *K8sClient) GetPods() ([]Pod, error) {
 	return pods, nil
 }
 
-// GetDeployments lista todos os deployments de todos os namespaces
-func (c *K8sClient) GetDeployments() ([]Deployment, error) {
-	list, err := c.clientset.AppsV1().Deployments("").List(context.Background(), metav1.ListOptions{})
+// GetDeployments lista deployments com filtros opcionais de namespace e label.
+func (c *K8sClient) GetDeployments(filter ListFilter) ([]Deployment, error) {
+	opts := metav1.ListOptions{}
+	if filter.LabelSelector != "" {
+		opts.LabelSelector = filter.LabelSelector
+	}
+	ns := filter.Namespace
+	list, err := c.clientset.AppsV1().Deployments(ns).List(context.Background(), opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar deployments: %w", err)
 	}
@@ -159,9 +175,14 @@ func (c *K8sClient) GetDeployments() ([]Deployment, error) {
 	return deps, nil
 }
 
-// GetServices lista todos os services de todos os namespaces
-func (c *K8sClient) GetServices() ([]Service, error) {
-	list, err := c.clientset.CoreV1().Services("").List(context.Background(), metav1.ListOptions{})
+// GetServices lista services com filtros opcionais de namespace e label.
+func (c *K8sClient) GetServices(filter ListFilter) ([]Service, error) {
+	opts := metav1.ListOptions{}
+	if filter.LabelSelector != "" {
+		opts.LabelSelector = filter.LabelSelector
+	}
+	ns := filter.Namespace
+	list, err := c.clientset.CoreV1().Services(ns).List(context.Background(), opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar services: %w", err)
 	}
@@ -185,9 +206,13 @@ func (c *K8sClient) GetServices() ([]Service, error) {
 	return svcs, nil
 }
 
-// GetNodes lista todos os nodes do cluster
-func (c *K8sClient) GetNodes() ([]Node, error) {
-	list, err := c.clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+// GetNodes lista nodes com filtros opcionais de label.
+func (c *K8sClient) GetNodes(filter ListFilter) ([]Node, error) {
+	opts := metav1.ListOptions{}
+	if filter.LabelSelector != "" {
+		opts.LabelSelector = filter.LabelSelector
+	}
+	list, err := c.clientset.CoreV1().Nodes().List(context.Background(), opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar nodes: %w", err)
 	}
