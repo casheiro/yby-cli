@@ -3,11 +3,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,31 +87,6 @@ func TestHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-func TestExportJSON_FormatoValido(t *testing.T) {
-	patch := "kubectl set resources..."
-	result := AnalysisResult{
-		RootCause:       "OOM",
-		TechnicalDetail: "Container excedeu limites de memória",
-		Confidence:      85,
-		SuggestedFix:    "Aumentar limits.memory",
-		KubectlPatch:    &patch,
-	}
-	content, err := exportJSON(result, "meu-pod", "default")
-	if err != nil {
-		t.Fatalf("exportJSON falhou: %v", err)
-	}
-	var report FullReport
-	if err := json.Unmarshal([]byte(content), &report); err != nil {
-		t.Fatalf("JSON inválido: %v", err)
-	}
-	if report.Metadata.Pod != "meu-pod" {
-		t.Errorf("pod esperado 'meu-pod', obtido %q", report.Metadata.Pod)
-	}
-	if report.Analysis.Confidence != 85 {
-		t.Errorf("confiança esperada 85, obtida %d", report.Analysis.Confidence)
-	}
-}
-
 func TestExportMarkdown_ContemSecoes(t *testing.T) {
 	patch := "kubectl patch..."
 	result := AnalysisResult{
@@ -146,30 +119,6 @@ func TestExportMarkdown_SemComandoOpcional(t *testing.T) {
 	content := exportMarkdown(result, "pod-config", "default")
 	if strings.Contains(content, "Comando Sugerido") {
 		t.Error("markdown não deveria conter seção de comando quando KubectlPatch é nil")
-	}
-}
-
-func TestWriteReport_ParaArquivo(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "report.json")
-	err := writeReport(`{"test": true}`, filePath)
-	if err != nil {
-		t.Fatalf("writeReport falhou: %v", err)
-	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		t.Fatalf("falha ao ler arquivo: %v", err)
-	}
-	if string(data) != `{"test": true}` {
-		t.Errorf("conteúdo inesperado: %s", data)
-	}
-}
-
-func TestCacheKey_Deterministico(t *testing.T) {
-	key1 := cacheKey("default", "pod-1", "log line 1")
-	key2 := cacheKey("default", "pod-1", "log line 1")
-	if key1 != key2 {
-		t.Error("cacheKey deveria ser determinístico para os mesmos inputs")
 	}
 }
 

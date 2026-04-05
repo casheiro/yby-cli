@@ -1,0 +1,63 @@
+{
+  "run_id": "20260404T232612-sentinel-unit-tests",
+  "profile": "fast",
+  "topic": "Plugin sentinel sem testes unitários — cache.go, report.go e scan.go não têm testes individuais. preciso que analise e veja como fazer para criar os testes necessários para que o plugin tenha testes unitários adequados",
+  "slug": "sentinel-unit-tests",
+  "started_at": "2026-04-04T23:26:12.38888416Z",
+  "duration": "29m36s",
+  "status": "partial",
+  "iterations": 17,
+  "total_tokens": 102707,
+  "cache_read": 5531531,
+  "cache_write": 468776,
+  "cost_usd": 16.511301999999997,
+  "tasks_total": 4,
+  "tasks_executed": 4,
+  "tasks_failed": 0,
+  "quality_rate": 100,
+  "circuit_trips": 0,
+  "artifact_path": "",
+  "spec_dir": "agile/planning/sentinel-unit-tests",
+  "phases": [
+    {
+      "name": "fast-temper",
+      "model": "sonnet",
+      "iterations": 1,
+      "cost_usd": 0.7767809999999999,
+      "tokens": 4912,
+      "avg_dur_ms": 90914
+    },
+    {
+      "name": "hammer",
+      "model": "sonnet",
+      "iterations": 7,
+      "cost_usd": 10.934813999999998,
+      "tokens": 48245,
+      "avg_dur_ms": 118115
+    },
+    {
+      "name": "self-review",
+      "model": "sonnet",
+      "iterations": 7,
+      "cost_usd": 3.287103,
+      "tokens": 31928,
+      "avg_dur_ms": 76130
+    },
+    {
+      "name": "hone",
+      "model": "haiku",
+      "iterations": 1,
+      "cost_usd": 0.386508,
+      "tokens": 2198,
+      "avg_dur_ms": 134944
+    },
+    {
+      "name": "document",
+      "model": "haiku",
+      "iterations": 1,
+      "cost_usd": 1.126096,
+      "tokens": 15006,
+      "avg_dur_ms": 147868
+    }
+  ]
+}
