@@ -122,7 +122,6 @@ func TestExportMarkdown_SemComandoOpcional(t *testing.T) {
 	}
 }
 
-
 func TestCacheKey_DiferenteParaInputsDiferentes(t *testing.T) {
 	key1 := cacheKey("default", "pod-1", "log A")
 	key2 := cacheKey("default", "pod-2", "log A")
