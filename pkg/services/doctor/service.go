@@ -7,23 +7,6 @@ import (
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
-type CheckResult struct {
-	Name    string
-	Status  bool
-	Message string
-}
-
-type DoctorReport struct {
-	System  []CheckResult
-	Tools   []CheckResult
-	Cluster []CheckResult
-	CRDs    []CheckResult
-}
-
-type Service interface {
-	Run(ctx context.Context) *DoctorReport
-}
-
 type doctorService struct {
 	runner shared.Runner
 }

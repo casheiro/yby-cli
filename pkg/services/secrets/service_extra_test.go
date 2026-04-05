@@ -139,3 +139,97 @@ func TestGenerateAgeKey_SemChavePublica(t *testing.T) {
 	_, err := svc.GenerateAgeKey(ctx, "/tmp/key.txt")
 	assert.ErrorContains(t, err, "chave pública não encontrada")
 }
+
+// TestGenerateSecretYAML_Success cobre o fluxo feliz de GenerateSecretYAML
+func TestGenerateSecretYAML_Success(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	svc := NewService(runner, new(MockFS))
+
+	runner.On("RunCombinedOutput", ctx, "kubectl", []string{
+		"create", "secret", "generic", "my-secret",
+		"--namespace", "default",
+		"--from-literal=password=s3cret",
+		"--dry-run=client", "-o", "yaml",
+	}).Return([]byte("apiVersion: v1\nkind: Secret\n"), nil)
+
+	out, err := svc.GenerateSecretYAML(ctx, "my-secret", "default", "password", "s3cret")
+	assert.NoError(t, err)
+	assert.Contains(t, string(out), "Secret")
+	runner.AssertExpectations(t)
+}
+
+// TestGenerateSecretYAML_KubectlError cobre falha do kubectl
+func TestGenerateSecretYAML_KubectlError(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	svc := NewService(runner, new(MockFS))
+
+	runner.On("RunCombinedOutput", ctx, "kubectl", mock.Anything).
+		Return(nil, errors.New("kubectl error"))
+
+	_, err := svc.GenerateSecretYAML(ctx, "my-secret", "default", "key", "val")
+	assert.ErrorContains(t, err, "falha ao gerar secret YAML")
+}
+
+// TestSealWithKubeseal_Success cobre o fluxo feliz de SealWithKubeseal
+func TestSealWithKubeseal_Success(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "secret-yaml", "kubeseal",
+		[]string{"--format", "yaml"}).
+		Return([]byte("sealed-content"), nil)
+	fsys.On("MkdirAll", "/tmp", mock.Anything).Return(nil)
+	fsys.On("WriteFile", "/tmp/sealed.yaml", []byte("sealed-content"), mock.Anything).Return(nil)
+
+	err := svc.SealWithKubeseal(ctx, []byte("secret-yaml"), "/tmp/sealed.yaml")
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+// TestSealWithKubeseal_KubesealError cobre falha do kubeseal
+func TestSealWithKubeseal_KubesealError(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	svc := NewService(runner, new(MockFS))
+
+	runner.On("RunStdinOutput", ctx, "data", "kubeseal", mock.Anything).
+		Return(nil, errors.New("kubeseal error"))
+
+	err := svc.SealWithKubeseal(ctx, []byte("data"), "/tmp/out.yaml")
+	assert.ErrorContains(t, err, "erro ao executar kubeseal")
+}
+
+// TestSealWithKubeseal_MkdirError cobre falha ao criar diretório
+func TestSealWithKubeseal_MkdirError(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "data", "kubeseal", mock.Anything).
+		Return([]byte("sealed"), nil)
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(errors.New("mkdir fail"))
+
+	err := svc.SealWithKubeseal(ctx, []byte("data"), "/tmp/dir/out.yaml")
+	assert.ErrorContains(t, err, "erro ao criar diretório")
+}
+
+// TestSealWithKubeseal_WriteError cobre falha ao salvar arquivo
+func TestSealWithKubeseal_WriteError(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "data", "kubeseal", mock.Anything).
+		Return([]byte("sealed"), nil)
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(nil)
+	fsys.On("WriteFile", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("write fail"))
+
+	err := svc.SealWithKubeseal(ctx, []byte("data"), "/tmp/out.yaml")
+	assert.ErrorContains(t, err, "erro ao salvar sealed secret")
+}

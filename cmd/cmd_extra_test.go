@@ -5,33 +5,43 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/casheiro/yby-cli/pkg/services/setup"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/stretchr/testify/assert"
 )
 
-// ---- configureDirenv — função pura interna ----
+// ---- ConfigureDirenv — via serviço de setup ----
 
 func TestConfigureDirenv_CreatesEnvrc(t *testing.T) {
 	tmpDir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(origDir)
+	runner := &shared.RealRunner{}
+	fsys := &shared.RealFilesystem{}
+	checker := &setup.SystemToolChecker{Runner: runner}
+	pkg := &setup.SystemPackageManager{Runner: runner}
+	svc := setup.NewService(checker, pkg, runner, fsys)
 
-	configureDirenv()
+	// Ignora erro de direnv allow (pode não estar instalado no CI)
+	_ = svc.ConfigureDirenv(tmpDir)
 
 	_, err := os.Stat(filepath.Join(tmpDir, ".envrc"))
-	assert.NoError(t, err, ".envrc should have been created")
+	assert.NoError(t, err, ".envrc deveria ter sido criado")
 }
 
 func TestConfigureDirenv_DoesNotOverwrite(t *testing.T) {
 	tmpDir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(origDir)
+	envrcPath := filepath.Join(tmpDir, ".envrc")
+	os.WriteFile(envrcPath, []byte("# existing"), 0644)
 
-	os.WriteFile(".envrc", []byte("# existing"), 0644)
-	configureDirenv()
+	runner := &shared.RealRunner{}
+	fsys := &shared.RealFilesystem{}
+	checker := &setup.SystemToolChecker{Runner: runner}
+	pkg := &setup.SystemPackageManager{Runner: runner}
+	svc := setup.NewService(checker, pkg, runner, fsys)
 
-	data, _ := os.ReadFile(".envrc")
+	// Ignora erro de direnv allow
+	_ = svc.ConfigureDirenv(tmpDir)
+
+	data, _ := os.ReadFile(envrcPath)
 	assert.Equal(t, "# existing", string(data))
 }
 

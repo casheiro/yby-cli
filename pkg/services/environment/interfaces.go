@@ -19,6 +19,7 @@ type ClusterManager interface {
 	Exists(ctx context.Context, name string) (bool, error)
 	Create(ctx context.Context, name string, configFile string) error
 	Start(ctx context.Context, name string) error
+	Delete(ctx context.Context, name string) error
 }
 
 // BootstrapService abstracts the bootstrap process

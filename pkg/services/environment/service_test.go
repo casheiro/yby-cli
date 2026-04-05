@@ -14,6 +14,7 @@ type MockClusterManager struct {
 	ExistsFunc func(ctx context.Context, name string) (bool, error)
 	CreateFunc func(ctx context.Context, name string, configFile string) error
 	StartFunc  func(ctx context.Context, name string) error
+	DeleteFunc func(ctx context.Context, name string) error
 }
 
 func (m *MockClusterManager) Exists(ctx context.Context, name string) (bool, error) {
@@ -33,6 +34,13 @@ func (m *MockClusterManager) Create(ctx context.Context, name string, configFile
 func (m *MockClusterManager) Start(ctx context.Context, name string) error {
 	if m.StartFunc != nil {
 		return m.StartFunc(ctx, name)
+	}
+	return nil
+}
+
+func (m *MockClusterManager) Delete(ctx context.Context, name string) error {
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, name)
 	}
 	return nil
 }

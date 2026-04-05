@@ -1,19 +1,47 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/services/status"
 	"github.com/stretchr/testify/assert"
 )
 
+// mockStatusService implementa status.Service para testes do cmd.
+type mockStatusService struct {
+	report *status.StatusReport
+}
+
+func (m *mockStatusService) Check(_ context.Context) *status.StatusReport {
+	return m.report
+}
+
 func TestStatusCmd_WithMock(t *testing.T) {
+	origFactory := newStatusService
+	defer func() { newStatusService = origFactory }()
+
+	newStatusService = func(_ shared.Runner) status.Service {
+		return &mockStatusService{
+			report: &status.StatusReport{
+				Nodes:   status.ComponentStatus{Available: true, Output: "node1  Ready"},
+				ArgoCD:  status.ComponentStatus{Available: true, Output: "argocd-server Running"},
+				Ingress: status.ComponentStatus{Available: true, Output: "my-ing nginx"},
+				KEDA:    status.ComponentStatus{Available: true, Output: "my-scaler"},
+				Kepler:  status.ComponentStatus{Available: true, Message: "Sensor Kepler ATIVO e monitorando o cluster.", Output: "kepler Running"},
+			},
+		}
+	}
+
+	// mockExecCommand continua necessário por conta do lookPath no cmd
 	teardown := mockExecCommand()
 	defer teardown()
 
-	// statusCmd usa RunE, então verificamos que não causa panic
 	assert.NotPanics(t, func() {
-		_ = statusCmd.RunE(statusCmd, []string{})
+		err := statusCmd.RunE(statusCmd, []string{})
+		assert.NoError(t, err)
 	})
 }
 
