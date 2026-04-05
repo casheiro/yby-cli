@@ -189,6 +189,20 @@ func TestCheck_IngressVazio(t *testing.T) {
 	assert.Empty(t, report.Ingress.Output)
 }
 
+func TestCheck_IngressErro(t *testing.T) {
+	inspector := &mockInspector{
+		getIngressesFunc: func(_ context.Context) (string, error) {
+			return "", fmt.Errorf("erro ao listar ingresses")
+		},
+	}
+
+	svc := NewService(inspector)
+	report := svc.Check(context.Background())
+
+	assert.False(t, report.Ingress.Available, "ingress não deve estar disponível quando GetIngresses falha")
+	assert.Contains(t, report.Ingress.Message, "Erro ao obter ingresses")
+}
+
 func TestCheck_ArgoCDNaoEncontrado(t *testing.T) {
 	inspector := &mockInspector{
 		getArgoCDPodsFunc: func(_ context.Context) (string, error) {

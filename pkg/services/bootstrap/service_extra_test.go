@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBootstrapService_EnsureToolsInstalled_Success(t *testing.T) {
@@ -161,12 +163,243 @@ func TestBootstrapService_PhaseConfigBootstrap_Local(t *testing.T) {
 	}
 }
 
-func TestBootstrapService_PhaseSecrets(t *testing.T) {
+func TestBootstrapService_PhaseSecrets_Default(t *testing.T) {
+	// Sem blueprint → detectSecretsStrategy retorna "sealed-secrets" (branch default)
 	svc := NewService(&MockRunner{}, &MockFilesystem{}, &MockK8sClient{})
-	// phaseSecrets is a placeholder, just verify it returns nil
 	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
 	if err != nil {
-		t.Errorf("phaseSecrets: unexpected error: %v", err)
+		t.Errorf("phaseSecrets default: erro inesperado: %v", err)
+	}
+}
+
+// lookPathSelectiveRunner permite controlar quais ferramentas são encontradas via LookPath.
+type lookPathSelectiveRunner struct {
+	MockRunner
+	available map[string]bool
+}
+
+func (r *lookPathSelectiveRunner) LookPath(file string) (string, error) {
+	if r.available[file] {
+		return "/usr/bin/" + file, nil
+	}
+	return "", errors.New(file + " não encontrado")
+}
+
+func TestBootstrapService_PhaseSecrets_SOPS_Success(t *testing.T) {
+	// Blueprint retorna "sops" e ambas ferramentas estão disponíveis
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	runner := &lookPathSelectiveRunner{
+		available: map[string]bool{"sops": true, "age": true, "kubectl": true, "helm": true},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	if err != nil {
+		t.Errorf("phaseSecrets sops sucesso: erro inesperado: %v", err)
+	}
+}
+
+func TestBootstrapService_PhaseSecrets_SOPS_MissingSops(t *testing.T) {
+	// Blueprint retorna "sops" mas binário sops não está disponível
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	runner := &lookPathSelectiveRunner{
+		available: map[string]bool{"age": true},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	if err == nil {
+		t.Error("esperava erro quando sops não está instalado, mas obteve nil")
+	}
+}
+
+func TestBootstrapService_PhaseSecrets_SOPS_MissingAge(t *testing.T) {
+	// Blueprint retorna "sops", sops existe mas age não
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	runner := &lookPathSelectiveRunner{
+		available: map[string]bool{"sops": true},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	if err == nil {
+		t.Error("esperava erro quando age não está instalado, mas obteve nil")
+	}
+}
+
+func TestBootstrapService_PhaseSecrets_ExternalSecrets(t *testing.T) {
+	// Blueprint retorna "external-secrets" → executa kubectl get crd
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: external-secrets
+`), nil
+		},
+	}
+	var kubectlCalled bool
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			if name == "kubectl" && len(args) > 0 && args[0] == "get" {
+				kubectlCalled = true
+			}
+			return nil
+		},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.phaseSecrets(context.Background(), "/infra", "https://github.com/test/repo.git")
+	if err != nil {
+		t.Errorf("phaseSecrets external-secrets: erro inesperado: %v", err)
+	}
+	if !kubectlCalled {
+		t.Error("esperava chamada kubectl get crd para external-secrets")
+	}
+}
+
+func TestBootstrapService_DetectSecretsStrategy_FileNotFound(t *testing.T) {
+	// FS retorna erro → deve retornar "sealed-secrets"
+	fsys := &MockFilesystem{} // ReadFile retorna ErrNotExist por padrão
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	strategy := svc.detectSecretsStrategy("/project")
+	assert.Equal(t, "sealed-secrets", strategy, "arquivo inexistente deve retornar sealed-secrets")
+}
+
+func TestBootstrapService_DetectSecretsStrategy_InvalidYAML(t *testing.T) {
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte("invalid: [yaml: :::"), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	strategy := svc.detectSecretsStrategy("/project")
+	assert.Equal(t, "sealed-secrets", strategy, "YAML inválido deve retornar sealed-secrets")
+}
+
+func TestBootstrapService_DetectSecretsStrategy_PromptFound(t *testing.T) {
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	strategy := svc.detectSecretsStrategy("/project")
+	assert.Equal(t, "sops", strategy, "deve retornar a estratégia do blueprint")
+}
+
+func TestBootstrapService_DetectSecretsStrategy_PromptNotFound(t *testing.T) {
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: other.setting
+    default: some-value
+`), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	strategy := svc.detectSecretsStrategy("/project")
+	assert.Equal(t, "sealed-secrets", strategy, "prompt não encontrado deve retornar sealed-secrets")
+}
+
+func TestBootstrapService_DetectSecretsStrategy_NonStringDefault(t *testing.T) {
+	// Prompt encontrado mas default não é string → deve retornar "sealed-secrets"
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: 42
+`), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	strategy := svc.detectSecretsStrategy("/project")
+	assert.Equal(t, "sealed-secrets", strategy, "default não-string deve retornar sealed-secrets")
+}
+
+func TestBootstrapService_Run_CheckEnvVarsFails(t *testing.T) {
+	// Contexto remoto sem GITHUB_REPO e sem blueprint → checkEnvVars deve falhar
+	os.Unsetenv("GITHUB_REPO")
+	fsys := &MockFilesystem{} // ReadFile retorna ErrNotExist → blueprintRepo = ""
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	err := svc.Run(context.Background(), BootstrapOptions{
+		Root:        "/tmp/infra",
+		Context:     "remote",
+		Environment: "remote",
+	})
+	if err == nil {
+		t.Error("esperava erro de checkEnvVars para contexto remoto sem repo, mas obteve nil")
+	}
+}
+
+func TestBootstrapService_Run_PhaseSecretsFails(t *testing.T) {
+	// Estratégia sops mas binário sops ausente → phaseSecrets falha dentro de Run
+	os.Setenv("GITHUB_REPO", "https://github.com/env/repo.git")
+	defer os.Unsetenv("GITHUB_REPO")
+
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(`prompts:
+  - id: secrets.strategy
+    default: sops
+`), nil
+		},
+	}
+	runner := &lookPathSelectiveRunner{
+		available: map[string]bool{"kubectl": true, "helm": true},
+	}
+	svc := NewService(runner, fsys, &MockK8sClient{})
+
+	err := svc.Run(context.Background(), BootstrapOptions{Root: "/tmp/infra"})
+	if err == nil {
+		t.Error("esperava erro de phaseSecrets (sops ausente), mas obteve nil")
+	}
+}
+
+func TestBootstrapService_Run_UsesGithubRepoEnv(t *testing.T) {
+	// Testa o branch onde GITHUB_REPO substitui blueprintRepo
+	os.Setenv("GITHUB_REPO", "https://github.com/env/repo.git")
+	defer os.Unsetenv("GITHUB_REPO")
+
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte("prompts: []"), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	err := svc.Run(context.Background(), BootstrapOptions{Root: "/tmp/infra"})
+	if err != nil {
+		t.Fatalf("Run com GITHUB_REPO: erro inesperado: %v", err)
 	}
 }
 

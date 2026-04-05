@@ -233,3 +233,62 @@ func TestSealWithKubeseal_WriteError(t *testing.T) {
 	err := svc.SealWithKubeseal(ctx, []byte("data"), "/tmp/out.yaml")
 	assert.ErrorContains(t, err, "erro ao salvar sealed secret")
 }
+
+// TestEncryptWithSOPS_MkdirAllFalha cobre o branch de erro em MkdirAll dentro de EncryptWithSOPS
+func TestEncryptWithSOPS_MkdirAllFalha(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "data", "sops", mock.Anything).
+		Return([]byte("encrypted"), nil)
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(errors.New("mkdir falhou"))
+
+	err := svc.EncryptWithSOPS(ctx, "", []byte("data"), "/tmp/dir/out.yaml")
+	assert.ErrorContains(t, err, "erro ao criar diretório")
+}
+
+// TestEncryptWithSOPS_WriteFileFalha cobre o branch de erro em WriteFile dentro de EncryptWithSOPS
+func TestEncryptWithSOPS_WriteFileFalha(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	runner.On("RunStdinOutput", ctx, "data", "sops", mock.Anything).
+		Return([]byte("encrypted"), nil)
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(nil)
+	fsys.On("WriteFile", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("write falhou"))
+
+	err := svc.EncryptWithSOPS(ctx, "", []byte("data"), "/tmp/out.yaml")
+	assert.ErrorContains(t, err, "erro ao salvar arquivo")
+}
+
+// TestGenerateAgeKey_MkdirAllFalha cobre o branch de erro em MkdirAll dentro de GenerateAgeKey
+func TestGenerateAgeKey_MkdirAllFalha(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(errors.New("mkdir falhou"))
+
+	_, err := svc.GenerateAgeKey(ctx, "/tmp/dir/key.txt")
+	assert.ErrorContains(t, err, "erro ao criar diretório para chave age")
+}
+
+// TestGenerateAgeKey_AgeKeygenFalha cobre o branch de erro do age-keygen dentro de GenerateAgeKey
+func TestGenerateAgeKey_AgeKeygenFalha(t *testing.T) {
+	ctx := context.Background()
+	runner := new(MockRunner)
+	fsys := new(MockFS)
+	svc := NewService(runner, fsys)
+
+	fsys.On("MkdirAll", mock.Anything, mock.Anything).Return(nil)
+	runner.On("RunCombinedOutput", ctx, "age-keygen", mock.Anything).
+		Return(nil, errors.New("age-keygen não encontrado"))
+
+	_, err := svc.GenerateAgeKey(ctx, "/tmp/key.txt")
+	assert.ErrorContains(t, err, "erro ao gerar chave age")
+}
