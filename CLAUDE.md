@@ -168,6 +168,17 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 - **Reconexão**: `RetryClient` com backoff exponencial, preserva último estado durante reconexão
 - **Scroll**: PgUp/PgDn, Home/End, indicador de posição na status bar
 
+### Enterprise Overrides
+
+Sistema de customização enterprise via arquivo YAML (`pkg/scaffold/overrides.go`):
+- **Struct `EnterpriseOverrides`** com sub-structs: Registry, Cloud, Namespaces, Ingress, TLS, Helm, Images, Git, Profiles, Observability
+- **Carregamento**: `LoadOverrides(paths...)` com precedência `--config` > `.yby/overrides.yaml` (projeto) > `~/.yby/overrides.yaml` (global) > defaults vazios
+- **Funções Resolve***: `ResolveImage()`, `ResolveNamespace()`, `ResolveStorageClass()`, `ResolveIngressClass()`, `ResolveHelmRepo()`, `ResolveChartVersion()`, `ResolveTLSIssuer()`, `ResolveGitProvider()`, `ResolveObservability()`, `ResourceProfile()`
+- **Integração com templates**: `contextFuncMap(ctx)` em `engine.go` disponibiliza todas as funções Resolve* nos templates `.tmpl`
+- **BlueprintContext**: campo `Overrides *EnterpriseOverrides` passa overrides para toda a cadeia de rendering
+- **Bootstrap**: `BootstrapOptions.Overrides` parametriza Helm repos, versões e namespaces
+- **Backward-compat**: sem overrides, todas as funções retornam o valor original (zero breaking change)
+
 ## Convenções
 
 - **Versionamento:** ldflags injetam `Version`, `commit`, `date` via GoReleaser

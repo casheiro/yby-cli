@@ -21,7 +21,7 @@ spec:
       {{- end }}
   destination:
     server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
-    namespace: monitoring
+    namespace: {{ .Values.namespaces.monitoring | default "monitoring" }}
   syncPolicy:
     automated:
       prune: true

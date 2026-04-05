@@ -277,7 +277,7 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 		// Render Template
 		destPath = strings.TrimSuffix(destPath, ".tmpl") // Remove .tmpl extension from target
 
-		tmpl, err := template.New(filepath.Base(srcPath)).Funcs(funcMap()).Parse(string(content))
+		tmpl, err := template.New(filepath.Base(srcPath)).Funcs(contextFuncMap(ctx)).Parse(string(content))
 		if err != nil {
 			return ybyerrors.Wrap(err, ybyerrors.ErrCodeScaffold, fmt.Sprintf("falha ao analisar template %s", srcPath))
 		}
@@ -305,14 +305,40 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 }
 
 func funcMap() template.FuncMap {
+	return contextFuncMap(nil)
+}
+
+// contextFuncMap retorna o FuncMap com funções que resolvem overrides enterprise.
+func contextFuncMap(ctx *BlueprintContext) template.FuncMap {
+	var ov *EnterpriseOverrides
+	if ctx != nil && ctx.Overrides != nil {
+		ov = ctx.Overrides
+	} else {
+		ov = DefaultOverrides()
+	}
 	return template.FuncMap{
-		"contains":   strings.Contains,
-		"hasPrefix":  strings.HasPrefix,
-		"hasSuffix":  strings.HasSuffix,
-		"replace":    strings.ReplaceAll,
-		"toUpper":    strings.ToUpper,
-		"toLower":    strings.ToLower,
-		"yamlEscape": yamlEscape,
+		"contains":              strings.Contains,
+		"hasPrefix":             strings.HasPrefix,
+		"hasSuffix":             strings.HasSuffix,
+		"replace":               strings.ReplaceAll,
+		"toUpper":               strings.ToUpper,
+		"toLower":               strings.ToLower,
+		"yamlEscape":            yamlEscape,
+		"resolveImage":          ov.ResolveImage,
+		"resolveNS":             ov.ResolveNamespace,
+		"resolveStorage":        ov.ResolveStorageClass,
+		"resolveIngress":        ov.ResolveIngressClass,
+		"resolveChartVersion":   ov.ResolveChartVersion,
+		"resolveTLSIssuer":      ov.ResolveTLSIssuer,
+		"resolveGitProvider":    ov.ResolveGitProvider,
+		"hasRegistryPullSecret": ov.HasRegistryPullSecret,
+		"registryPullSecret":    ov.RegistryPullSecret,
+		"nsLabels": func(indent int) string {
+			return ov.NamespaceLabelsYAML(indent)
+		},
+		"resolveCloudProvider": ov.ResolveCloudProvider,
+		"resourceProfile":      ov.ResourceProfile,
+		"resolveObservability": ov.ResolveObservability,
 	}
 }
 

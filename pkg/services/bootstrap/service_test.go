@@ -129,7 +129,7 @@ func TestBootstrapService_PhaseSystemBootstrap(t *testing.T) {
 	}
 
 	svc := NewService(runner, fsys, k8s)
-	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6")
+	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6", nil)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

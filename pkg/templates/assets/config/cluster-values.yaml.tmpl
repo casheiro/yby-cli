@@ -38,9 +38,12 @@ system:
 
 # Definição de Namespaces do Sistema
 namespaces:
-  argocd: argocd
-  ingress: ingress-system
-  events: argo-events
+  argocd: {{ resolveNS "argocd" }}
+  ingress: {{ resolveNS "ingress-system" }}
+  events: {{ resolveNS "argo-events" }}
+  monitoring: {{ resolveNS "monitoring" }}
+  storage: {{ resolveNS "storage" }}
+  keda: {{ resolveNS "keda" }}
 
 global:
   # Ambiente (dev, staging, prod)

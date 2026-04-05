@@ -11,6 +11,7 @@ import (
 
 	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"gopkg.in/yaml.v3"
 )
@@ -141,11 +142,16 @@ type BootstrapOptions struct {
 	Context      string
 	Environment  string
 	PlainSecrets bool
+	Overrides    *scaffold.EnterpriseOverrides
 }
 
 func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error {
-	// 0. Resolve Blueprint for versions
+	// 0. Resolve Blueprint for versions (com suporte a enterprise overrides)
+	ov := opts.Overrides
 	argoVersion := "5.51.6"
+	if ov != nil {
+		argoVersion = ov.ResolveChartVersion("argocd", argoVersion)
+	}
 	argoChart := "argo/argo-cd"
 	blueprintRepo := s.getRepoURLFromBlueprint(opts.Root)
 
@@ -177,7 +183,7 @@ func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error
 
 	// 3. Fase 1: Bootstrap do Sistema
 	if !phaseCompleted(cp, PhaseSystem) {
-		if err := s.phaseSystemBootstrap(ctx, opts.Root, argoChart, argoVersion); err != nil {
+		if err := s.phaseSystemBootstrap(ctx, opts.Root, argoChart, argoVersion, ov); err != nil {
 			return err
 		}
 		if err := s.saveCheckpoint(PhaseSystem, opts); err != nil {
@@ -201,7 +207,7 @@ func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error
 
 	// 5. Fase 3: Bootstrap de Configuração
 	if !phaseCompleted(cp, PhaseConfig) {
-		if err := s.phaseConfigBootstrap(ctx, opts.Root, finalRepo, opts.Context, opts.Environment); err != nil {
+		if err := s.phaseConfigBootstrap(ctx, opts.Root, finalRepo, opts.Context, opts.Environment, ov); err != nil {
 			return err
 		}
 		if err := s.saveCheckpoint(PhaseConfig, opts); err != nil {
@@ -238,29 +244,43 @@ func (s *BootstrapService) checkEnvVars(contextFlag, envEnv, blueprintRepo strin
 	return nil
 }
 
-func (s *BootstrapService) phaseSystemBootstrap(ctx context.Context, root, chart, version string) error {
-	// Helm Repo Add
+func (s *BootstrapService) phaseSystemBootstrap(ctx context.Context, root, chart, version string, ov *scaffold.EnterpriseOverrides) error {
+	// Helm Repo Add (com suporte a mirror enterprise)
+	repoURL := "https://argoproj.github.io/argo-helm"
+	if ov != nil {
+		repoURL = ov.ResolveHelmRepo(repoURL)
+	}
 	err := retry.DoWithDefault(ctx, func() error {
-		return s.Runner.Run(ctx, "helm", "repo", "add", "argo", "https://argoproj.github.io/argo-helm")
+		return s.Runner.Run(ctx, "helm", "repo", "add", "argo", repoURL)
 	})
 	if err != nil {
 		return err
 	}
 
+	// Resolver namespaces via enterprise overrides (backward-compat: sem overrides retorna original)
+	resolveNS := func(ns string) string {
+		if ov != nil {
+			return ov.ResolveNamespace(ns)
+		}
+		return ns
+	}
+
 	// Namespaces
-	for _, ns := range []string{"argocd", "argo", "argo-events"} {
+	for _, ns := range []string{resolveNS("argocd"), resolveNS("argo"), resolveNS("argo-events")} {
+		nsToCreate := ns
 		err := retry.DoWithDefault(ctx, func() error {
-			return s.K8s.CreateNamespace(ctx, ns)
+			return s.K8s.CreateNamespace(ctx, nsToCreate)
 		})
 		if err != nil {
 			return err
 		}
 	}
 
+	argocdNS := resolveNS("argocd")
 	// Helm Install CD
 	return retry.DoWithDefault(ctx, func() error {
 		return s.Runner.Run(ctx, "helm", "upgrade", "--install", "argocd", chart,
-			"--namespace", "argocd",
+			"--namespace", argocdNS,
 			"--version", version,
 			"-f", filepath.Join(root, "config/cluster-values.yaml"),
 			"--wait", "--atomic", "--timeout", "300s")
@@ -331,11 +351,16 @@ func (s *BootstrapService) detectSecretsStrategy(root string) string {
 	return "sealed-secrets"
 }
 
-func (s *BootstrapService) phaseConfigBootstrap(ctx context.Context, root, repoURL, ctxFlag, envEnv string) error {
+func (s *BootstrapService) phaseConfigBootstrap(ctx context.Context, root, repoURL, ctxFlag, envEnv string, ov *scaffold.EnterpriseOverrides) error {
+	argocdNS := "argocd"
+	if ov != nil {
+		argocdNS = ov.ResolveNamespace(argocdNS)
+	}
+
 	// Applying Root App
 	manifest := filepath.Join(root, "manifests/argocd/root-app.yaml")
 	err := retry.DoWithDefault(ctx, func() error {
-		return s.K8s.ApplyManifest(ctx, manifest, "argocd")
+		return s.K8s.ApplyManifest(ctx, manifest, argocdNS)
 	})
 	if err != nil {
 		return err
@@ -346,7 +371,7 @@ func (s *BootstrapService) phaseConfigBootstrap(ctx context.Context, root, repoU
 	if isLocal {
 		patch := `{"spec": {"source": {"repoURL": "git://git-server.yby-system.svc:9418/repo.git"}}}`
 		err := retry.DoWithDefault(ctx, func() error {
-			return s.K8s.PatchApplication(ctx, "root-app", "argocd", patch)
+			return s.K8s.PatchApplication(ctx, "root-app", argocdNS, patch)
 		})
 		if err != nil {
 			return err

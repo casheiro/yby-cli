@@ -72,6 +72,9 @@ type InitOptions struct {
 	// Environments custom (comma-separated)
 	Environments string
 
+	// Enterprise overrides
+	ConfigFile string
+
 	// Modes
 	Offline        bool
 	NonInteractive bool
@@ -103,7 +106,8 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
-	initCmd.Flags().StringVar(&opts.Environments, "environments", "", "Lista de ambientes separados por vírgula (ex: local,dev,hom,prod). Sobrescreve os ambientes padrão da topologia")
+	initCmd.Flags().StringVar(&opts.Environments, "environments", "", "Lista de ambientes separados por v��rgula (ex: local,dev,hom,prod). Sobrescreve os ambientes padrão da topologia")
+	initCmd.Flags().StringVar(&opts.ConfigFile, "config", "", "Arquivo de configuração enterprise (.yby/overrides.yaml)")
 
 	initCmd.Flags().StringVar(&opts.SecretsStrategy, "secrets-strategy", "external-secrets", "Estratégia de secrets: sealed-secrets, external-secrets, sops")
 
@@ -375,6 +379,18 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		GitRepo:     flags.GitRepo,
 		ProjectName: resolveProjectName(flags),
 	}
+
+	// Carregar enterprise overrides
+	targetDir := flags.TargetDir
+	if targetDir == "" {
+		targetDir, _ = os.Getwd()
+	}
+	overridePaths := scaffold.ResolveOverridePaths(flags.ConfigFile, targetDir)
+	overrides, err := scaffold.LoadOverrides(overridePaths...)
+	if err != nil {
+		return nil, err
+	}
+	ctx.Overrides = overrides
 
 	// Populate Github details
 	if org := extractGithubOrg(flags.GitRepo); org != "" {

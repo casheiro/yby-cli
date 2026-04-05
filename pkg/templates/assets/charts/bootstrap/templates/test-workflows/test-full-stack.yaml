@@ -9,11 +9,15 @@ metadata:
 spec:
   entrypoint: full-stack-test
   serviceAccountName: argo-workflow-executor
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   
   templates:
   - name: wait-ready
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -40,7 +44,7 @@ spec:
   
   - name: cluster-check
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -52,7 +56,7 @@ spec:
   
   - name: argocd-check
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -64,7 +68,7 @@ spec:
   
   - name: workflows-check
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -76,7 +80,7 @@ spec:
   
   - name: events-check
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -89,7 +93,7 @@ spec:
   
   - name: webhook-check
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash

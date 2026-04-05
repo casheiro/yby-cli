@@ -32,9 +32,21 @@ hosts:
   minio: ""
   minioConsole: ""
 
+# Namespaces do Sistema (parametrizáveis via enterprise overrides)
+namespaces:
+  argocd: "{{ resolveNS "argocd" }}"
+  argoEvents: "{{ resolveNS "argo-events" }}"
+  monitoring: "{{ resolveNS "monitoring" }}"
+  ingress: "{{ resolveNS "ingress-system" }}"
+  storage: "{{ resolveNS "storage" }}"
+  keda: "{{ resolveNS "keda" }}"
+
+# Labels customizadas para namespaces (enterprise overrides)
+customLabels:{{ nsLabels 2 }}
+
 argocd:
   enabled: false
-  namespace: "argocd"
+  namespace: "{{ resolveNS "argocd" }}"
   project: "{{ .ProjectName }}"
   url: "" # default derivado de hosts.argocd
   repositories: [] # ex.: [{type: git, url: https://github.com/... , name: app}]
@@ -51,7 +63,7 @@ events:
 
 applicationset:
   enabled: false
-  namespace: "argocd"
+  namespace: "{{ resolveNS "argocd" }}"
   organization: "{{ .GithubOrg }}"
   branch: ""
   labelMatch: "{{ .ProjectName }}-app"
@@ -68,7 +80,7 @@ discovery:
 storage:
   minio:
     enabled: false
-    namespace: "storage"
+    namespace: "{{ resolveNS "storage" }}"
     endpoints:
       api: "" # default derivado de hosts.minio
       console: "" # default derivado de hosts.minioConsole
@@ -76,6 +88,14 @@ storage:
     autoBootstrap:
       enabled: false
       buckets: []
+
+# Imagens de containers (parametrizáveis via enterprise overrides)
+images:
+  kubectl: "{{ resolveImage "bitnami/kubectl:1.31" }}"
+{{- if hasRegistryPullSecret }}
+imagePullSecrets:
+  - name: {{ registryPullSecret }}
+{{- end }}
 
 validation:
   enabled: true # hooks de validação de referências a Secrets

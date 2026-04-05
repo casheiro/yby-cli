@@ -159,7 +159,7 @@ func TestBootstrapService_PhaseConfigBootstrap_Local(t *testing.T) {
 	k8s := &MockK8sClient{}
 	svc := NewService(runner, &MockFilesystem{}, k8s)
 
-	err := svc.phaseConfigBootstrap(context.Background(), "/infra", "https://github.com/test/repo.git", "local", "local")
+	err := svc.phaseConfigBootstrap(context.Background(), "/infra", "https://github.com/test/repo.git", "local", "local", nil)
 	if err != nil {
 		t.Errorf("phaseConfigBootstrap local: unexpected error: %v", err)
 	}
@@ -677,7 +677,7 @@ func TestBootstrapService_PhaseSystemBootstrap_TemAtomic(t *testing.T) {
 		},
 	}
 	svc := NewService(runner, &MockFilesystem{}, &MockK8sClient{})
-	err := svc.phaseSystemBootstrap(context.Background(), "/infra", "argo/argo-cd", "5.51.6")
+	err := svc.phaseSystemBootstrap(context.Background(), "/infra", "argo/argo-cd", "5.51.6", nil)
 	assert.NoError(t, err)
 	assert.True(t, atomicPresente, "helm upgrade --install deve incluir --atomic")
 }

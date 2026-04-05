@@ -21,7 +21,7 @@ spec:
       {{- end }}
   destination:
     server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
-    namespace: events
+    namespace: {{ .Values.namespaces.argoEvents | default "argo-events" }}
   syncPolicy:
     automated:
       prune: true

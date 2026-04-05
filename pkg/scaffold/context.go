@@ -45,6 +45,9 @@ type BlueprintContext struct {
 	// Servidor de destino do cluster (multi-cluster)
 	DestinationServer string // default: "https://kubernetes.default.svc"
 
+	// Enterprise overrides carregados de --config ou .yby/overrides.yaml
+	Overrides *EnterpriseOverrides
+
 	// [NEW] Dynamic Data injected by plugins
 	Data map[string]interface{}
 }

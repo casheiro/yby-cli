@@ -17,7 +17,7 @@ spec:
         template: check-argocd-apps
   - name: check-argocd-apps
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ resolveImage "bitnami/kubectl:1.31" }}
       command: [bash]
       source: |
         set -euo pipefail

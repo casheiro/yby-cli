@@ -21,7 +21,7 @@ spec:
       {{- end }}
   destination:
     server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
-    namespace: minio
+    namespace: {{ .Values.namespaces.storage | default "storage" }}
   syncPolicy:
     automated:
       prune: true
