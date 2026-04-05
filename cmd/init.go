@@ -158,20 +158,22 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			fmt.Printf("⚠️  Erro no hook 'context' dos plugins: %v\n", err)
 		}
 
-		// 1.5 Detecção de init duplo
+		// 1.5 Detecção de init duplo (pular se --update, que trata isso depois)
 		targetDir := resolveTargetDir(opts.TargetDir)
 		blueprintPath := filepath.Join(targetDir, ".yby", "blueprint.yaml")
-		if _, err := os.Stat(blueprintPath); err == nil {
-			// Projeto já inicializado
-			if opts.Force {
-				fmt.Println("⚠️  Projeto Yby já inicializado. Sobrescrevendo (--force).")
-			} else if opts.NonInteractive {
-				return errors.New(errors.ErrCodeValidation,
-					"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
-			} else {
-				confirm, err := askConfirm("Projeto Yby já inicializado neste diretório. Deseja sobrescrever?", false)
-				if err != nil || !confirm {
-					return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+		if !opts.Update {
+			if _, err := os.Stat(blueprintPath); err == nil {
+				// Projeto já inicializado
+				if opts.Force {
+					fmt.Println("⚠️  Projeto Yby já inicializado. Sobrescrevendo (--force).")
+				} else if opts.NonInteractive {
+					return errors.New(errors.ErrCodeValidation,
+						"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
+				} else {
+					confirm, err := askConfirm("Projeto Yby já inicializado neste diretório. Deseja sobrescrever?", false)
+					if err != nil || !confirm {
+						return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+					}
 				}
 			}
 		}
