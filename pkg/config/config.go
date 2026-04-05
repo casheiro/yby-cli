@@ -3,11 +3,13 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/viper"
 )
 
@@ -54,7 +56,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai.model", "")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
-	v.SetDefault("telemetry.enabled", true)
+	v.SetDefault("telemetry.enabled", false)
 }
 
 // bindEnvVars associa variáveis de ambiente ao viper com prefixo YBY.
@@ -99,10 +101,37 @@ func Load() (*Config, error) {
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, ybyerrors.Wrap(err, ybyerrors.ErrCodeConfig, "falha ao deserializar configuração")
+	}
+
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+// Validate verifica se os valores de configuração são válidos.
+func (c *Config) Validate() error {
+	validProviders := map[string]bool{"": true, "ollama": true, "gemini": true, "openai": true}
+	if !validProviders[c.AI.Provider] {
+		return ybyerrors.New(ybyerrors.ErrCodeConfig,
+			fmt.Sprintf("ai.provider inválido: %q (valores aceitos: ollama, gemini, openai)", c.AI.Provider))
+	}
+
+	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLevels[c.Log.Level] {
+		return ybyerrors.New(ybyerrors.ErrCodeConfig,
+			fmt.Sprintf("log.level inválido: %q (valores aceitos: debug, info, warn, error)", c.Log.Level))
+	}
+
+	validFormats := map[string]bool{"text": true, "json": true}
+	if !validFormats[c.Log.Format] {
+		return ybyerrors.New(ybyerrors.ErrCodeConfig,
+			fmt.Sprintf("log.format inválido: %q (valores aceitos: text, json)", c.Log.Format))
+	}
+
+	return nil
 }
 
 // LoadOnce carrega a configuração uma única vez (singleton thread-safe).
@@ -137,7 +166,7 @@ func DefaultConfig() *Config {
 			Format: "text",
 		},
 		Telemetry: TelemetryConfig{
-			Enabled: true,
+			Enabled: false,
 		},
 	}
 }

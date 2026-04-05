@@ -42,6 +42,9 @@ type BlueprintContext struct {
 	// Estratégia de secrets (sealed-secrets, external-secrets, sops)
 	SecretsStrategy string
 
+	// Servidor de destino do cluster (multi-cluster)
+	DestinationServer string // default: "https://kubernetes.default.svc"
+
 	// [NEW] Dynamic Data injected by plugins
 	Data map[string]interface{}
 }

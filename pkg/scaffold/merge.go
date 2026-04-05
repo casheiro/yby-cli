@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,6 +104,63 @@ func addConflictMarkers(diskContent, newContent []byte) []byte {
 	}
 	b.WriteString(">>>>>>> SCAFFOLD (novo)\n")
 	return []byte(b.String())
+}
+
+// topologyEnvironments retorna os ambientes associados a uma topologia.
+func topologyEnvironments(topology string) []string {
+	switch topology {
+	case "single":
+		return []string{"local"}
+	case "standard":
+		return []string{"local", "prod"}
+	case "complete":
+		return []string{"local", "dev", "staging", "prod"}
+	default:
+		return []string{"local"}
+	}
+}
+
+// DetectOrphanedFiles detecta arquivos de values que pertencem à topologia antiga
+// mas não à nova. Retorna os caminhos relativos dos arquivos órfãos encontrados no disco.
+func DetectOrphanedFiles(targetDir, oldTopology, newTopology string) []string {
+	if oldTopology == "" || newTopology == "" || oldTopology == newTopology {
+		return nil
+	}
+
+	oldEnvs := topologyEnvironments(oldTopology)
+	newEnvs := topologyEnvironments(newTopology)
+
+	newSet := make(map[string]bool, len(newEnvs))
+	for _, env := range newEnvs {
+		newSet[env] = true
+	}
+
+	var orphans []string
+	for _, env := range oldEnvs {
+		if newSet[env] {
+			continue
+		}
+		// Procurar arquivos values-<env>.yaml no disco
+		pattern := fmt.Sprintf("values-%s.yaml", env)
+		err := filepath.WalkDir(targetDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			if d.Name() == pattern {
+				relPath, _ := filepath.Rel(targetDir, path)
+				if relPath == "" {
+					relPath = path
+				}
+				orphans = append(orphans, relPath)
+			}
+			return nil
+		})
+		if err != nil {
+			slog.Warn("erro ao procurar arquivos órfãos", "erro", err)
+		}
+	}
+
+	return orphans
 }
 
 // ComputeMergePlan calcula o plano de merge comparando hashes do manifest, disco e novo scaffold.

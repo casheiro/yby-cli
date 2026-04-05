@@ -21,4 +21,5 @@ type Service interface {
 	GenerateAgeKey(ctx context.Context, outputPath string) (string, error)
 	GenerateSecretYAML(ctx context.Context, name, namespace, key, value string) ([]byte, error)
 	SealWithKubeseal(ctx context.Context, secretYAML []byte, outputPath string) error
+	RotateKeys(ctx context.Context) error
 }

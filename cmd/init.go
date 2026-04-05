@@ -69,6 +69,9 @@ type InitOptions struct {
 	EnableKEDA          bool
 	EnableMetricsServer bool
 
+	// Environments custom (comma-separated)
+	Environments string
+
 	// Modes
 	Offline        bool
 	NonInteractive bool
@@ -100,6 +103,7 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
+	initCmd.Flags().StringVar(&opts.Environments, "environments", "", "Lista de ambientes separados por vírgula (ex: local,dev,hom,prod). Sobrescreve os ambientes padrão da topologia")
 
 	initCmd.Flags().StringVar(&opts.SecretsStrategy, "secrets-strategy", "external-secrets", "Estratégia de secrets: sealed-secrets, external-secrets, sops")
 
@@ -560,8 +564,16 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		return nil, err
 	}
 
-	// Calcula lista de ambientes baseada na topologia
-	ctx.Environments = environmentsForTopology(ctx.Topology)
+	// Calcula lista de ambientes: usa --environments se fornecido, senão defaults da topologia
+	if flags.Environments != "" {
+		envs := parseEnvironments(flags.Environments)
+		if err := scaffold.ValidateEnvironmentNames(envs); err != nil {
+			return nil, err
+		}
+		ctx.Environments = envs
+	} else {
+		ctx.Environments = environmentsForTopology(ctx.Topology)
+	}
 
 	// Modo offline: garante que "local" está presente
 	if flags.Offline {
@@ -654,6 +666,20 @@ func environmentsForTopology(topology string) []string {
 	default:
 		return []string{"local"}
 	}
+}
+
+// parseEnvironments converte uma string comma-separated em uma lista de ambientes,
+// removendo espaços em branco ao redor de cada nome.
+func parseEnvironments(raw string) []string {
+	parts := strings.Split(raw, ",")
+	var envs []string
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			envs = append(envs, trimmed)
+		}
+	}
+	return envs
 }
 
 // ensureLocalEnvironment garante que o ambiente "local" está presente na lista,

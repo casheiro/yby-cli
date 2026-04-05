@@ -112,6 +112,10 @@ func TestMockCommandExecutor_Run_ComErro(t *testing.T) {
 	assert.ErrorIs(t, err, expectedErr)
 }
 
+func TestLocalExecutor_ImplementaInterface(t *testing.T) {
+	var _ Executor = (*LocalExecutor)(nil)
+}
+
 // --- Testes para RealCommandExecutor ---
 
 func TestRealCommandExecutor_LookPath_Encontrado(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
@@ -474,9 +475,10 @@ func TestLoadAllEntries_BackwardCompat(t *testing.T) {
 	restore := chdir(t, tmpDir)
 	defer restore()
 
-	// Escrever entrada JSONL antiga (sem session_id)
+	// Escrever entrada JSONL antiga (sem session_id) com timestamp recente
 	os.MkdirAll(".yby", 0755)
-	legacyLine := `{"role":"user","content":"pergunta antiga","timestamp":"2026-01-01T00:00:00Z"}`
+	recentTS := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+	legacyLine := fmt.Sprintf(`{"role":"user","content":"pergunta antiga","timestamp":"%s"}`, recentTS)
 	os.WriteFile(historyFile, []byte(legacyLine+"\n"), 0600)
 
 	entries, err := loadAllEntries()

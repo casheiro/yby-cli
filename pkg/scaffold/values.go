@@ -2,11 +2,14 @@ package scaffold
 
 // EnvironmentOverrides contém os valores específicos por ambiente para geração de values files.
 type EnvironmentOverrides struct {
-	Environment string
-	TLSIssuer   string
-	Insecure    bool
-	Retention   string
-	Resources   ResourceOverrides
+	Environment  string
+	TLSIssuer    string
+	Insecure     bool
+	Retention    string
+	Resources    ResourceOverrides
+	EnableKepler *bool
+	EnableKEDA   *bool
+	EnableMinio  *bool
 }
 
 // ResourceOverrides contém overrides de recursos por ambiente.
@@ -70,9 +73,21 @@ func GetEnvironmentOverrides(env string) EnvironmentOverrides {
 	}
 }
 
+// resolveFeature retorna o valor per-environment se definido, senão usa o fallback global.
+func resolveFeature(override *bool, global bool) bool {
+	if override != nil {
+		return *override
+	}
+	return global
+}
+
 // RenderEnvironmentValues gera o conteúdo YAML de um values file para um ambiente específico.
 func RenderEnvironmentValues(ctx *BlueprintContext, env string) string {
 	ov := GetEnvironmentOverrides(env)
+
+	keplerEnabled := resolveFeature(ov.EnableKepler, ctx.EnableKepler)
+	kedaEnabled := resolveFeature(ov.EnableKEDA, ctx.EnableKEDA)
+	minioEnabled := resolveFeature(ov.EnableMinio, ctx.EnableMinio)
 
 	insecureStr := "false"
 	if ov.Insecure {
@@ -127,14 +142,14 @@ observability:
         memory: ` + ov.Resources.PrometheusMemory + `
 
 kepler:
-  enabled: ` + boolStr(ctx.EnableKepler) + `
+  enabled: ` + boolStr(keplerEnabled) + `
 
 keda:
-  enabled: ` + boolStr(ctx.EnableKEDA) + `
+  enabled: ` + boolStr(kedaEnabled) + `
 
 storage:
   minio:
-    enabled: ` + boolStr(ctx.EnableMinio) + `
+    enabled: ` + boolStr(minioEnabled) + `
 `
 }
 

@@ -2,7 +2,9 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -468,4 +470,214 @@ func TestBootstrapOptions_Fields(t *testing.T) {
 		t.Errorf("Root field mismatch")
 	}
 	_ = filepath.Join(opts.Root, "file")
+}
+
+// ---- Checkpoint ----
+
+func TestPhaseCompleted_SemCheckpoint(t *testing.T) {
+	assert.False(t, phaseCompleted(nil, PhaseSystem))
+	assert.False(t, phaseCompleted(nil, PhaseSecrets))
+	assert.False(t, phaseCompleted(nil, PhaseConfig))
+}
+
+func TestPhaseCompleted_AposSystem(t *testing.T) {
+	cp := &BootstrapCheckpoint{Phase: PhaseSystem}
+	assert.True(t, phaseCompleted(cp, PhaseSystem))
+	assert.False(t, phaseCompleted(cp, PhaseSecrets))
+	assert.False(t, phaseCompleted(cp, PhaseConfig))
+}
+
+func TestPhaseCompleted_AposSecrets(t *testing.T) {
+	cp := &BootstrapCheckpoint{Phase: PhaseSecrets}
+	assert.True(t, phaseCompleted(cp, PhaseSystem))
+	assert.True(t, phaseCompleted(cp, PhaseSecrets))
+	assert.False(t, phaseCompleted(cp, PhaseConfig))
+}
+
+func TestPhaseCompleted_AposConfig(t *testing.T) {
+	cp := &BootstrapCheckpoint{Phase: PhaseConfig}
+	assert.True(t, phaseCompleted(cp, PhaseSystem))
+	assert.True(t, phaseCompleted(cp, PhaseSecrets))
+	assert.True(t, phaseCompleted(cp, PhaseConfig))
+}
+
+func TestBootstrapService_LoadCheckpoint_SemArquivo(t *testing.T) {
+	fsys := &MockFilesystem{} // ReadFile retorna ErrNotExist
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	cp, err := svc.loadCheckpoint()
+	assert.NoError(t, err)
+	assert.Nil(t, cp)
+}
+
+func TestBootstrapService_LoadCheckpoint_JSONValido(t *testing.T) {
+	checkpointJSON := `{"phase":"secrets","completed_at":"2026-04-05T10:00:00Z","root":"/infra","environment":"local"}`
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte(checkpointJSON), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	cp, err := svc.loadCheckpoint()
+	assert.NoError(t, err)
+	assert.NotNil(t, cp)
+	assert.Equal(t, PhaseSecrets, cp.Phase)
+	assert.Equal(t, "/infra", cp.Root)
+	assert.Equal(t, "local", cp.Environment)
+}
+
+func TestBootstrapService_LoadCheckpoint_JSONCorrompido(t *testing.T) {
+	fsys := &MockFilesystem{
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return []byte("não é json"), nil
+		},
+	}
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	cp, err := svc.loadCheckpoint()
+	assert.NoError(t, err)
+	assert.Nil(t, cp)
+}
+
+// trackingFilesystem rastreia chamadas a WriteFile e MkdirAll.
+type trackingFilesystem struct {
+	MockFilesystem
+	writtenFiles map[string][]byte
+	mkdirCalls   []string
+}
+
+func newTrackingFilesystem() *trackingFilesystem {
+	return &trackingFilesystem{
+		writtenFiles: make(map[string][]byte),
+	}
+}
+
+func (f *trackingFilesystem) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	f.writtenFiles[name] = data
+	return nil
+}
+
+func (f *trackingFilesystem) MkdirAll(path string, perm fs.FileMode) error {
+	f.mkdirCalls = append(f.mkdirCalls, path)
+	return nil
+}
+
+func TestBootstrapService_SaveCheckpoint(t *testing.T) {
+	fsys := newTrackingFilesystem()
+	svc := NewService(&MockRunner{}, fsys, &MockK8sClient{})
+
+	opts := BootstrapOptions{
+		Root:        "/infra",
+		Environment: "production",
+	}
+
+	err := svc.saveCheckpoint(PhaseSystem, opts)
+	assert.NoError(t, err)
+
+	assert.NotEmpty(t, fsys.mkdirCalls)
+
+	var found bool
+	for path, data := range fsys.writtenFiles {
+		assert.Contains(t, path, "bootstrap-state.json")
+		var cp BootstrapCheckpoint
+		err := json.Unmarshal(data, &cp)
+		assert.NoError(t, err)
+		assert.Equal(t, PhaseSystem, cp.Phase)
+		assert.Equal(t, "/infra", cp.Root)
+		assert.Equal(t, "production", cp.Environment)
+		assert.NotEmpty(t, cp.CompletedAt)
+		found = true
+	}
+	assert.True(t, found, "checkpoint deveria ter sido escrito")
+}
+
+func TestBootstrapService_Run_RetomaAposCheckpoint(t *testing.T) {
+	checkpointJSON := `{"phase":"system","completed_at":"2026-04-05T10:00:00Z","root":"/tmp/infra","environment":"local"}`
+
+	var helmUpgradeCalled bool
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			if name == "helm" && len(args) > 0 && args[0] == "upgrade" {
+				helmUpgradeCalled = true
+			}
+			return nil
+		},
+	}
+
+	fsys := &trackingFilesystem{
+		MockFilesystem: MockFilesystem{
+			ReadFileFunc: func(name string) ([]byte, error) {
+				if filepath.Base(name) == "bootstrap-state.json" {
+					return []byte(checkpointJSON), nil
+				}
+				return []byte("prompts: []"), nil
+			},
+		},
+		writtenFiles: make(map[string][]byte),
+	}
+
+	svc := NewService(runner, fsys, &MockK8sClient{})
+	err := svc.Run(context.Background(), BootstrapOptions{
+		Root:        "/tmp/infra",
+		Context:     "local",
+		Environment: "local",
+	})
+	assert.NoError(t, err)
+	assert.False(t, helmUpgradeCalled, "helm upgrade não deveria ser chamado quando fase system já foi completada")
+}
+
+func TestBootstrapService_Run_CheckpointOutroContexto(t *testing.T) {
+	checkpointJSON := `{"phase":"config","completed_at":"2026-04-05T10:00:00Z","root":"/outro/root","environment":"staging"}`
+
+	var helmUpgradeCalled bool
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			if name == "helm" && len(args) > 0 && args[0] == "upgrade" {
+				helmUpgradeCalled = true
+			}
+			return nil
+		},
+	}
+
+	fsys := &trackingFilesystem{
+		MockFilesystem: MockFilesystem{
+			ReadFileFunc: func(name string) ([]byte, error) {
+				if filepath.Base(name) == "bootstrap-state.json" {
+					return []byte(checkpointJSON), nil
+				}
+				return []byte("prompts: []"), nil
+			},
+		},
+		writtenFiles: make(map[string][]byte),
+	}
+
+	svc := NewService(runner, fsys, &MockK8sClient{})
+	err := svc.Run(context.Background(), BootstrapOptions{
+		Root:        "/tmp/infra",
+		Context:     "local",
+		Environment: "local",
+	})
+	assert.NoError(t, err)
+	assert.True(t, helmUpgradeCalled, "helm upgrade deveria ser chamado quando checkpoint é de outro contexto")
+}
+
+func TestBootstrapService_PhaseSystemBootstrap_TemAtomic(t *testing.T) {
+	var atomicPresente bool
+	runner := &MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			if name == "helm" && len(args) > 0 && args[0] == "upgrade" {
+				for _, arg := range args {
+					if arg == "--atomic" {
+						atomicPresente = true
+					}
+				}
+			}
+			return nil
+		},
+	}
+	svc := NewService(runner, &MockFilesystem{}, &MockK8sClient{})
+	err := svc.phaseSystemBootstrap(context.Background(), "/infra", "argo/argo-cd", "5.51.6")
+	assert.NoError(t, err)
+	assert.True(t, atomicPresente, "helm upgrade --install deve incluir --atomic")
 }

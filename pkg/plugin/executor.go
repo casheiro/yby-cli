@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
+
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
 // execCommandContext is a variable so it can be mocked in tests
@@ -15,7 +18,8 @@ var execCommandContext = exec.CommandContext
 
 // Executor handles the execution of a plugin process.
 type Executor struct {
-	Timeout time.Duration
+	Timeout        time.Duration
+	SkipTrustCheck bool // Desabilita verificação de trust (usado em testes e manifest discovery)
 }
 
 // NewExecutor creates a new plugin executor.
@@ -25,9 +29,34 @@ func NewExecutor() *Executor {
 	}
 }
 
+// checkTrust verifica se o plugin é confiável antes da execução.
+func (e *Executor) checkTrust(binaryPath string) error {
+	if e.SkipTrustCheck {
+		return nil
+	}
+
+	trusted, err := IsTrusted(binaryPath)
+	if err != nil {
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePlugin, fmt.Sprintf("falha ao verificar confiança do plugin '%s'", binaryPath))
+	}
+
+	if !trusted {
+		name := filepath.Base(binaryPath)
+		return ybyerrors.New(ybyerrors.ErrCodePlugin,
+			fmt.Sprintf("plugin '%s' não está na whitelist de confiança ou seu checksum foi alterado", name)).
+			WithHint(fmt.Sprintf("Execute 'yby plugin trust %s' para registrá-lo como confiável", name))
+	}
+
+	return nil
+}
+
 // Run executes the plugin binary at path with the given request payload.
 // It writes payload to STDIN and reads response from STDOUT.
 func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) (*PluginResponse, error) {
+	if err := e.checkTrust(binaryPath); err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, e.Timeout)
 	defer cancel()
 
@@ -36,7 +65,7 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 	// Prepare STDIN
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("falha ao serializar requisição do plugin: %w", err)
+		return nil, ybyerrors.Wrap(err, ybyerrors.ErrCodePluginRPC, "falha ao serializar requisição do plugin")
 	}
 	cmd.Stdin = bytes.NewReader(reqBytes)
 
@@ -47,17 +76,20 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 
 	// Execute
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("execução do plugin falhou (%s): %w. Stderr: %s", binaryPath, err, stderr.String())
+		return nil, ybyerrors.Wrap(err, ybyerrors.ErrCodePlugin,
+			fmt.Sprintf("execução do plugin falhou (%s)", binaryPath)).
+			WithContext("stderr", stderr.String())
 	}
 
 	// Parse STDOUT
 	var resp PluginResponse
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("falha ao analisar resposta do plugin: %w. Stdout: %s", err, stdout.String())
+		return nil, ybyerrors.Wrap(err, ybyerrors.ErrCodePluginRPC, "falha ao analisar resposta do plugin").
+			WithContext("stdout", stdout.String())
 	}
 
 	if resp.Error != "" {
-		return nil, fmt.Errorf("plugin reportou erro: %s", resp.Error)
+		return nil, ybyerrors.New(ybyerrors.ErrCodePlugin, fmt.Sprintf("plugin reportou erro: %s", resp.Error))
 	}
 
 	return &resp, nil
@@ -67,6 +99,10 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 // It passes the request payload via the YBY_PLUGIN_REQUEST environment variable
 // and connects the plugin's Stdin/Stdout/Stderr directly to the OS.
 func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req interface{}) error {
+	if err := e.checkTrust(binaryPath); err != nil {
+		return err
+	}
+
 	// Interactive plugins typically manage their own timeout or run indefinitely until user exit
 	// So we might not want to enforce a strict short timeout, but context cancellation is still good.
 	cmd := execCommandContext(ctx, binaryPath)
@@ -74,7 +110,7 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 	// Pass payload via Env Var
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("falha ao serializar requisição do plugin: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePluginRPC, "falha ao serializar requisição do plugin")
 	}
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqBytes)))
 
@@ -85,7 +121,7 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 
 	// Execute
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("execução interativa do plugin falhou: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePlugin, "execução interativa do plugin falhou")
 	}
 
 	return nil

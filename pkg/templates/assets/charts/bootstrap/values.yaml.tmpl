@@ -18,7 +18,7 @@ project: {{ .ProjectName }}
 argocd:
   namespace: argocd
   project: {{ .ProjectName }}
-  destinationServer: https://kubernetes.default.svc
+  destinationServer: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
 
 # Configurações de Eventos (Argo Events)
 events:

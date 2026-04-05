@@ -779,6 +779,149 @@ func TestResolveProjectName_FlagExplicitoSobrepoGitRepo(t *testing.T) {
 	}
 }
 
+func TestParseEnvironments(t *testing.T) {
+	tests := []struct {
+		nome     string
+		entrada  string
+		esperado []string
+	}{
+		{
+			nome:     "lista simples",
+			entrada:  "local,dev,hom,prod",
+			esperado: []string{"local", "dev", "hom", "prod"},
+		},
+		{
+			nome:     "com espaços ao redor",
+			entrada:  " local , dev , hom , prod ",
+			esperado: []string{"local", "dev", "hom", "prod"},
+		},
+		{
+			nome:     "um único ambiente",
+			entrada:  "prod",
+			esperado: []string{"prod"},
+		},
+		{
+			nome:     "vírgulas extras são ignoradas",
+			entrada:  "local,,dev,",
+			esperado: []string{"local", "dev"},
+		},
+		{
+			nome:     "string vazia retorna nil",
+			entrada:  "",
+			esperado: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			result := parseEnvironments(tt.entrada)
+			if tt.esperado == nil {
+				if result != nil {
+					t.Errorf("parseEnvironments(%q) = %v, esperado nil", tt.entrada, result)
+				}
+				return
+			}
+			if len(result) != len(tt.esperado) {
+				t.Fatalf("parseEnvironments(%q) retornou %d itens, esperado %d", tt.entrada, len(result), len(tt.esperado))
+			}
+			for i, v := range tt.esperado {
+				if result[i] != v {
+					t.Errorf("parseEnvironments(%q)[%d] = %q, esperado %q", tt.entrada, i, result[i], v)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildContext_CustomEnvironments(t *testing.T) {
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		NonInteractive: true,
+		Environments:   "local,dev,hom,prod",
+		Environment:    "dev",
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	esperado := []string{"local", "dev", "hom", "prod"}
+	if len(ctx.Environments) != len(esperado) {
+		t.Fatalf("Environments = %v, esperado %v", ctx.Environments, esperado)
+	}
+	for i, env := range esperado {
+		if ctx.Environments[i] != env {
+			t.Errorf("Environments[%d] = %q, esperado %q", i, ctx.Environments[i], env)
+		}
+	}
+}
+
+func TestBuildContext_CustomEnvironments_SobrescreverTopologia(t *testing.T) {
+	// Mesmo com topologia "single" (que normalmente dá ["local"]),
+	// --environments deve sobrescrever
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "single",
+		Workflow:       "essential",
+		NonInteractive: true,
+		Environments:   "dev,qa,uat,prod",
+		Environment:    "dev",
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	if len(ctx.Environments) != 4 {
+		t.Fatalf("Environments = %v, esperado 4 ambientes", ctx.Environments)
+	}
+	if ctx.Environments[2] != "uat" {
+		t.Errorf("Environments[2] = %q, esperado 'uat'", ctx.Environments[2])
+	}
+}
+
+func TestBuildContext_CustomEnvironments_Invalido(t *testing.T) {
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		NonInteractive: true,
+		Environments:   "local,DEV-INVALID",
+		Environment:    "local",
+	}
+
+	_, err := buildContext(o)
+	if err == nil {
+		t.Fatal("Esperava erro para nome de ambiente inválido")
+	}
+	if !contains(err.Error(), "RFC 1123") {
+		t.Errorf("Erro deveria mencionar RFC 1123, obtido: %s", err.Error())
+	}
+}
+
+func TestBuildContext_CustomEnvironments_Duplicado(t *testing.T) {
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		NonInteractive: true,
+		Environments:   "local,dev,local",
+		Environment:    "local",
+	}
+
+	_, err := buildContext(o)
+	if err == nil {
+		t.Fatal("Esperava erro para ambiente duplicado")
+	}
+	if !contains(err.Error(), "duplicado") {
+		t.Errorf("Erro deveria mencionar 'duplicado', obtido: %s", err.Error())
+	}
+}
+
 // contains é um helper simples para verificar substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && containsCheck(s, substr)

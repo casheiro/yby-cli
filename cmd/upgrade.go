@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,13 +19,49 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
+// newUpgradeHTTPClient cria um http.Client com timeout e suporte a CA customizado via YBY_CA_BUNDLE.
+var newUpgradeHTTPClient = func() (*http.Client, error) {
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if caPath := os.Getenv("YBY_CA_BUNDLE"); caPath != "" {
+		caCert, err := os.ReadFile(caPath)
+		if err != nil {
+			return nil, fmt.Errorf("falha ao ler CA bundle '%s': %w", caPath, err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("falha ao adicionar certificados de '%s' ao pool de CAs", caPath)
+		}
+		tlsCfg.RootCAs = pool
+	}
+
+	return &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg,
+		},
+	}, nil
+}
+
 // httpGet permite substituição em testes
-var httpGet = http.Get
+var httpGet = func(url string) (*http.Response, error) {
+	client, err := newUpgradeHTTPClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.Get(url)
+}
 
 // releaseInfo representa os dados relevantes de um release do GitHub
 type releaseInfo struct {

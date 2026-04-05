@@ -20,7 +20,7 @@ spec:
       values: |
         # Values default from cluster-values
   destination:
-    server: https://kubernetes.default.svc
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
     namespace: keda
   syncPolicy:
     automated:
@@ -53,7 +53,7 @@ spec:
           labels:
             release: prometheus-stack # Ajustar conforme label do Prometheus Operator
   destination:
-    server: https://kubernetes.default.svc
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
     namespace: monitoring
   syncPolicy:
     automated:

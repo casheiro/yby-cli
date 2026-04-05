@@ -62,6 +62,15 @@ func (m *MockFS) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return m.Called(name, data, perm).Error(0)
 }
 
+func (m *MockFS) ReadFile(name string) ([]byte, error) {
+	cArgs := m.Called(name)
+	var data []byte
+	if cArgs.Get(0) != nil {
+		data = cArgs.Get(0).([]byte)
+	}
+	return data, cArgs.Error(1)
+}
+
 func (m *MockFS) Stat(name string) (os.FileInfo, error) {
 	cArgs := m.Called(name)
 	var info os.FileInfo
@@ -270,6 +279,7 @@ func TestBackupKeys(t *testing.T) {
 			Return([]byte("backup data"), nil)
 
 		fsys.On("WriteFile", "/tmp/backup.yaml", []byte("backup data"), mock.Anything).Return(nil)
+		fsys.On("WriteFile", "/tmp/backup.yaml.hmac", mock.Anything, mock.Anything).Return(nil)
 
 		key, err := svc.BackupKeys(ctx, opts)
 		assert.NoError(t, err)
@@ -339,19 +349,89 @@ func TestBackupKeys(t *testing.T) {
 func TestRestoreKeys(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("Success", func(t *testing.T) {
+	t.Run("Success without HMAC file", func(t *testing.T) {
 		runner := new(MockRunner)
 		fsys := new(MockFS)
 		svc := NewService(runner, fsys)
 		opts := Options{OutputPath: "/tmp/backup.yaml"}
 
 		fsys.On("Stat", "/tmp/backup.yaml").Return(nil, nil)
+		fsys.On("Stat", "/tmp/backup.yaml.hmac").Return(nil, errors.New("not exists"))
 		runner.On("Run", ctx, "kubectl", []string{"create", "ns", "sealed-secrets"}).Return(nil)
 		runner.On("Run", ctx, "kubectl", []string{"apply", "-f", "/tmp/backup.yaml"}).Return(nil)
 		runner.On("Run", ctx, "kubectl", []string{"delete", "pod", "-n", "sealed-secrets", "-l", "app.kubernetes.io/name=sealed-secrets"}).Return(nil)
 
 		err := svc.RestoreKeys(ctx, opts)
 		assert.NoError(t, err)
+	})
+
+	t.Run("Success with valid HMAC", func(t *testing.T) {
+		runner := new(MockRunner)
+		fsys := new(MockFS)
+		svc := NewService(runner, fsys)
+		opts := Options{OutputPath: "/tmp/backup.yaml"}
+
+		backupData := []byte("backup data")
+		hmacKey := deriveHMACKey("/tmp/backup.yaml")
+		validHMAC := computeHMAC(backupData, hmacKey)
+
+		fsys.On("Stat", "/tmp/backup.yaml").Return(nil, nil)
+		fsys.On("Stat", "/tmp/backup.yaml.hmac").Return(nil, nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml").Return(backupData, nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml.hmac").Return([]byte(validHMAC), nil)
+		runner.On("Run", ctx, "kubectl", []string{"create", "ns", "sealed-secrets"}).Return(nil)
+		runner.On("Run", ctx, "kubectl", []string{"apply", "-f", "/tmp/backup.yaml"}).Return(nil)
+		runner.On("Run", ctx, "kubectl", []string{"delete", "pod", "-n", "sealed-secrets", "-l", "app.kubernetes.io/name=sealed-secrets"}).Return(nil)
+
+		err := svc.RestoreKeys(ctx, opts)
+		assert.NoError(t, err)
+	})
+
+	t.Run("HMAC mismatch rejects restore", func(t *testing.T) {
+		runner := new(MockRunner)
+		fsys := new(MockFS)
+		svc := NewService(runner, fsys)
+		opts := Options{OutputPath: "/tmp/backup.yaml"}
+
+		fsys.On("Stat", "/tmp/backup.yaml").Return(nil, nil)
+		fsys.On("Stat", "/tmp/backup.yaml.hmac").Return(nil, nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml").Return([]byte("backup data"), nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml.hmac").Return([]byte("hmac-invalido"), nil)
+
+		err := svc.RestoreKeys(ctx, opts)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "verificação de integridade falhou")
+	})
+
+	t.Run("HMAC read backup error", func(t *testing.T) {
+		runner := new(MockRunner)
+		fsys := new(MockFS)
+		svc := NewService(runner, fsys)
+		opts := Options{OutputPath: "/tmp/backup.yaml"}
+
+		fsys.On("Stat", "/tmp/backup.yaml").Return(nil, nil)
+		fsys.On("Stat", "/tmp/backup.yaml.hmac").Return(nil, nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml").Return(nil, errors.New("read fail"))
+
+		err := svc.RestoreKeys(ctx, opts)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "erro ao ler backup para verificação de integridade")
+	})
+
+	t.Run("HMAC read hmac file error", func(t *testing.T) {
+		runner := new(MockRunner)
+		fsys := new(MockFS)
+		svc := NewService(runner, fsys)
+		opts := Options{OutputPath: "/tmp/backup.yaml"}
+
+		fsys.On("Stat", "/tmp/backup.yaml").Return(nil, nil)
+		fsys.On("Stat", "/tmp/backup.yaml.hmac").Return(nil, nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml").Return([]byte("data"), nil)
+		fsys.On("ReadFile", "/tmp/backup.yaml.hmac").Return(nil, errors.New("read fail"))
+
+		err := svc.RestoreKeys(ctx, opts)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "erro ao ler arquivo HMAC")
 	})
 
 	t.Run("File not found", func(t *testing.T) {
@@ -369,7 +449,8 @@ func TestRestoreKeys(t *testing.T) {
 		fsys := new(MockFS)
 		svc := NewService(runner, fsys)
 
-		fsys.On("Stat", mock.Anything).Return(nil, nil)
+		fsys.On("Stat", "").Return(nil, nil)
+		fsys.On("Stat", ".hmac").Return(nil, errors.New("not exists"))
 		runner.On("Run", ctx, "kubectl", []string{"create", "ns", "sealed-secrets"}).Return(errors.New("already exists"))
 		runner.On("Run", ctx, "kubectl", []string{"apply", "-f", ""}).Return(errors.New("apply fail"))
 
@@ -382,7 +463,8 @@ func TestRestoreKeys(t *testing.T) {
 		fsys := new(MockFS)
 		svc := NewService(runner, fsys)
 
-		fsys.On("Stat", mock.Anything).Return(nil, nil)
+		fsys.On("Stat", "").Return(nil, nil)
+		fsys.On("Stat", ".hmac").Return(nil, errors.New("not exists"))
 		runner.On("Run", ctx, "kubectl", []string{"create", "ns", "sealed-secrets"}).Return(nil)
 		runner.On("Run", ctx, "kubectl", []string{"apply", "-f", ""}).Return(nil)
 		runner.On("Run", ctx, "kubectl", []string{"delete", "pod", "-n", "sealed-secrets", "-l", "app.kubernetes.io/name=sealed-secrets"}).Return(errors.New("delete fail"))
@@ -390,4 +472,56 @@ func TestRestoreKeys(t *testing.T) {
 		err := svc.RestoreKeys(ctx, Options{})
 		assert.ErrorContains(t, err, "erro ao reiniciar controller")
 	})
+}
+
+func TestValidateSecretValue(t *testing.T) {
+	tests := []struct {
+		nome      string
+		valor     string
+		esperaErr bool
+		msgContem string
+	}{
+		{"valor simples é válido", "minha-senha-segura", false, ""},
+		{"valor com caracteres especiais é válido", "p@ss!w0rd#2024", false, ""},
+		{"valor com newline deve retornar erro", "valor\nmalicioso", true, "caracteres de controle"},
+		{"valor com carriage return deve retornar erro", "valor\rmalicioso", true, "caracteres de controle"},
+		{"valor com tab deve retornar erro", "valor\tmalicioso", true, "caracteres de controle"},
+		{"valor com null byte deve retornar erro", "valor\x00malicioso", true, "caracteres de controle"},
+		{"valor vazio é válido", "", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			err := validateSecretValue(tt.valor, "teste")
+			if tt.esperaErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.msgContem)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestGenerateWebhook_SecretValWithControlChars(t *testing.T) {
+	svc := NewService(new(MockRunner), new(MockFS))
+	_, err := svc.GenerateWebhook(context.Background(), Options{
+		Provider:  "github",
+		SecretVal: "secret\ninjection",
+	})
+	assert.ErrorContains(t, err, "caracteres de controle")
+}
+
+func TestCreateGitHubToken_TokenWithControlChars(t *testing.T) {
+	svc := NewService(new(MockRunner), new(MockFS))
+	err := svc.CreateGitHubToken(context.Background(), Options{
+		Token: "token\twith\ttabs",
+	})
+	assert.ErrorContains(t, err, "caracteres de controle")
+}
+
+func TestGenerateSecretYAML_ValueWithControlChars(t *testing.T) {
+	svc := NewService(new(MockRunner), new(MockFS))
+	_, err := svc.GenerateSecretYAML(context.Background(), "name", "ns", "key", "val\x00ue")
+	assert.ErrorContains(t, err, "caracteres de controle")
 }

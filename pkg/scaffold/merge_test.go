@@ -248,6 +248,77 @@ func TestNonInteractiveResolver_Unknown(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Testes de DetectOrphanedFiles (P1.7)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestDetectOrphanedFiles_CompleteParaStandard(t *testing.T) {
+	dir := t.TempDir()
+	// Topologia "complete" tem: local, dev, staging, prod
+	// Topologia "standard" tem: local, prod
+	// Órfãos: values-dev.yaml, values-staging.yaml
+	helperWriteFile(t, dir, "charts/argocd/values-local.yaml", "local")
+	helperWriteFile(t, dir, "charts/argocd/values-dev.yaml", "dev")
+	helperWriteFile(t, dir, "charts/argocd/values-staging.yaml", "staging")
+	helperWriteFile(t, dir, "charts/argocd/values-prod.yaml", "prod")
+
+	orphans := DetectOrphanedFiles(dir, "complete", "standard")
+
+	assert.Len(t, orphans, 2, "deve detectar 2 arquivos órfãos")
+	joined := strings.Join(orphans, "\n")
+	assert.Contains(t, joined, "values-dev.yaml")
+	assert.Contains(t, joined, "values-staging.yaml")
+}
+
+func TestDetectOrphanedFiles_StandardParaSingle(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "values-local.yaml", "local")
+	helperWriteFile(t, dir, "values-prod.yaml", "prod")
+
+	orphans := DetectOrphanedFiles(dir, "standard", "single")
+	assert.Len(t, orphans, 1)
+	assert.Contains(t, orphans[0], "values-prod.yaml")
+}
+
+func TestDetectOrphanedFiles_MesmaTopologia(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "values-local.yaml", "local")
+
+	orphans := DetectOrphanedFiles(dir, "standard", "standard")
+	assert.Empty(t, orphans, "mesma topologia não deve gerar órfãos")
+}
+
+func TestDetectOrphanedFiles_TopologiaVazia(t *testing.T) {
+	dir := t.TempDir()
+	orphans := DetectOrphanedFiles(dir, "", "standard")
+	assert.Empty(t, orphans)
+
+	orphans = DetectOrphanedFiles(dir, "standard", "")
+	assert.Empty(t, orphans)
+}
+
+func TestDetectOrphanedFiles_SemArquivosNoDisco(t *testing.T) {
+	dir := t.TempDir()
+	orphans := DetectOrphanedFiles(dir, "complete", "single")
+	assert.Empty(t, orphans, "sem arquivos no disco não deve retornar órfãos")
+}
+
+func TestDetectOrphanedFiles_SingleParaComplete(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "values-local.yaml", "local")
+
+	// Expandindo de single para complete — nenhum órfão, pois complete contém todos
+	orphans := DetectOrphanedFiles(dir, "single", "complete")
+	assert.Empty(t, orphans, "expandir topologia não deve gerar órfãos")
+}
+
+func TestTopologyEnvironments(t *testing.T) {
+	assert.Equal(t, []string{"local"}, topologyEnvironments("single"))
+	assert.Equal(t, []string{"local", "prod"}, topologyEnvironments("standard"))
+	assert.Equal(t, []string{"local", "dev", "staging", "prod"}, topologyEnvironments("complete"))
+	assert.Equal(t, []string{"local"}, topologyEnvironments("desconhecido"))
+}
+
 func TestMergePlan_Summary(t *testing.T) {
 	plan := &MergePlan{
 		Entries: []MergeEntry{
