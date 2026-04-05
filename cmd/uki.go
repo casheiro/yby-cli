@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,17 +42,19 @@ Exemplo:
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
-		// 1. Get Description
-		description := ""
-		if len(args) > 0 {
+		// 1. Obtém descrição: via --file ou argumento posicional
+		var description string
+		filePath, _ := cmd.Flags().GetString("file")
+		if filePath != "" {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler arquivo")
+			}
+			description = string(data)
+		} else if len(args) > 0 {
 			description = strings.Join(args, " ")
-		}
-
-		// Optional: Read from file if flag provided (skipped for MVP simplicity unless requested, sticking to args/stdin later)
-		// For now, simple arg.
-
-		if description == "" {
-			return errors.New(errors.ErrCodeValidation, "Descrição necessária. Uso: yby uki capture \"Descrição da necessidade ou decisão\"")
+		} else {
+			return errors.New(errors.ErrCodeValidation, "informe uma descrição ou use --file")
 		}
 
 		fmt.Println(titleStyle.Render("🧠 Yby AI - Governance Capture"))
@@ -68,8 +71,8 @@ Exemplo:
 		fmt.Printf("%s Usando provedor: %s\n", checkStyle.String(), provider.Name())
 		fmt.Println(stepStyle.Render("🤔 Analisando e estruturando conhecimento... (Isso pode levar alguns segundos)"))
 
-		// 3. Generate
-		blueprint, err := provider.GenerateGovernance(ctx, description)
+		// 3. Generate via Completion
+		blueprint, err := generateGovernanceViaCompletion(ctx, provider, description)
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "Erro na geração AI")
 		}
@@ -115,10 +118,34 @@ Exemplo:
 	},
 }
 
+// generateGovernanceViaCompletion usa Completion com o system prompt de governança
+// para gerar um GovernanceBlueprint, substituindo o uso direto de GenerateGovernance.
+func generateGovernanceViaCompletion(ctx context.Context, provider ai.Provider, description string) (*ai.GovernanceBlueprint, error) {
+	userPrompt := fmt.Sprintf("Descrição do Projeto: %s", description)
+	result, err := provider.Completion(ctx, ai.SystemPrompt, userPrompt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Limpar possíveis fences de markdown na resposta
+	cleanJSON := strings.TrimPrefix(result, "```json")
+	cleanJSON = strings.TrimPrefix(cleanJSON, "```")
+	cleanJSON = strings.TrimSuffix(cleanJSON, "```")
+	cleanJSON = strings.TrimSpace(cleanJSON)
+
+	var blueprint ai.GovernanceBlueprint
+	if err := json.Unmarshal([]byte(cleanJSON), &blueprint); err != nil {
+		return nil, fmt.Errorf("falha ao analisar json do blueprint: %w", err)
+	}
+
+	return &blueprint, nil
+}
+
 func init() {
 	rootCmd.AddCommand(ukiCmd)
 	ukiCmd.AddCommand(captureCmd)
 
 	// Flags
 	captureCmd.Flags().String("ai-provider", "", "Forçar provedor de IA (ollama, gemini, openai)")
+	captureCmd.Flags().String("file", "", "Arquivo de texto para capturar como UKI")
 }

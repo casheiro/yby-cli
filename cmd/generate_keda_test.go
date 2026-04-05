@@ -21,6 +21,7 @@ func TestGenerateKedaCmd(t *testing.T) {
 	kedaOpts.Deployment = "test-deploy"
 	kedaOpts.Namespace = "test-ns"
 	kedaOpts.Schedule = "0 18 * * *"
+	kedaOpts.EndSchedule = "0 8 * * *"
 	kedaOpts.Replicas = "5"
 	kedaOpts.Timezone = "UTC"
 
@@ -73,6 +74,7 @@ func TestGenerateKedaCmd_ValoresDiferentes(t *testing.T) {
 	kedaOpts.Deployment = "nginx"
 	kedaOpts.Namespace = "production"
 	kedaOpts.Schedule = "0 22 * * 1-5"
+	kedaOpts.EndSchedule = "0 8 * * *"
 	kedaOpts.Replicas = "10"
 	kedaOpts.Timezone = "America/Sao_Paulo"
 
@@ -104,6 +106,7 @@ func TestGenerateKedaCmd_SaidaEhYAMLValido(t *testing.T) {
 	kedaOpts.Deployment = "app"
 	kedaOpts.Namespace = "default"
 	kedaOpts.Schedule = "0 20 * * *"
+	kedaOpts.EndSchedule = "0 8 * * *"
 	kedaOpts.Replicas = "1"
 	kedaOpts.Timezone = "UTC"
 
@@ -141,6 +144,7 @@ func TestKedaCmd_FlagsRegistradas(t *testing.T) {
 		{"schedule", "0 20 * * *"},
 		{"replicas", "1"},
 		{"timezone", "America/Sao_Paulo"},
+		{"end-schedule", "0 8 * * *"},
 	}
 
 	for _, f := range flags {
@@ -187,6 +191,7 @@ func TestGenerateKedaCmd_Headless(t *testing.T) {
 	kedaOpts.Deployment = "my-app"
 	kedaOpts.Namespace = ""
 	kedaOpts.Schedule = "0 20 * * *"
+	kedaOpts.EndSchedule = "0 8 * * *"
 	kedaOpts.Replicas = "1"
 	kedaOpts.Timezone = "UTC"
 

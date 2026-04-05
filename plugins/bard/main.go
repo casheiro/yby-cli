@@ -22,16 +22,21 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	var req plugin.PluginRequest
 
 	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
 	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
 		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("erro ao analisar YBY_PLUGIN_REQUEST: %w", err)
 		}
-		handlePluginRequest(req)
-		return
+		return handlePluginRequest(req)
 	}
 
 	// 2. Check for Stdin Protocol (Legacy/Automation)
@@ -39,17 +44,16 @@ func main() {
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
 		// Data on pipe -> Plugin Request
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
-			handlePluginRequest(req)
-			return
+			return handlePluginRequest(req)
 		}
 	}
 
 	// 3. Fallback / Dev Mode
 	// Mock request for development or direct invocation without context
-	handlePluginRequest(plugin.PluginRequest{Hook: "command"})
+	return handlePluginRequest(plugin.PluginRequest{Hook: "command"})
 }
 
-func handlePluginRequest(req plugin.PluginRequest) {
+func handlePluginRequest(req plugin.PluginRequest) error {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
@@ -58,22 +62,20 @@ func handlePluginRequest(req plugin.PluginRequest) {
 			Description: "Assistente de IA interativo para diagnóstico e operações",
 			Hooks:       []string{"command"},
 		})
+		return nil
 	case "command":
-		startChat(req.Context)
+		return startChat(req.Context)
 	default:
-		// Unknown hook
-		// Just exit 0 to not break anything, or error
-		os.Exit(0)
+		return nil
 	}
 }
 
-func startChat(ctxData map[string]interface{}) {
+func startChat(ctxData map[string]interface{}) error {
 	// Inicializar IA
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
-		fmt.Println("❌ Nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY.")
-		os.Exit(1)
+		return fmt.Errorf("nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY")
 	}
 
 	// 1. Inicializar Vector Store (acesso somente leitura)
@@ -91,7 +93,7 @@ func startChat(ctxData map[string]interface{}) {
 	// 3. Detectar modo batch (non-TTY)
 	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	if !isTTY {
-		os.Exit(runBatchMode(ctx, provider, vectorStore, bardCfg, ctxData))
+		return runBatchMode(ctx, provider, vectorStore, bardCfg, ctxData)
 	}
 
 	// 4. Gerar SessionID para esta sessão interativa
@@ -240,6 +242,7 @@ func startChat(ctxData map[string]interface{}) {
 		}
 		fmt.Println() // Nova linha após o stream
 	}
+	return nil
 }
 
 // buildSystemPrompt constrói o system prompt enriquecido com contexto e histórico.
@@ -306,11 +309,11 @@ func handleSessionsList(currentSessionID string) {
 
 // runBatchMode executa o Bard em modo não-interativo (pipe/batch).
 // Processa uma pergunta por linha do stdin, sem styling nem histórico.
-func runBatchMode(ctx context.Context, provider ai.Provider, vectorStore *ai.VectorStore, bardCfg BardConfig, ctxData map[string]interface{}) int {
+func runBatchMode(ctx context.Context, provider ai.Provider, vectorStore *ai.VectorStore, bardCfg BardConfig, ctxData map[string]interface{}) error {
 	systemPrompt := buildSystemPrompt(ctxData, bardCfg, nil)
 
 	scanner := bufio.NewScanner(os.Stdin)
-	exitCode := 0
+	var lastErr error
 	first := true
 
 	for scanner.Scan() {
@@ -343,12 +346,12 @@ func runBatchMode(ctx context.Context, provider ai.Provider, vectorStore *ai.Vec
 		err := provider.StreamCompletion(ctx, systemPrompt, runInput, os.Stdout)
 		if err != nil {
 			slog.Error("falha ao processar pergunta", "pergunta", question, "erro", err)
-			exitCode = 1
+			lastErr = err
 			continue
 		}
 	}
 
-	return exitCode
+	return lastErr
 }
 
 func respond(data interface{}) {

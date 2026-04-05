@@ -27,33 +27,39 @@ type PluginResponse struct {
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	var rootCmd = &cobra.Command{
 		Use:   "viz",
 		Short: "Yby Viz - Observability TUI",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := monitor.NewK8sClient()
 			if err != nil {
 				// Passa nil para mostrar mensagem de erro na TUI
 				p := tea.NewProgram(ui.NewModel(nil), tea.WithAltScreen())
 				if _, err := p.Run(); err != nil {
-					fmt.Printf("Ops, ocorreu um erro: %v", err)
-					os.Exit(1)
+					return fmt.Errorf("ops, ocorreu um erro: %w", err)
 				}
-				return
+				return nil
 			}
 			retryClient := monitor.NewRetryClient(client)
 			p := tea.NewProgram(ui.NewModel(retryClient), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
-				fmt.Printf("Ops, ocorreu um erro: %v", err)
-				os.Exit(1)
+				return fmt.Errorf("ops, ocorreu um erro: %w", err)
 			}
+			return nil
 		},
 	}
 
 	var manifestCmd = &cobra.Command{
 		Use:    "manifest",
 		Hidden: true,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			manifest := PluginManifest{
 				Name:        "viz",
 				Description: "Observabilidade visual no terminal (Dashboards TUI)",
@@ -63,9 +69,9 @@ func main() {
 			if err := json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 				"data": manifest,
 			}); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to encode manifest: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("falha ao codificar manifest: %w", err)
 			}
+			return nil
 		},
 	}
 
@@ -83,15 +89,12 @@ func main() {
 					Hooks:       []string{"command"},
 				}
 				if err := json.NewEncoder(os.Stdout).Encode(PluginResponse{Data: manifest}); err != nil {
-					fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("falha ao codificar resposta: %w", err)
 				}
-				return
+				return nil
 			}
 		}
 	}
 
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+	return rootCmd.Execute()
 }

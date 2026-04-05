@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/executor"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
@@ -65,12 +64,7 @@ Pré-requisitos (verificados automaticamente):
 			// Smart Local Detection:
 			// If no host provided, and we are on Linux, ask if user wants to provision THIS machine.
 			if host == "" && runtime.GOOS == "linux" {
-				confirmLocal := false
-				prompt := &survey.Confirm{
-					Message: "Nenhum host remoto definido. Deseja provisionar ESTA máquina como uma VPS Yby (localhost)?",
-					Default: false,
-				}
-				_ = survey.AskOne(prompt, &confirmLocal)
+				confirmLocal, _ := prompter.Confirm("Nenhum host remoto definido. Deseja provisionar ESTA máquina como uma VPS Yby (localhost)?", false)
 
 				if confirmLocal {
 					isLocal = true

@@ -417,7 +417,7 @@ func (m *Manager) Remove(name string) error {
 		return fmt.Errorf("plugin '%s' está instalado fora do diretório global (%s). Remoção manual necessária", name, p.Path)
 	}
 
-	fmt.Printf("🗑️  Removendo plugin %s de %s...\n", name, p.Path)
+	slog.Info("Removendo plugin", "nome", name, "caminho", p.Path)
 	return os.Remove(p.Path)
 }
 
@@ -445,7 +445,7 @@ func (m *Manager) Update(name string) error {
 
 	if nativePlugins[name] {
 		// Native plugin: simple reinstall/upgrade
-		fmt.Printf("🔄 Atualizando plugin nativo '%s' (Atual: %s)...\n", name, p.Manifest.Version)
+		slog.Info("Atualizando plugin nativo", "nome", name, "versão_atual", p.Manifest.Version)
 		return m.Install(name, "latest", true) // Force = true
 	}
 
@@ -477,16 +477,16 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 					return fmt.Errorf("plugin '%s' versão %s já está instalado. Use --force para reinstalar", pluginSource, version)
 				}
 				if version == "latest" {
-					fmt.Printf("⚠️  Plugin '%s' já existe (v%s). Reinstalando 'latest'...\n", pluginSource, existing.Manifest.Version)
+					slog.Warn("Plugin já existe, reinstalando latest", "nome", pluginSource, "versão_atual", existing.Manifest.Version)
 				} else {
-					fmt.Printf("⚠️  Plugin '%s' já existe (v%s). Substituindo por v%s...\n", pluginSource, existing.Manifest.Version, version)
+					slog.Warn("Plugin já existe, substituindo", "nome", pluginSource, "versão_atual", existing.Manifest.Version, "nova_versão", version)
 				}
 			}
 		}
 		return m.installNative(pluginSource, version)
 	}
 
-	fmt.Printf("📦 Instalando plugin de %s...\n", pluginSource)
+	slog.Info("Instalando plugin", "origem", pluginSource)
 
 	// Determine source path
 	var srcPath string
@@ -540,13 +540,13 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 		return fmt.Errorf("falha ao copiar binário: %w", err)
 	}
 
-	fmt.Printf("✅ Plugin %s instalado com sucesso em %s\n", pluginName, destPath)
+	slog.Info("Plugin instalado com sucesso", "nome", pluginName, "caminho", destPath)
 	return nil
 }
 
 func (m *Manager) installNative(name, version string) error {
 	if version == "dev" {
-		fmt.Println("⚠️  Rodando em modo dev. Assumindo release 'latest' para plugins.")
+		slog.Warn("Rodando em modo dev, release 'latest' assumido para plugins")
 		// In a real scenario, we might want to fail or look for local builds.
 		// For now, let's warn and fail because we don't know the URL for sure without a tag.
 		return fmt.Errorf("não é possível instalar plugins nativos em modo dev (version=dev). Construa localmente ou especifique uma versão")
@@ -577,7 +577,7 @@ func (m *Manager) installNative(name, version string) error {
 	}
 	url := fmt.Sprintf("%s/%s/%s", releaseBaseURL, tag, filename)
 
-	fmt.Printf("⬇️  Baixando plugin %s de %s...\n", name, url)
+	slog.Info("Baixando plugin", "nome", name, "url", url)
 
 	// Create temp dir
 	tmpDir, err := os.MkdirTemp("", "yby-plugin-install-*")
@@ -669,12 +669,12 @@ func (m *Manager) installNative(name, version string) error {
 		return fmt.Errorf("falha ao tornar plugin executável: %w", err)
 	}
 
-	fmt.Printf("✅ Plugin %s instalado com sucesso em %s\n", name, finalPath)
+	slog.Info("Plugin instalado com sucesso", "nome", name, "caminho", finalPath)
 	return nil
 }
 
 func (m *Manager) installFromURL(url string) error {
-	fmt.Printf("⬇️  Baixando plugin genérico de %s...\n", url)
+	slog.Info("Baixando plugin genérico", "url", url)
 
 	// Create temp dir
 	tmpDir, err := os.MkdirTemp("", "yby-plugin-generic-*")
@@ -731,7 +731,7 @@ func (m *Manager) installFromURL(url string) error {
 		// Write directly to file
 		// Check name convention yby-plugin-*
 		if !strings.HasPrefix(filename, "yby-plugin-") {
-			fmt.Println("⚠️  Aviso: Nome do binário do plugin não começa com 'yby-plugin-'. Pode não ser descoberto...")
+			slog.Warn("Nome do binário do plugin não começa com 'yby-plugin-', pode não ser descoberto", "arquivo", filename)
 		}
 		pluginName = filename
 		destFile := filepath.Join(tmpDir, pluginName)
@@ -792,7 +792,7 @@ func (m *Manager) installFromURL(url string) error {
 		return fmt.Errorf("falha ao executar chmod: %w", err)
 	}
 
-	fmt.Printf("✅ Plugin genérico instalado: %s\n", finalPath)
+	slog.Info("Plugin genérico instalado", "caminho", finalPath)
 	return nil
 }
 

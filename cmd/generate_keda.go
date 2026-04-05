@@ -7,19 +7,19 @@ import (
 	"os"
 	"text/template"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
 // Options for KEDA generation
 var kedaOpts struct {
-	Name       string
-	Deployment string
-	Namespace  string
-	Schedule   string
-	Replicas   string
-	Timezone   string
+	Name        string
+	Deployment  string
+	Namespace   string
+	Schedule    string
+	EndSchedule string
+	Replicas    string
+	Timezone    string
 }
 
 // Template for ScaledObject
@@ -58,60 +58,31 @@ var kedaCmd = &cobra.Command{
 			}
 		}
 
-		// Collect missing info via prompts
-		qs := []*survey.Question{}
-
+		// Coletar informações faltantes via prompts
 		if kedaOpts.Name == "" {
-			qs = append(qs, &survey.Question{
-				Name: "name",
-				Prompt: &survey.Input{
-					Message: "Nome do ScaledObject:",
-					Default: "scale-to-zero",
-				},
-			})
-		}
-		if kedaOpts.Namespace == "" {
-			qs = append(qs, &survey.Question{
-				Name: "namespace",
-				Prompt: &survey.Input{
-					Message: "Namespace da aplicação:",
-					Default: "apps",
-				},
-			})
-		}
-		if kedaOpts.Deployment == "" {
-			qs = append(qs, &survey.Question{
-				Name: "deployment",
-				Prompt: &survey.Input{
-					Message: "Nome do Deployment alvo:",
-				},
-				Validate: survey.Required,
-			})
-		}
-
-		// Prompt answers
-		answers := struct {
-			Name       string
-			Namespace  string
-			Deployment string
-		}{}
-
-		// Pre-fill with flags
-		answers.Name = kedaOpts.Name
-		answers.Namespace = kedaOpts.Namespace
-		answers.Deployment = kedaOpts.Deployment
-
-		if len(qs) > 0 {
-			err := survey.Ask(qs, &answers)
+			val, err := prompter.Input("Nome do ScaledObject:", "scale-to-zero")
 			if err != nil {
 				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
 			}
+			kedaOpts.Name = val
 		}
-
-		// Apply back to opts for generation
-		kedaOpts.Name = answers.Name
-		kedaOpts.Namespace = answers.Namespace
-		kedaOpts.Deployment = answers.Deployment
+		if kedaOpts.Namespace == "" {
+			val, err := prompter.Input("Namespace da aplicação:", "apps")
+			if err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
+			}
+			kedaOpts.Namespace = val
+		}
+		if kedaOpts.Deployment == "" {
+			val, err := prompter.Input("Nome do Deployment alvo:", "")
+			if err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
+			}
+			if val == "" {
+				return errors.New(errors.ErrCodeValidation, "nome do deployment é obrigatório")
+			}
+			kedaOpts.Deployment = val
+		}
 
 		// Defaults for schedule if not provided (Flags have defaults, but check logic)
 		// ... actually flags handle defaults well.
@@ -132,7 +103,7 @@ var kedaCmd = &cobra.Command{
 			Replicas:    kedaOpts.Replicas,
 			Timezone:    kedaOpts.Timezone,
 			Schedule:    kedaOpts.Schedule,
-			EndSchedule: "0 8 * * *", // Hardcoded end for now based on simplicity request, or could prompt.
+			EndSchedule: kedaOpts.EndSchedule,
 		}
 
 		t := template.Must(template.New("keda").Parse(kedaCronTemplate))
@@ -152,4 +123,5 @@ func init() {
 	kedaCmd.Flags().StringVar(&kedaOpts.Schedule, "schedule", "0 20 * * *", "Cron de início (desligar)")
 	kedaCmd.Flags().StringVar(&kedaOpts.Replicas, "replicas", "1", "Máximo de réplicas ao ligar")
 	kedaCmd.Flags().StringVar(&kedaOpts.Timezone, "timezone", "America/Sao_Paulo", "Timezone")
+	kedaCmd.Flags().StringVar(&kedaOpts.EndSchedule, "end-schedule", "0 8 * * *", "Cron schedule para desligar o scaler (padrão: 08:00 diário)")
 }

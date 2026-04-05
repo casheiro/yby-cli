@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/filesystem"
@@ -23,8 +22,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Allow mocking for tests
-var askOne = survey.AskOne
+// askInput é um atalho mockável para prompts de input nos testes.
+var askInput = func(title, defaultVal string) (string, error) {
+	return prompter.Input(title, defaultVal)
+}
+
+// askSelect é um atalho mockável para prompts de select nos testes.
+var askSelect = func(title string, options []string, defaultVal string) (string, error) {
+	return prompter.Select(title, options, defaultVal)
+}
+
+// askConfirm é um atalho mockável para prompts de confirm nos testes.
+var askConfirm = func(title string, defaultVal bool) (bool, error) {
+	return prompter.Confirm(title, defaultVal)
+}
+
+// askMultiSelect é um atalho mockável para prompts de multi-select nos testes.
+var askMultiSelect = func(title string, options []string, defaults []string) ([]string, error) {
+	return prompter.MultiSelect(title, options, defaults)
+}
 
 // InitOptions holds the flags for headless mode
 type InitOptions struct {
@@ -153,12 +169,8 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 				return errors.New(errors.ErrCodeValidation,
 					"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
 			} else {
-				var confirm bool
-				confirmPrompt := &survey.Confirm{
-					Message: "⚠️  Projeto Yby já inicializado neste diretório. Deseja sobrescrever?",
-					Default: false,
-				}
-				if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
+				confirm, err := askConfirm("Projeto Yby já inicializado neste diretório. Deseja sobrescrever?", false)
+				if err != nil || !confirm {
 					return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
 				}
 			}
@@ -232,7 +244,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 			if description != "" {
 				fmt.Printf("🧠 Processando... (Analisando: '%s')\n", description)
-				blueprint, err := aiProvider.GenerateGovernance(bgCtx, description)
+				blueprint, err := generateGovernanceViaCompletion(bgCtx, aiProvider, description)
 				if err != nil {
 					fmt.Printf("⚠️ Falha na geração por IA: %v. Usando templates estáticos.\n", err)
 				} else {
@@ -426,13 +438,8 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		fmt.Println("------------------------------------")
 		// Directory Prompt
 		if flags.TargetDir == "" {
-			prompt := &survey.Input{
-				Message: "Onde deseja inicializar o projeto? (caminho relativo ou absoluto)",
-				Default: ".",
-				Help:    "Diretório onde os arquivos serão criados. Se não existir, será criado.",
-			}
-			var dir string
-			if err := askOne(prompt, &dir); err != nil {
+			dir, err := askInput("Onde deseja inicializar o projeto? (caminho relativo ou absoluto)", ".")
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 			flags.TargetDir = dir
@@ -440,43 +447,32 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 
 		// Topology Prompt
 		if ctx.Topology == "" {
-			prompt := &survey.Select{
-				Message: "Selecione a Topologia de Ambientes:",
-				Options: []string{"single", "standard", "complete"},
-				Help:    "single: Apenas 1 env. standard: Local+Prod. complete: Local+Dev+Staging+Prod",
-				Default: "standard",
-			}
-			if err := askOne(prompt, &ctx.Topology); err != nil {
+			val, err := askSelect("Selecione a Topologia de Ambientes:", []string{"single", "standard", "complete"}, "standard")
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
+			ctx.Topology = val
 		}
 
 		// Workflow Prompt
 		if ctx.WorkflowPattern == "" {
-			prompt := &survey.Select{
-				Message: "Selecione o Padrão de Workflow (CI/CD):",
-				Options: []string{"essential", "gitflow", "trunkbased"},
-				Help:    "essential: Apenas checks básica. gitflow: Release automatizado. trunkbased: CD rápido.",
-				Default: "gitflow",
-			}
-			if err := askOne(prompt, &ctx.WorkflowPattern); err != nil {
+			val, err := askSelect("Selecione o Padrão de Workflow (CI/CD):", []string{"essential", "gitflow", "trunkbased"}, "gitflow")
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
+			ctx.WorkflowPattern = val
 		}
 
 		// Ask for Git Repo if missing
 		if ctx.GitRepoURL == "" {
 			if flags.Offline {
-				// Offline Mode: Use placeholder without asking
-				ctx.GitRepoURL = "http://git-server.yby-system.svc/repo.git" // Internal placeholder
+				ctx.GitRepoURL = "http://git-server.yby-system.svc/repo.git"
 			} else {
-				prompt := &survey.Input{
-					Message: "Qual a URL do repositório Git?",
-					Help:    "Se não tiver um ainda, deixe em branco para usar um placeholder ou gerar localmente.",
-				}
-				if err := askOne(prompt, &ctx.GitRepoURL); err != nil {
+				val, err := askInput("Qual a URL do repositório Git?", "")
+				if err != nil {
 					return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 				}
+				ctx.GitRepoURL = val
 			}
 		}
 
@@ -486,45 +482,30 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 			defaultName = deriveProjectName(ctx.GitRepoURL)
 		}
 
-		promptName := &survey.Input{
-			Message: "Nome do Projeto (Slug para K8s):",
-			Default: defaultName,
-			Help:    "Identificador único usado em namespaces e resources.",
-		}
-		_ = askOne(promptName, &ctx.ProjectName)
+		val, _ := askInput("Nome do Projeto (Slug para K8s):", defaultName)
+		ctx.ProjectName = val
 
 		// Ask for Project Details (Domain / Email)
-		if ctx.Domain == "yby.local" { // Check if default
-			prompt := &survey.Input{
-				Message: "Defina o Domínio Base do Cluster:",
-				Default: "yby.local",
-			}
-			_ = askOne(prompt, &ctx.Domain)
+		if ctx.Domain == "yby.local" {
+			val, _ := askInput("Defina o Domínio Base do Cluster:", "yby.local")
+			ctx.Domain = val
 		}
 
-		if ctx.Email == "admin@yby.local" { // Check if default
-			prompt := &survey.Input{
-				Message: "Email para Admin/Certificados:",
-				Default: "admin@yby.local",
-			}
-			_ = askOne(prompt, &ctx.Email)
+		if ctx.Email == "admin@yby.local" {
+			val, _ := askInput("Email para Admin/Certificados:", "admin@yby.local")
+			ctx.Email = val
 		}
 
 		// Modules Selection (MultiSelect)
-		var selectedModules []string
-		// Pre-select based on flags if any were true, otherwise default to none or recommeded
 		defaults := []string{}
 		if ctx.EnableKepler {
 			defaults = append(defaults, "Kepler (Eficiência Energética)")
 		}
 
-		promptModules := &survey.MultiSelect{
-			Message: "Selecione os Módulos Adicionais (Add-ons):",
-			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)", "Observability Core (Metrics Server)"},
-			Default: defaults,
-			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
-		}
-		if err := askOne(promptModules, &selectedModules); err != nil {
+		selectedModules, err := askMultiSelect("Selecione os Módulos Adicionais (Add-ons):",
+			[]string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)", "Observability Core (Metrics Server)"},
+			defaults)
+		if err != nil {
 			return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 		}
 
@@ -533,50 +514,33 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 
 		// Ask for DevContainer
 		if !flags.IncludeDevContainer {
-			prompt := &survey.Confirm{
-				Message: "Deseja incluir configuração de DevContainer (.devcontainer)?",
-				Default: true,
-			}
-			if err := askOne(prompt, &ctx.EnableDevContainer); err != nil {
+			devContainer, err := askConfirm("Deseja incluir configuração de DevContainer (.devcontainer)?", true)
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
+			ctx.EnableDevContainer = devContainer
 		}
 
 		// ---------------------------------------------------------
-		// New: AI & Governance Section
+		// AI & Governance Section
 		// ---------------------------------------------------------
 		if !flags.Offline {
-			enableAI := false
-			promptAI := &survey.Confirm{
-				Message: "🤖 Deseja ativar o Assistente de IA (Synapstor & Governança)?",
-				Default: true,
-				Help:    "Gera documentação técnica, decisões de arquitetura e personas baseada na descrição do projeto.",
-			}
-			_ = askOne(promptAI, &enableAI)
+			enableAI, _ := askConfirm("Deseja ativar o Assistente de IA (Synapstor & Governança)?", true)
 
 			if enableAI {
 				// Provider Selection
 				if flags.AIProvider == "" {
-					promptProvider := &survey.Select{
-						Message: "Selecione o Provedor de IA:",
-						Options: []string{"auto", "ollama", "gemini", "openai"},
-						Default: "auto",
-						Help:    "auto: Tenta Ollama local, depois chaves de API (Gemini/OpenAI).",
+					provider, _ := askSelect("Selecione o Provedor de IA:", []string{"auto", "ollama", "gemini", "openai"}, "auto")
+					if provider == "auto" {
+						provider = ""
 					}
-					_ = askOne(promptProvider, &flags.AIProvider)
-					// If user selects "auto", we leave it empty string for factory defaults, or "auto"
-					if flags.AIProvider == "auto" {
-						flags.AIProvider = ""
-					}
+					flags.AIProvider = provider
 				}
 
 				// Description
 				if flags.Description == "" {
-					promptDesc := &survey.Input{
-						Message: "📝 Descreva seu projeto (em linguagem natural):",
-						Help:    "Ex: 'Um gateway de pagamento para criptoativos focado em segurança'. A IA detectará o idioma.",
-					}
-					_ = askOne(promptDesc, &flags.Description)
+					desc, _ := askInput("Descreva seu projeto (em linguagem natural):", "")
+					flags.Description = desc
 				}
 			}
 		}
@@ -857,12 +821,8 @@ func runUpdateFlow(targetDir string, ctx *scaffold.BlueprintContext, manifest *s
 
 	// 4. Confirmar com o usuário
 	if !flags.NonInteractive {
-		var confirm bool
-		confirmPrompt := &survey.Confirm{
-			Message: "Deseja aplicar o plano de merge?",
-			Default: true,
-		}
-		if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
+		confirm, err := askConfirm("Deseja aplicar o plano de merge?", true)
+		if err != nil || !confirm {
 			return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
 		}
 	}

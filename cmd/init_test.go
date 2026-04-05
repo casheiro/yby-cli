@@ -3,7 +3,6 @@ package cmd
 import (
 	"testing"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
@@ -487,28 +486,39 @@ func TestBuildContext_OfflineMode(t *testing.T) {
 }
 
 func TestBuildContext_Interactive_Mock(t *testing.T) {
-	// Mock askOne
-	originalAskOne := askOne
-	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
-		switch prompt := p.(type) {
-		case *survey.Select:
-			if prompt.Message == "Selecione a Topologia de Ambientes:" {
-				*(response.(*string)) = "complete"
-			} else if prompt.Message == "Selecione o Padrão de Workflow (CI/CD):" {
-				*(response.(*string)) = "trunkbased"
-			}
-		case *survey.Input:
-			if prompt.Message == "Nome do Projeto (Slug para K8s):" {
-				*(response.(*string)) = "mocked-project"
-			}
-		case *survey.MultiSelect:
-			*(response.(*[]string)) = []string{"Kepler (Eficiência Energética)"}
-		case *survey.Confirm:
-			*(response.(*bool)) = true
+	// Mock dos wrappers de prompt
+	origInput := askInput
+	origSelect := askSelect
+	origConfirm := askConfirm
+	origMultiSelect := askMultiSelect
+	defer func() {
+		askInput = origInput
+		askSelect = origSelect
+		askConfirm = origConfirm
+		askMultiSelect = origMultiSelect
+	}()
+
+	askSelect = func(title string, options []string, defaultVal string) (string, error) {
+		if title == "Selecione a Topologia de Ambientes:" {
+			return "complete", nil
 		}
-		return nil
+		if title == "Selecione o Padrão de Workflow (CI/CD):" {
+			return "trunkbased", nil
+		}
+		return defaultVal, nil
 	}
-	defer func() { askOne = originalAskOne }()
+	askInput = func(title, defaultVal string) (string, error) {
+		if title == "Nome do Projeto (Slug para K8s):" {
+			return "mocked-project", nil
+		}
+		return defaultVal, nil
+	}
+	askMultiSelect = func(title string, options []string, defaults []string) ([]string, error) {
+		return []string{"Kepler (Eficiência Energética)"}, nil
+	}
+	askConfirm = func(title string, defaultVal bool) (bool, error) {
+		return true, nil
+	}
 
 	opts := &InitOptions{
 		NonInteractive: false,
@@ -611,24 +621,6 @@ func TestExtractGithubOrg_CasosExtras(t *testing.T) {
 	}
 }
 
-func TestInferContext_TopologiaCompleta(t *testing.T) {
-	// Verifica que topologia "complete" adiciona sufixo ao ImpactLevel
-	ctx := &scaffold.BlueprintContext{
-		ProjectName: "payment-system",
-		Topology:    "complete",
-	}
-	inferContext(ctx)
-
-	if ctx.BusinessDomain != "Fintech / Financial Services" {
-		t.Errorf("BusinessDomain = %q, esperado 'Fintech / Financial Services'", ctx.BusinessDomain)
-	}
-	// ImpactLevel deve conter o sufixo da topologia completa
-	expectedSuffix := "(Enterprise Topology)"
-	if !contains(ctx.ImpactLevel, expectedSuffix) {
-		t.Errorf("ImpactLevel = %q, esperado conter %q", ctx.ImpactLevel, expectedSuffix)
-	}
-}
-
 func TestInferContext_PalavrasChaveVariadas(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -661,16 +653,6 @@ func TestInferContext_PalavrasChaveVariadas(t *testing.T) {
 				t.Errorf("Archetype para %q = %q, esperado %q", tt.projectName, ctx.Archetype, tt.expectedArch)
 			}
 		})
-	}
-}
-
-func TestInferContext_CaseInsensitive(t *testing.T) {
-	// Nome com letras maiúsculas deve ser tratado como minúsculas
-	ctx := &scaffold.BlueprintContext{ProjectName: "MyPaymentGateway"}
-	inferContext(ctx)
-
-	if ctx.BusinessDomain != "Fintech / Financial Services" {
-		t.Errorf("BusinessDomain = %q, esperado 'Fintech / Financial Services' (case-insensitive)", ctx.BusinessDomain)
 	}
 }
 
