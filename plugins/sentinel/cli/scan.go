@@ -54,64 +54,10 @@ func scanNamespace(namespace, outputFormat, outputFile string) {
 
 	for _, pod := range pods.Items {
 		for _, container := range pod.Spec.Containers {
-			// 1. Verificar containers rodando como root
-			if container.SecurityContext != nil && container.SecurityContext.RunAsUser != nil && *container.SecurityContext.RunAsUser == 0 {
-				findings = append(findings, SecurityFinding{
-					Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-					Namespace:   namespace,
-					Type:        "critical",
-					Category:    "root_container",
-					Description: fmt.Sprintf("Container '%s' no pod '%s' roda como root (UID 0)", container.Name, pod.Name),
-				})
-			}
-			// Também verificar se não tem SecurityContext (potencialmente root)
-			if container.SecurityContext == nil || container.SecurityContext.RunAsNonRoot == nil || !*container.SecurityContext.RunAsNonRoot {
-				if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil {
-					findings = append(findings, SecurityFinding{
-						Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-						Namespace:   namespace,
-						Type:        "warning",
-						Category:    "root_container",
-						Description: fmt.Sprintf("Container '%s' no pod '%s' não define runAsNonRoot=true", container.Name, pod.Name),
-					})
-				}
-			}
-
-			// 2. Verificar sem resource limits
-			if container.Resources.Limits == nil || (container.Resources.Limits.Cpu().IsZero() && container.Resources.Limits.Memory().IsZero()) {
-				findings = append(findings, SecurityFinding{
-					Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-					Namespace:   namespace,
-					Type:        "warning",
-					Category:    "no_limits",
-					Description: fmt.Sprintf("Container '%s' no pod '%s' sem limites de CPU/memória definidos", container.Name, pod.Name),
-				})
-			}
-
-			// 3. Verificar ImagePullPolicy
-			if container.ImagePullPolicy != corev1.PullAlways {
-				findings = append(findings, SecurityFinding{
-					Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-					Namespace:   namespace,
-					Type:        "warning",
-					Category:    "image_pull_policy",
-					Description: fmt.Sprintf("Container '%s' no pod '%s' com ImagePullPolicy=%s (recomendado: Always)", container.Name, pod.Name, container.ImagePullPolicy),
-				})
-			}
-
-			// 4. Verificar variáveis de ambiente com secrets expostos
-			for _, env := range container.Env {
-				lowerName := strings.ToLower(env.Name)
-				if (strings.Contains(lowerName, "password") || strings.Contains(lowerName, "secret") || strings.Contains(lowerName, "token") || strings.Contains(lowerName, "key")) && env.ValueFrom == nil {
-					findings = append(findings, SecurityFinding{
-						Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-						Namespace:   namespace,
-						Type:        "critical",
-						Category:    "exposed_secrets",
-						Description: fmt.Sprintf("Container '%s' no pod '%s' tem env '%s' com valor hardcoded (use secretKeyRef)", container.Name, pod.Name, env.Name),
-					})
-				}
-			}
+			findings = append(findings, checkRootContainer(pod, container, namespace)...)
+			findings = append(findings, checkResourceLimits(pod, container, namespace)...)
+			findings = append(findings, checkImagePullPolicy(pod, container, namespace)...)
+			findings = append(findings, checkExposedSecrets(pod, container, namespace)...)
 		}
 	}
 
@@ -164,6 +110,89 @@ func scanNamespace(namespace, outputFormat, outputFile string) {
 
 	// Renderização visual (padrão)
 	renderScanResult(report)
+}
+
+// checkRootContainer verifica se um container roda como root ou não define runAsNonRoot.
+func checkRootContainer(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
+	var findings []SecurityFinding
+
+	if container.SecurityContext != nil && container.SecurityContext.RunAsUser != nil && *container.SecurityContext.RunAsUser == 0 {
+		findings = append(findings, SecurityFinding{
+			Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
+			Namespace:   namespace,
+			Type:        "critical",
+			Category:    "root_container",
+			Description: fmt.Sprintf("Container '%s' no pod '%s' roda como root (UID 0)", container.Name, pod.Name),
+		})
+	}
+
+	if container.SecurityContext == nil || container.SecurityContext.RunAsNonRoot == nil || !*container.SecurityContext.RunAsNonRoot {
+		if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil {
+			findings = append(findings, SecurityFinding{
+				Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
+				Namespace:   namespace,
+				Type:        "warning",
+				Category:    "root_container",
+				Description: fmt.Sprintf("Container '%s' no pod '%s' não define runAsNonRoot=true", container.Name, pod.Name),
+			})
+		}
+	}
+
+	return findings
+}
+
+// checkResourceLimits verifica se um container possui limites de CPU/memória definidos.
+func checkResourceLimits(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
+	var findings []SecurityFinding
+
+	if container.Resources.Limits == nil || (container.Resources.Limits.Cpu().IsZero() && container.Resources.Limits.Memory().IsZero()) {
+		findings = append(findings, SecurityFinding{
+			Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
+			Namespace:   namespace,
+			Type:        "warning",
+			Category:    "no_limits",
+			Description: fmt.Sprintf("Container '%s' no pod '%s' sem limites de CPU/memória definidos", container.Name, pod.Name),
+		})
+	}
+
+	return findings
+}
+
+// checkImagePullPolicy verifica se o ImagePullPolicy do container é Always.
+func checkImagePullPolicy(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
+	var findings []SecurityFinding
+
+	if container.ImagePullPolicy != corev1.PullAlways {
+		findings = append(findings, SecurityFinding{
+			Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
+			Namespace:   namespace,
+			Type:        "warning",
+			Category:    "image_pull_policy",
+			Description: fmt.Sprintf("Container '%s' no pod '%s' com ImagePullPolicy=%s (recomendado: Always)", container.Name, pod.Name, container.ImagePullPolicy),
+		})
+	}
+
+	return findings
+}
+
+// checkExposedSecrets verifica se variáveis de ambiente contêm secrets com valores hardcoded.
+func checkExposedSecrets(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
+	var findings []SecurityFinding
+
+	for _, env := range container.Env {
+		lowerName := strings.ToLower(env.Name)
+		if (strings.Contains(lowerName, "password") || strings.Contains(lowerName, "secret") || strings.Contains(lowerName, "token") || strings.Contains(lowerName, "key")) && env.ValueFrom == nil {
+			findings = append(findings, SecurityFinding{
+				Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
+				Namespace:   namespace,
+				Type:        "critical",
+				Category:    "exposed_secrets",
+				Description: fmt.Sprintf("Container '%s' no pod '%s' tem env '%s' com valor hardcoded (use secretKeyRef)", container.Name, pod.Name, env.Name),
+			})
+		}
+	}
+
+	return findings
 }
 
 // exportScanMarkdown gera o relatório de scan em formato Markdown.
