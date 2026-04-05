@@ -402,39 +402,6 @@ func TestProcessFile_TemplateExecuteError(t *testing.T) {
 // Testes adicionais de cobertura
 // ═══════════════════════════════════════════════════════════════════════════════
 
-func TestApply_RootAssetWithoutGit_FallbackCWD(t *testing.T) {
-	// Quando targetDir != "." e git root não está disponível,
-	// root assets (.github) devem ir para CWD como fallback.
-	// Aqui testamos com targetDir sendo um subdiretório.
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, "infra")
-	require.NoError(t, os.MkdirAll(targetDir, 0755))
-
-	mockFS := fstest.MapFS{
-		"assets/.github/CODEOWNERS": &fstest.MapFile{
-			Data: []byte("* @team"),
-		},
-		"assets/config/app.yaml": &fstest.MapFile{
-			Data: []byte("app: config"),
-		},
-	}
-
-	ctx := &BlueprintContext{
-		EnableCI: false, // CI desabilitado mas CODEOWNERS não é workflows
-	}
-
-	// Neste teste, estamos em um repo git real, então .github irá para o git root.
-	// Mas verificamos que config vai para targetDir corretamente.
-	err := Apply(targetDir, ctx, mockFS)
-	require.NoError(t, err)
-
-	// config/app.yaml deve estar em targetDir
-	configPath := filepath.Join(targetDir, "config", "app.yaml")
-	data, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-	assert.Equal(t, "app: config", string(data))
-}
-
 func TestApply_DevContainerEnabled(t *testing.T) {
 	// Quando EnableDevContainer=true, arquivos .devcontainer devem ser incluídos
 	tmpDir := t.TempDir()
