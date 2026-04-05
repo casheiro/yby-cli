@@ -35,8 +35,7 @@ func TestStatusCmd_WithMock(t *testing.T) {
 		}
 	}
 
-	// mockExecCommand continua necessário por conta do lookPath no cmd
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	assert.NotPanics(t, func() {

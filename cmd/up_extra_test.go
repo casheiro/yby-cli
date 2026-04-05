@@ -122,7 +122,7 @@ func newUpMockFs() shared.Filesystem {
 // ========================================================
 
 func TestRunLocalUp_ErroNoLookPath(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -150,7 +150,7 @@ func TestRunLocalUp_ErroNoLookPath(t *testing.T) {
 }
 
 func TestRunLocalUp_ClusterExisteStartFalha(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -179,7 +179,7 @@ func TestRunLocalUp_ClusterExisteStartFalha(t *testing.T) {
 }
 
 func TestRunLocalUp_ClusterNaoExisteCriacaoFalha(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -214,7 +214,7 @@ func TestRunLocalUp_ClusterNaoExisteCriacaoFalha(t *testing.T) {
 // ========================================================
 
 func TestRunLocalUp_Sucesso(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	orig := newLocalEnvironmentService
@@ -253,7 +253,7 @@ func TestRunLocalUp_Sucesso(t *testing.T) {
 }
 
 func TestRunLocalUp_Sucesso_ComClusterName(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	t.Setenv("YBY_CLUSTER_NAME", "custom-cluster")

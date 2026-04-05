@@ -8,7 +8,7 @@ import (
 )
 
 func TestRunRemoteUp_Success(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	err := runRemoteUp(context.Background(), "prod")
@@ -16,7 +16,7 @@ func TestRunRemoteUp_Success(t *testing.T) {
 }
 
 func TestRunRemoteUp_DevEnv(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	err := runRemoteUp(context.Background(), "staging")
