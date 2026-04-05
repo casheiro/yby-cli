@@ -513,12 +513,12 @@ Auditoria completa do codebase realizada em 2026-04-05. Este documento cataloga 
 
 ### P0 — Criticos (bloqueiam uso em producao)
 
-| # | Area | Melhoria | Impacto |
-|---|------|----------|---------|
-| 1.1 | IA | Gemini streaming real | UX congelada em respostas longas |
-| 1.2 | IA | Retry universal (nao so Gemini) | Falhas em rede instavel |
-| 5.1 | Viz | Expandir alem de pods | Dashboard inutil para operacao real |
-| 8.1 | Mirror | Port-forward com reconexao | Sync quebra silenciosamente |
+| # | Area | Melhoria | Impacto | Status |
+|---|------|----------|---------|--------|
+| 1.1 | IA | Gemini streaming real | UX congelada em respostas longas | ✅ |
+| 1.2 | IA | Retry universal (nao so Gemini) | Falhas em rede instavel | ✅ |
+| 5.1 | Viz | Expandir alem de pods | Dashboard inutil para operacao real | ✅ |
+| 8.1 | Mirror | Port-forward com reconexao | Sync quebra silenciosamente | ✅ |
 
 ### P1 — Importantes (impactam experiencia significativamente)
 
