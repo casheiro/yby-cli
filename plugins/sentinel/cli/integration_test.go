@@ -87,7 +87,6 @@ func TestHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-
 func TestExportMarkdown_ContemSecoes(t *testing.T) {
 	patch := "kubectl patch..."
 	result := AnalysisResult{
