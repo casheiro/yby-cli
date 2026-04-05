@@ -219,7 +219,7 @@ func TestSaveMessage_CriaArquivo(t *testing.T) {
 	restore := chdir(t, tmpDir)
 	defer restore()
 
-	saveMessage("user", "teste")
+	saveMessage("user", "teste", "test-session")
 
 	path := filepath.Join(tmpDir, historyFile)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -254,9 +254,9 @@ func TestSaveAndLoadHistory_Roundtrip(t *testing.T) {
 	restore := chdir(t, tmpDir)
 	defer restore()
 
-	saveMessage("user", "pergunta 1")
-	saveMessage("assistant", "resposta 1")
-	saveMessage("user", "pergunta 2")
+	saveMessage("user", "pergunta 1", "s1")
+	saveMessage("assistant", "resposta 1", "s1")
+	saveMessage("user", "pergunta 2", "s1")
 
 	entries := loadHistory()
 	if len(entries) != 3 {
@@ -282,7 +282,7 @@ func TestLoadHistory_LimitaEntradas(t *testing.T) {
 
 	// Criar 30 entradas
 	for i := 0; i < 30; i++ {
-		saveMessage("user", fmt.Sprintf("mensagem %d", i))
+		saveMessage("user", fmt.Sprintf("mensagem %d", i), "s1")
 	}
 
 	entries := loadHistory()
@@ -302,7 +302,7 @@ func TestClearHistory_RemoveArquivo(t *testing.T) {
 	restore := chdir(t, tmpDir)
 	defer restore()
 
-	saveMessage("user", "algo")
+	saveMessage("user", "algo", "s1")
 	clearHistory()
 
 	path := filepath.Join(tmpDir, historyFile)
@@ -448,5 +448,191 @@ func TestFilterByThreshold_Vazio(t *testing.T) {
 	filtered := filterByThreshold(nil, 0.6)
 	if len(filtered) != 0 {
 		t.Errorf("esperava 0 resultados, obteve %d", len(filtered))
+	}
+}
+
+// --- Testes de Sessões ---
+
+// TestLoadAllEntries_ArquivoInexistente verifica retorno vazio sem arquivo.
+func TestLoadAllEntries_ArquivoInexistente(t *testing.T) {
+	tmpDir := t.TempDir()
+	restore := chdir(t, tmpDir)
+	defer restore()
+
+	entries, err := loadAllEntries()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("esperava slice vazio, obteve %d entradas", len(entries))
+	}
+}
+
+// TestLoadAllEntries_BackwardCompat verifica que entries sem session_id recebem "legacy".
+func TestLoadAllEntries_BackwardCompat(t *testing.T) {
+	tmpDir := t.TempDir()
+	restore := chdir(t, tmpDir)
+	defer restore()
+
+	// Escrever entrada JSONL antiga (sem session_id)
+	os.MkdirAll(".yby", 0755)
+	legacyLine := `{"role":"user","content":"pergunta antiga","timestamp":"2026-01-01T00:00:00Z"}`
+	os.WriteFile(historyFile, []byte(legacyLine+"\n"), 0600)
+
+	entries, err := loadAllEntries()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("esperava 1 entrada, obteve %d", len(entries))
+	}
+	if entries[0].SessionID != "legacy" {
+		t.Errorf("session_id esperado 'legacy', obtido '%s'", entries[0].SessionID)
+	}
+}
+
+// TestSaveMessage_ComSessionID verifica que o session_id é salvo no JSONL.
+func TestSaveMessage_ComSessionID(t *testing.T) {
+	tmpDir := t.TempDir()
+	restore := chdir(t, tmpDir)
+	defer restore()
+
+	saveMessage("user", "teste", "20260405-143022")
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, historyFile))
+	if err != nil {
+		t.Fatalf("falha ao ler arquivo: %v", err)
+	}
+
+	var entry HistoryEntry
+	if err := json.Unmarshal(bytes.TrimSpace(data), &entry); err != nil {
+		t.Fatalf("JSONL inválido: %v", err)
+	}
+
+	if entry.SessionID != "20260405-143022" {
+		t.Errorf("session_id esperado '20260405-143022', obtido '%s'", entry.SessionID)
+	}
+}
+
+// TestListSessions verifica a listagem de sessões agrupadas.
+func TestListSessions(t *testing.T) {
+	entries := []HistoryEntry{
+		{Role: "user", Content: "p1", Timestamp: "2026-01-01T10:00:00Z", SessionID: "s1"},
+		{Role: "assistant", Content: "r1", Timestamp: "2026-01-01T10:01:00Z", SessionID: "s1"},
+		{Role: "user", Content: "p2", Timestamp: "2026-01-02T09:00:00Z", SessionID: "s2"},
+		{Role: "user", Content: "p3", Timestamp: "2026-01-01T08:00:00Z", SessionID: "legacy"},
+	}
+
+	sessions := listSessions(entries)
+	if len(sessions) != 3 {
+		t.Fatalf("esperava 3 sessões, obteve %d", len(sessions))
+	}
+
+	// Verificar ordem preservada
+	if sessions[0].SessionID != "s1" {
+		t.Errorf("primeira sessão esperada 's1', obtida '%s'", sessions[0].SessionID)
+	}
+	if sessions[0].MessageCount != 2 {
+		t.Errorf("contagem de mensagens esperada 2, obtida %d", sessions[0].MessageCount)
+	}
+	if sessions[1].SessionID != "s2" {
+		t.Errorf("segunda sessão esperada 's2', obtida '%s'", sessions[1].SessionID)
+	}
+	if sessions[2].SessionID != "legacy" {
+		t.Errorf("terceira sessão esperada 'legacy', obtida '%s'", sessions[2].SessionID)
+	}
+}
+
+// TestLoadSessionHistory_Filtro verifica que filtra corretamente por sessão.
+func TestLoadSessionHistory_Filtro(t *testing.T) {
+	entries := []HistoryEntry{
+		{Role: "user", Content: "s1-p1", SessionID: "s1"},
+		{Role: "user", Content: "s2-p1", SessionID: "s2"},
+		{Role: "user", Content: "s1-p2", SessionID: "s1"},
+		{Role: "user", Content: "s2-p2", SessionID: "s2"},
+	}
+
+	result := loadSessionHistory(entries, "s1", 20)
+	if len(result) != 2 {
+		t.Fatalf("esperava 2 entradas, obteve %d", len(result))
+	}
+	if result[0].Content != "s1-p1" || result[1].Content != "s1-p2" {
+		t.Errorf("conteúdo inesperado: %+v", result)
+	}
+}
+
+// TestLoadSessionHistory_LimitaEntradas verifica o limite máximo de entradas.
+func TestLoadSessionHistory_LimitaEntradas(t *testing.T) {
+	var entries []HistoryEntry
+	for i := 0; i < 30; i++ {
+		entries = append(entries, HistoryEntry{
+			Role:      "user",
+			Content:   fmt.Sprintf("msg %d", i),
+			SessionID: "s1",
+		})
+	}
+
+	result := loadSessionHistory(entries, "s1", 10)
+	if len(result) != 10 {
+		t.Fatalf("esperava 10 entradas, obteve %d", len(result))
+	}
+	// Deve retornar as últimas 10 (índices 20..29)
+	if result[0].Content != "msg 20" {
+		t.Errorf("primeira entrada esperada 'msg 20', obtida '%s'", result[0].Content)
+	}
+}
+
+// TestLoadSessionHistory_SessaoInexistente verifica retorno vazio para sessão inexistente.
+func TestLoadSessionHistory_SessaoInexistente(t *testing.T) {
+	entries := []HistoryEntry{
+		{Role: "user", Content: "p1", SessionID: "s1"},
+	}
+
+	result := loadSessionHistory(entries, "inexistente", 20)
+	if len(result) != 0 {
+		t.Errorf("esperava slice vazio, obteve %d entradas", len(result))
+	}
+}
+
+// TestListSessions_Vazio verifica retorno vazio sem entradas.
+func TestListSessions_Vazio(t *testing.T) {
+	sessions := listSessions(nil)
+	if len(sessions) != 0 {
+		t.Errorf("esperava 0 sessões, obteve %d", len(sessions))
+	}
+}
+
+// --- Testes de Modo Batch ---
+
+// TestRunBatchMode_ProcessaMultiplasLinhas verifica que o modo batch processa
+// múltiplas linhas e não inclui prompt "You >" na saída.
+func TestRunBatchMode_SemPromptYou(t *testing.T) {
+	// Verificar que buildSystemPrompt não contém "You >"
+	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, nil)
+	if strings.Contains(prompt, "You >") {
+		t.Error("system prompt não deveria conter 'You >'")
+	}
+}
+
+// TestBuildSystemPrompt_ComHistorico verifica construção do prompt com histórico.
+func TestBuildSystemPrompt_ComHistorico(t *testing.T) {
+	entries := []HistoryEntry{
+		{Role: "user", Content: "oi", Timestamp: "2026-01-01T00:00:00Z"},
+	}
+
+	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, entries)
+	if !strings.Contains(prompt, "Histórico de Conversas Anteriores") {
+		t.Error("prompt deveria conter histórico quando fornecido")
+	}
+}
+
+// TestBuildSystemPrompt_SemHistorico verifica construção do prompt sem histórico.
+func TestBuildSystemPrompt_SemHistorico(t *testing.T) {
+	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, nil)
+	if prompt == "" {
+		t.Error("prompt não deveria estar vazio")
+	}
+	if strings.Contains(prompt, "Histórico de Conversas Anteriores") {
+		t.Error("prompt sem histórico não deveria conter bloco de histórico")
 	}
 }

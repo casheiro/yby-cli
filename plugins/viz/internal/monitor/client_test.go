@@ -15,10 +15,10 @@ type FakeClient struct {
 	err         error
 }
 
-func (f *FakeClient) GetPods() ([]Pod, error)               { return f.pods, f.err }
-func (f *FakeClient) GetDeployments() ([]Deployment, error) { return f.deployments, f.err }
-func (f *FakeClient) GetServices() ([]Service, error)       { return f.services, f.err }
-func (f *FakeClient) GetNodes() ([]Node, error)             { return f.nodes, f.err }
+func (f *FakeClient) GetPods(_ ListFilter) ([]Pod, error)               { return f.pods, f.err }
+func (f *FakeClient) GetDeployments(_ ListFilter) ([]Deployment, error) { return f.deployments, f.err }
+func (f *FakeClient) GetServices(_ ListFilter) ([]Service, error)       { return f.services, f.err }
+func (f *FakeClient) GetNodes(_ ListFilter) ([]Node, error)             { return f.nodes, f.err }
 
 // TestClientInterface verifica que FakeClient satisfaz a interface Client.
 func TestClientInterface(t *testing.T) {
@@ -38,7 +38,7 @@ func TestFakeClient_GetPods_Sucesso(t *testing.T) {
 		},
 	}
 
-	pods, err := fake.GetPods()
+	pods, err := fake.GetPods(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestFakeClient_GetPods_Erro(t *testing.T) {
 		err: fmt.Errorf("conexão recusada"),
 	}
 
-	pods, err := fake.GetPods()
+	pods, err := fake.GetPods(ListFilter{})
 	if err == nil {
 		t.Fatal("esperava erro, mas obteve nil")
 	}
@@ -82,7 +82,7 @@ func TestFakeClient_GetPods_Vazio(t *testing.T) {
 		pods: []Pod{},
 	}
 
-	pods, err := fake.GetPods()
+	pods, err := fake.GetPods(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestFakeClient_GetDeployments_Sucesso(t *testing.T) {
 		},
 	}
 
-	deps, err := fake.GetDeployments()
+	deps, err := fake.GetDeployments(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestFakeClient_GetDeployments_Erro(t *testing.T) {
 		err: fmt.Errorf("acesso negado"),
 	}
 
-	deps, err := fake.GetDeployments()
+	deps, err := fake.GetDeployments(ListFilter{})
 	if err == nil {
 		t.Fatal("esperava erro, mas obteve nil")
 	}
@@ -202,7 +202,7 @@ func TestFakeClient_GetDeployments_Vazio(t *testing.T) {
 		deployments: []Deployment{},
 	}
 
-	deps, err := fake.GetDeployments()
+	deps, err := fake.GetDeployments(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestFakeClient_GetServices_Sucesso(t *testing.T) {
 		},
 	}
 
-	svcs, err := fake.GetServices()
+	svcs, err := fake.GetServices(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestFakeClient_GetServices_Erro(t *testing.T) {
 		err: fmt.Errorf("timeout"),
 	}
 
-	svcs, err := fake.GetServices()
+	svcs, err := fake.GetServices(ListFilter{})
 	if err == nil {
 		t.Fatal("esperava erro, mas obteve nil")
 	}
@@ -288,7 +288,7 @@ func TestFakeClient_GetServices_Vazio(t *testing.T) {
 		services: []Service{},
 	}
 
-	svcs, err := fake.GetServices()
+	svcs, err := fake.GetServices(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestFakeClient_GetNodes_Sucesso(t *testing.T) {
 		},
 	}
 
-	nodes, err := fake.GetNodes()
+	nodes, err := fake.GetNodes(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestFakeClient_GetNodes_Erro(t *testing.T) {
 		err: fmt.Errorf("cluster inacessível"),
 	}
 
-	nodes, err := fake.GetNodes()
+	nodes, err := fake.GetNodes(ListFilter{})
 	if err == nil {
 		t.Fatal("esperava erro, mas obteve nil")
 	}
@@ -371,7 +371,7 @@ func TestFakeClient_GetNodes_Vazio(t *testing.T) {
 		nodes: []Node{},
 	}
 
-	nodes, err := fake.GetNodes()
+	nodes, err := fake.GetNodes(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}

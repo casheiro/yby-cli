@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -178,7 +179,7 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
+		return nil, NewAPIErrorFromResponse("ollama", resp, body)
 	}
 
 	var oResp ollamaResponse
@@ -224,7 +225,7 @@ func (p *OllamaProvider) Completion(ctx context.Context, systemPrompt, userPromp
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
+		return "", NewAPIErrorFromResponse("ollama", resp, body)
 	}
 
 	var oResp ollamaResponse
@@ -263,7 +264,7 @@ func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
+		return NewAPIErrorFromResponse("ollama", resp, body)
 	}
 
 	decoder := json.NewDecoder(resp.Body)
@@ -283,6 +284,19 @@ func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	return nil
 }
 
+// ollamaEmbedBatchSize define o tamanho máximo de batch para /api/embed (Ollama v0.5+).
+const ollamaEmbedBatchSize = 50
+
+type ollamaEmbedRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+type ollamaEmbedResponse struct {
+	Embeddings [][]float32 `json:"embeddings"`
+}
+
+// structs legadas para fallback em Ollama < v0.5
 type ollamaEmbeddingRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
@@ -293,14 +307,82 @@ type ollamaEmbeddingResponse struct {
 }
 
 func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
 	if !p.modelConfigured {
 		if err := p.resolveModel(ctx); err != nil {
 			return nil, err
 		}
 	}
 
-	results := make([][]float32, len(texts))
+	results, err := p.embedBatch(ctx, texts)
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// embedBatch usa /api/embed (batch, Ollama v0.5+) com fallback para /api/embeddings (sequencial).
+func (p *OllamaProvider) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	client := http.Client{Timeout: 300 * time.Second}
+	var allResults [][]float32
+
+	for i := 0; i < len(texts); i += ollamaEmbedBatchSize {
+		end := i + ollamaEmbedBatchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		batch := texts[i:end]
+
+		reqBody := ollamaEmbedRequest{
+			Model: p.Model,
+			Input: batch,
+		}
+		jsonBody, _ := json.Marshal(reqBody)
+
+		req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/api/embed", bytes.NewBuffer(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("falha ao chamar ollama embed (batch %d): %w", i, err)
+		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			// Ollama antigo não suporta /api/embed, usar fallback sequencial
+			slog.Warn("Ollama não suporta batch, usando modo sequencial")
+			return p.embedSequential(ctx, texts)
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return nil, NewAPIErrorFromResponse("ollama", resp, body)
+		}
+
+		var oResp ollamaEmbedResponse
+		if err := json.Unmarshal(body, &oResp); err != nil {
+			return nil, fmt.Errorf("falha ao decodificar resposta de embed batch %d: %w", i, err)
+		}
+
+		if len(oResp.Embeddings) != len(batch) {
+			return nil, fmt.Errorf("mismatch no batch %d: enviados %d, recebidos %d", i, len(batch), len(oResp.Embeddings))
+		}
+
+		allResults = append(allResults, oResp.Embeddings...)
+	}
+
+	return allResults, nil
+}
+
+// embedSequential usa /api/embeddings (1 texto por request) para Ollama < v0.5.
+func (p *OllamaProvider) embedSequential(ctx context.Context, texts []string) ([][]float32, error) {
+	client := http.Client{Timeout: 300 * time.Second}
+	results := make([][]float32, len(texts))
 
 	for i, text := range texts {
 		reqBody := ollamaEmbeddingRequest{
@@ -309,19 +391,23 @@ func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		}
 		jsonBody, _ := json.Marshal(reqBody)
 
-		resp, err := client.Post(p.BaseURL+"/api/embeddings", "application/json", bytes.NewBuffer(jsonBody))
+		req, _ := http.NewRequestWithContext(ctx, "POST", p.BaseURL+"/api/embeddings", bytes.NewBuffer(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("falha ao chamar ollama embedding [%d]: %w", i, err)
 		}
-		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 
 		if resp.StatusCode != 200 {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, &APIError{Provider: "ollama", StatusCode: resp.StatusCode, Body: string(body)}
+			return nil, NewAPIErrorFromResponse("ollama", resp, body)
 		}
 
 		var oResp ollamaEmbeddingResponse
-		if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
+		if err := json.Unmarshal(body, &oResp); err != nil {
 			return nil, err
 		}
 		results[i] = oResp.Embedding

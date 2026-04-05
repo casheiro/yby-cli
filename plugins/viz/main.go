@@ -41,7 +41,8 @@ func main() {
 				}
 				return
 			}
-			p := tea.NewProgram(ui.NewModel(client), tea.WithAltScreen())
+			retryClient := monitor.NewRetryClient(client)
+			p := tea.NewProgram(ui.NewModel(retryClient), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				fmt.Printf("Ops, ocorreu um erro: %v", err)
 				os.Exit(1)

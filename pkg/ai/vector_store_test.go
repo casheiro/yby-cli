@@ -51,6 +51,104 @@ func (m *MockAIProvider) StreamCompletionCorrect(ctx context.Context, systemProm
 	return nil // Stub
 }
 
+func TestVectorStore_DeleteDocuments(t *testing.T) {
+	ctx := context.Background()
+	vs := newTestVectorStore(t)
+
+	docs := []string{"hello", "world"}
+	metas := []map[string]string{{"source": "a.md"}, {"source": "b.md"}}
+	ids := []string{"1", "2"}
+	if err := vs.AddDocuments(ctx, docs, metas, ids); err != nil {
+		t.Fatalf("Falha ao adicionar docs: %v", err)
+	}
+
+	if vs.Count() != 2 {
+		t.Fatalf("Esperava 2 documentos, obteve %d", vs.Count())
+	}
+
+	if err := vs.DeleteDocuments(ctx, []string{"1"}); err != nil {
+		t.Fatalf("Falha ao deletar doc: %v", err)
+	}
+
+	if vs.Count() != 1 {
+		t.Errorf("Esperava 1 documento após delete, obteve %d", vs.Count())
+	}
+}
+
+func TestVectorStore_DeleteByMetadata(t *testing.T) {
+	ctx := context.Background()
+	vs := newTestVectorStore(t)
+
+	docs := []string{"hello", "world", "mix"}
+	metas := []map[string]string{
+		{"source": "a.md"},
+		{"source": "b.md"},
+		{"source": "a.md"},
+	}
+	ids := []string{"1", "2", "3"}
+	if err := vs.AddDocuments(ctx, docs, metas, ids); err != nil {
+		t.Fatalf("Falha ao adicionar docs: %v", err)
+	}
+
+	if vs.Count() != 3 {
+		t.Fatalf("Esperava 3 documentos, obteve %d", vs.Count())
+	}
+
+	if err := vs.DeleteByMetadata(ctx, map[string]string{"source": "a.md"}); err != nil {
+		t.Fatalf("Falha ao deletar por metadata: %v", err)
+	}
+
+	if vs.Count() != 1 {
+		t.Errorf("Esperava 1 documento após delete por metadata, obteve %d", vs.Count())
+	}
+}
+
+func TestVectorStore_Count(t *testing.T) {
+	ctx := context.Background()
+	vs := newTestVectorStore(t)
+
+	if vs.Count() != 0 {
+		t.Errorf("Esperava 0 documentos em store vazio, obteve %d", vs.Count())
+	}
+
+	docs := []string{"hello", "world"}
+	metas := []map[string]string{{"id": "1"}, {"id": "2"}}
+	ids := []string{"1", "2"}
+	if err := vs.AddDocuments(ctx, docs, metas, ids); err != nil {
+		t.Fatalf("Falha ao adicionar docs: %v", err)
+	}
+
+	if vs.Count() != 2 {
+		t.Errorf("Esperava 2 documentos, obteve %d", vs.Count())
+	}
+
+	if err := vs.DeleteDocuments(ctx, []string{"1"}); err != nil {
+		t.Fatalf("Falha ao deletar: %v", err)
+	}
+
+	if vs.Count() != 1 {
+		t.Errorf("Esperava 1 documento após delete, obteve %d", vs.Count())
+	}
+}
+
+func TestVectorStore_DeleteDocuments_Empty(t *testing.T) {
+	ctx := context.Background()
+	vs := newTestVectorStore(t)
+
+	if err := vs.DeleteDocuments(ctx, []string{}); err != nil {
+		t.Errorf("Deletar lista vazia não deveria dar erro: %v", err)
+	}
+}
+
+func TestVectorStore_DeleteByMetadata_Empty(t *testing.T) {
+	ctx := context.Background()
+	vs := newTestVectorStore(t)
+
+	if err := vs.DeleteByMetadata(ctx, map[string]string{}); err != nil {
+		t.Errorf("Deletar com metadata vazio não deveria dar erro: %v", err)
+	}
+}
+
 func TestVectorStore_AddAndSearch(t *testing.T) {
 	ctx := context.Background()
 	tmpDir, err := os.MkdirTemp("", "vector-store-test")

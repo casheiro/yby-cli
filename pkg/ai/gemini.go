@@ -75,6 +75,11 @@ type geminiResponse struct {
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
+	UsageMetadataResponse struct {
+		PromptTokenCount     int `json:"promptTokenCount"`
+		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		TotalTokenCount      int `json:"totalTokenCount"`
+	} `json:"usageMetadata"`
 }
 
 func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
@@ -106,13 +111,22 @@ func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description str
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(body)}
+		return nil, NewAPIErrorFromResponse("gemini", resp, body)
 	}
 
 	var gResp geminiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
 		return nil, fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
 	}
+
+	SetUsage(ctx, &UsageMetadata{
+		PromptTokens:     gResp.UsageMetadataResponse.PromptTokenCount,
+		CompletionTokens: gResp.UsageMetadataResponse.CandidatesTokenCount,
+		TotalTokens:      gResp.UsageMetadataResponse.TotalTokenCount,
+		Provider:         "gemini",
+		Model:            p.Model,
+		Operation:        "governance",
+	})
 
 	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
 		return nil, fmt.Errorf("resposta vazia do gemini")
@@ -161,13 +175,22 @@ func (p *GeminiProvider) Completion(ctx context.Context, systemPrompt, userPromp
 
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(bodyBytes)}
+		return "", NewAPIErrorFromResponse("gemini", resp, bodyBytes)
 	}
 
 	var gResp geminiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gResp); err != nil {
 		return "", fmt.Errorf("falha ao decodificar resposta do gemini: %w", err)
 	}
+
+	SetUsage(ctx, &UsageMetadata{
+		PromptTokens:     gResp.UsageMetadataResponse.PromptTokenCount,
+		CompletionTokens: gResp.UsageMetadataResponse.CandidatesTokenCount,
+		TotalTokens:      gResp.UsageMetadataResponse.TotalTokenCount,
+		Provider:         "gemini",
+		Model:            p.Model,
+		Operation:        "completion",
+	})
 
 	if len(gResp.Candidates) == 0 || len(gResp.Candidates[0].Content.Parts) == 0 {
 		return "", fmt.Errorf("resposta vazia do gemini")
@@ -210,7 +233,7 @@ func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(body)}
+		return NewAPIErrorFromResponse("gemini", resp, body)
 	}
 
 	// Parser SSE — Gemini retorna data: {json}\n\n (sem sentinel [DONE], termina com EOF)
@@ -300,7 +323,7 @@ func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		resp.Body.Close()
 
 		if resp.StatusCode != 200 {
-			return nil, &APIError{Provider: "gemini", StatusCode: resp.StatusCode, Body: string(body)}
+			return nil, NewAPIErrorFromResponse("gemini", resp, body)
 		}
 
 		var batchResp geminiBatchEmbeddingResponse

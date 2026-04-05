@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"github.com/cenkalti/backoff/v4"
 
@@ -107,10 +108,21 @@ func (r *RetryProvider) classifyError(err error) error {
 		if !r.retryableStatuses[apiErr.StatusCode] {
 			return backoff.Permanent(err)
 		}
-		slog.Warn("erro do provider de IA, retentando",
-			"provider", r.inner.Name(),
-			"status", apiErr.StatusCode,
-		)
+
+		// Respeitar Retry-After do servidor quando disponível
+		if apiErr.RetryAfter > 0 {
+			slog.Warn("erro do provider de IA, aguardando retry-after",
+				"provider", r.inner.Name(),
+				"status", apiErr.StatusCode,
+				"retry_after", apiErr.RetryAfter,
+			)
+			time.Sleep(apiErr.RetryAfter)
+		} else {
+			slog.Warn("erro do provider de IA, retentando",
+				"provider", r.inner.Name(),
+				"status", apiErr.StatusCode,
+			)
+		}
 		return err
 	}
 	// Erros que nao sao APIError (ex: rede) sao retentaveis por padrao

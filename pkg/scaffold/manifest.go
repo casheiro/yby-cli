@@ -1,6 +1,8 @@
 package scaffold
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,13 +27,14 @@ type ProjectMetadata struct {
 
 // ProjectSpec contém as decisões de configuração do projeto.
 type ProjectSpec struct {
-	Topology        string       `yaml:"topology"`
-	Workflow        string       `yaml:"workflow"`
-	SecretsStrategy string       `yaml:"secretsStrategy"`
-	Features        FeatureFlags `yaml:"features"`
-	Git             GitSpec      `yaml:"git"`
-	Domain          string       `yaml:"domain"`
-	Email           string       `yaml:"email"`
+	Topology        string            `yaml:"topology"`
+	Workflow        string            `yaml:"workflow"`
+	SecretsStrategy string            `yaml:"secretsStrategy"`
+	Features        FeatureFlags      `yaml:"features"`
+	Git             GitSpec           `yaml:"git"`
+	Domain          string            `yaml:"domain"`
+	Email           string            `yaml:"email"`
+	FileHashes      map[string]string `yaml:"fileHashes,omitempty"`
 }
 
 // FeatureFlags representa as flags de features habilitadas no projeto.
@@ -52,7 +55,8 @@ type GitSpec struct {
 }
 
 // SaveProjectManifest serializa o BlueprintContext para .yby/project.yaml.
-func SaveProjectManifest(targetDir string, ctx *BlueprintContext) error {
+// fileHashes é opcional — se nil, o manifest é salvo sem hashes de arquivos.
+func SaveProjectManifest(targetDir string, ctx *BlueprintContext, fileHashes ...map[string]string) error {
 	manifest := ProjectManifest{
 		APIVersion: "yby/v1",
 		Kind:       "ProjectManifest",
@@ -82,6 +86,10 @@ func SaveProjectManifest(targetDir string, ctx *BlueprintContext) error {
 		},
 	}
 
+	if len(fileHashes) > 0 && fileHashes[0] != nil {
+		manifest.Spec.FileHashes = fileHashes[0]
+	}
+
 	data, err := yaml.Marshal(&manifest)
 	if err != nil {
 		return fmt.Errorf("erro ao serializar project manifest: %w", err)
@@ -93,6 +101,47 @@ func SaveProjectManifest(targetDir string, ctx *BlueprintContext) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+// ComputeFileHash calcula o hash SHA-256 de um arquivo.
+func ComputeFileHash(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:]), nil
+}
+
+// ComputeDirHashes calcula o hash SHA-256 de todos os arquivos regulares em um diretório.
+// Retorna um mapa de caminho relativo -> hash.
+func ComputeDirHashes(dir string) (map[string]string, error) {
+	hashes := make(map[string]string)
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+
+		hash, err := ComputeFileHash(path)
+		if err != nil {
+			return err
+		}
+
+		hashes[relPath] = hash
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return hashes, nil
 }
 
 // LoadProjectManifest carrega o project manifest de .yby/project.yaml.
