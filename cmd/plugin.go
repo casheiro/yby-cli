@@ -127,12 +127,58 @@ var pluginUpdateCmd = &cobra.Command{
 	},
 }
 
+var pluginTrustCmd = &cobra.Command{
+	Use:   "trust [name]",
+	Short: "Registra um plugin como confiável na whitelist",
+	Long:  `Calcula o SHA256 do binário do plugin e o registra como confiável. Plugins não registrados não podem ser executados.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pm := newPluginManager()
+		if err := pm.Discover(); err != nil {
+			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao descobrir plugins")
+		}
+
+		p, found := pm.GetPlugin(args[0])
+		if !found {
+			return errors.New(errors.ErrCodePlugin, fmt.Sprintf("Plugin '%s' não encontrado. Instale-o primeiro com 'yby plugin install %s'", args[0], args[0]))
+		}
+
+		if err := plugin.TrustPlugin(p.Path); err != nil {
+			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao registrar confiança do plugin")
+		}
+
+		fmt.Printf("Plugin '%s' registrado como confiável.\n", args[0])
+		return nil
+	},
+}
+
+var pluginUntrustCmd = &cobra.Command{
+	Use:   "untrust [name]",
+	Short: "Remove um plugin da whitelist de confiança",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pluginName := args[0]
+		if !strings.HasPrefix(pluginName, "yby-plugin-") {
+			pluginName = "yby-plugin-" + pluginName
+		}
+
+		if err := plugin.UntrustPlugin(pluginName); err != nil {
+			return errors.Wrap(err, errors.ErrCodePlugin, "Erro ao remover confiança do plugin")
+		}
+
+		fmt.Printf("Plugin '%s' removido da whitelist de confiança.\n", args[0])
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(pluginCmd)
 	pluginCmd.AddCommand(pluginListCmd)
 	pluginCmd.AddCommand(pluginInstallCmd)
 	pluginCmd.AddCommand(pluginRemoveCmd)
 	pluginCmd.AddCommand(pluginUpdateCmd)
+	pluginCmd.AddCommand(pluginTrustCmd)
+	pluginCmd.AddCommand(pluginUntrustCmd)
 
 	// Flags for Install
 	pluginInstallCmd.Flags().String("version", "", "Versão específica para instalar (ex: v1.0.0)")

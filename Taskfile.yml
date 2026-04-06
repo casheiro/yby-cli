@@ -33,6 +33,11 @@ tasks:
     cmds:
       - go test -v -tags e2e ./test/e2e/...
 
+  test:e2e:fast:
+    desc: Run E2E tests that don't require Docker (AI, sessions, BM25, etc.)
+    cmds:
+      - go test -v -tags e2e -run "TestAI|TestEmbedding|TestCostTracking|TestBardSessions|TestOllama|TestAtlas_ShouldIgnore|TestSynapstor_BM25|TestSynapstor_Hook" ./test/e2e/scenarios/...
+
   clean:
     desc: Clean bin directory
     cmds:

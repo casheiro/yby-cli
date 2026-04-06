@@ -9,6 +9,10 @@ metadata:
 spec:
   entrypoint: self-configure
   serviceAccountName: argo-workflow-executor
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   
   templates:
   - name: self-configure
@@ -25,12 +29,12 @@ spec:
   # Step 1: Instalar Docker
   - name: docker-install
     script:
-      image: ubuntu:22.04
+      image: {{ .Values.images.ubuntu }}
       command: [bash]
       source: |
         #!/bin/bash
         set -euo pipefail
-        
+
         echo "📦 Instalando Docker..."
         
         # Atualizar apt
@@ -66,12 +70,12 @@ spec:
   # O acesso privilegiado é necessário para manipulação de regras de firewall no host.
   - name: firewall-config
     script:
-      image: ubuntu:22.04
+      image: {{ .Values.images.ubuntu }}
       command: [bash]
       source: |
         #!/bin/bash
         set -euo pipefail
-        
+
         echo "🔥 Configurando Firewall (UFW)..."
         
         apt-get update -qq
@@ -108,12 +112,12 @@ spec:
   # Step 3: System Tuning
   - name: system-tune
     script:
-      image: ubuntu:22.04
+      image: {{ .Values.images.ubuntu }}
       command: [bash]
       source: |
         #!/bin/bash
         set -euo pipefail
-        
+
         echo "⚙️ Aplicando tuning de sistema..."
         
         # Configurações de rede
@@ -148,12 +152,12 @@ spec:
   # Step 4: Setup Monitoring (Placeholder - pode ser expandido)
   - name: monitoring-setup
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
         set -euo pipefail
-        
+
         echo "📊 Configurando monitoring básico..."
         
         # Verificar se métricas estão habilitadas

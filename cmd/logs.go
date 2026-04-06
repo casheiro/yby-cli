@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/logs"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
@@ -30,15 +29,7 @@ var isTTY = func() bool {
 
 // surveySelect abstrai a seleção interativa para testes.
 var surveySelect = func(message string, options []string) (string, error) {
-	var selected string
-	prompt := &survey.Select{
-		Message: message,
-		Options: options,
-	}
-	if err := survey.AskOne(prompt, &selected); err != nil {
-		return "", err
-	}
-	return selected, nil
+	return prompter.Select(message, options, "")
 }
 
 // logsCmd represents the logs command

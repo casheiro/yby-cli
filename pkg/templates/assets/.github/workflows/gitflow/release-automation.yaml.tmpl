@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout release branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           # Checkout the base branch of the PR, which is the release branch
           ref: ${{ "{{" }} github.event.pull_request.base.ref {{ "}}" }}

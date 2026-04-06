@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/setup"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
@@ -80,12 +79,7 @@ Exemplo:
 		}
 
 		// 4. Prompt interativo para instalação
-		install := false
-		prompt := &survey.Confirm{
-			Message: "Deseja tentar instalar as dependências automaticamente (via brew/apt)?",
-			Default: true,
-		}
-		_ = survey.AskOne(prompt, &install)
+		install, _ := prompter.Confirm("Deseja tentar instalar as dependências automaticamente (via brew/apt)?", true)
 
 		if install {
 			fmt.Println(headerStyle.Render("📦 Instalando Dependências..."))

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-server
+  namespace: %s
+  labels:
+    app: git-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: git-server
+  template:
+    metadata:
+      labels:
+        app: git-server
+    spec:
+      containers:
+      - name: git-server
+        image: bitnami/git:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          mkdir -p /git/repo.git
+          if [ ! -d "/git/repo.git/HEAD" ]; then
+            git init --bare --initial-branch=main /git/repo.git
+            git config --file /git/repo.git/config http.receivepack true
+            touch /git/repo.git/git-daemon-export-ok
+          fi
+          exec git daemon --verbose --base-path=/git --export-all --enable=receive-pack
+        ports:
+        - containerPort: 9418
+        volumeMounts:
+        - name: git-data
+          mountPath: /git
+      volumes:
+      - name: git-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-server
+  namespace: %s
+  labels:
+    app: git-server
+spec:
+  selector:
+    app: git-server
+  ports:
+  - port: 9418
+    targetPort: 9418
+    protocol: TCP

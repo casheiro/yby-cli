@@ -261,6 +261,78 @@ func TestRenderEnvironmentValues(t *testing.T) {
 	})
 }
 
+// --- Testes de Features per-environment (P1.8) ---
+
+func TestRenderEnvironmentValues_FeaturesPerEnvironment(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
+	t.Run("override per-env sobrescreve valor global", func(t *testing.T) {
+		ctx := &BlueprintContext{
+			ProjectName:  "test",
+			Domain:       "test.local",
+			Email:        "a@b.com",
+			GitRepo:      "https://github.com/org/repo",
+			GitBranch:    "main",
+			EnableKepler: true,  // global habilitado
+			EnableKEDA:   false, // global desabilitado
+			EnableMinio:  true,  // global habilitado
+		}
+
+		// Configurar overrides: desabilitar kepler e habilitar KEDA no local
+		ov := GetEnvironmentOverrides("local")
+		ov.EnableKepler = &falseVal
+		ov.EnableKEDA = &trueVal
+
+		// Para testar com overrides, precisamos injetar — vamos testar via resolveFeature
+		assert.False(t, resolveFeature(&falseVal, true), "override false deve sobrescrever global true")
+		assert.True(t, resolveFeature(&trueVal, false), "override true deve sobrescrever global false")
+
+		// Verificar que o YAML gerado usa os globais quando sem override
+		resultado := RenderEnvironmentValues(ctx, "local")
+		assert.Contains(t, resultado, "kepler:")
+		assert.Contains(t, resultado, "keda:")
+	})
+
+	t.Run("fallback para global quando override é nil", func(t *testing.T) {
+		assert.True(t, resolveFeature(nil, true), "nil override deve usar global true")
+		assert.False(t, resolveFeature(nil, false), "nil override deve usar global false")
+	})
+
+	t.Run("override explicitamente false", func(t *testing.T) {
+		assert.False(t, resolveFeature(&falseVal, true))
+	})
+
+	t.Run("override explicitamente true", func(t *testing.T) {
+		assert.True(t, resolveFeature(&trueVal, false))
+	})
+
+	t.Run("EnvironmentOverrides tem campos de feature", func(t *testing.T) {
+		ov := EnvironmentOverrides{
+			Environment:  "staging",
+			EnableKepler: &trueVal,
+			EnableKEDA:   &falseVal,
+			EnableMinio:  nil,
+		}
+		assert.Equal(t, "staging", ov.Environment)
+		assert.NotNil(t, ov.EnableKepler)
+		assert.True(t, *ov.EnableKepler)
+		assert.NotNil(t, ov.EnableKEDA)
+		assert.False(t, *ov.EnableKEDA)
+		assert.Nil(t, ov.EnableMinio)
+	})
+
+	t.Run("GetEnvironmentOverrides retorna nil por padrao nos campos de feature", func(t *testing.T) {
+		envs := []string{"local", "dev", "staging", "prod", "desconhecido"}
+		for _, env := range envs {
+			ov := GetEnvironmentOverrides(env)
+			assert.Nil(t, ov.EnableKepler, "EnableKepler deve ser nil por padrão em %s", env)
+			assert.Nil(t, ov.EnableKEDA, "EnableKEDA deve ser nil por padrão em %s", env)
+			assert.Nil(t, ov.EnableMinio, "EnableMinio deve ser nil por padrão em %s", env)
+		}
+	})
+}
+
 // --- Testes de diferenciacao entre ambientes ---
 
 func TestAmbientesStagingProdDiferemDeLocal(t *testing.T) {

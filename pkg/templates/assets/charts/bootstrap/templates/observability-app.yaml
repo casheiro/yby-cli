@@ -20,8 +20,8 @@ spec:
       - {{ printf "../../%s" $f | quote }}
       {{- end }}
   destination:
-    server: https://kubernetes.default.svc
-    namespace: monitoring
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
+    namespace: {{ .Values.namespaces.monitoring | default "monitoring" }}
   syncPolicy:
     automated:
       prune: true

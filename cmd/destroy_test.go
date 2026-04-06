@@ -9,6 +9,36 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// mockPrompter implementa Prompter para testes
+type mockPrompter struct {
+	inputFunc   func(title string, defaultVal string) (string, error)
+	confirmFunc func(title string, defaultVal bool) (bool, error)
+}
+
+func (m *mockPrompter) Input(title string, defaultVal string) (string, error) {
+	if m.inputFunc != nil {
+		return m.inputFunc(title, defaultVal)
+	}
+	return "", nil
+}
+
+func (m *mockPrompter) Password(title string) (string, error) { return "", nil }
+
+func (m *mockPrompter) Confirm(title string, defaultVal bool) (bool, error) {
+	if m.confirmFunc != nil {
+		return m.confirmFunc(title, defaultVal)
+	}
+	return true, nil
+}
+
+func (m *mockPrompter) Select(title string, options []string, defaultVal string) (string, error) {
+	return "", nil
+}
+
+func (m *mockPrompter) MultiSelect(title string, options []string, defaults []string) ([]string, error) {
+	return nil, nil
+}
+
 // mockDestroyClusterManager substitui a factory do destroy para testes
 func mockDestroyClusterManager(deleteErr error) func() {
 	original := newDestroyClusterManager
@@ -39,12 +69,79 @@ func TestDestroyCmd_LocalEnv_WithMock(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestDestroyCmd_NonLocalEnv_Rejected(t *testing.T) {
+func TestDestroyCmd_NonLocalEnv_WithoutFlag_Rejected(t *testing.T) {
 	t.Setenv("YBY_ENV", "prod")
+
+	destroyCmd.Flags().Set("yes-destroy-production", "false")
 
 	err := destroyCmd.RunE(destroyCmd, []string{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "local")
+	assert.Contains(t, err.Error(), "requer a flag --yes-destroy-production")
+}
+
+func TestDestroyCmd_NonLocalEnv_WithFlag_WrongName(t *testing.T) {
+	teardown := mockDestroyClusterManager(nil)
+	defer teardown()
+
+	oldPrompter := prompter
+	prompter = &mockPrompter{
+		inputFunc: func(title string, defaultVal string) (string, error) {
+			return "wrong-name", nil
+		},
+	}
+	defer func() { prompter = oldPrompter }()
+
+	t.Setenv("YBY_ENV", "prod")
+	t.Setenv("YBY_CLUSTER_NAME", "prod-cluster")
+
+	destroyCmd.Flags().Set("yes-destroy-production", "true")
+	defer destroyCmd.Flags().Set("yes-destroy-production", "false")
+
+	err := destroyCmd.RunE(destroyCmd, []string{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "não confere com o cluster")
+}
+
+func TestDestroyCmd_NonLocalEnv_WithFlag_CorrectName(t *testing.T) {
+	teardown := mockDestroyClusterManager(nil)
+	defer teardown()
+
+	oldPrompter := prompter
+	prompter = &mockPrompter{
+		inputFunc: func(title string, defaultVal string) (string, error) {
+			return "prod-cluster", nil
+		},
+	}
+	defer func() { prompter = oldPrompter }()
+
+	t.Setenv("YBY_ENV", "prod")
+	t.Setenv("YBY_CLUSTER_NAME", "prod-cluster")
+
+	destroyCmd.Flags().Set("yes-destroy-production", "true")
+	defer destroyCmd.Flags().Set("yes-destroy-production", "false")
+
+	err := destroyCmd.RunE(destroyCmd, []string{})
+	assert.NoError(t, err)
+}
+
+func TestDestroyCmd_NonLocalEnv_PromptError(t *testing.T) {
+	oldPrompter := prompter
+	prompter = &mockPrompter{
+		inputFunc: func(title string, defaultVal string) (string, error) {
+			return "", fmt.Errorf("terminal não interativo")
+		},
+	}
+	defer func() { prompter = oldPrompter }()
+
+	t.Setenv("YBY_ENV", "staging")
+	t.Setenv("YBY_CLUSTER_NAME", "staging-cluster")
+
+	destroyCmd.Flags().Set("yes-destroy-production", "true")
+	defer destroyCmd.Flags().Set("yes-destroy-production", "false")
+
+	err := destroyCmd.RunE(destroyCmd, []string{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "falha ao ler confirmação")
 }
 
 func TestDestroyCmd_DefaultClusterName(t *testing.T) {
@@ -72,8 +169,10 @@ func TestDestroyCmd_DefaultClusterName(t *testing.T) {
 	assert.Equal(t, "yby-local", capturedName, "deve usar 'yby-local' como nome padrão do cluster")
 }
 
-func TestDestroyCmd_YBYEnvStaging_Rejected(t *testing.T) {
+func TestDestroyCmd_YBYEnvStaging_WithoutFlag_Rejected(t *testing.T) {
 	t.Setenv("YBY_ENV", "staging")
+	destroyCmd.Flags().Set("yes-destroy-production", "false")
+
 	err := destroyCmd.RunE(destroyCmd, []string{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ERR_VALIDATION")

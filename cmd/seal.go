@@ -26,14 +26,49 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
 )
 
-// surveyAsk é uma variável para permitir mocking nos testes
-var surveyAsk = survey.Ask
+// sealPrompt abstrai a coleta de dados do seal para testes.
+// Retorna (name, namespace, key, value, error).
+var sealPrompt = func() (string, string, string, string, error) {
+	name, err := prompter.Input("Nome do Secret:", "")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if name == "" {
+		return "", "", "", "", fmt.Errorf("nome é obrigatório")
+	}
+	ns, err := prompter.Input("Namespace:", "default")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if ns == "" {
+		return "", "", "", "", fmt.Errorf("namespace é obrigatório")
+	}
+	key, err := prompter.Input("Chave do Dado (ex: password):", "")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if err := validateSecretKey(key); err != nil {
+		return "", "", "", "", err
+	}
+	value, err := prompter.Password("Valor do Dado:")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if value == "" {
+		return "", "", "", "", fmt.Errorf("valor é obrigatório")
+	}
+	return name, ns, key, value, nil
+}
+
+// sealPathPrompt abstrai a coleta do caminho de salvamento para testes.
+var sealPathPrompt = func(defaultPath string) (string, error) {
+	return prompter.Input("Onde salvar o arquivo?", defaultPath)
+}
 
 var sealStrategy string
 
@@ -64,46 +99,7 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			}
 		}
 
-		answers := struct {
-			Name      string
-			Namespace string
-			Key       string
-			Value     string
-		}{}
-
-		qs := []*survey.Question{
-			{
-				Name: "Name",
-				Prompt: &survey.Input{
-					Message: "Nome do Secret:",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Namespace",
-				Prompt: &survey.Input{
-					Message: "Namespace:",
-					Default: "default",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Key",
-				Prompt: &survey.Input{
-					Message: "Chave do Dado (ex: password):",
-				},
-				Validate: validateSecretKey,
-			},
-			{
-				Name: "Value",
-				Prompt: &survey.Password{
-					Message: "Valor do Dado:",
-				},
-				Validate: survey.Required,
-			},
-		}
-
-		err := surveyAsk(qs, &answers)
+		name, namespace, key, value, err := sealPrompt()
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados do secret")
 		}
@@ -114,7 +110,7 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 		svc := newSecretsService(runner, fsys)
 
 		fmt.Println("Gerando Secret...")
-		secretYaml, err := svc.GenerateSecretYAML(cmd.Context(), answers.Name, answers.Namespace, answers.Key, answers.Value)
+		secretYaml, err := svc.GenerateSecretYAML(cmd.Context(), name, namespace, key, value)
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret")
 		}
@@ -127,15 +123,10 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 		if sealStrategy == "sops" {
 			// 2a. Encriptar com SOPS + age
 			fmt.Println("Encriptando com SOPS...")
-			filename := fmt.Sprintf("sops-secret-%s.yaml", answers.Name)
+			filename := fmt.Sprintf("sops-secret-%s.yaml", name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/secrets")
 
-			pathPrompt := &survey.Input{
-				Message: "Onde salvar o arquivo?",
-				Default: filepath.Join(targetDir, filename),
-			}
-			var finalPath string
-			_ = askOne(pathPrompt, &finalPath)
+			finalPath, _ := sealPathPrompt(filepath.Join(targetDir, filename))
 
 			if err := svc.EncryptWithSOPS(cmd.Context(), "", secretYaml, finalPath); err != nil {
 				return errors.Wrap(err, errors.ErrCodeExec, "falha ao encriptar secret com SOPS")
@@ -147,15 +138,10 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 		} else {
 			// 2b. Selar com Kubeseal
 			fmt.Println("Selando com Kubeseal...")
-			filename := fmt.Sprintf("sealed-secret-%s.yaml", answers.Name)
+			filename := fmt.Sprintf("sealed-secret-%s.yaml", name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/events")
 
-			pathPrompt := &survey.Input{
-				Message: "Onde salvar o arquivo?",
-				Default: filepath.Join(targetDir, filename),
-			}
-			var finalPath string
-			_ = askOne(pathPrompt, &finalPath)
+			finalPath, _ := sealPathPrompt(filepath.Join(targetDir, filename))
 
 			if err := svc.SealWithKubeseal(cmd.Context(), secretYaml, finalPath); err != nil {
 				return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")

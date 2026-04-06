@@ -89,6 +89,32 @@ O Yby foi desenhado para ser estendido. Não encontrou o que precisa? Crie seu p
 
 ---
 
+## 🏢 Enterprise Ready
+
+O Yby entrega defaults opinativos para PMEs, mas adapta-se a qualquer ambiente enterprise via um arquivo de overrides:
+
+```yaml
+# .yby/overrides.yaml
+registry:
+  url: 012345678.dkr.ecr.sa-east-1.amazonaws.com
+  pullSecret: regcred
+ingress:
+  className: nginx
+namespaces:
+  prefix: "fintech"
+tls:
+  issuer: custom
+  caSecretName: corp-ca
+```
+
+```bash
+yby init --config .yby/overrides.yaml
+```
+
+Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, namespaces com prefixo, labels de compliance, versoes de charts, resource profiles e mais. [Guia completo](docs/wiki/Enterprise-Overrides.md).
+
+---
+
 ## 📚 Documentação
 
 A documentação completa está na nossa **Wiki**:
@@ -96,6 +122,7 @@ A documentação completa está na nossa **Wiki**:
 - **[Getting Started](docs/wiki/Getting-Started.md)**: Passos iniciais.
 - **[Core Concepts](docs/wiki/Core-Concepts.md)**: Estrutura, Monorepo e Arquivos Gerados.
 - **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
+- **[Enterprise Overrides](docs/wiki/Enterprise-Overrides.md)**: Customizacao para ambientes corporativos.
 - **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
 
 ---

@@ -1,12 +1,17 @@
 package telemetry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // maxTelemetryFileSize define o tamanho máximo do arquivo de telemetria antes da rotação (5MB).
@@ -14,20 +19,28 @@ const maxTelemetryFileSize = 5 * 1024 * 1024
 
 // Event records metrics about a specific operation
 type Event struct {
-	Name      string
-	Duration  time.Duration
-	Success   bool
-	Error     error
-	Timestamp time.Time
+	Name        string
+	Duration    time.Duration
+	Success     bool
+	Error       error
+	Timestamp   time.Time
+	Environment string
+	Cluster     string
+	UserID      string
+	RequestID   string
 }
 
 // jsonEvent é a representação JSON de um evento de telemetria para persistência em JSONL.
 type jsonEvent struct {
-	Name       string `json:"name"`
-	DurationMs int64  `json:"duration_ms"`
-	Success    bool   `json:"success"`
-	Error      string `json:"error,omitempty"`
-	Timestamp  string `json:"timestamp"`
+	Name        string `json:"name"`
+	DurationMs  int64  `json:"duration_ms"`
+	Success     bool   `json:"success"`
+	Error       string `json:"error,omitempty"`
+	Timestamp   string `json:"timestamp"`
+	Environment string `json:"environment,omitempty"`
+	Cluster     string `json:"cluster,omitempty"`
+	UserID      string `json:"user_id,omitempty"`
+	RequestID   string `json:"request_id,omitempty"`
 }
 
 var (
@@ -41,12 +54,26 @@ func Record(name string, duration time.Duration, err error) {
 	defer mu.Unlock()
 
 	events = append(events, Event{
-		Name:      name,
-		Duration:  duration,
-		Success:   err == nil,
-		Error:     err,
-		Timestamp: time.Now(),
+		Name:        name,
+		Duration:    duration,
+		Success:     err == nil,
+		Error:       err,
+		Timestamp:   time.Now(),
+		Environment: os.Getenv("YBY_ENV"),
+		Cluster:     os.Getenv("YBY_CLUSTER"),
+		UserID:      anonymizedUserID(),
+		RequestID:   uuid.New().String(),
 	})
+}
+
+// anonymizedUserID retorna um hash SHA-256 truncado do nome de usuário do sistema.
+func anonymizedUserID() string {
+	u, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256([]byte(u.Username))
+	return hex.EncodeToString(h[:8])
 }
 
 // Track execution easily: defer telemetry.Track("my_operation", time.Now(), &err)
@@ -119,7 +146,7 @@ func FlushToFile(enabled bool) error {
 		return err
 	}
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -164,7 +191,7 @@ func FlushToFilePath(enabled bool, path string) error {
 		return err
 	}
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -228,10 +255,14 @@ func telemetryFilePath() (string, error) {
 
 func toJSONEvent(e Event) jsonEvent {
 	je := jsonEvent{
-		Name:       e.Name,
-		DurationMs: e.Duration.Milliseconds(),
-		Success:    e.Success,
-		Timestamp:  e.Timestamp.Format(time.RFC3339),
+		Name:        e.Name,
+		DurationMs:  e.Duration.Milliseconds(),
+		Success:     e.Success,
+		Timestamp:   e.Timestamp.Format(time.RFC3339),
+		Environment: e.Environment,
+		Cluster:     e.Cluster,
+		UserID:      e.UserID,
+		RequestID:   e.RequestID,
 	}
 	if e.Error != nil {
 		je.Error = e.Error.Error()

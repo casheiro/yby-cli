@@ -94,11 +94,21 @@ func (m *MockBootstrapService) WaitHealthy(ctx context.Context, name, namespace 
 }
 
 type MockRunner struct {
-	LookPathFunc func(file string) (string, error)
+	LookPathFunc          func(file string) (string, error)
+	RunFunc               func(ctx context.Context, name string, args ...string) error
+	RunCombinedOutputFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-func (m *MockRunner) Run(ctx context.Context, name string, args ...string) error { return nil }
+func (m *MockRunner) Run(ctx context.Context, name string, args ...string) error {
+	if m.RunFunc != nil {
+		return m.RunFunc(ctx, name, args...)
+	}
+	return nil
+}
 func (m *MockRunner) RunCombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.RunCombinedOutputFunc != nil {
+		return m.RunCombinedOutputFunc(ctx, name, args...)
+	}
 	return nil, nil
 }
 func (m *MockRunner) RunStdin(ctx context.Context, stdin string, name string, args ...string) error {

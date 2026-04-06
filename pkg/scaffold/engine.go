@@ -9,7 +9,87 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"gopkg.in/yaml.v3"
 )
+
+// criticalYAMLFields define os campos que não devem estar vazios nos YAMLs gerados.
+var criticalYAMLFields = []string{"repoURL", "repoName", "domainBase", "server"}
+
+// ValidateRenderedYAML percorre arquivos .yaml/.yml no diretório e verifica
+// se campos críticos não estão com valor vazio.
+// Retorna uma lista de warnings no formato "arquivo: campo 'X' está vazio".
+func ValidateRenderedYAML(targetDir string) []string {
+	var warnings []string
+
+	_ = filepath.WalkDir(targetDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var content map[string]interface{}
+		if err := yaml.Unmarshal(data, &content); err != nil {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(targetDir, path)
+		if relPath == "" {
+			relPath = path
+		}
+
+		found := findEmptyCriticalFields("", content)
+		for _, field := range found {
+			warnings = append(warnings, fmt.Sprintf("%s: campo '%s' está vazio", relPath, field))
+		}
+
+		return nil
+	})
+
+	return warnings
+}
+
+// findEmptyCriticalFields busca recursivamente campos críticos com valor vazio em um mapa YAML.
+func findEmptyCriticalFields(prefix string, data map[string]interface{}) []string {
+	var result []string
+
+	for key, value := range data {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+
+		isCritical := false
+		for _, cf := range criticalYAMLFields {
+			if key == cf {
+				isCritical = true
+				break
+			}
+		}
+
+		if isCritical {
+			if value == nil || value == "" {
+				result = append(result, fullKey)
+			}
+		}
+
+		if nested, ok := value.(map[string]interface{}); ok {
+			result = append(result, findEmptyCriticalFields(fullKey, nested)...)
+		}
+	}
+
+	return result
+}
 
 // Apply executes the scaffold process based on the provided context and source filesystem.
 func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
@@ -110,7 +190,16 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("scaffold falhou: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeScaffold, "scaffold falhou")
+	}
+
+	// Validação pós-render: verificar campos críticos vazios nos YAMLs gerados
+	if warnings := ValidateRenderedYAML(targetDir); len(warnings) > 0 {
+		for _, w := range warnings {
+			slog.Warn("campo vazio detectado no YAML gerado", "detalhe", w)
+		}
+		return ybyerrors.New(ybyerrors.ErrCodeScaffold,
+			fmt.Sprintf("validação pós-render falhou: %d campo(s) crítico(s) vazio(s) encontrado(s)", len(warnings)))
 	}
 
 	return nil
@@ -126,7 +215,7 @@ func ApplyWithTracking(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) 
 	// Computar hashes de todos os arquivos gerados no targetDir
 	hashes, err := ComputeDirHashes(targetDir)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao computar hashes dos arquivos gerados: %w", err)
+		return nil, ybyerrors.Wrap(err, ybyerrors.ErrCodeScaffold, "erro ao computar hashes dos arquivos gerados")
 	}
 
 	return hashes, nil
@@ -160,7 +249,7 @@ func GetGitRoot() (string, error) {
 	// Check if git is installed
 	_, err := exec.LookPath("git")
 	if err != nil {
-		return "", fmt.Errorf("binário git não encontrado")
+		return "", ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, "binário git não encontrado")
 	}
 
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -188,9 +277,9 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 		// Render Template
 		destPath = strings.TrimSuffix(destPath, ".tmpl") // Remove .tmpl extension from target
 
-		tmpl, err := template.New(filepath.Base(srcPath)).Funcs(funcMap()).Parse(string(content))
+		tmpl, err := template.New(filepath.Base(srcPath)).Funcs(contextFuncMap(ctx)).Parse(string(content))
 		if err != nil {
-			return fmt.Errorf("falha ao analisar template %s: %w", srcPath, err)
+			return ybyerrors.Wrap(err, ybyerrors.ErrCodeScaffold, fmt.Sprintf("falha ao analisar template %s", srcPath))
 		}
 
 		f, err := os.Create(destPath)
@@ -200,7 +289,7 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 		defer f.Close()
 
 		if err := tmpl.Execute(f, ctx); err != nil {
-			return fmt.Errorf("falha ao executar template %s: %w", srcPath, err)
+			return ybyerrors.Wrap(err, ybyerrors.ErrCodeScaffold, fmt.Sprintf("falha ao executar template %s", srcPath))
 		}
 
 		slog.Debug("Rendered template", "file", destPath)
@@ -216,12 +305,71 @@ func processFile(fsys fs.FS, srcPath, destPath string, ctx *BlueprintContext) er
 }
 
 func funcMap() template.FuncMap {
-	return template.FuncMap{
-		"contains":  strings.Contains,
-		"hasPrefix": strings.HasPrefix,
-		"hasSuffix": strings.HasSuffix,
-		"replace":   strings.ReplaceAll,
-		"toUpper":   strings.ToUpper,
-		"toLower":   strings.ToLower,
+	return contextFuncMap(nil)
+}
+
+// contextFuncMap retorna o FuncMap com funções que resolvem overrides enterprise.
+func contextFuncMap(ctx *BlueprintContext) template.FuncMap {
+	var ov *EnterpriseOverrides
+	if ctx != nil && ctx.Overrides != nil {
+		ov = ctx.Overrides
+	} else {
+		ov = DefaultOverrides()
 	}
+	return template.FuncMap{
+		"contains":              strings.Contains,
+		"hasPrefix":             strings.HasPrefix,
+		"hasSuffix":             strings.HasSuffix,
+		"replace":               strings.ReplaceAll,
+		"toUpper":               strings.ToUpper,
+		"toLower":               strings.ToLower,
+		"yamlEscape":            yamlEscape,
+		"resolveImage":          ov.ResolveImage,
+		"resolveNS":             ov.ResolveNamespace,
+		"resolveStorage":        ov.ResolveStorageClass,
+		"resolveIngress":        ov.ResolveIngressClass,
+		"resolveChartVersion":   ov.ResolveChartVersion,
+		"resolveTLSIssuer":      ov.ResolveTLSIssuer,
+		"resolveGitProvider":    ov.ResolveGitProvider,
+		"hasRegistryPullSecret": ov.HasRegistryPullSecret,
+		"registryPullSecret":    ov.RegistryPullSecret,
+		"nsLabels": func(indent int) string {
+			return ov.NamespaceLabelsYAML(indent)
+		},
+		"resolveCloudProvider": ov.ResolveCloudProvider,
+		"resourceProfile":      ov.ResourceProfile,
+		"resolveObservability": ov.ResolveObservability,
+	}
+}
+
+// yamlEscape escapa valores para uso seguro em YAML.
+// Rejeita valores com caracteres de controle (newlines, tabs, etc).
+// Envolve em aspas duplas valores que contêm caracteres especiais YAML.
+func yamlEscape(s string) string {
+	// Rejeitar caracteres de controle (newlines, tabs, null, etc)
+	for _, r := range s {
+		if r == '\n' || r == '\r' || r == '\t' || r == '\x00' || (r < 0x20 && r != ' ') {
+			return ""
+		}
+	}
+
+	// Caracteres especiais YAML que exigem aspas duplas
+	const yamlSpecial = `:#{}\[\]*&!|>'"` + ","
+
+	needsQuoting := false
+	for _, r := range s {
+		if strings.ContainsRune(yamlSpecial, r) {
+			needsQuoting = true
+			break
+		}
+	}
+
+	if !needsQuoting {
+		return s
+	}
+
+	// Escapar barras invertidas e aspas duplas dentro do valor
+	escaped := strings.ReplaceAll(s, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
 }

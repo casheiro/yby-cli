@@ -2,14 +2,20 @@ package mirror
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/charmbracelet/lipgloss"
 )
+
+//go:embed manifests/*.yaml
+var manifestsFS embed.FS
 
 var (
 	stepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // Blue
@@ -41,6 +47,9 @@ type MirrorManager struct {
 	// ForwarderFactory permite injetar factory customizada para testes
 	ForwarderFactory ForwarderFactory
 
+	// mu protege acesso concorrente a forwarder e localPort
+	mu sync.Mutex
+
 	// Forwarder instance for local access
 	forwarder Forwarder
 	localPort int
@@ -61,82 +70,30 @@ func NewManager(localPath string, runner shared.Runner) *MirrorManager {
 // EnsureGitServer deploys the git-server to the cluster if not present
 func (m *MirrorManager) EnsureGitServer() error {
 	// 1. Create Namespace
-	nsManifest := fmt.Sprintf(`
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: %s
-`, m.Namespace)
+	nsTpl, err := manifestsFS.ReadFile("manifests/namespace.yaml")
+	if err != nil {
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "failed to read namespace manifest")
+	}
+	nsManifest := fmt.Sprintf(string(nsTpl), m.Namespace)
 
 	if err := m.Runner.RunStdin(context.Background(), nsManifest, "kubectl", "apply", "-f", "-"); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "failed to create namespace")
 	}
 
 	// 2. Apply Manifests (Deployment + Service)
-	manifest := fmt.Sprintf(`
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: git-server
-  namespace: %s
-  labels:
-    app: git-server
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: git-server
-  template:
-    metadata:
-      labels:
-        app: git-server
-    spec:
-      containers:
-      - name: git-server
-        image: bitnami/git:latest
-        command:
-        - /bin/bash
-        - -c
-        - |
-          mkdir -p /git/repo.git
-          if [ ! -d "/git/repo.git/HEAD" ]; then
-            git init --bare --initial-branch=main /git/repo.git
-            git config --file /git/repo.git/config http.receivepack true
-            touch /git/repo.git/git-daemon-export-ok
-          fi
-          exec git daemon --verbose --base-path=/git --export-all --enable=receive-pack
-        ports:
-        - containerPort: 9418
-        volumeMounts:
-        - name: git-data
-          mountPath: /git
-      volumes:
-      - name: git-data
-        emptyDir: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: git-server
-  namespace: %s
-  labels:
-    app: git-server
-spec:
-  selector:
-    app: git-server
-  ports:
-  - port: 9418
-    targetPort: 9418
-    protocol: TCP
-`, m.Namespace, m.Namespace)
+	serverTpl, err := manifestsFS.ReadFile("manifests/git-server.yaml")
+	if err != nil {
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "failed to read git-server manifest")
+	}
+	manifest := fmt.Sprintf(string(serverTpl), m.Namespace, m.Namespace)
 
 	if err := m.Runner.RunStdin(context.Background(), manifest, "kubectl", "apply", "-f", "-"); err != nil {
-		return fmt.Errorf("failed to apply git-server manifests: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "failed to apply git-server manifests")
 	}
 
 	// Wait for rollout
 	if err := m.Runner.Run(context.Background(), "kubectl", "rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s"); err != nil {
-		return fmt.Errorf("git-server failed to start: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "git-server failed to start")
 	}
 
 	return nil
@@ -151,30 +108,37 @@ func (m *MirrorManager) SetupTunnel(ctx context.Context) error {
 
 	pf, err := factory(m.Namespace, "git-server", 9418)
 	if err != nil {
-		return fmt.Errorf("failed to create port forwarder: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePortForward, "failed to create port forwarder")
 	}
 
 	port, err := pf.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to start port forwarder: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePortForward, "failed to start port forwarder")
 	}
 
+	m.mu.Lock()
 	m.forwarder = pf
 	m.localPort = port
+	m.mu.Unlock()
+
 	fmt.Printf("📡 Tunnel established: localhost:%d -> git-server:9418\n", port)
 	return nil
 }
 
 // Sync pushes local changes to the in-cluster git server via the tunnel
 func (m *MirrorManager) Sync() error {
-	if m.localPort == 0 {
-		return fmt.Errorf("tunnel not established. Call SetupTunnel() first")
+	m.mu.Lock()
+	port := m.localPort
+	m.mu.Unlock()
+
+	if port == 0 {
+		return ybyerrors.New(ybyerrors.ErrCodePortForward, "tunnel not established. Call SetupTunnel() first")
 	}
 
-	remoteURL := fmt.Sprintf("git://localhost:%d/repo.git", m.localPort)
+	remoteURL := fmt.Sprintf("git://localhost:%d/repo.git", port)
 
 	if err := m.Runner.Run(context.Background(), "git", "push", remoteURL, "HEAD:main", "--force"); err != nil {
-		return fmt.Errorf("git push failed: %w", err)
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "git push failed")
 	}
 
 	return nil
@@ -185,11 +149,13 @@ func (m *MirrorManager) reconnect(ctx context.Context) error {
 	fmt.Println(stepStyle.Render("🔄 Reconectando port-forward..."))
 	slog.Info("iniciando reconexão do port-forward", "namespace", m.Namespace)
 
+	m.mu.Lock()
 	if m.forwarder != nil {
 		m.forwarder.Stop()
 		m.forwarder = nil
 		m.localPort = 0
 	}
+	m.mu.Unlock()
 
 	return retry.Do(ctx, retry.Options{
 		InitialInterval:     2 * time.Second,
@@ -247,14 +213,19 @@ func (m *MirrorManager) StartSyncLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			m.mu.Lock()
 			if m.forwarder != nil {
 				m.forwarder.Stop()
 			}
+			m.mu.Unlock()
 			return
 
 		case <-healthTicker.C:
-			if m.forwarder != nil {
-				if err := m.forwarder.HealthCheck(ctx); err != nil {
+			m.mu.Lock()
+			fwd := m.forwarder
+			m.mu.Unlock()
+			if fwd != nil {
+				if err := fwd.HealthCheck(ctx); err != nil {
 					slog.Warn("health check falhou, iniciando reconexão", "error", err)
 					fmt.Println(errorStyle.Render("⚠️  Conexão perdida, reconectando..."))
 					if err := m.reconnect(ctx); err != nil {

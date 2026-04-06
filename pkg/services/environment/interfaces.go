@@ -33,5 +33,6 @@ type UpOptions struct {
 	Root         string
 	Environment  string
 	ClusterName  string
+	Namespace    string
 	PlainSecrets bool
 }

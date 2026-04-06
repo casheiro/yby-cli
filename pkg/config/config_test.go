@@ -35,8 +35,8 @@ func TestLoad_DefaultValues(t *testing.T) {
 	if cfg.Log.Format != "text" {
 		t.Errorf("log.format esperado 'text', obteve '%s'", cfg.Log.Format)
 	}
-	if !cfg.Telemetry.Enabled {
-		t.Error("telemetry.enabled esperado true, obteve false")
+	if cfg.Telemetry.Enabled {
+		t.Error("telemetry.enabled esperado false, obteve true")
 	}
 }
 
@@ -48,7 +48,7 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	t.Setenv("YBY_AI_LANGUAGE", "en-US")
 	t.Setenv("YBY_LOG_LEVEL", "debug")
 	t.Setenv("YBY_LOG_FORMAT", "json")
-	t.Setenv("YBY_TELEMETRY_ENABLED", "false")
+	t.Setenv("YBY_TELEMETRY_ENABLED", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -70,8 +70,8 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	if cfg.Log.Format != "json" {
 		t.Errorf("log.format esperado 'json', obteve '%s'", cfg.Log.Format)
 	}
-	if cfg.Telemetry.Enabled {
-		t.Error("telemetry.enabled esperado false, obteve true")
+	if !cfg.Telemetry.Enabled {
+		t.Error("telemetry.enabled esperado true, obteve false")
 	}
 }
 
@@ -99,7 +99,7 @@ log:
   level: warn
   format: json
 telemetry:
-  enabled: false
+  enabled: true
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configContent), 0o644); err != nil {
 		t.Fatal(err)
@@ -128,8 +128,8 @@ telemetry:
 	if cfg.Log.Format != "json" {
 		t.Errorf("log.format esperado 'json', obteve '%s'", cfg.Log.Format)
 	}
-	if cfg.Telemetry.Enabled {
-		t.Error("telemetry.enabled esperado false, obteve true")
+	if !cfg.Telemetry.Enabled {
+		t.Error("telemetry.enabled esperado true, obteve false")
 	}
 }
 
@@ -200,8 +200,8 @@ func TestLoad_MissingFileUsesDefaults(t *testing.T) {
 	if cfg.Log.Level != "info" {
 		t.Errorf("log.level esperado 'info', obteve '%s'", cfg.Log.Level)
 	}
-	if !cfg.Telemetry.Enabled {
-		t.Error("telemetry.enabled esperado true")
+	if cfg.Telemetry.Enabled {
+		t.Error("telemetry.enabled esperado false")
 	}
 }
 
@@ -217,7 +217,121 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Log.Format != "text" {
 		t.Errorf("DefaultConfig log.format esperado 'text', obteve '%s'", cfg.Log.Format)
 	}
-	if !cfg.Telemetry.Enabled {
-		t.Error("DefaultConfig telemetry.enabled esperado true")
+	if cfg.Telemetry.Enabled {
+		t.Error("DefaultConfig telemetry.enabled esperado false")
+	}
+}
+
+func TestValidate_Sucesso(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() não deveria falhar para config padrão: %v", err)
+	}
+}
+
+func TestValidate_ProviderValido(t *testing.T) {
+	for _, provider := range []string{"", "ollama", "gemini", "openai"} {
+		cfg := DefaultConfig()
+		cfg.AI.Provider = provider
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate() não deveria falhar para provider %q: %v", provider, err)
+		}
+	}
+}
+
+func TestValidate_ProviderInvalido(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AI.Provider = "anthropic"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() deveria falhar para provider inválido")
+	}
+}
+
+func TestValidate_LogLevelInvalido(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Log.Level = "verbose"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() deveria falhar para log.level inválido")
+	}
+}
+
+func TestValidate_LogFormatInvalido(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Log.Format = "xml"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() deveria falhar para log.format inválido")
+	}
+}
+
+func TestLoad_ConfigInvalida(t *testing.T) {
+	ResetGlobal()
+
+	for _, key := range []string{"YBY_AI_PROVIDER", "YBY_AI_MODEL", "YBY_AI_LANGUAGE", "YBY_LOG_LEVEL", "YBY_LOG_FORMAT", "YBY_TELEMETRY_ENABLED"} {
+		os.Unsetenv(key)
+	}
+
+	tmpHome := t.TempDir()
+	configDir := filepath.Join(tmpHome, ".yby")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := `
+ai:
+  provider: invalido
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", tmpHome)
+
+	_, err := Load()
+	if err == nil {
+		t.Error("Load() deveria retornar erro para provider inválido")
+	}
+}
+
+func TestLoadOnce_RetornaConfig(t *testing.T) {
+	ResetGlobal()
+
+	for _, key := range []string{"YBY_AI_PROVIDER", "YBY_AI_MODEL", "YBY_AI_LANGUAGE", "YBY_LOG_LEVEL", "YBY_LOG_FORMAT", "YBY_TELEMETRY_ENABLED"} {
+		os.Unsetenv(key)
+	}
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfg := LoadOnce()
+	if cfg == nil {
+		t.Fatal("LoadOnce() não deveria retornar nil")
+	}
+	if cfg.AI.Language != "pt-BR" {
+		t.Errorf("LoadOnce ai.language esperado 'pt-BR', obteve '%s'", cfg.AI.Language)
+	}
+}
+
+func TestGet_RetornaConfig(t *testing.T) {
+	ResetGlobal()
+
+	for _, key := range []string{"YBY_AI_PROVIDER", "YBY_AI_MODEL", "YBY_AI_LANGUAGE", "YBY_LOG_LEVEL", "YBY_LOG_FORMAT", "YBY_TELEMETRY_ENABLED"} {
+		os.Unsetenv(key)
+	}
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfg := Get()
+	if cfg == nil {
+		t.Fatal("Get() não deveria retornar nil")
+	}
+
+	// Segunda chamada deve retornar o mesmo singleton
+	cfg2 := Get()
+	if cfg != cfg2 {
+		t.Error("Get() deveria retornar o mesmo ponteiro (singleton)")
 	}
 }

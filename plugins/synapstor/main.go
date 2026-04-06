@@ -17,34 +17,40 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	// 1. Tentar inicializar via SDK (lê stdin/env var)
 	if err := sdk.Init(); err != nil {
 		// 2. Fallback: modo CLI direto (args na linha de comando)
 		if len(os.Args) > 1 {
 			cmd := os.Args[1]
 			args := os.Args[2:]
-			handlePluginRequest(plugin.PluginRequest{
+			return handlePluginRequest(plugin.PluginRequest{
 				Hook: "command",
 				Args: append([]string{cmd}, args...),
 			})
-			return
 		}
 		// Sem input via SDK nem CLI
 		printHelp()
-		return
+		return nil
 	}
 
 	// SDK inicializado com sucesso
 	hook := sdk.GetHook()
 	args := sdk.GetArgs()
 
-	handlePluginRequest(plugin.PluginRequest{
+	return handlePluginRequest(plugin.PluginRequest{
 		Hook: hook,
 		Args: args,
 	})
 }
 
-func handlePluginRequest(req plugin.PluginRequest) {
+func handlePluginRequest(req plugin.PluginRequest) error {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
@@ -53,19 +59,20 @@ func handlePluginRequest(req plugin.PluginRequest) {
 			Description: "Governança semântica e gestão de conhecimento (UKIs)",
 			Hooks:       []string{"command", "context"},
 		})
+		return nil
 	case "context":
 		handleContextHook()
+		return nil
 	case "command":
 		if len(req.Args) == 0 {
 			printHelp()
-			return
+			return nil
 		}
 
 		ctx := context.Background()
 		provider := ai.GetProvider(ctx, "auto")
 		if provider == nil {
-			fmt.Println("❌ Nenhum provedor de IA configurado.")
-			return
+			return fmt.Errorf("nenhum provedor de IA configurado")
 		}
 
 		cwd, _ := os.Getwd()
@@ -75,28 +82,22 @@ func handlePluginRequest(req plugin.PluginRequest) {
 		switch cmd {
 		case "capture":
 			if len(req.Args) < 2 {
-				fmt.Println("❌ Uso: yby synapstor capture \"seu texto de input\"")
-				return
+				return fmt.Errorf("uso: yby synapstor capture \"seu texto de input\"")
 			}
 			input := strings.Join(req.Args[1:], " ")
-			if err := agt.Capture(input); err != nil {
-				fmt.Printf("❌ Erro: %v\n", err)
-			}
+			return agt.Capture(input)
 		case "study":
 			if len(req.Args) < 2 {
-				fmt.Println("❌ Uso: yby synapstor study \"tópico ou arquivo\"")
-				return
+				return fmt.Errorf("uso: yby synapstor study \"tópico ou arquivo\"")
 			}
 			query := strings.Join(req.Args[1:], " ")
-			if err := agt.Study(query); err != nil {
-				fmt.Printf("❌ Erro: %v\n", err)
-			}
+			return agt.Study(query)
 		case "search":
 			if len(req.Args) < 2 {
-				fmt.Println("❌ Uso: yby synapstor search \"sua consulta\" [--top-k N]")
-				return
+				return fmt.Errorf("uso: yby synapstor search \"sua consulta\" [--top-k N]")
 			}
 			runSearch(req.Args[1:])
+			return nil
 		case "index":
 			fullReindex := false
 			for _, a := range req.Args[1:] {
@@ -104,19 +105,20 @@ func handlePluginRequest(req plugin.PluginRequest) {
 					fullReindex = true
 				}
 			}
-			runIndex(fullReindex)
+			return runIndex(fullReindex)
 		default:
 			printHelp()
+			return nil
 		}
 	}
+	return nil
 }
 
-func runIndex(fullReindex bool) {
+func runIndex(fullReindex bool) error {
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
-		fmt.Println("❌ Nenhum provedor de IA configurado. Defina GEMINI_API_KEY, OPENAI_API_KEY ou OLLAMA_HOST.")
-		return
+		return fmt.Errorf("nenhum provedor de IA configurado. Defina GEMINI_API_KEY, OPENAI_API_KEY ou OLLAMA_HOST")
 	}
 
 	cwd, _ := os.Getwd()
@@ -125,8 +127,7 @@ func runIndex(fullReindex bool) {
 
 	report, err := idx.Run(ctx)
 	if err != nil {
-		fmt.Printf("❌ Erro na indexação: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("erro na indexação: %w", err)
 	}
 
 	fmt.Printf("Indexação concluída em %.1fs\n", report.Duration.Seconds())
@@ -134,6 +135,7 @@ func runIndex(fullReindex bool) {
 	fmt.Printf("  Arquivos ignorados:  %d\n", report.FilesSkipped)
 	fmt.Printf("  Chunks gerados:      %d\n", report.ChunksGenerated)
 	fmt.Printf("  Embeddings criados:  %d\n", report.EmbeddingsCreated)
+	return nil
 }
 
 // handleContextHook retorna dados de contexto do Synapstor para o sistema de plugins.

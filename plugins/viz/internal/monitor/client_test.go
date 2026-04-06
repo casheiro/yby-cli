@@ -8,17 +8,27 @@ import (
 // FakeClient implementa a interface Client para testes,
 // sem necessidade de conexão real com o cluster K8s.
 type FakeClient struct {
-	pods        []Pod
-	deployments []Deployment
-	services    []Service
-	nodes       []Node
-	err         error
+	pods         []Pod
+	deployments  []Deployment
+	services     []Service
+	nodes        []Node
+	statefulsets []StatefulSet
+	jobs         []Job
+	ingresses    []Ingress
+	configmaps   []ConfigMap
+	events       []Event
+	err          error
 }
 
 func (f *FakeClient) GetPods(_ ListFilter) ([]Pod, error)               { return f.pods, f.err }
 func (f *FakeClient) GetDeployments(_ ListFilter) ([]Deployment, error) { return f.deployments, f.err }
 func (f *FakeClient) GetServices(_ ListFilter) ([]Service, error)       { return f.services, f.err }
 func (f *FakeClient) GetNodes(_ ListFilter) ([]Node, error)             { return f.nodes, f.err }
+func (f *FakeClient) GetStatefulSets(_ ListFilter) ([]StatefulSet, error) { return f.statefulsets, f.err }
+func (f *FakeClient) GetJobs(_ ListFilter) ([]Job, error)                 { return f.jobs, f.err }
+func (f *FakeClient) GetIngresses(_ ListFilter) ([]Ingress, error)        { return f.ingresses, f.err }
+func (f *FakeClient) GetConfigMaps(_ ListFilter) ([]ConfigMap, error)     { return f.configmaps, f.err }
+func (f *FakeClient) GetEvents(_ ListFilter) ([]Event, error)             { return f.events, f.err }
 
 // TestClientInterface verifica que FakeClient satisfaz a interface Client.
 func TestClientInterface(t *testing.T) {
@@ -404,5 +414,188 @@ func TestNodeStruct(t *testing.T) {
 	}
 	if node.Version != "v1.29.0" {
 		t.Errorf("versão esperada 'v1.29.0', obtida '%s'", node.Version)
+	}
+}
+
+// --- Testes de StatefulSets ---
+
+// TestFakeClient_GetStatefulSets_Sucesso verifica que o fake client retorna
+// statefulsets corretamente.
+func TestFakeClient_GetStatefulSets_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		statefulsets: []StatefulSet{
+			{Name: "redis-ss", Namespace: "default", Replicas: 3, Ready: 3},
+			{Name: "mongo-ss", Namespace: "db", Replicas: 2, Ready: 1},
+		},
+	}
+
+	sets, err := fake.GetStatefulSets(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(sets) != 2 {
+		t.Fatalf("esperado 2 statefulsets, obtido %d", len(sets))
+	}
+	if sets[0].Name != "redis-ss" {
+		t.Errorf("nome esperado 'redis-ss', obtido '%s'", sets[0].Name)
+	}
+	if sets[1].Ready != 1 {
+		t.Errorf("ready esperado 1, obtido %d", sets[1].Ready)
+	}
+}
+
+// TestFakeClient_GetStatefulSets_Erro verifica propagação de erro em statefulsets.
+func TestFakeClient_GetStatefulSets_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("acesso negado")}
+	sets, err := fake.GetStatefulSets(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if sets != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", sets)
+	}
+}
+
+// --- Testes de Jobs ---
+
+// TestFakeClient_GetJobs_Sucesso verifica que o fake client retorna jobs corretamente.
+func TestFakeClient_GetJobs_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		jobs: []Job{
+			{Name: "backup-job", Namespace: "default", Completions: 1, Active: 0, Succeeded: 1, Failed: 0},
+			{Name: "migrate-job", Namespace: "db", Completions: 3, Active: 1, Succeeded: 1, Failed: 1},
+		},
+	}
+
+	jobs, err := fake.GetJobs(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("esperado 2 jobs, obtido %d", len(jobs))
+	}
+	if jobs[0].Name != "backup-job" {
+		t.Errorf("nome esperado 'backup-job', obtido '%s'", jobs[0].Name)
+	}
+	if jobs[1].Failed != 1 {
+		t.Errorf("failed esperado 1, obtido %d", jobs[1].Failed)
+	}
+}
+
+// TestFakeClient_GetJobs_Erro verifica propagação de erro em jobs.
+func TestFakeClient_GetJobs_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("timeout")}
+	jobs, err := fake.GetJobs(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if jobs != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", jobs)
+	}
+}
+
+// --- Testes de Ingresses ---
+
+// TestFakeClient_GetIngresses_Sucesso verifica que o fake client retorna ingresses corretamente.
+func TestFakeClient_GetIngresses_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		ingresses: []Ingress{
+			{Name: "web-ing", Namespace: "default", Class: "nginx", Hosts: "app.example.com", Paths: "/"},
+		},
+	}
+
+	ings, err := fake.GetIngresses(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(ings) != 1 {
+		t.Fatalf("esperado 1 ingress, obtido %d", len(ings))
+	}
+	if ings[0].Class != "nginx" {
+		t.Errorf("classe esperada 'nginx', obtida '%s'", ings[0].Class)
+	}
+}
+
+// TestFakeClient_GetIngresses_Erro verifica propagação de erro em ingresses.
+func TestFakeClient_GetIngresses_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("não autorizado")}
+	ings, err := fake.GetIngresses(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if ings != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", ings)
+	}
+}
+
+// --- Testes de ConfigMaps ---
+
+// TestFakeClient_GetConfigMaps_Sucesso verifica que o fake client retorna configmaps corretamente.
+func TestFakeClient_GetConfigMaps_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		configmaps: []ConfigMap{
+			{Name: "app-config", Namespace: "default", Keys: 5, DataSize: "2.1Ki"},
+		},
+	}
+
+	cms, err := fake.GetConfigMaps(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(cms) != 1 {
+		t.Fatalf("esperado 1 configmap, obtido %d", len(cms))
+	}
+	if cms[0].Keys != 5 {
+		t.Errorf("keys esperado 5, obtido %d", cms[0].Keys)
+	}
+}
+
+// TestFakeClient_GetConfigMaps_Erro verifica propagação de erro em configmaps.
+func TestFakeClient_GetConfigMaps_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("forbidden")}
+	cms, err := fake.GetConfigMaps(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if cms != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", cms)
+	}
+}
+
+// --- Testes de Events ---
+
+// TestFakeClient_GetEvents_Sucesso verifica que o fake client retorna eventos corretamente.
+func TestFakeClient_GetEvents_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		events: []Event{
+			{Name: "pod-1", Namespace: "default", Type: "Normal", Reason: "Scheduled", Message: "Pod scheduled", Age: "5m"},
+			{Name: "pod-2", Namespace: "default", Type: "Warning", Reason: "BackOff", Message: "Back-off restarting", Age: "2m"},
+		},
+	}
+
+	events, err := fake.GetEvents(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("esperado 2 eventos, obtido %d", len(events))
+	}
+	if events[0].Type != "Normal" {
+		t.Errorf("tipo esperado 'Normal', obtido '%s'", events[0].Type)
+	}
+	if events[1].Type != "Warning" {
+		t.Errorf("tipo esperado 'Warning', obtido '%s'", events[1].Type)
+	}
+}
+
+// TestFakeClient_GetEvents_Erro verifica propagação de erro em eventos.
+func TestFakeClient_GetEvents_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("cluster offline")}
+	events, err := fake.GetEvents(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if events != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", events)
 	}
 }

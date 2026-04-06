@@ -198,7 +198,7 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
 
-	client := http.Client{} // No timeout for streaming
+	client := http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("falha ao chamar openai stream: %w", err)

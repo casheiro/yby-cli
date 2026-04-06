@@ -224,7 +224,7 @@ func (p *GeminiProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := http.Client{} // sem timeout para streaming
+	client := http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("falha ao chamar streaming gemini: %w", err)

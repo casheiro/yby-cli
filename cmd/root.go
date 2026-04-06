@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/config"
@@ -106,6 +107,7 @@ func handleExecutionError(err error) {
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	pm := newRootPluginManager()
+	pm.EnableTrustCheck()
 	discoverPlugins(rootCmd, pm)
 
 	start := time.Now()
@@ -159,8 +161,40 @@ func initConfig(cmd *cobra.Command, args []string) {
 		Format: logFormat,
 	})
 
+	// Primeiro uso: se o arquivo de config não existe, pergunta sobre telemetria
+	if home, err := os.UserHomeDir(); err == nil {
+		configPath := filepath.Join(home, ".yby", "config.yaml")
+		if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+			askTelemetryOptIn(configPath)
+		}
+	}
+
 	// Se a flag --context foi informada, propaga via env var para pkg/context
 	if contextFlag != "" {
 		os.Setenv("YBY_ENV", contextFlag)
+	}
+}
+
+// askTelemetryOptIn pergunta ao usuário se deseja habilitar telemetria no primeiro uso.
+func askTelemetryOptIn(configPath string) {
+	enabled, err := prompter.Confirm("Deseja habilitar telemetria anônima para ajudar a melhorar o Yby CLI?", false)
+	if err != nil {
+		slog.Debug("Falha ao solicitar opt-in de telemetria", "erro", err)
+		return
+	}
+
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		slog.Debug("Falha ao criar diretório de config", "erro", err)
+		return
+	}
+
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+	content := fmt.Sprintf("telemetry:\n  enabled: %s\n", val)
+	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
+		slog.Debug("Falha ao salvar preferência de telemetria", "erro", err)
 	}
 }
