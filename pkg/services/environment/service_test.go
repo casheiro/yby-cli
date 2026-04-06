@@ -14,6 +14,7 @@ type MockClusterManager struct {
 	ExistsFunc func(ctx context.Context, name string) (bool, error)
 	CreateFunc func(ctx context.Context, name string, configFile string) error
 	StartFunc  func(ctx context.Context, name string) error
+	DeleteFunc func(ctx context.Context, name string) error
 }
 
 func (m *MockClusterManager) Exists(ctx context.Context, name string) (bool, error) {
@@ -33,6 +34,13 @@ func (m *MockClusterManager) Create(ctx context.Context, name string, configFile
 func (m *MockClusterManager) Start(ctx context.Context, name string) error {
 	if m.StartFunc != nil {
 		return m.StartFunc(ctx, name)
+	}
+	return nil
+}
+
+func (m *MockClusterManager) Delete(ctx context.Context, name string) error {
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, name)
 	}
 	return nil
 }
@@ -67,7 +75,8 @@ func (m *MockMirrorService) Sync() error {
 func (m *MockMirrorService) StartSyncLoop(ctx context.Context) {}
 
 type MockBootstrapService struct {
-	RunFunc func(ctx context.Context, opts bootstrap.BootstrapOptions) error
+	RunFunc         func(ctx context.Context, opts bootstrap.BootstrapOptions) error
+	WaitHealthyFunc func(ctx context.Context, name, namespace string, timeoutSeconds int) error
 }
 
 func (m *MockBootstrapService) Run(ctx context.Context, opts bootstrap.BootstrapOptions) error {
@@ -77,12 +86,29 @@ func (m *MockBootstrapService) Run(ctx context.Context, opts bootstrap.Bootstrap
 	return nil
 }
 
-type MockRunner struct {
-	LookPathFunc func(file string) (string, error)
+func (m *MockBootstrapService) WaitHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error {
+	if m.WaitHealthyFunc != nil {
+		return m.WaitHealthyFunc(ctx, name, namespace, timeoutSeconds)
+	}
+	return nil
 }
 
-func (m *MockRunner) Run(ctx context.Context, name string, args ...string) error { return nil }
+type MockRunner struct {
+	LookPathFunc          func(file string) (string, error)
+	RunFunc               func(ctx context.Context, name string, args ...string) error
+	RunCombinedOutputFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
+func (m *MockRunner) Run(ctx context.Context, name string, args ...string) error {
+	if m.RunFunc != nil {
+		return m.RunFunc(ctx, name, args...)
+	}
+	return nil
+}
 func (m *MockRunner) RunCombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.RunCombinedOutputFunc != nil {
+		return m.RunCombinedOutputFunc(ctx, name, args...)
+	}
 	return nil, nil
 }
 func (m *MockRunner) RunStdin(ctx context.Context, stdin string, name string, args ...string) error {

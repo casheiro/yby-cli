@@ -11,18 +11,36 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/filesystem"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/services/validate"
 	"github.com/casheiro/yby-cli/pkg/templates"
 	"github.com/spf13/cobra"
 )
 
-// Allow mocking for tests
-var askOne = survey.AskOne
+// askInput é um atalho mockável para prompts de input nos testes.
+var askInput = func(title, defaultVal string) (string, error) {
+	return prompter.Input(title, defaultVal)
+}
+
+// askSelect é um atalho mockável para prompts de select nos testes.
+var askSelect = func(title string, options []string, defaultVal string) (string, error) {
+	return prompter.Select(title, options, defaultVal)
+}
+
+// askConfirm é um atalho mockável para prompts de confirm nos testes.
+var askConfirm = func(title string, defaultVal bool) (bool, error) {
+	return prompter.Confirm(title, defaultVal)
+}
+
+// askMultiSelect é um atalho mockável para prompts de multi-select nos testes.
+var askMultiSelect = func(title string, options []string, defaults []string) ([]string, error) {
+	return prompter.MultiSelect(title, options, defaults)
+}
 
 // InitOptions holds the flags for headless mode
 type InitOptions struct {
@@ -51,10 +69,17 @@ type InitOptions struct {
 	EnableKEDA          bool
 	EnableMetricsServer bool
 
+	// Environments custom (comma-separated)
+	Environments string
+
+	// Enterprise overrides
+	ConfigFile string
+
 	// Modes
 	Offline        bool
 	NonInteractive bool
 	Force          bool
+	Update         bool
 }
 
 var opts InitOptions
@@ -70,6 +95,7 @@ func init() {
 	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 	initCmd.Flags().BoolVar(&opts.Force, "force", false, "Sobrescrever projeto existente sem confirmação")
+	initCmd.Flags().BoolVar(&opts.Update, "update", false, "Atualiza scaffold preservando alterações do usuário")
 
 	initCmd.Flags().StringVarP(&opts.TargetDir, "target-dir", "t", "", "Diretório alvo para inicialização do projeto")
 	initCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "URL do Repositório Git")
@@ -80,6 +106,8 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
+	initCmd.Flags().StringVar(&opts.Environments, "environments", "", "Lista de ambientes separados por v��rgula (ex: local,dev,hom,prod). Sobrescreve os ambientes padrão da topologia")
+	initCmd.Flags().StringVar(&opts.ConfigFile, "config", "", "Arquivo de configuração enterprise (.yby/overrides.yaml)")
 
 	initCmd.Flags().StringVar(&opts.SecretsStrategy, "secrets-strategy", "external-secrets", "Estratégia de secrets: sealed-secrets, external-secrets, sops")
 
@@ -103,6 +131,12 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
   # AI-Native Initialization
   yby init --description "A secure payment gateway for crypto assets"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validação: --update e --force são mutuamente exclusivos
+		if opts.Update && opts.Force {
+			return errors.New(errors.ErrCodeValidation,
+				"--update e --force são mutuamente exclusivos. Use --update para merge ou --force para sobrescrever")
+		}
+
 		fmt.Println("🌱 Yby Smart Init (Native Engine)")
 
 		// 1. Build Context (Merge Flags + Prompts)
@@ -132,26 +166,43 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			fmt.Printf("⚠️  Erro no hook 'context' dos plugins: %v\n", err)
 		}
 
-		// 1.5 Detecção de init duplo
+		// 1.5 Detecção de init duplo (pular se --update, que trata isso depois)
 		targetDir := resolveTargetDir(opts.TargetDir)
 		blueprintPath := filepath.Join(targetDir, ".yby", "blueprint.yaml")
-		if _, err := os.Stat(blueprintPath); err == nil {
-			// Projeto já inicializado
-			if opts.Force {
-				fmt.Println("⚠️  Projeto Yby já inicializado. Sobrescrevendo (--force).")
-			} else if opts.NonInteractive {
-				return errors.New(errors.ErrCodeValidation,
-					"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
-			} else {
-				var confirm bool
-				confirmPrompt := &survey.Confirm{
-					Message: "⚠️  Projeto Yby já inicializado neste diretório. Deseja sobrescrever?",
-					Default: false,
-				}
-				if err := askOne(confirmPrompt, &confirm); err != nil || !confirm {
-					return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+		if !opts.Update {
+			if _, err := os.Stat(blueprintPath); err == nil {
+				// Projeto já inicializado
+				if opts.Force {
+					fmt.Println("⚠️  Projeto Yby já inicializado. Sobrescrevendo (--force).")
+				} else if opts.NonInteractive {
+					return errors.New(errors.ErrCodeValidation,
+						"projeto Yby já inicializado neste diretório. Usar --force para sobrescrever")
+				} else {
+					confirm, err := askConfirm("Projeto Yby já inicializado neste diretório. Deseja sobrescrever?", false)
+					if err != nil || !confirm {
+						return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+					}
 				}
 			}
+		}
+
+		// 1.6 Carregar manifest anterior como defaults (se existir e não for --force puro)
+		var existingManifest *scaffold.ProjectManifest
+		if m, err := scaffold.LoadProjectManifest(targetDir); err == nil {
+			existingManifest = m
+			defaults := scaffold.ManifestToContext(existingManifest)
+			scaffold.MergeContextDefaults(ctx, defaults)
+			fmt.Println("📋 Configurações anteriores carregadas como base.")
+		}
+
+		// 1.7 Fluxo --update: merge inteligente preservando alterações do usuário
+		if opts.Update {
+			if existingManifest == nil {
+				return errors.New(errors.ErrCodeValidation,
+					"--update requer um projeto já inicializado com manifest (.yby/project.yaml)")
+			}
+
+			return runUpdateFlow(targetDir, ctx, existingManifest, &opts)
 		}
 
 		// 2. Execute Scaffold
@@ -203,7 +254,7 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 			if description != "" {
 				fmt.Printf("🧠 Processando... (Analisando: '%s')\n", description)
-				blueprint, err := aiProvider.GenerateGovernance(bgCtx, description)
+				blueprint, err := generateGovernanceViaCompletion(bgCtx, aiProvider, description)
 				if err != nil {
 					fmt.Printf("⚠️ Falha na geração por IA: %v. Usando templates estáticos.\n", err)
 				} else {
@@ -257,6 +308,50 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 			}
 		}
 
+		// 4. Validação pós-scaffold (apenas warnings, não bloqueia)
+		fmt.Println("\n🔍 Validando charts gerados...")
+		runner := &shared.RealRunner{}
+		helmRunner := &validate.RealHelmRunner{Runner: runner}
+		validateSvc := validate.NewService(helmRunner)
+
+		chartCandidates := []string{
+			filepath.Join(targetDir, "charts/system"),
+			filepath.Join(targetDir, "charts/bootstrap"),
+			filepath.Join(targetDir, "charts/cluster-config"),
+		}
+
+		// Filtrar apenas charts que existem
+		var existingCharts []string
+		for _, c := range chartCandidates {
+			if _, err := os.Stat(filepath.Join(c, "Chart.yaml")); err == nil {
+				existingCharts = append(existingCharts, c)
+			}
+		}
+
+		if len(existingCharts) > 0 {
+			valuesFile := filepath.Join(targetDir, "config/cluster-values.yaml")
+			report, err := validateSvc.Run(bgCtx, existingCharts, valuesFile)
+			if err != nil || !report.Success {
+				fmt.Printf("⚠️  Validação detectou problemas (não bloqueante):\n")
+				if err != nil {
+					fmt.Printf("   %v\n", err)
+				}
+				for _, cr := range report.Charts {
+					if cr.Error != "" {
+						fmt.Printf("   %s: %s\n", cr.Chart, cr.Error)
+					}
+				}
+				fmt.Println("   Execute 'yby validate' para detalhes completos.")
+			} else {
+				fmt.Println("✅ Charts validados com sucesso!")
+			}
+		}
+
+		// 5. Persistir Project Manifest (.yby/project.yaml)
+		if err := scaffold.SaveProjectManifest(targetDir, ctx); err != nil {
+			fmt.Printf("⚠️  Falha ao salvar project manifest: %v\n", err)
+		}
+
 		fmt.Println("✅ Projeto inicializado com sucesso!")
 		fmt.Println("   próximo passo: 'yby env list'")
 		return nil
@@ -284,6 +379,18 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		GitRepo:     flags.GitRepo,
 		ProjectName: resolveProjectName(flags),
 	}
+
+	// Carregar enterprise overrides
+	targetDir := flags.TargetDir
+	if targetDir == "" {
+		targetDir, _ = os.Getwd()
+	}
+	overridePaths := scaffold.ResolveOverridePaths(flags.ConfigFile, targetDir)
+	overrides, err := scaffold.LoadOverrides(overridePaths...)
+	if err != nil {
+		return nil, err
+	}
+	ctx.Overrides = overrides
 
 	// Populate Github details
 	if org := extractGithubOrg(flags.GitRepo); org != "" {
@@ -353,13 +460,8 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		fmt.Println("------------------------------------")
 		// Directory Prompt
 		if flags.TargetDir == "" {
-			prompt := &survey.Input{
-				Message: "Onde deseja inicializar o projeto? (caminho relativo ou absoluto)",
-				Default: ".",
-				Help:    "Diretório onde os arquivos serão criados. Se não existir, será criado.",
-			}
-			var dir string
-			if err := askOne(prompt, &dir); err != nil {
+			dir, err := askInput("Onde deseja inicializar o projeto? (caminho relativo ou absoluto)", ".")
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
 			flags.TargetDir = dir
@@ -367,43 +469,32 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 
 		// Topology Prompt
 		if ctx.Topology == "" {
-			prompt := &survey.Select{
-				Message: "Selecione a Topologia de Ambientes:",
-				Options: []string{"single", "standard", "complete"},
-				Help:    "single: Apenas 1 env. standard: Local+Prod. complete: Local+Dev+Staging+Prod",
-				Default: "standard",
-			}
-			if err := askOne(prompt, &ctx.Topology); err != nil {
+			val, err := askSelect("Selecione a Topologia de Ambientes:", []string{"single", "standard", "complete"}, "standard")
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
+			ctx.Topology = val
 		}
 
 		// Workflow Prompt
 		if ctx.WorkflowPattern == "" {
-			prompt := &survey.Select{
-				Message: "Selecione o Padrão de Workflow (CI/CD):",
-				Options: []string{"essential", "gitflow", "trunkbased"},
-				Help:    "essential: Apenas checks básica. gitflow: Release automatizado. trunkbased: CD rápido.",
-				Default: "gitflow",
-			}
-			if err := askOne(prompt, &ctx.WorkflowPattern); err != nil {
+			val, err := askSelect("Selecione o Padrão de Workflow (CI/CD):", []string{"essential", "gitflow", "trunkbased"}, "gitflow")
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
+			ctx.WorkflowPattern = val
 		}
 
 		// Ask for Git Repo if missing
 		if ctx.GitRepoURL == "" {
 			if flags.Offline {
-				// Offline Mode: Use placeholder without asking
-				ctx.GitRepoURL = "http://git-server.yby-system.svc/repo.git" // Internal placeholder
+				ctx.GitRepoURL = "http://git-server.yby-system.svc/repo.git"
 			} else {
-				prompt := &survey.Input{
-					Message: "Qual a URL do repositório Git?",
-					Help:    "Se não tiver um ainda, deixe em branco para usar um placeholder ou gerar localmente.",
-				}
-				if err := askOne(prompt, &ctx.GitRepoURL); err != nil {
+				val, err := askInput("Qual a URL do repositório Git?", "")
+				if err != nil {
 					return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 				}
+				ctx.GitRepoURL = val
 			}
 		}
 
@@ -413,45 +504,30 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 			defaultName = deriveProjectName(ctx.GitRepoURL)
 		}
 
-		promptName := &survey.Input{
-			Message: "Nome do Projeto (Slug para K8s):",
-			Default: defaultName,
-			Help:    "Identificador único usado em namespaces e resources.",
-		}
-		_ = askOne(promptName, &ctx.ProjectName)
+		val, _ := askInput("Nome do Projeto (Slug para K8s):", defaultName)
+		ctx.ProjectName = val
 
 		// Ask for Project Details (Domain / Email)
-		if ctx.Domain == "yby.local" { // Check if default
-			prompt := &survey.Input{
-				Message: "Defina o Domínio Base do Cluster:",
-				Default: "yby.local",
-			}
-			_ = askOne(prompt, &ctx.Domain)
+		if ctx.Domain == "yby.local" {
+			val, _ := askInput("Defina o Domínio Base do Cluster:", "yby.local")
+			ctx.Domain = val
 		}
 
-		if ctx.Email == "admin@yby.local" { // Check if default
-			prompt := &survey.Input{
-				Message: "Email para Admin/Certificados:",
-				Default: "admin@yby.local",
-			}
-			_ = askOne(prompt, &ctx.Email)
+		if ctx.Email == "admin@yby.local" {
+			val, _ := askInput("Email para Admin/Certificados:", "admin@yby.local")
+			ctx.Email = val
 		}
 
 		// Modules Selection (MultiSelect)
-		var selectedModules []string
-		// Pre-select based on flags if any were true, otherwise default to none or recommeded
 		defaults := []string{}
 		if ctx.EnableKepler {
 			defaults = append(defaults, "Kepler (Eficiência Energética)")
 		}
 
-		promptModules := &survey.MultiSelect{
-			Message: "Selecione os Módulos Adicionais (Add-ons):",
-			Options: []string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)", "Observability Core (Metrics Server)"},
-			Default: defaults,
-			Help:    "Kepler: Monitoramento de CO2/Energia. MinIO: S3 Compatible Storage. KEDA: Escala baseada em eventos. Observability: Metrics Server (Req. para Sentinel/Viz).",
-		}
-		if err := askOne(promptModules, &selectedModules); err != nil {
+		selectedModules, err := askMultiSelect("Selecione os Módulos Adicionais (Add-ons):",
+			[]string{"Kepler (Eficiência Energética)", "MinIO (Object Storage Local)", "KEDA (Event-Driven Autoscaling)", "Observability Core (Metrics Server)"},
+			defaults)
+		if err != nil {
 			return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 		}
 
@@ -460,50 +536,33 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 
 		// Ask for DevContainer
 		if !flags.IncludeDevContainer {
-			prompt := &survey.Confirm{
-				Message: "Deseja incluir configuração de DevContainer (.devcontainer)?",
-				Default: true,
-			}
-			if err := askOne(prompt, &ctx.EnableDevContainer); err != nil {
+			devContainer, err := askConfirm("Deseja incluir configuração de DevContainer (.devcontainer)?", true)
+			if err != nil {
 				return nil, errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado pelo usuário")
 			}
+			ctx.EnableDevContainer = devContainer
 		}
 
 		// ---------------------------------------------------------
-		// New: AI & Governance Section
+		// AI & Governance Section
 		// ---------------------------------------------------------
 		if !flags.Offline {
-			enableAI := false
-			promptAI := &survey.Confirm{
-				Message: "🤖 Deseja ativar o Assistente de IA (Synapstor & Governança)?",
-				Default: true,
-				Help:    "Gera documentação técnica, decisões de arquitetura e personas baseada na descrição do projeto.",
-			}
-			_ = askOne(promptAI, &enableAI)
+			enableAI, _ := askConfirm("Deseja ativar o Assistente de IA (Synapstor & Governança)?", true)
 
 			if enableAI {
 				// Provider Selection
 				if flags.AIProvider == "" {
-					promptProvider := &survey.Select{
-						Message: "Selecione o Provedor de IA:",
-						Options: []string{"auto", "ollama", "gemini", "openai"},
-						Default: "auto",
-						Help:    "auto: Tenta Ollama local, depois chaves de API (Gemini/OpenAI).",
+					provider, _ := askSelect("Selecione o Provedor de IA:", []string{"auto", "ollama", "gemini", "openai"}, "auto")
+					if provider == "auto" {
+						provider = ""
 					}
-					_ = askOne(promptProvider, &flags.AIProvider)
-					// If user selects "auto", we leave it empty string for factory defaults, or "auto"
-					if flags.AIProvider == "auto" {
-						flags.AIProvider = ""
-					}
+					flags.AIProvider = provider
 				}
 
 				// Description
 				if flags.Description == "" {
-					promptDesc := &survey.Input{
-						Message: "📝 Descreva seu projeto (em linguagem natural):",
-						Help:    "Ex: 'Um gateway de pagamento para criptoativos focado em segurança'. A IA detectará o idioma.",
-					}
-					_ = askOne(promptDesc, &flags.Description)
+					desc, _ := askInput("Descreva seu projeto (em linguagem natural):", "")
+					flags.Description = desc
 				}
 			}
 		}
@@ -521,8 +580,16 @@ func buildContext(flags *InitOptions) (*scaffold.BlueprintContext, error) {
 		return nil, err
 	}
 
-	// Calcula lista de ambientes baseada na topologia
-	ctx.Environments = environmentsForTopology(ctx.Topology)
+	// Calcula lista de ambientes: usa --environments se fornecido, senão defaults da topologia
+	if flags.Environments != "" {
+		envs := parseEnvironments(flags.Environments)
+		if err := scaffold.ValidateEnvironmentNames(envs); err != nil {
+			return nil, err
+		}
+		ctx.Environments = envs
+	} else {
+		ctx.Environments = environmentsForTopology(ctx.Topology)
+	}
 
 	// Modo offline: garante que "local" está presente
 	if flags.Offline {
@@ -615,6 +682,20 @@ func environmentsForTopology(topology string) []string {
 	default:
 		return []string{"local"}
 	}
+}
+
+// parseEnvironments converte uma string comma-separated em uma lista de ambientes,
+// removendo espaços em branco ao redor de cada nome.
+func parseEnvironments(raw string) []string {
+	parts := strings.Split(raw, ",")
+	var envs []string
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			envs = append(envs, trimmed)
+		}
+	}
+	return envs
 }
 
 // ensureLocalEnvironment garante que o ambiente "local" está presente na lista,
@@ -725,4 +806,87 @@ func inferContext(ctx *scaffold.BlueprintContext) {
 	if ctx.Topology == "complete" {
 		ctx.ImpactLevel += " (Enterprise Topology)"
 	}
+}
+
+// runUpdateFlow executa o fluxo de --update: gera scaffold em tmpdir, computa merge plan e aplica.
+func runUpdateFlow(targetDir string, ctx *scaffold.BlueprintContext, manifest *scaffold.ProjectManifest, flags *InitOptions) error {
+	fmt.Println("🔄 Modo Update: analisando alterações...")
+
+	// 1. Gerar scaffold em diretório temporário
+	tmpDir, err := os.MkdirTemp("", "yby-update-*")
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeIO, "erro ao criar diretório temporário para update")
+	}
+	defer os.RemoveAll(tmpDir)
+
+	layers := []fs.FS{templates.Assets}
+	compositeFS := filesystem.NewCompositeFS(layers...)
+
+	if err := scaffold.Apply(tmpDir, ctx, compositeFS); err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao gerar scaffold para comparação")
+	}
+
+	// 2. Computar plano de merge
+	manifestHashes := manifest.Spec.FileHashes
+	if manifestHashes == nil {
+		manifestHashes = make(map[string]string)
+	}
+
+	plan, err := scaffold.ComputeMergePlan(manifestHashes, targetDir, tmpDir)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao computar plano de merge")
+	}
+
+	// 3. Exibir resumo do plano
+	summary := plan.Summary()
+	fmt.Println("\nPlano de Merge:")
+	if n := summary[scaffold.ActionNone]; n > 0 {
+		fmt.Printf("  %d arquivos sem alterações\n", n)
+	}
+	if n := summary[scaffold.ActionUpdate]; n > 0 {
+		fmt.Printf("  %d arquivos a atualizar\n", n)
+	}
+	if n := summary[scaffold.ActionPreserve]; n > 0 {
+		fmt.Printf("  %d arquivos preservados\n", n)
+	}
+	if n := summary[scaffold.ActionConflict]; n > 0 {
+		fmt.Printf("  %d conflitos detectados\n", n)
+	}
+	if n := summary[scaffold.ActionNew]; n > 0 {
+		fmt.Printf("  %d arquivos novos\n", n)
+	}
+
+	// Se não há nada a fazer, sair cedo
+	totalChanges := summary[scaffold.ActionUpdate] + summary[scaffold.ActionConflict] + summary[scaffold.ActionNew]
+	if totalChanges == 0 {
+		fmt.Println("\n✅ Nenhuma alteração necessária. Projeto já está atualizado.")
+		return nil
+	}
+
+	// 4. Confirmar com o usuário
+	if !flags.NonInteractive {
+		confirm, err := askConfirm("Deseja aplicar o plano de merge?", true)
+		if err != nil || !confirm {
+			return errors.New(errors.ErrCodeValidation, "operação cancelada pelo usuário")
+		}
+	}
+
+	// 5. Aplicar plano com resolver de conflitos
+	resolver := &scaffold.NonInteractiveResolver{Strategy: "conflict-markers"}
+	if err := scaffold.ApplyMergePlan(plan, targetDir, tmpDir, resolver); err != nil {
+		return errors.Wrap(err, errors.ErrCodeManifest, "erro ao aplicar plano de merge")
+	}
+
+	// 6. Salvar manifest com novos hashes
+	newHashes, err := scaffold.ComputeDirHashes(targetDir)
+	if err != nil {
+		fmt.Printf("⚠️  Falha ao computar hashes pós-merge: %v\n", err)
+	} else {
+		if err := scaffold.SaveProjectManifest(targetDir, ctx, newHashes); err != nil {
+			fmt.Printf("⚠️  Falha ao salvar project manifest: %v\n", err)
+		}
+	}
+
+	fmt.Println("✅ Scaffold atualizado com sucesso!")
+	return nil
 }

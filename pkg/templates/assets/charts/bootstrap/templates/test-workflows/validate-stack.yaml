@@ -9,6 +9,10 @@ metadata:
 spec:
   entrypoint: validate
   serviceAccountName: argo-workflow-executor
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   
   templates:
   - name: validate
@@ -22,7 +26,7 @@ spec:
   
   - name: resource-validation
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -45,7 +49,7 @@ spec:
   
   - name: network-validation
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash
@@ -65,7 +69,7 @@ spec:
   
   - name: security-validation
     script:
-      image: bitnami/kubectl:1.31
+      image: {{ .Values.images.kubectl }}
       command: [bash]
       source: |
         #!/bin/bash

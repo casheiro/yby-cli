@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 🔧 Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.3.0
         with:
-          go-version: stable
+          go-version: "1.24.2"
 
       - name: 🏃 Run Tests
         run: go test ./... -v
@@ -31,15 +31,15 @@ jobs:
     needs: [validate-before-release]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.3.0
         with:
-          go-version: stable
+          go-version: "1.24.2"
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v6.1.0
         with:
           distribution: goreleaser
           version: "~> v2"

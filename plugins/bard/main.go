@@ -12,23 +12,31 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	var req plugin.PluginRequest
 
 	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
 	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
 		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			fmt.Printf("Erro ao analisar YBY_PLUGIN_REQUEST: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("erro ao analisar YBY_PLUGIN_REQUEST: %w", err)
 		}
-		handlePluginRequest(req)
-		return
+		return handlePluginRequest(req)
 	}
 
 	// 2. Check for Stdin Protocol (Legacy/Automation)
@@ -36,17 +44,16 @@ func main() {
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
 		// Data on pipe -> Plugin Request
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err == nil {
-			handlePluginRequest(req)
-			return
+			return handlePluginRequest(req)
 		}
 	}
 
 	// 3. Fallback / Dev Mode
 	// Mock request for development or direct invocation without context
-	handlePluginRequest(plugin.PluginRequest{Hook: "command"})
+	return handlePluginRequest(plugin.PluginRequest{Hook: "command"})
 }
 
-func handlePluginRequest(req plugin.PluginRequest) {
+func handlePluginRequest(req plugin.PluginRequest) error {
 	switch req.Hook {
 	case "manifest":
 		respond(plugin.PluginManifest{
@@ -55,22 +62,20 @@ func handlePluginRequest(req plugin.PluginRequest) {
 			Description: "Assistente de IA interativo para diagnóstico e operações",
 			Hooks:       []string{"command"},
 		})
+		return nil
 	case "command":
-		startChat(req.Context)
+		return startChat(req.Context)
 	default:
-		// Unknown hook
-		// Just exit 0 to not break anything, or error
-		os.Exit(0)
+		return nil
 	}
 }
 
-func startChat(ctxData map[string]interface{}) {
+func startChat(ctxData map[string]interface{}) error {
 	// Inicializar IA
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
-		fmt.Println("❌ Nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY.")
-		os.Exit(1)
+		return fmt.Errorf("nenhum provedor de IA disponível. Defina OLLAMA_HOST ou OPENAI_API_KEY")
 	}
 
 	// 1. Inicializar Vector Store (acesso somente leitura)
@@ -85,51 +90,31 @@ func startChat(ctxData map[string]interface{}) {
 	// 2. Carregar configuração do Bard
 	bardCfg := loadBardConfig()
 
-	// 3. Carregar histórico de sessões anteriores
+	// 3. Detectar modo batch (non-TTY)
+	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	if !isTTY {
+		return runBatchMode(ctx, provider, vectorStore, bardCfg, ctxData)
+	}
+
+	// 4. Gerar SessionID para esta sessão interativa
+	sessionID := time.Now().Format("20060102-150405")
+
+	// 5. Carregar histórico de sessões anteriores
 	history := loadHistory()
 
-	// 4. Construir contexto base a partir do payload
-	overview, _ := ctxData["overview"].(string)
-	backlog, _ := ctxData["backlog"].(string)
+	// 6. Construir system prompt enriquecido
+	systemPrompt := buildSystemPrompt(ctxData, bardCfg, history)
 
-	blueprintSummary := "Nenhum blueprint disponível."
-	if bp, ok := ctxData["blueprint"]; ok {
-		bpBytes, _ := json.MarshalIndent(bp, "", "  ")
-		blueprintSummary = string(bpBytes)
-	}
-
-	// 5. Construir system prompt enriquecido
-	contextBlock := fmt.Sprintf(`
-## Project Overview
-%s
-
-## Backlog & Debt
-%s
-
-## Technical Blueprint (Atlas)
-%s
-`, overview, backlog, blueprintSummary)
-
-	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
-
-	// Injetar histórico de conversas anteriores
 	historyCtx := formatHistoryContext(history)
-	if historyCtx != "" {
-		systemPrompt += "\n\n" + historyCtx
-	}
-
-	// Injetar prompt extra da configuração
-	if bardCfg.SystemPromptExtra != "" {
-		systemPrompt += "\n\n" + bardCfg.SystemPromptExtra
-	}
 
 	// Configuração da UI
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
-	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair. '/clear' para limpar histórico."))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair. '/clear' para limpar histórico. '/sessions' para listar sessões."))
 
 	if vectorStore != nil {
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("🧠 Memória Semântica Ativa."))
 	}
+	fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("📝 Sessão: %s\n"), sessionID)
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -154,12 +139,40 @@ func startChat(ctxData map[string]interface{}) {
 			continue
 		}
 
+		// Comando /sessions para listar sessões
+		if input == "/sessions" {
+			handleSessionsList(sessionID)
+			continue
+		}
+
+		// Comando /session <id> para carregar sessão específica
+		if strings.HasPrefix(input, "/session ") {
+			targetID := strings.TrimSpace(strings.TrimPrefix(input, "/session "))
+			entries, loadErr := loadAllEntries()
+			if loadErr != nil {
+				fmt.Printf("Erro ao carregar sessões: %v\n", loadErr)
+				continue
+			}
+			sessionEntries := loadSessionHistory(entries, targetID, maxHistoryEntries)
+			if len(sessionEntries) == 0 {
+				fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("⚠️  Sessão '%s' não encontrada ou vazia.\n"), targetID)
+				continue
+			}
+			// Atualizar contexto de histórico com a sessão carregada
+			historyCtx = formatHistoryContext(sessionEntries)
+			systemPrompt = buildSystemPrompt(ctxData, bardCfg, sessionEntries)
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render(
+				fmt.Sprintf("Carregada sessão %s (%d mensagens)", targetID, len(sessionEntries)),
+			))
+			continue
+		}
+
 		// Salvar mensagem do usuário antes da chamada IA
-		saveMessage("user", input)
+		saveMessage("user", input, sessionID)
 
 		fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Bard > "))
 
-		// 6. Recuperação inteligente (busca vetorial com threshold)
+		// 7. Recuperação inteligente (busca vetorial com threshold)
 		ukiContext := ""
 		if vectorStore != nil {
 			results, searchErr := vectorStore.Search(ctx, input, bardCfg.TopK)
@@ -184,10 +197,21 @@ func startChat(ctxData map[string]interface{}) {
 			}
 		}
 
-		// 7. Resposta final com retry e captura de output
+		// 8. Ajustar contextos ao orçamento de tokens
+		truncatedHistory, truncatedRAG := TruncateToFit(
+			bardCfg.MaxTokens, systemPrompt, input, historyCtx, ukiContext,
+		)
+
+		// Reconstruir system prompt com histórico truncado
+		if truncatedHistory != historyCtx {
+			currentPrompt := strings.ReplaceAll(systemPrompt, historyCtx, truncatedHistory)
+			systemPrompt = currentPrompt
+		}
+
+		// 9. Resposta final com retry e captura de output
 		runInput := input
-		if ukiContext != "" {
-			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", ukiContext, input)
+		if truncatedRAG != "" {
+			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", truncatedRAG, input)
 		}
 
 		var responseBuf bytes.Buffer
@@ -214,10 +238,120 @@ func startChat(ctxData map[string]interface{}) {
 		if err != nil {
 			fmt.Printf("\nErro: %v\n", err)
 		} else {
-			saveMessage("assistant", responseBuf.String())
+			saveMessage("assistant", responseBuf.String(), sessionID)
 		}
 		fmt.Println() // Nova linha após o stream
 	}
+	return nil
+}
+
+// buildSystemPrompt constrói o system prompt enriquecido com contexto e histórico.
+func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, history []HistoryEntry) string {
+	overview, _ := ctxData["overview"].(string)
+	backlog, _ := ctxData["backlog"].(string)
+
+	blueprintSummary := "Nenhum blueprint disponível."
+	if bp, ok := ctxData["blueprint"]; ok {
+		bpBytes, _ := json.MarshalIndent(bp, "", "  ")
+		blueprintSummary = string(bpBytes)
+	}
+
+	contextBlock := fmt.Sprintf(`
+## Project Overview
+%s
+
+## Backlog & Debt
+%s
+
+## Technical Blueprint (Atlas)
+%s
+`, overview, backlog, blueprintSummary)
+
+	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
+
+	historyCtx := formatHistoryContext(history)
+	if historyCtx != "" {
+		systemPrompt += "\n\n" + historyCtx
+	}
+
+	if bardCfg.SystemPromptExtra != "" {
+		systemPrompt += "\n\n" + bardCfg.SystemPromptExtra
+	}
+
+	return systemPrompt
+}
+
+// handleSessionsList exibe a lista de sessões disponíveis.
+func handleSessionsList(currentSessionID string) {
+	entries, err := loadAllEntries()
+	if err != nil {
+		fmt.Printf("Erro ao carregar sessões: %v\n", err)
+		return
+	}
+
+	if len(entries) == 0 {
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Nenhuma sessão encontrada."))
+		return
+	}
+
+	sessions := listSessions(entries)
+	fmt.Println(lipgloss.NewStyle().Bold(true).Render("Sessões disponíveis:"))
+	for _, s := range sessions {
+		marker := "  "
+		suffix := ""
+		if s.SessionID == currentSessionID {
+			marker = "* "
+			suffix = " — atual"
+		}
+		fmt.Printf("  %s%s (%d mensagens)%s\n", marker, s.SessionID, s.MessageCount, suffix)
+	}
+}
+
+// runBatchMode executa o Bard em modo não-interativo (pipe/batch).
+// Processa uma pergunta por linha do stdin, sem styling nem histórico.
+func runBatchMode(ctx context.Context, provider ai.Provider, vectorStore *ai.VectorStore, bardCfg BardConfig, ctxData map[string]interface{}) error {
+	systemPrompt := buildSystemPrompt(ctxData, bardCfg, nil)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	var lastErr error
+	first := true
+
+	for scanner.Scan() {
+		question := strings.TrimSpace(scanner.Text())
+		if question == "" {
+			continue
+		}
+
+		if !first {
+			fmt.Print("\n---\n\n")
+		}
+		first = false
+
+		// Busca RAG (se vector store disponível)
+		runInput := question
+		if vectorStore != nil {
+			results, searchErr := vectorStore.Search(ctx, question, bardCfg.TopK)
+			if searchErr == nil && len(results) > 0 {
+				filtered := filterByThreshold(results, bardCfg.RelevanceThreshold)
+				if len(filtered) > 0 {
+					var sb strings.Builder
+					for _, res := range filtered {
+						sb.WriteString(fmt.Sprintf("\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content))
+					}
+					runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", sb.String(), question)
+				}
+			}
+		}
+
+		err := provider.StreamCompletion(ctx, systemPrompt, runInput, os.Stdout)
+		if err != nil {
+			slog.Error("falha ao processar pergunta", "pergunta", question, "erro", err)
+			lastErr = err
+			continue
+		}
+	}
+
+	return lastErr
 }
 
 func respond(data interface{}) {

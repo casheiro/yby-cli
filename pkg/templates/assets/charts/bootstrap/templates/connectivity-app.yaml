@@ -20,7 +20,7 @@ spec:
       - {{ printf "../../%s" $f | quote }}
       {{- end }}
   destination:
-    server: https://kubernetes.default.svc
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
     namespace: default # ClusterIssuer é cluster-wide, mas Ingress Dashboard geralmente é system
   syncPolicy:
     automated:

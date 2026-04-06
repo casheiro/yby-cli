@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: 💬 Notify Start
-        uses: peter-evans/create-or-update-comment@v3
+        uses: peter-evans/create-or-update-comment@v4.0.0
         with:
           issue-number: ${{ "{{" }} github.event.issue.number {{ "}}" }}
           body: |
@@ -23,7 +23,7 @@ jobs:
             - **Workflow Run:** [Acompanhe o progresso aqui](${{ "{{" }} github.server_url {{ "}}" }}/${{ "{{" }} github.repository {{ "}}" }}/actions/runs/${{ "{{" }} github.run_id {{ "}}" }})
 
       - name: 🔍 Checkout Template
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 📝 Parse Issue and Extract Variables
         id: vars
@@ -109,7 +109,7 @@ jobs:
             --clone
 
       - name: 🧰 Setup yq
-        uses: mikefarah/yq@master
+        uses: mikefarah/yq@v4.44.6
 
       - name: 🔧 Configure Cluster Values
         working-directory: ./${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}
@@ -149,7 +149,7 @@ jobs:
           git push https://x-access-token:$GH_TOKEN@github.com/${{ "{{" }} github.repository_owner {{ "}}" }}/${{ "{{" }} steps.vars.outputs.CLUSTER_NAME {{ "}}" }}.git {{ .GitBranch }}
 
       - name: ✅ Notify Success
-        uses: peter-evans/create-or-update-comment@v3
+        uses: peter-evans/create-or-update-comment@v4.0.0
         with:
           issue-number: ${{ "{{" }} github.event.issue.number {{ "}}" }}
           body: |
@@ -174,7 +174,7 @@ jobs:
 
       - name: ❌ Notify Failure
         if: failure()
-        uses: peter-evans/create-or-update-comment@v3
+        uses: peter-evans/create-or-update-comment@v4.0.0
         with:
           issue-number: ${{ "{{" }} github.event.issue.number {{ "}}" }}
           body: |

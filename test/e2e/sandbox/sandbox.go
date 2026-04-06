@@ -173,6 +173,32 @@ func (s *Sandbox) RunShell(t *testing.T, args ...string) string {
 	return string(out)
 }
 
+// RunCLIWithEnv executa o CLI dentro do container com variáveis de ambiente adicionais.
+// Útil para isolar HOME e testar comportamento dependente de configuração.
+func (s *Sandbox) RunCLIWithEnv(t *testing.T, envVars []string, args ...string) string {
+	dockerArgs := []string{"exec"}
+	for _, env := range envVars {
+		dockerArgs = append(dockerArgs, "-e", env)
+	}
+	dockerArgs = append(dockerArgs, s.ContainerID, "yby")
+	dockerArgs = append(dockerArgs, args...)
+
+	cmd := exec.Command("docker", dockerArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("CLI command with env failed: yby %s\n%s", strings.Join(args, " "), string(out))
+	}
+	return string(out)
+}
+
+// RunShellAllowError executa um comando shell no container e retorna o erro (nil se sucesso).
+// Não falha o teste — permite verificar se um comando falhou.
+func (s *Sandbox) RunShellAllowError(t *testing.T, args ...string) error {
+	dockerArgs := append([]string{"exec", s.ContainerID}, args...)
+	cmd := exec.Command("docker", dockerArgs...)
+	return cmd.Run()
+}
+
 // AssertFileExists checks if file exists inside container
 func (s *Sandbox) AssertFileExists(t *testing.T, path string) {
 	cmd := exec.Command("docker", "exec", s.ContainerID, "test", "-f", path)
@@ -193,6 +219,28 @@ func (s *Sandbox) AssertFileContains(t *testing.T, path, sub string) {
 		t.Errorf("File %s does not contain '%s'. Content matches?", path, sub)
 		// t.Logf("Content: %s", string(out))
 	}
+}
+
+// RunCLIAllowError executa o CLI e retorna a saída independente de sucesso ou erro.
+// Útil para comandos que podem falhar por fatores externos (ex: rede) mas queremos inspecionar a saída.
+func (s *Sandbox) RunCLIAllowError(t *testing.T, args ...string) string {
+	dockerArgs := append([]string{"exec", s.ContainerID, "yby"}, args...)
+	cmd := exec.Command("docker", dockerArgs...)
+	out, _ := cmd.CombinedOutput()
+	return string(out)
+}
+
+// RunCLIExpectError executa o CLI e espera que o comando falhe.
+// Retorna a saída combinada (stdout+stderr) para verificação de mensagens de erro.
+func (s *Sandbox) RunCLIExpectError(t *testing.T, args ...string) string {
+	dockerArgs := append([]string{"exec", s.ContainerID, "yby"}, args...)
+	cmd := exec.Command("docker", dockerArgs...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("Esperava erro ao rodar: yby %s, mas o comando teve sucesso.\nOutput: %s",
+			strings.Join(args, " "), string(out))
+	}
+	return string(out)
 }
 
 // AssertFileNotExists checks if file does NOT exist inside container

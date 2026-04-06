@@ -3,6 +3,7 @@ package scaffold
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -677,6 +678,121 @@ func TestApply_DiscoveryFilter(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tmpDir, "app/main.yaml"))
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Testes de ValidateRenderedYAML (P1.6)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestValidateRenderedYAML_SemCamposVazios(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "values.yaml", `
+git:
+  repoURL: https://github.com/org/repo
+  repoName: meu-projeto
+global:
+  domainBase: "app.local"
+server:
+  host: "0.0.0.0"
+`)
+	warnings := ValidateRenderedYAML(dir)
+	assert.Empty(t, warnings, "não deve haver warnings quando campos críticos estão preenchidos")
+}
+
+func TestValidateRenderedYAML_CamposCriticosVazios(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "values.yaml", `
+git:
+  repoURL: ""
+  repoName: ""
+global:
+  domainBase: ""
+`)
+	warnings := ValidateRenderedYAML(dir)
+	assert.Len(t, warnings, 3, "deve detectar 3 campos críticos vazios")
+
+	joined := strings.Join(warnings, "\n")
+	assert.Contains(t, joined, "repoURL")
+	assert.Contains(t, joined, "repoName")
+	assert.Contains(t, joined, "domainBase")
+}
+
+func TestValidateRenderedYAML_CamposNulos(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "values.yaml", `
+git:
+  repoURL:
+  repoName: meu-projeto
+`)
+	warnings := ValidateRenderedYAML(dir)
+	assert.Len(t, warnings, 1, "deve detectar 1 campo nulo")
+	assert.Contains(t, warnings[0], "repoURL")
+}
+
+func TestValidateRenderedYAML_IgnoraArquivosNaoYAML(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "config.json", `{"repoURL": ""}`)
+	helperWriteFile(t, dir, "readme.txt", "repoURL: ")
+
+	warnings := ValidateRenderedYAML(dir)
+	assert.Empty(t, warnings, "não deve validar arquivos que não são YAML")
+}
+
+func TestValidateRenderedYAML_DiretorioVazio(t *testing.T) {
+	dir := t.TempDir()
+	warnings := ValidateRenderedYAML(dir)
+	assert.Empty(t, warnings)
+}
+
+func TestValidateRenderedYAML_YAMLInvalido(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "broken.yaml", `{{{{ invalid yaml`)
+
+	warnings := ValidateRenderedYAML(dir)
+	assert.Empty(t, warnings, "deve ignorar YAMLs com sintaxe inválida")
+}
+
+func TestValidateRenderedYAML_SubdirRecursivo(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "sub/nested/values.yml", `
+git:
+  repoURL: ""
+`)
+	warnings := ValidateRenderedYAML(dir)
+	assert.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "sub/nested/values.yml")
+}
+
+func TestValidateRenderedYAML_CampoServerVazio(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "app.yaml", `
+server: ""
+`)
+	warnings := ValidateRenderedYAML(dir)
+	assert.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "server")
+}
+
+func TestFindEmptyCriticalFields_MapaAninhado(t *testing.T) {
+	data := map[string]interface{}{
+		"level1": map[string]interface{}{
+			"repoURL": "",
+			"level2": map[string]interface{}{
+				"domainBase": nil,
+			},
+		},
+	}
+	result := findEmptyCriticalFields("", data)
+	assert.Len(t, result, 2)
+}
+
+func TestFindEmptyCriticalFields_SemCamposCriticos(t *testing.T) {
+	data := map[string]interface{}{
+		"name":    "test",
+		"version": "1.0",
+	}
+	result := findEmptyCriticalFields("", data)
+	assert.Empty(t, result)
+}
+
 func TestRenderEmbedDir_WithTemplate(t *testing.T) {
 	// Testar RenderEmbedDir com template usando funcMap
 	tmpDir := t.TempDir()
@@ -695,4 +811,57 @@ func TestRenderEmbedDir_WithTemplate(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(tmpDir, "config.yaml"))
 	require.NoError(t, err)
 	assert.Equal(t, "project: MEU-APP", string(data))
+}
+
+// ══════���════════════════════════════��═══════════════════════════════════════════
+// yamlEscape
+// ══════════════════════════��════════════════════════════════════════════════════
+
+func TestYamlEscape(t *testing.T) {
+	tests := []struct {
+		nome     string
+		entrada  string
+		esperado string
+	}{
+		{"valor simples sem caracteres especiais", "meu-projeto", "meu-projeto"},
+		{"valor com dois pontos é envolvido em aspas", "chave:valor", `"chave:valor"`},
+		{"valor com hash é envolvido em aspas", "valor # comentário", `"valor # comentário"`},
+		{"valor com chaves é envolvido em aspas", "{malicioso}", `"{malicioso}"`},
+		{"valor com colchetes é envolvido em aspas", "[item]", `"[item]"`},
+		{"valor com asterisco é envolvido em aspas", "*referencia", `"*referencia"`},
+		{"valor com ampersand é envolvido em aspas", "&ancora", `"&ancora"`},
+		{"valor com aspas duplas escapa e envolve", `valor "com" aspas`, `"valor \"com\" aspas"`},
+		{"valor com barra invertida escapa", `path\to\file`, `"path\\to\\file"`},
+		{"newline retorna vazio", "valor\nmalicioso", ""},
+		{"carriage return retorna vazio", "valor\rmalicioso", ""},
+		{"tab retorna vazio", "valor\tmalicioso", ""},
+		{"null byte retorna vazio", "valor\x00malicioso", ""},
+		{"valor vazio retorna vazio", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			resultado := yamlEscape(tt.entrada)
+			assert.Equal(t, tt.esperado, resultado)
+		})
+	}
+}
+
+func TestYamlEscapeInTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mockFS := fstest.MapFS{
+		"assets/config.yaml.tmpl": &fstest.MapFile{
+			Data: []byte("domain: {{ .Domain | yamlEscape }}"),
+		},
+	}
+
+	ctx := &BlueprintContext{Domain: "app:8080"}
+
+	err := Apply(tmpDir, ctx, mockFS)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, `domain: "app:8080"`, string(data))
 }

@@ -24,10 +24,14 @@ func NewOpenAIProvider() *OpenAIProvider {
 		return nil
 	}
 
-	// Support Anthropic/Other via Compatible Base URL if needed, but defaults to OpenAI
+	model := "gpt-4o-mini" // Default: rápido e econômico
+	if override := getConfiguredModel(); override != "" {
+		model = override
+	}
+
 	return &OpenAIProvider{
 		APIKey:  apiKey,
-		Model:   "gpt-4o-mini", // Smart and fast
+		Model:   model,
 		BaseURL: "https://api.openai.com/v1",
 	}
 }
@@ -59,6 +63,11 @@ type openAIResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
@@ -84,17 +93,23 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		buf := new(bytes.Buffer)
-		if _, err := buf.ReadFrom(resp.Body); err != nil {
-			return nil, fmt.Errorf("openai retornou status: %d (falha ao ler corpo: %v)", resp.StatusCode, err)
-		}
-		return nil, fmt.Errorf("openai retornou status: %d - %s", resp.StatusCode, buf.String())
+		body, _ := io.ReadAll(resp.Body)
+		return nil, NewAPIErrorFromResponse("openai", resp, body)
 	}
 
 	var oResp openAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
 		return nil, fmt.Errorf("falha ao decodificar resposta da openai: %w", err)
 	}
+
+	SetUsage(ctx, &UsageMetadata{
+		PromptTokens:     oResp.Usage.PromptTokens,
+		CompletionTokens: oResp.Usage.CompletionTokens,
+		TotalTokens:      oResp.Usage.TotalTokens,
+		Provider:         "openai",
+		Model:            p.Model,
+		Operation:        "governance",
+	})
 
 	if len(oResp.Choices) == 0 {
 		return nil, fmt.Errorf("resposta vazia do openai")
@@ -136,13 +151,23 @@ func (p *OpenAIProvider) Completion(ctx context.Context, systemPrompt, userPromp
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("openai retornou status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", NewAPIErrorFromResponse("openai", resp, body)
 	}
 
 	var oResp openAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&oResp); err != nil {
 		return "", fmt.Errorf("falha ao decodificar resposta da openai: %w", err)
 	}
+
+	SetUsage(ctx, &UsageMetadata{
+		PromptTokens:     oResp.Usage.PromptTokens,
+		CompletionTokens: oResp.Usage.CompletionTokens,
+		TotalTokens:      oResp.Usage.TotalTokens,
+		Provider:         "openai",
+		Model:            p.Model,
+		Operation:        "completion",
+	})
 
 	if len(oResp.Choices) == 0 {
 		return "", fmt.Errorf("resposta vazia da openai")
@@ -173,7 +198,7 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
 
-	client := http.Client{} // No timeout for streaming
+	client := http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("falha ao chamar openai stream: %w", err)
@@ -181,7 +206,8 @@ func (p *OpenAIProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("openai returned status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return NewAPIErrorFromResponse("openai", resp, body)
 	}
 
 	// Simple SSE Parser
@@ -265,7 +291,8 @@ func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("openai embeddings status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, NewAPIErrorFromResponse("openai", resp, body)
 	}
 
 	var oResp openAIEmbeddingResponse

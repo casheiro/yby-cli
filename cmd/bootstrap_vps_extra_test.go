@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -15,24 +16,31 @@ import (
 // ========================================================
 
 func TestFetchKubeconfig_FetchFileError(t *testing.T) {
+	runner := &testutil.MockRunner{}
 	mock := &testutil.MockExecutor{
 		FetchFileFunc: func(path string) ([]byte, error) {
 			return nil, fmt.Errorf("arquivo não encontrado: %s", path)
 		},
 	}
 
-	err := fetchKubeconfig(mock, "192.168.1.100")
+	err := fetchKubeconfig(mock, "192.168.1.100", runner)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "arquivo não encontrado")
 }
 
 func TestFetchKubeconfig_ClusterNameFromEnv(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("CLUSTER_NAME", "meu-cluster-custom")
+
+	runner := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("merged"), nil
+		},
+	}
 
 	mock := &testutil.MockExecutor{
 		FetchFileFunc: func(path string) ([]byte, error) {
@@ -55,19 +63,23 @@ users:
 		},
 	}
 
-	err := fetchKubeconfig(mock, "10.0.0.1")
-	// Pode falhar se kubectl não estiver disponível, mas não deve entrar em pânico
-	_ = err
+	err := fetchKubeconfig(mock, "10.0.0.1", runner)
+	assert.NoError(t, err)
 }
 
 func TestFetchKubeconfig_DefaultClusterName(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	// Garante que CLUSTER_NAME não está definido para usar o padrão "yby-prod"
 	t.Setenv("CLUSTER_NAME", "")
+
+	runner := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("merged"), nil
+		},
+	}
 
 	mock := &testutil.MockExecutor{
 		FetchFileFunc: func(path string) ([]byte, error) {
@@ -81,20 +93,27 @@ kind: Config
 		},
 	}
 
-	err := fetchKubeconfig(mock, "10.0.0.2")
-	_ = err
+	err := fetchKubeconfig(mock, "10.0.0.2", runner)
+	assert.NoError(t, err)
 }
 
 func TestFetchKubeconfig_HostReplacement(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("CLUSTER_NAME", "test-replace")
 
-	// Conteúdo com 127.0.0.1 e localhost que devem ser substituídos
-	kubeconfigContent := `apiVersion: v1
+	runner := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("merged"), nil
+		},
+	}
+
+	mock := &testutil.MockExecutor{
+		FetchFileFunc: func(path string) ([]byte, error) {
+			return []byte(`apiVersion: v1
 clusters:
 - cluster:
     server: https://127.0.0.1:6443
@@ -103,20 +122,12 @@ clusters:
     server: https://localhost:6443
   name: secondary
 kind: Config
-`
-
-	var capturedContent string
-	mock := &testutil.MockExecutor{
-		FetchFileFunc: func(path string) ([]byte, error) {
-			return []byte(kubeconfigContent), nil
+`), nil
 		},
 	}
 
-	// Verifica que a substituição aconteceu verificando o arquivo temporário
-	// Como não podemos interceptar diretamente, verificamos via a lógica do fetchKubeconfig
-	err := fetchKubeconfig(mock, "203.0.113.50")
-	_ = err
-	_ = capturedContent
+	err := fetchKubeconfig(mock, "203.0.113.50", runner)
+	assert.NoError(t, err)
 }
 
 // ========================================================
@@ -159,7 +170,6 @@ func TestCopyFile_DestDirNotExists(t *testing.T) {
 	src := dir + "/source.txt"
 	require.NoError(t, os.WriteFile(src, []byte("conteúdo"), 0644))
 
-	// Destino em diretório que não existe
 	dst := dir + "/subdir/inexistente/dest.txt"
 	err := copyFile(src, dst)
 	assert.Error(t, err, "deve falhar quando o diretório de destino não existe")

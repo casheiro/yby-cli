@@ -15,13 +15,13 @@ spec:
   source:
     repoURL: https://kedacore.github.io/charts
     chart: keda
-    targetRevision: 2.14.2
+    targetRevision: {{ .Values.versions.keda | default "2.14.2" }}
     helm:
       values: |
         # Values default from cluster-values
   destination:
-    server: https://kubernetes.default.svc
-    namespace: keda
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
+    namespace: {{ .Values.namespaces.keda | default "keda" }}
   syncPolicy:
     automated:
       prune: true
@@ -45,7 +45,7 @@ spec:
   source:
     repoURL: https://sustainable-computing-io.github.io/kepler-helm-chart
     chart: kepler
-    targetRevision: 0.5.11
+    targetRevision: {{ .Values.versions.kepler | default "0.5.11" }}
     helm:
       values: |
         serviceMonitor:
@@ -53,8 +53,8 @@ spec:
           labels:
             release: prometheus-stack # Ajustar conforme label do Prometheus Operator
   destination:
-    server: https://kubernetes.default.svc
-    namespace: monitoring
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
+    namespace: {{ .Values.namespaces.monitoring | default "monitoring" }}
   syncPolicy:
     automated:
       prune: true

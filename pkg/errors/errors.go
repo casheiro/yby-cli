@@ -11,6 +11,7 @@ type YbyError struct {
 	Message string
 	Cause   error                  // Underlying error (for %w unwrapping)
 	Context map[string]interface{} // Diagnostic data
+	Hint    string                 // Sugestão de correção para o usuário
 }
 
 // Error implements the standard error interface.
@@ -55,6 +56,20 @@ func (e *YbyError) WithContext(key string, value interface{}) *YbyError {
 	return e
 }
 
+// WithHint adiciona uma sugestão de correção ao erro.
+func (e *YbyError) WithHint(hint string) *YbyError {
+	e.Hint = hint
+	return e
+}
+
+// GetHint retorna o hint do erro, ou busca no registry de hints padrão pelo código.
+func (e *YbyError) GetHint() string {
+	if e.Hint != "" {
+		return e.Hint
+	}
+	return GetDefaultHint(e.Code)
+}
+
 // --- Standardized Error Codes ---
 
 const (
@@ -84,4 +99,7 @@ const (
 
 	// Scaffold & Generation
 	ErrCodeScaffold = "ERR_SCAFFOLD_FAILED"
+
+	// AI / Token Limits
+	ErrCodeTokenLimit = "ERR_TOKEN_LIMIT"
 )

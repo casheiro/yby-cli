@@ -67,7 +67,7 @@ func TestEnv_Commands(t *testing.T) {
 	defer s.Stop()
 
 	// Init first
-	s.RunCLI(t, "init", "--topology", "standard", "--workflow", "essential", "--git-repo", "x")
+	s.RunCLI(t, "init", "--topology", "standard", "--workflow", "essential", "--git-repo", "https://github.com/test/env-test.git")
 
 	// Test List
 	out := s.RunCLI(t, "env", "list")

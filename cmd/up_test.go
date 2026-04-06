@@ -8,7 +8,7 @@ import (
 )
 
 func TestRunRemoteUp_Success(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	err := runRemoteUp(context.Background(), "prod")
@@ -16,7 +16,7 @@ func TestRunRemoteUp_Success(t *testing.T) {
 }
 
 func TestRunRemoteUp_DevEnv(t *testing.T) {
-	teardown := mockExecCommand()
+	teardown := mockLookPath()
 	defer teardown()
 
 	err := runRemoteUp(context.Background(), "staging")
@@ -27,4 +27,11 @@ func TestUpCmd_Structure(t *testing.T) {
 	assert.Equal(t, "up", upCmd.Use)
 	assert.Contains(t, upCmd.Aliases, "dev")
 	assert.NotEmpty(t, upCmd.Short)
+}
+
+func TestUpCmd_PlainSecretsFlag(t *testing.T) {
+	flag := upCmd.Flags().Lookup("plain-secrets")
+	assert.NotNil(t, flag, "flag --plain-secrets deveria existir")
+	assert.Equal(t, "false", flag.DefValue, "valor padrão deveria ser false")
+	assert.NotEmpty(t, flag.Usage)
 }

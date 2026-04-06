@@ -24,9 +24,14 @@ func newOllamaTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Serv
 	return server, provider
 }
 
-// ollamaRouterHandler retorna um handler que roteia /api/tags e /api/generate (e /api/embeddings)
+// ollamaRouterHandler retorna um handler que roteia /api/tags, /api/generate, /api/embed e /api/embeddings
 // para handlers distintos.
 func ollamaRouterHandler(tagsHandler, generateHandler, embeddingsHandler http.HandlerFunc) http.HandlerFunc {
+	return ollamaRouterHandlerFull(tagsHandler, generateHandler, nil, embeddingsHandler)
+}
+
+// ollamaRouterHandlerFull roteia incluindo /api/embed (batch, Ollama v0.5+).
+func ollamaRouterHandlerFull(tagsHandler, generateHandler, embedHandler, embeddingsHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/tags":
@@ -37,6 +42,11 @@ func ollamaRouterHandler(tagsHandler, generateHandler, embeddingsHandler http.Ha
 		case "/api/generate":
 			if generateHandler != nil {
 				generateHandler(w, r)
+				return
+			}
+		case "/api/embed":
+			if embedHandler != nil {
+				embedHandler(w, r)
 				return
 			}
 		case "/api/embeddings":
@@ -212,7 +222,7 @@ func TestOllamaProvider_GenerateGovernance_Error(t *testing.T) {
 
 	_, err := provider.GenerateGovernance(context.Background(), "teste")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 func TestOllamaProvider_GenerateGovernance_MalformedJSON(t *testing.T) {
@@ -267,7 +277,7 @@ func TestOllamaProvider_Completion_Error(t *testing.T) {
 
 	_, err := provider.Completion(context.Background(), "system", "user")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // ─── Testes de StreamCompletion ─────────────────────────────────────────────
@@ -312,18 +322,48 @@ func TestOllamaProvider_StreamCompletion_Error(t *testing.T) {
 	var buf bytes.Buffer
 	err := provider.StreamCompletion(context.Background(), "system", "user", &buf)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
 }
 
-// ─── Testes de EmbedDocuments ───────────────────────────────────────────────
+// ─── Testes de EmbedDocuments (batch via /api/embed) ────────────────────────
 
-func TestOllamaProvider_EmbedDocuments_Success(t *testing.T) {
-	handler := ollamaRouterHandler(
+func TestOllamaProvider_EmbedDocuments_Batch_Success(t *testing.T) {
+	handler := ollamaRouterHandlerFull(
 		tagsOK("llama3"),
 		nil,
 		func(w http.ResponseWriter, r *http.Request) {
+			var req ollamaEmbedRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			// Retornar um embedding por input
+			embeddings := make([][]float32, len(req.Input))
+			for i := range req.Input {
+				embeddings[i] = []float32{0.1, 0.2, 0.3}
+			}
+			resp := ollamaEmbedResponse{Embeddings: embeddings}
+			json.NewEncoder(w).Encode(resp)
+		},
+		nil,
+	)
+
+	server, provider := newOllamaTestServer(t, handler)
+	defer server.Close()
+
+	results, err := provider.EmbedDocuments(context.Background(), []string{"texto1", "texto2"})
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+	assert.InDelta(t, float32(0.1), results[0][0], 0.001)
+	assert.InDelta(t, float32(0.1), results[1][0], 0.001)
+}
+
+func TestOllamaProvider_EmbedDocuments_Fallback_Sequential(t *testing.T) {
+	// /api/embed retorna 404 (Ollama antigo), fallback para /api/embeddings
+	handler := ollamaRouterHandlerFull(
+		tagsOK("llama3"),
+		nil,
+		nil, // embed handler nil → retorna 404
+		func(w http.ResponseWriter, r *http.Request) {
 			resp := ollamaEmbeddingResponse{
-				Embedding: []float32{0.1, 0.2, 0.3},
+				Embedding: []float32{0.4, 0.5, 0.6},
 			}
 			json.NewEncoder(w).Encode(resp)
 		},
@@ -335,18 +375,18 @@ func TestOllamaProvider_EmbedDocuments_Success(t *testing.T) {
 	results, err := provider.EmbedDocuments(context.Background(), []string{"texto1", "texto2"})
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
-	// Cada chamada retorna o mesmo embedding mockado
-	assert.InDelta(t, float32(0.1), results[0][0], 0.001)
-	assert.InDelta(t, float32(0.1), results[1][0], 0.001)
+	assert.InDelta(t, float32(0.4), results[0][0], 0.001)
+	assert.InDelta(t, float32(0.4), results[1][0], 0.001)
 }
 
-func TestOllamaProvider_EmbedDocuments_Error(t *testing.T) {
-	handler := ollamaRouterHandler(
+func TestOllamaProvider_EmbedDocuments_Batch_Error(t *testing.T) {
+	handler := ollamaRouterHandlerFull(
 		tagsOK("llama3"),
 		nil,
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		},
+		nil,
 	)
 
 	server, provider := newOllamaTestServer(t, handler)
@@ -354,5 +394,46 @@ func TestOllamaProvider_EmbedDocuments_Error(t *testing.T) {
 
 	_, err := provider.EmbedDocuments(context.Background(), []string{"texto"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "status: 500")
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestOllamaProvider_EmbedDocuments_Empty(t *testing.T) {
+	provider := &OllamaProvider{BaseURL: "http://localhost:11434", Model: "llama3"}
+	results, err := provider.EmbedDocuments(context.Background(), []string{})
+	require.NoError(t, err)
+	assert.Nil(t, results)
+}
+
+func TestOllamaProvider_EmbedDocuments_LargeBatch(t *testing.T) {
+	var batchCount int
+	handler := ollamaRouterHandlerFull(
+		tagsOK("llama3"),
+		nil,
+		func(w http.ResponseWriter, r *http.Request) {
+			batchCount++
+			var req ollamaEmbedRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			embeddings := make([][]float32, len(req.Input))
+			for i := range req.Input {
+				embeddings[i] = []float32{float32(batchCount), float32(i)}
+			}
+			resp := ollamaEmbedResponse{Embeddings: embeddings}
+			json.NewEncoder(w).Encode(resp)
+		},
+		nil,
+	)
+
+	server, provider := newOllamaTestServer(t, handler)
+	defer server.Close()
+
+	// 75 textos = 2 batches (50 + 25)
+	texts := make([]string, 75)
+	for i := range texts {
+		texts[i] = fmt.Sprintf("texto-%d", i)
+	}
+
+	results, err := provider.EmbedDocuments(context.Background(), texts)
+	require.NoError(t, err)
+	assert.Len(t, results, 75)
+	assert.Equal(t, 2, batchCount, "deveria ter feito 2 requests de batch")
 }

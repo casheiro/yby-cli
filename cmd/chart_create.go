@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
@@ -25,26 +26,27 @@ var chartCreateCmd = &cobra.Command{
 
 		fmt.Printf("📦 Criando chart '%s'...\n", name)
 
-		// Create Scaffold Context
-		// We reuse BlueprintContext logic but focused on this chart
-		// We need ProjectName, Domain, GithubOrg to fill defaults.
-		// How do we get them? We can look at existing project context or use flags.
-		// For simplicity, we assume we are in a Yby project.
-
-		// TODO: Load context from .yby/blueprint.yaml or init vars?
-		// For now, simple placeholders.
-		ctx := &scaffold.BlueprintContext{
-			ProjectName: name,
-			Domain:      "yby.local", // Placeholder
-			GithubOrg:   "org",       // Placeholder
+		// Tenta carregar contexto do ProjectManifest; usa defaults se não encontrar
+		domain := "yby.local"
+		githubOrg := "org"
+		if manifest, err := scaffold.LoadProjectManifest("."); err == nil {
+			if manifest.Spec.Domain != "" {
+				domain = manifest.Spec.Domain
+			}
+			if manifest.Spec.Git.Repo != "" {
+				// Extrai organização do URL do repositório (ex: "https://github.com/org/repo" → "org")
+				parts := strings.Split(strings.TrimSuffix(manifest.Spec.Git.Repo, ".git"), "/")
+				if len(parts) >= 2 {
+					githubOrg = parts[len(parts)-2]
+				}
+			}
 		}
 
-		// Use internal template "charts/app-template"
-		// We can't use scaffold.Apply easily because it applies explicit logic.
-		// We'll write a simple "CopyTemplate" helper using templates.Assets?
-		// Or assume scaffold package has "CopyDir" from Embed?
-
-		// Implementation: Walk embedded "charts/app-template" and copy/render to "./charts/<name>"
+		ctx := &scaffold.BlueprintContext{
+			ProjectName: name,
+			Domain:      domain,
+			GithubOrg:   githubOrg,
+		}
 
 		dest := filepath.Join(targetDir, "charts", name)
 		if _, err := os.Stat(dest); !os.IsNotExist(err) {

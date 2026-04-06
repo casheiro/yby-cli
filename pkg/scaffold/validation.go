@@ -154,9 +154,80 @@ func ValidateSecretsStrategy(strategy string) error {
 	return nil
 }
 
+// ValidateEnvironmentName valida o nome de um ambiente conforme RFC 1123.
+func ValidateEnvironmentName(name string) error {
+	if name == "" {
+		return errors.New(errors.ErrCodeValidation, "nome do ambiente não pode ser vazio")
+	}
+	if len(name) > 63 {
+		return errors.New(errors.ErrCodeValidation,
+			fmt.Sprintf("nome do ambiente deve ter no máximo 63 caracteres, recebeu %d", len(name)))
+	}
+	if !rfc1123Regex.MatchString(name) {
+		return errors.New(errors.ErrCodeValidation,
+			fmt.Sprintf("nome do ambiente '%s' deve seguir RFC 1123: apenas letras minúsculas, números e hífens, começando e terminando com alfanumérico", name))
+	}
+	return nil
+}
+
+// ValidateEnvironmentNames valida uma lista de nomes de ambientes.
+func ValidateEnvironmentNames(names []string) error {
+	if len(names) == 0 {
+		return errors.New(errors.ErrCodeValidation, "lista de ambientes não pode ser vazia")
+	}
+	seen := make(map[string]bool)
+	for _, name := range names {
+		if err := ValidateEnvironmentName(name); err != nil {
+			return err
+		}
+		if seen[name] {
+			return errors.New(errors.ErrCodeValidation,
+				fmt.Sprintf("nome do ambiente '%s' está duplicado", name))
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
+// ValidateNoYAMLInjection rejeita valores que contêm caracteres perigosos para YAML injection.
+// Bloqueia newlines, caracteres de controle e sequências multiline.
+func ValidateNoYAMLInjection(value, fieldName string) error {
+	for _, r := range value {
+		if r == '\n' || r == '\r' || r == '\x00' || (r < 0x20 && r != ' ' && r != '\t') {
+			return errors.New(errors.ErrCodeValidation,
+				fmt.Sprintf("%s contém caracteres de controle não permitidos (possível YAML injection)", fieldName))
+		}
+	}
+
+	// Rejeitar sequências multiline YAML (indicadores de bloco no início)
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) > 0 && (trimmed[0] == '|' || trimmed[0] == '>') {
+		return errors.New(errors.ErrCodeValidation,
+			fmt.Sprintf("%s contém indicador de bloco YAML não permitido (possível YAML injection)", fieldName))
+	}
+
+	return nil
+}
+
 // ValidateContext valida todos os campos do BlueprintContext.
 // Retorna o primeiro erro encontrado.
 func ValidateContext(ctx *BlueprintContext) error {
+	// Validação contra YAML injection nos campos de entrada do usuário
+	for _, field := range []struct {
+		valor string
+		nome  string
+	}{
+		{ctx.ProjectName, "nome do projeto"},
+		{ctx.Domain, "domínio"},
+		{ctx.Email, "email"},
+	} {
+		if field.valor != "" {
+			if err := ValidateNoYAMLInjection(field.valor, field.nome); err != nil {
+				return err
+			}
+		}
+	}
+
 	if ctx.ProjectName != "" {
 		if err := ValidateProjectName(ctx.ProjectName); err != nil {
 			return err

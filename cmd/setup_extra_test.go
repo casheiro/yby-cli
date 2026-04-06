@@ -1,204 +1,87 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"testing"
 
+	"github.com/casheiro/yby-cli/pkg/services/setup"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 // ========================================================
-// attemptInstall — cenários adicionais (cobertura 36.4%)
+// Testes adicionais do cmd/setup usando newSetupService
 // ========================================================
 
-func TestAttemptInstall_ComBrew(t *testing.T) {
-	originalLookPath := lookPath
-	originalExecCommand := execCommand
-	defer func() {
-		lookPath = originalLookPath
-		execCommand = originalExecCommand
-	}()
-
-	// Simula brew disponível como gerenciador de pacotes
-	lookPath = func(file string) (string, error) {
-		if file == "brew" {
-			return "/usr/local/bin/brew", nil
-		}
-		return "", fmt.Errorf("not found: %s", file)
-	}
-
-	// Registra quais comandos foram chamados
-	comandosChamados := []string{}
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		comandosChamados = append(comandosChamados, name)
-		// Retorna um comando que simplesmente imprime sucesso
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
-	}
-
-	capturarStdout(t, func() {
-		attemptInstall([]string{"kubectl", "helm"})
-	})
-
-	// Deve ter chamado execCommand pelo menos 2 vezes (uma por ferramenta)
-	assert.GreaterOrEqual(t, len(comandosChamados), 2,
-		"deveria chamar execCommand para cada ferramenta")
+// mockSetupSvc implementa setup.Service para testes do cmd
+type mockSetupSvc struct {
+	checkToolsResult *setup.SetupResult
+	checkToolsErr    error
+	installResults   []setup.InstallResult
+	direnvErr        error
+	direnvCalled     bool
 }
 
-func TestAttemptInstall_ComApt(t *testing.T) {
-	originalLookPath := lookPath
-	originalExecCommand := execCommand
-	defer func() {
-		lookPath = originalLookPath
-		execCommand = originalExecCommand
-	}()
-
-	// Simula apt disponível (brew não disponível)
-	lookPath = func(file string) (string, error) {
-		if file == "apt-get" {
-			return "/usr/bin/apt-get", nil
-		}
-		return "", fmt.Errorf("not found: %s", file)
-	}
-
-	comandosChamados := []string{}
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		comandosChamados = append(comandosChamados, name)
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
-	}
-
-	capturarStdout(t, func() {
-		attemptInstall([]string{"kubectl"})
-	})
-
-	assert.GreaterOrEqual(t, len(comandosChamados), 1,
-		"deveria chamar execCommand para a ferramenta via apt")
+func (m *mockSetupSvc) CheckTools(profile string) (*setup.SetupResult, error) {
+	return m.checkToolsResult, m.checkToolsErr
 }
 
-func TestAttemptInstall_ComSnap(t *testing.T) {
-	originalLookPath := lookPath
-	originalExecCommand := execCommand
-	defer func() {
-		lookPath = originalLookPath
-		execCommand = originalExecCommand
-	}()
-
-	// Simula snap disponível (brew e apt não disponíveis)
-	lookPath = func(file string) (string, error) {
-		if file == "snap" {
-			return "/usr/bin/snap", nil
-		}
-		return "", fmt.Errorf("not found: %s", file)
-	}
-
-	comandosChamados := []string{}
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		comandosChamados = append(comandosChamados, name)
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
-	}
-
-	capturarStdout(t, func() {
-		attemptInstall([]string{"helm"})
-	})
-
-	assert.GreaterOrEqual(t, len(comandosChamados), 1,
-		"deveria chamar execCommand para a ferramenta via snap")
+func (m *mockSetupSvc) InstallMissing(_ context.Context, tools []string) []setup.InstallResult {
+	return m.installResults
 }
 
-func TestAttemptInstall_FalhaInstalacao(t *testing.T) {
-	originalLookPath := lookPath
-	originalExecCommand := execCommand
-	defer func() {
-		lookPath = originalLookPath
-		execCommand = originalExecCommand
-	}()
-
-	lookPath = func(file string) (string, error) {
-		if file == "brew" {
-			return "/usr/local/bin/brew", nil
-		}
-		return "", fmt.Errorf("not found: %s", file)
-	}
-
-	// Simula falha na instalação
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		// Retorna um comando que falha
-		cmd := exec.Command("false")
-		return cmd
-	}
-
-	// Não deve entrar em pânico mesmo com falha
-	assert.NotPanics(t, func() {
-		capturarStdout(t, func() {
-			attemptInstall([]string{"ferramenta-inexistente"})
-		})
-	})
+func (m *mockSetupSvc) ConfigureDirenv(workDir string) error {
+	m.direnvCalled = true
+	return m.direnvErr
 }
 
-// TestSetupCmd_DevProfile_FerramentasFaltando testa o caminho com ferramentas ausentes (sem prompt interativo)
 func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
-	originalLookPath := lookPath
-	originalExecCommand := execCommand
-	defer func() {
-		lookPath = originalLookPath
-		execCommand = originalExecCommand
-	}()
+	original := newSetupService
+	defer func() { newSetupService = original }()
 
-	// Simula k3d e direnv ausentes
-	lookPath = func(file string) (string, error) {
-		if file == "k3d" || file == "direnv" {
-			return "", fmt.Errorf("not found: %s", file)
-		}
-		return "/usr/bin/" + file, nil
+	mockSvc := &mockSetupSvc{
+		checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+				{Name: "helm", Installed: true, Path: "/usr/bin/helm"},
+				{Name: "k3d", Installed: false},
+				{Name: "direnv", Installed: false},
+			},
+			Missing: []string{"k3d", "direnv"},
+		},
 	}
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
+	newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service {
+		return mockSvc
 	}
 
 	setupCmd.Flags().Set("profile", "dev")
 
-	// O comando não entra em pânico; survey.AskOne falha silenciosamente sem stdin
+	// O survey.AskOne vai falhar silenciosamente sem stdin interativo
 	capturarStdout(t, func() {
 		err := setupCmd.RunE(setupCmd, []string{})
 		assert.NoError(t, err)
 	})
 }
 
-// TestSetupCmd_ServerProfile_FerramentasFaltando testa o perfil server com ferramentas ausentes
 func TestSetupCmd_ServerProfile_FerramentasFaltando(t *testing.T) {
-	originalLookPath := lookPath
-	originalExecCommand := execCommand
-	defer func() {
-		lookPath = originalLookPath
-		execCommand = originalExecCommand
-	}()
+	original := newSetupService
+	defer func() { newSetupService = original }()
 
-	lookPath = func(file string) (string, error) {
-		if file == "helm" {
-			return "", fmt.Errorf("not found: %s", file)
-		}
-		return "/usr/bin/" + file, nil
+	mockSvc := &mockSetupSvc{
+		checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+				{Name: "helm", Installed: false},
+			},
+			Missing: []string{"helm"},
+		},
 	}
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
+	newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service {
+		return mockSvc
 	}
 
 	setupCmd.Flags().Set("profile", "server")
@@ -210,75 +93,204 @@ func TestSetupCmd_ServerProfile_FerramentasFaltando(t *testing.T) {
 	})
 }
 
-// TestConfigureDirenv_CriaEnvrc testa a criação do .envrc
-func TestConfigureDirenv_CriaEnvrc(t *testing.T) {
-	originalExecCommand := execCommand
-	defer func() { execCommand = originalExecCommand }()
+func TestSetupCmd_DevProfile_TodasInstaladas_ConfiguraDirenv(t *testing.T) {
+	original := newSetupService
+	defer func() { newSetupService = original }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
+	mockSvc := &mockSetupSvc{
+		checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+				{Name: "helm", Installed: true, Path: "/usr/bin/helm"},
+				{Name: "k3d", Installed: true, Path: "/usr/bin/k3d"},
+				{Name: "direnv", Installed: true, Path: "/usr/bin/direnv"},
+			},
+			Missing: []string{},
+		},
 	}
 
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(dir)
-
-	capturarStdout(t, func() {
-		configureDirenv()
-	})
-
-	// Verifica que o .envrc foi criado
-	assert.FileExists(t, dir+"/.envrc")
-}
-
-// TestConfigureDirenv_EnvrcJaExiste testa quando .envrc já existe
-func TestConfigureDirenv_EnvrcJaExiste(t *testing.T) {
-	originalExecCommand := execCommand
-	defer func() { execCommand = originalExecCommand }()
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", "echo", "ok"}
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
+	newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service {
+		return mockSvc
 	}
 
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(dir)
-
-	// Cria .envrc antes
-	os.WriteFile(dir+"/.envrc", []byte("existente"), 0644)
+	setupCmd.Flags().Set("profile", "dev")
 
 	capturarStdout(t, func() {
-		configureDirenv()
+		err := setupCmd.RunE(setupCmd, []string{})
+		assert.NoError(t, err)
 	})
 
-	// Verifica que o conteúdo original foi preservado
-	data, _ := os.ReadFile(dir + "/.envrc")
-	assert.Equal(t, "existente", string(data))
+	assert.True(t, mockSvc.direnvCalled, "deveria chamar ConfigureDirenv no perfil dev")
 }
 
-func TestAttemptInstall_ListaVazia(t *testing.T) {
-	originalLookPath := lookPath
-	defer func() { lookPath = originalLookPath }()
+func TestSetupCmd_ServerProfile_NaoConfiguraDirenv(t *testing.T) {
+	original := newSetupService
+	defer func() { newSetupService = original }()
 
-	lookPath = func(file string) (string, error) {
-		if file == "brew" {
-			return "/usr/local/bin/brew", nil
+	mockSvc := &mockSetupSvc{
+		checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+				{Name: "helm", Installed: true, Path: "/usr/bin/helm"},
+			},
+			Missing: []string{},
+		},
+	}
+
+	newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service {
+		return mockSvc
+	}
+
+	setupCmd.Flags().Set("profile", "server")
+	defer setupCmd.Flags().Set("profile", "dev")
+
+	capturarStdout(t, func() {
+		err := setupCmd.RunE(setupCmd, []string{})
+		assert.NoError(t, err)
+	})
+
+	assert.False(t, mockSvc.direnvCalled, "não deveria chamar ConfigureDirenv no perfil server")
+}
+
+func TestSetupCmd_CheckToolsFalha(t *testing.T) {
+	original := newSetupService
+	defer func() { newSetupService = original }()
+
+	newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service {
+		return &mockSetupSvc{
+			checkToolsErr: fmt.Errorf("erro inesperado"),
 		}
-		return "", fmt.Errorf("not found: %s", file)
 	}
 
-	// Não deve entrar em pânico com lista vazia
-	assert.NotPanics(t, func() {
-		capturarStdout(t, func() {
-			attemptInstall([]string{})
-		})
+	setupCmd.Flags().Set("profile", "dev")
+
+	capturarStdout(t, func() {
+		err := setupCmd.RunE(setupCmd, []string{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "falha ao verificar ferramentas")
 	})
+}
+
+func TestSetupCmd_DirenvFalhaLogWarning(t *testing.T) {
+	original := newSetupService
+	defer func() { newSetupService = original }()
+
+	mockSvc := &mockSetupSvc{
+		checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true},
+				{Name: "helm", Installed: true},
+				{Name: "k3d", Installed: true},
+				{Name: "direnv", Installed: true},
+			},
+			Missing: []string{},
+		},
+		direnvErr: fmt.Errorf("falha ao criar .envrc"),
+	}
+
+	newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service {
+		return mockSvc
+	}
+
+	setupCmd.Flags().Set("profile", "dev")
+
+	// Não deve retornar erro — o erro de direnv é apenas warning
+	capturarStdout(t, func() {
+		err := setupCmd.RunE(setupCmd, []string{})
+		assert.NoError(t, err)
+	})
+}
+
+// --- Testes dos adapters via cmd ---
+
+func TestSystemToolChecker_Instalado(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			return "/usr/bin/" + file, nil
+		},
+	}
+	checker := &setup.SystemToolChecker{Runner: runner}
+
+	path, err := checker.IsInstalled("kubectl")
+	assert.NoError(t, err)
+	assert.Equal(t, "/usr/bin/kubectl", path)
+}
+
+func TestSystemToolChecker_NaoInstalado(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			return "", fmt.Errorf("não encontrado: %s", file)
+		},
+	}
+	checker := &setup.SystemToolChecker{Runner: runner}
+
+	_, err := checker.IsInstalled("kubectl")
+	assert.Error(t, err)
+}
+
+func TestSystemPackageManager_DetectBrew(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			if file == "brew" {
+				return "/usr/local/bin/brew", nil
+			}
+			return "", fmt.Errorf("não encontrado")
+		},
+	}
+	pkg := &setup.SystemPackageManager{Runner: runner}
+
+	assert.Equal(t, "brew", pkg.Detect())
+}
+
+func TestSystemPackageManager_DetectApt(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			if file == "apt-get" {
+				return "/usr/bin/apt-get", nil
+			}
+			return "", fmt.Errorf("não encontrado")
+		},
+	}
+	pkg := &setup.SystemPackageManager{Runner: runner, GOOS: "linux"}
+
+	assert.Equal(t, "apt", pkg.Detect())
+}
+
+func TestSystemPackageManager_DetectSnap(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			if file == "snap" {
+				return "/usr/bin/snap", nil
+			}
+			return "", fmt.Errorf("não encontrado")
+		},
+	}
+	pkg := &setup.SystemPackageManager{Runner: runner, GOOS: "linux"}
+
+	assert.Equal(t, "snap", pkg.Detect())
+}
+
+func TestSystemPackageManager_DetectNenhum(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			return "", fmt.Errorf("não encontrado")
+		},
+	}
+	pkg := &setup.SystemPackageManager{Runner: runner}
+
+	assert.Equal(t, "", pkg.Detect())
+}
+
+func TestSystemPackageManager_AptNaoDetectaForaLinux(t *testing.T) {
+	runner := &testutil.MockRunner{
+		LookPathFunc: func(file string) (string, error) {
+			if file == "apt-get" {
+				return "/usr/bin/apt-get", nil
+			}
+			return "", fmt.Errorf("não encontrado")
+		},
+	}
+	pkg := &setup.SystemPackageManager{Runner: runner, GOOS: "darwin"}
+
+	assert.Equal(t, "", pkg.Detect())
 }

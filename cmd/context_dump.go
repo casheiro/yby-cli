@@ -57,12 +57,4 @@ var contextDumpCmd = &cobra.Command{
 
 func init() {
 	envCmd.AddCommand(contextDumpCmd)
-	// Root command -> Context command -> Dump command?
-	// Or standard 'yby context dump'?
-	// Wait, we don't have 'yby context' root command yet in my view.
-	// Let's create 'yby context' if not exists, or attach to root for now as 'yby config dump'?
-	// The plan said 'yby context dump'.
-
-	// Create parent command if not exists logic is hard in init().
-	// Assume we need to create contextCmd first.
 }

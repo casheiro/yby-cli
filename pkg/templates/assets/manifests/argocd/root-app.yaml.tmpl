@@ -26,7 +26,7 @@ spec:
         - ../../config/cluster-values.yaml
 
   destination:
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
     namespace: argocd
 
   syncPolicy:

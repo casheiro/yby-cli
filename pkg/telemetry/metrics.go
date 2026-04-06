@@ -1,18 +1,46 @@
 package telemetry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"log/slog"
+	"os"
+	"os/user"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+// maxTelemetryFileSize define o tamanho máximo do arquivo de telemetria antes da rotação (5MB).
+const maxTelemetryFileSize = 5 * 1024 * 1024
 
 // Event records metrics about a specific operation
 type Event struct {
-	Name      string
-	Duration  time.Duration
-	Success   bool
-	Error     error
-	Timestamp time.Time
+	Name        string
+	Duration    time.Duration
+	Success     bool
+	Error       error
+	Timestamp   time.Time
+	Environment string
+	Cluster     string
+	UserID      string
+	RequestID   string
+}
+
+// jsonEvent é a representação JSON de um evento de telemetria para persistência em JSONL.
+type jsonEvent struct {
+	Name        string `json:"name"`
+	DurationMs  int64  `json:"duration_ms"`
+	Success     bool   `json:"success"`
+	Error       string `json:"error,omitempty"`
+	Timestamp   string `json:"timestamp"`
+	Environment string `json:"environment,omitempty"`
+	Cluster     string `json:"cluster,omitempty"`
+	UserID      string `json:"user_id,omitempty"`
+	RequestID   string `json:"request_id,omitempty"`
 }
 
 var (
@@ -26,12 +54,26 @@ func Record(name string, duration time.Duration, err error) {
 	defer mu.Unlock()
 
 	events = append(events, Event{
-		Name:      name,
-		Duration:  duration,
-		Success:   err == nil,
-		Error:     err,
-		Timestamp: time.Now(),
+		Name:        name,
+		Duration:    duration,
+		Success:     err == nil,
+		Error:       err,
+		Timestamp:   time.Now(),
+		Environment: os.Getenv("YBY_ENV"),
+		Cluster:     os.Getenv("YBY_CLUSTER"),
+		UserID:      anonymizedUserID(),
+		RequestID:   uuid.New().String(),
 	})
+}
+
+// anonymizedUserID retorna um hash SHA-256 truncado do nome de usuário do sistema.
+func anonymizedUserID() string {
+	u, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256([]byte(u.Username))
+	return hex.EncodeToString(h[:8])
 }
 
 // Track execution easily: defer telemetry.Track("my_operation", time.Now(), &err)
@@ -73,4 +115,157 @@ func Flush() {
 		)
 	}
 	slog.Debug("=============================")
+}
+
+// FlushToFile persiste os eventos de telemetria em arquivo JSONL (~/.yby/telemetry.jsonl).
+// Se enabled for false, não faz nada. Não limpa os eventos (Flush faz slog separadamente).
+func FlushToFile(enabled bool) error {
+	if !enabled {
+		return nil
+	}
+
+	mu.Lock()
+	snapshot := make([]Event, len(events))
+	copy(snapshot, events)
+	mu.Unlock()
+
+	if len(snapshot) == 0 {
+		return nil
+	}
+
+	path, err := telemetryFilePath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	if err := rotateIfNeeded(path, maxTelemetryFileSize); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for _, e := range snapshot {
+		je := toJSONEvent(e)
+		data, err := json.Marshal(je)
+		if err != nil {
+			continue
+		}
+		data = append(data, '\n')
+		if _, err := f.Write(data); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// FlushToFilePath persiste os eventos em um caminho específico.
+// Usado internamente para testes e cenários com path customizado.
+func FlushToFilePath(enabled bool, path string) error {
+	if !enabled {
+		return nil
+	}
+
+	mu.Lock()
+	snapshot := make([]Event, len(events))
+	copy(snapshot, events)
+	mu.Unlock()
+
+	if len(snapshot) == 0 {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	if err := rotateIfNeeded(path, maxTelemetryFileSize); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for _, e := range snapshot {
+		je := toJSONEvent(e)
+		data, err := json.Marshal(je)
+		if err != nil {
+			continue
+		}
+		data = append(data, '\n')
+		if _, err := f.Write(data); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// rotateIfNeeded renomeia o arquivo para path.1 se exceder maxBytes.
+func rotateIfNeeded(path string, maxBytes int64) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		// Arquivo não existe — nada a rotacionar
+		return nil
+	}
+
+	if info.Size() < maxBytes {
+		return nil
+	}
+
+	return os.Rename(path, path+".1")
+}
+
+// ExportEvents lê e retorna o conteúdo bruto do arquivo de telemetria.
+// Retorna nil, nil se o arquivo não existir.
+func ExportEvents(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
+}
+
+// TelemetryFilePath retorna o caminho padrão do arquivo de telemetria.
+func TelemetryFilePath() (string, error) {
+	return telemetryFilePath()
+}
+
+func telemetryFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".yby", "telemetry.jsonl"), nil
+}
+
+func toJSONEvent(e Event) jsonEvent {
+	je := jsonEvent{
+		Name:        e.Name,
+		DurationMs:  e.Duration.Milliseconds(),
+		Success:     e.Success,
+		Timestamp:   e.Timestamp.Format(time.RFC3339),
+		Environment: e.Environment,
+		Cluster:     e.Cluster,
+		UserID:      e.UserID,
+		RequestID:   e.RequestID,
+	}
+	if e.Error != nil {
+		je.Error = e.Error.Error()
+	}
+	return je
 }

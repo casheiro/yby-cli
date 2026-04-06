@@ -105,8 +105,11 @@ func (m *Manager) SetCurrent(name string) error {
 	return m.SaveManifest(manifest)
 }
 
-// AddEnvironment adds a new environment to the manifest
-func (m *Manager) AddEnvironment(name, envType, description string) error {
+// AddEnvironment adiciona um novo ambiente ao manifesto.
+// O parâmetro env contém os campos do ambiente (Type, Description, KubeContext, Namespace, etc.).
+// O parâmetro valuesContent permite fornecer conteúdo estruturado para o arquivo de values;
+// se vazio, um comentário genérico será usado como fallback.
+func (m *Manager) AddEnvironment(name string, env Environment, valuesContent string) error {
 	manifest, err := m.LoadManifest()
 	if err != nil {
 		return err
@@ -116,21 +119,38 @@ func (m *Manager) AddEnvironment(name, envType, description string) error {
 		return fmt.Errorf("environment '%s' already exists", name)
 	}
 
-	// Create values file if not exists
+	// Cria arquivo de values se não existir
 	valuesFile := fmt.Sprintf("config/values-%s.yaml", name)
 	if _, err := os.Stat(filepath.Join(m.RootDir, valuesFile)); os.IsNotExist(err) {
-		// Create empty or copy from base? For now empty with comment
-		content := fmt.Sprintf("# Values for %s environment", name)
+		content := valuesContent
+		if content == "" {
+			content = fmt.Sprintf("# Values for %s environment\n", name)
+		}
 		if err := os.WriteFile(filepath.Join(m.RootDir, valuesFile), []byte(content), 0644); err != nil {
 			return fmt.Errorf("falha ao criar arquivo de values: %w", err)
 		}
 	}
 
-	manifest.Environments[name] = Environment{
-		Type:        envType,
-		Description: description,
-		Values:      valuesFile,
-	}
+	env.Values = valuesFile
+	manifest.Environments[name] = env
 
 	return m.SaveManifest(manifest)
+}
+
+// ValidateIntegrity verifica a integridade dos ambientes configurados,
+// retornando uma lista de avisos para problemas encontrados.
+func (m *Manager) ValidateIntegrity() ([]string, error) {
+	manifest, err := m.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+
+	var warnings []string
+	for name, env := range manifest.Environments {
+		valuesPath := filepath.Join(m.RootDir, env.Values)
+		if _, err := os.Stat(valuesPath); os.IsNotExist(err) {
+			warnings = append(warnings, fmt.Sprintf("ambiente '%s': arquivo de values '%s' não encontrado", name, env.Values))
+		}
+	}
+	return warnings, nil
 }

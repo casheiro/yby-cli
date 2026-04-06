@@ -2,11 +2,13 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"testing"
 
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -66,6 +68,7 @@ func TestExecutor_Run(t *testing.T) {
 	defer func() { execCommandContext = originalExecCommandContext }()
 
 	executor := NewExecutor()
+	executor.SkipTrustCheck = true
 	ctx := context.Background()
 	req := PluginRequest{Hook: "test"}
 
@@ -87,7 +90,11 @@ func TestExecutor_Run(t *testing.T) {
 	t.Run("Plugin crashes / non-zero exit", func(t *testing.T) {
 		_, err := executor.Run(ctx, "/path/to/crash-plugin", req)
 		assert.ErrorContains(t, err, "execução do plugin falhou")
-		assert.ErrorContains(t, err, "panic runtime error")
+		// O stderr agora está no contexto do YbyError, não inline na mensagem
+		var ybyErr *ybyerrors.YbyError
+		if errors.As(err, &ybyErr) {
+			assert.Contains(t, ybyErr.Context["stderr"], "panic runtime error")
+		}
 	})
 
 	t.Run("Plugin returns malformed JSON", func(t *testing.T) {
@@ -109,6 +116,7 @@ func TestExecutor_RunInteractive(t *testing.T) {
 	defer func() { execCommandContext = originalExecCommandContext }()
 
 	executor := NewExecutor()
+	executor.SkipTrustCheck = true
 	ctx := context.Background()
 	req := PluginRequest{Hook: "command"}
 

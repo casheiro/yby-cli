@@ -1,6 +1,12 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: ingress-system
+  name: {{ .Values.namespaces.ingress | default "ingress-system" }}
   labels:
-    name: ingress-system
+    name: {{ .Values.namespaces.ingress | default "ingress-system" }}
+    app.kubernetes.io/managed-by: yby-cli
+{{- if .Values.customLabels }}
+{{- range $key, $value := .Values.customLabels }}
+    {{ $key }}: {{ $value | quote }}
+{{- end }}
+{{- end }}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockAIProvider implementa ai.Provider para testes
+// mockAIProvider implementa ai.Provider para testes.
+// Completion retorna o blueprint serializado como JSON para compatibilidade
+// com generateGovernanceViaCompletion.
 type mockAIProvider struct {
 	name      string
 	blueprint *ai.GovernanceBlueprint
@@ -22,6 +25,13 @@ type mockAIProvider struct {
 func (m *mockAIProvider) Name() string                       { return m.name }
 func (m *mockAIProvider) IsAvailable(_ context.Context) bool { return true }
 func (m *mockAIProvider) Completion(_ context.Context, _, _ string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	if m.blueprint != nil {
+		data, _ := json.Marshal(m.blueprint)
+		return string(data), nil
+	}
 	return "", nil
 }
 func (m *mockAIProvider) StreamCompletion(_ context.Context, _, _ string, _ io.Writer) error {
@@ -37,7 +47,52 @@ func (m *mockAIProvider) GenerateGovernance(_ context.Context, _ string) (*ai.Go
 func TestCaptureCmd_NoDescription(t *testing.T) {
 	err := captureCmd.RunE(captureCmd, []string{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Descrição necessária")
+	assert.Contains(t, err.Error(), "informe uma descrição ou use --file")
+}
+
+func TestCaptureCmd_FileFlag(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	// Cria arquivo de entrada
+	inputFile := filepath.Join(dir, "input.txt")
+	os.WriteFile(inputFile, []byte("conteúdo do arquivo para captura"), 0644)
+
+	original := getAIProvider
+	defer func() { getAIProvider = original }()
+
+	getAIProvider = func(_ context.Context, _ string) ai.Provider {
+		return &mockAIProvider{
+			name: "Mock",
+			blueprint: &ai.GovernanceBlueprint{
+				Files: []ai.GeneratedFile{
+					{Path: ".synapstor/.uki/from-file.md", Content: "# Do Arquivo"},
+				},
+			},
+		}
+	}
+
+	// Seta a flag --file
+	captureCmd.Flags().Set("file", inputFile)
+	defer captureCmd.Flags().Set("file", "")
+
+	err := captureCmd.RunE(captureCmd, []string{})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".synapstor", ".uki", "from-file.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "# Do Arquivo", string(data))
+}
+
+func TestCaptureCmd_FileFlag_ArquivoInexistente(t *testing.T) {
+	captureCmd.Flags().Set("file", "/caminho/inexistente/arquivo.txt")
+	defer captureCmd.Flags().Set("file", "")
+
+	err := captureCmd.RunE(captureCmd, []string{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "falha ao ler arquivo")
 }
 
 func TestCaptureCmd_NoProvider(t *testing.T) {

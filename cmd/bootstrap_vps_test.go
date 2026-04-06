@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
@@ -55,12 +56,18 @@ func TestCopyFile_SourceNotFound(t *testing.T) {
 }
 
 func TestFetchKubeconfig_Success(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("CLUSTER_NAME", "test-cluster")
+
+	runner := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return nil
+		},
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("merged-kubeconfig-content"), nil
+		},
+	}
 
 	mock := &testutil.MockExecutor{
 		FetchFileFunc: func(path string) ([]byte, error) {
@@ -83,10 +90,14 @@ users:
 		},
 	}
 
-	err := fetchKubeconfig(mock, "192.168.1.100")
-	// Pode falhar caso kubectl não esteja disponível no ambiente de teste
-	// O objetivo principal é verificar que não entra em pânico
-	_ = err
+	err := fetchKubeconfig(mock, "192.168.1.100", runner)
+	assert.NoError(t, err)
+
+	// Verificar que o kubeconfig foi escrito
+	configPath := filepath.Join(dir, ".kube", "config")
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, "merged-kubeconfig-content", string(data))
 }
 
 func TestBootstrapVpsCmd_Flags(t *testing.T) {

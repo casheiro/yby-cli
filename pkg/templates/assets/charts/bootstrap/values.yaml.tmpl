@@ -8,24 +8,34 @@ git:
   targetRevision: {{ .GitBranch }}
   branch: {{ .GitBranch }}
   repoName: "{{ .ProjectName }}"
+  provider: "{{ resolveGitProvider "github" }}"
 
 headlamp:
   enabled: false
 
 project: {{ .ProjectName }}
 
+# Namespaces do Sistema (parametrizáveis via enterprise overrides)
+namespaces:
+  argocd: "{{ resolveNS "argocd" }}"
+  argoEvents: "{{ resolveNS "argo-events" }}"
+  monitoring: "{{ resolveNS "monitoring" }}"
+  ingressSystem: "{{ resolveNS "ingress-system" }}"
+  storage: "{{ resolveNS "storage" }}"
+  keda: "{{ resolveNS "keda" }}"
+
 # Configurações do Argo CD
 argocd:
-  namespace: argocd
+  namespace: {{ resolveNS "argocd" }}
   project: {{ .ProjectName }}
-  destinationServer: https://kubernetes.default.svc
+  destinationServer: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
 
 # Configurações de Eventos (Argo Events)
 events:
   enabled: true
   eventbus:
     replicas: 1
-    storageClass: local-path
+    storageClass: {{ resolveStorage "local-path" }}
   webhook:
     port: 12000
     serviceType: NodePort
@@ -37,9 +47,21 @@ clusterConfig:
   valueFiles:
     - config/cluster-values.yaml
 
+# Resources profiles (small/medium/large via enterprise overrides)
+resources:
+  profile: "{{ .Overrides.Profiles.Resources }}"
+  eventbus:
+    requests:
+      cpu: "{{ (resourceProfile).CPURequest }}"
+      memory: "{{ (resourceProfile).MemoryRequest }}"
+    limits:
+      cpu: "{{ (resourceProfile).CPULimit }}"
+      memory: "{{ (resourceProfile).MemoryLimit }}"
+
 # Observabilidade
 observability:
   enabled: false
+  mode: "{{ resolveObservability "prometheus" }}"
   grafana:
     enabled: false
     # Usar existingSecret para senha do Grafana em produção:
@@ -56,7 +78,7 @@ observability:
 # Descoberta Automática de Aplicações (Zero-Touch)
 discovery:
   enabled: {{ .GithubDiscovery }}  # Override: discovery.enabled
-  scmProvider: github
+  scmProvider: "{{ resolveGitProvider "github" }}"
   organization: "{{ .GithubOrg }}"  # Override: discovery.organization
   topic: "yby-cluster"  # Default topic for discovery
   tokenSecretName: github-token
@@ -70,6 +92,18 @@ legacy:
 storage:
   minio:
     enabled: false
+
+# Imagens de containers (parametrizáveis via enterprise overrides)
+images:
+  kubectl: "{{ resolveImage "bitnami/kubectl:1.31" }}"
+  ubuntu: "{{ resolveImage "ubuntu:22.04" }}"
+  alpineGit: "{{ resolveImage "alpine/git:2.43.0" }}"
+  argocd: "{{ resolveImage "argoproj/argocd:v2.13.3" }}"
+  curl: "{{ resolveImage "curlimages/curl:8.11.1" }}"
+{{- if hasRegistryPullSecret }}
+imagePullSecrets:
+  - name: {{ registryPullSecret }}
+{{- end }}
 
 minio:
   mode: standalone
@@ -98,10 +132,25 @@ kepler:
 # Connectivity - Defaults
 ingress:
   enabled: true
+  className: "{{ resolveIngress "traefik" }}"
   tls:
     enabled: true
-    issuer: letsencrypt-staging
+    issuer: {{ resolveTLSIssuer "letsencrypt-staging" }}
     email: {{ .Email }}
+    caSecretName: ""
+    acmeSolver: "http01"
+
+# Versões de charts (parametrizáveis via enterprise overrides)
+versions:
+  keda: "{{ resolveChartVersion "keda" "2.14.2" }}"
+  kepler: "{{ resolveChartVersion "kepler" "0.5.11" }}"
+
+# Labels customizadas para namespaces (enterprise overrides)
+customLabels:{{ nsLabels 2 }}
+
+# Cloud provider (preparatório para annotations condicionais)
+cloud:
+  provider: "{{ resolveCloudProvider }}"
 
 # Hosts Definitions (Used by Ingresses)
 hosts: {}

@@ -633,3 +633,270 @@ func TestValidateSecretsStrategy(t *testing.T) {
 		})
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ValidateNoYAMLInjection
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestValidateNoYAMLInjection(t *testing.T) {
+	tests := []struct {
+		nome      string
+		valor     string
+		esperaErr bool
+		msgContem string
+	}{
+		{
+			nome:      "valor simples é válido",
+			valor:     "meu-projeto",
+			esperaErr: false,
+		},
+		{
+			nome:      "valor com espaço é válido",
+			valor:     "meu projeto",
+			esperaErr: false,
+		},
+		{
+			nome:      "valor com newline deve retornar erro",
+			valor:     "valor\nmalicioso",
+			esperaErr: true,
+			msgContem: "caracteres de controle",
+		},
+		{
+			nome:      "valor com carriage return deve retornar erro",
+			valor:     "valor\rmalicioso",
+			esperaErr: true,
+			msgContem: "caracteres de controle",
+		},
+		{
+			nome:      "valor com null byte deve retornar erro",
+			valor:     "valor\x00malicioso",
+			esperaErr: true,
+			msgContem: "caracteres de controle",
+		},
+		{
+			nome:      "valor com caractere de controle deve retornar erro",
+			valor:     "valor\x01malicioso",
+			esperaErr: true,
+			msgContem: "caracteres de controle",
+		},
+		{
+			nome:      "indicador de bloco pipe deve retornar erro",
+			valor:     "| echo malicioso",
+			esperaErr: true,
+			msgContem: "indicador de bloco YAML",
+		},
+		{
+			nome:      "indicador de bloco > deve retornar erro",
+			valor:     "> texto multiline",
+			esperaErr: true,
+			msgContem: "indicador de bloco YAML",
+		},
+		{
+			nome:      "indicador de bloco com espaço antes deve retornar erro",
+			valor:     "  | echo",
+			esperaErr: true,
+			msgContem: "indicador de bloco YAML",
+		},
+		{
+			nome:      "valor com dois pontos é válido (não é controle)",
+			valor:     "chave:valor",
+			esperaErr: false,
+		},
+		{
+			nome:      "valor com hash é válido (não é controle)",
+			valor:     "valor # comentário",
+			esperaErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			err := ValidateNoYAMLInjection(tt.valor, "campo")
+			if tt.esperaErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.msgContem)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateContext_YAMLInjection(t *testing.T) {
+	tests := []struct {
+		nome      string
+		ctx       *BlueprintContext
+		esperaErr bool
+		msgContem string
+	}{
+		{
+			nome: "ProjectName com newline deve retornar erro",
+			ctx: &BlueprintContext{
+				ProjectName: "app\nmalicioso",
+			},
+			esperaErr: true,
+			msgContem: "caracteres de controle",
+		},
+		{
+			nome: "Domain com indicador de bloco deve retornar erro",
+			ctx: &BlueprintContext{
+				Domain: "| echo hack",
+			},
+			esperaErr: true,
+			msgContem: "indicador de bloco YAML",
+		},
+		{
+			nome: "Email com carriage return deve retornar erro",
+			ctx: &BlueprintContext{
+				Email: "user\r@example.com",
+			},
+			esperaErr: true,
+			msgContem: "caracteres de controle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			err := ValidateContext(tt.ctx)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.msgContem)
+		})
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ValidateEnvironmentName
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestValidateEnvironmentName(t *testing.T) {
+	tests := []struct {
+		nome      string
+		entrada   string
+		esperaErr bool
+		msgContem string
+	}{
+		{
+			nome:      "vazio deve retornar erro",
+			entrada:   "",
+			esperaErr: true,
+			msgContem: "não pode ser vazio",
+		},
+		{
+			nome:      "nome válido simples",
+			entrada:   "dev",
+			esperaErr: false,
+		},
+		{
+			nome:      "nome válido com hífen",
+			entrada:   "hom-01",
+			esperaErr: false,
+		},
+		{
+			nome:      "nome válido longo",
+			entrada:   "qa",
+			esperaErr: false,
+		},
+		{
+			nome:      "nome válido uat",
+			entrada:   "uat",
+			esperaErr: false,
+		},
+		{
+			nome:      "maiúsculas deve retornar erro",
+			entrada:   "DEV",
+			esperaErr: true,
+			msgContem: "RFC 1123",
+		},
+		{
+			nome:      "com espaço deve retornar erro",
+			entrada:   "dev env",
+			esperaErr: true,
+			msgContem: "RFC 1123",
+		},
+		{
+			nome:      "com underscore deve retornar erro",
+			entrada:   "dev_env",
+			esperaErr: true,
+			msgContem: "RFC 1123",
+		},
+		{
+			nome:      "começando com hífen deve retornar erro",
+			entrada:   "-dev",
+			esperaErr: true,
+			msgContem: "RFC 1123",
+		},
+		{
+			nome:      "terminando com hífen deve retornar erro",
+			entrada:   "dev-",
+			esperaErr: true,
+			msgContem: "RFC 1123",
+		},
+		{
+			nome:      "mais de 63 caracteres deve retornar erro",
+			entrada:   strings.Repeat("a", 64),
+			esperaErr: true,
+			msgContem: "no máximo 63 caracteres",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			err := ValidateEnvironmentName(tt.entrada)
+			if tt.esperaErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.msgContem)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ValidateEnvironmentNames
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestValidateEnvironmentNames(t *testing.T) {
+	tests := []struct {
+		nome      string
+		entrada   []string
+		esperaErr bool
+		msgContem string
+	}{
+		{
+			nome:      "lista válida",
+			entrada:   []string{"local", "dev", "hom", "prod"},
+			esperaErr: false,
+		},
+		{
+			nome:      "lista vazia deve retornar erro",
+			entrada:   []string{},
+			esperaErr: true,
+			msgContem: "não pode ser vazia",
+		},
+		{
+			nome:      "nome inválido na lista deve retornar erro",
+			entrada:   []string{"local", "DEV"},
+			esperaErr: true,
+			msgContem: "RFC 1123",
+		},
+		{
+			nome:      "duplicata deve retornar erro",
+			entrada:   []string{"local", "dev", "local"},
+			esperaErr: true,
+			msgContem: "duplicado",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			err := ValidateEnvironmentNames(tt.entrada)
+			if tt.esperaErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.msgContem)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

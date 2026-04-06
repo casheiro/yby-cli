@@ -20,8 +20,8 @@ spec:
       - {{ printf "../../%s" $f | quote }}
       {{- end }}
   destination:
-    server: https://kubernetes.default.svc
-    namespace: events
+    server: {{ .Values.argocd.destinationServer | default "https://kubernetes.default.svc" }}
+    namespace: {{ .Values.namespaces.argoEvents | default "argo-events" }}
   syncPolicy:
     automated:
       prune: true

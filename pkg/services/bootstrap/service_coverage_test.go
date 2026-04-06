@@ -67,7 +67,7 @@ func TestBootstrapService_PhaseSystemBootstrap_HelmRepoFalha(t *testing.T) {
 		},
 	}
 	svc := NewService(runner, &MockFilesystem{}, &MockK8sClient{})
-	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6")
+	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6", nil)
 	assert.Error(t, err)
 }
 
@@ -81,7 +81,7 @@ func TestBootstrapService_PhaseSystemBootstrap_NamespaceFalha(t *testing.T) {
 		},
 	}
 	svc := NewService(&MockRunner{}, &MockFilesystem{}, k8s)
-	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6")
+	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6", nil)
 	assert.Error(t, err)
 }
 
@@ -98,7 +98,7 @@ func TestBootstrapService_PhaseSystemBootstrap_HelmInstallFalha(t *testing.T) {
 		},
 	}
 	svc := NewService(runner, &MockFilesystem{}, &MockK8sClient{})
-	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6")
+	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6", nil)
 	assert.Error(t, err)
 }
 
@@ -114,7 +114,7 @@ func TestBootstrapService_PhaseConfigBootstrap_Remote(t *testing.T) {
 		},
 	}
 	svc := NewService(&MockRunner{}, &MockFilesystem{}, k8s)
-	err := svc.phaseConfigBootstrap(context.Background(), "/infra", "https://github.com/test/repo.git", "remote", "production")
+	err := svc.phaseConfigBootstrap(context.Background(), "/infra", "https://github.com/test/repo.git", "remote", "production", nil)
 	assert.NoError(t, err)
 	assert.True(t, applyCalled)
 }
@@ -129,7 +129,7 @@ func TestBootstrapService_PhaseConfigBootstrap_ApplyFalha(t *testing.T) {
 		},
 	}
 	svc := NewService(&MockRunner{}, &MockFilesystem{}, k8s)
-	err := svc.phaseConfigBootstrap(ctx, "/infra", "https://github.com/test/repo.git", "local", "local")
+	err := svc.phaseConfigBootstrap(ctx, "/infra", "https://github.com/test/repo.git", "local", "local", nil)
 	assert.Error(t, err)
 }
 
@@ -187,7 +187,7 @@ func TestBootstrapService_PhaseConfigBootstrap_PatchFalha(t *testing.T) {
 	k8s := &patchFailK8s{}
 	svc := NewService(&MockRunner{}, &MockFilesystem{}, k8s)
 	// local=true dispara PatchApplication
-	err := svc.phaseConfigBootstrap(ctx, "/infra", "https://github.com/test/repo.git", "local", "local")
+	err := svc.phaseConfigBootstrap(ctx, "/infra", "https://github.com/test/repo.git", "local", "local", nil)
 	assert.Error(t, err)
 }
 

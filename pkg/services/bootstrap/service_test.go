@@ -77,6 +77,9 @@ func (m *MockK8sClient) ApplyManifest(ctx context.Context, path string, namespac
 	return nil
 }
 func (m *MockK8sClient) PatchApplication(ctx context.Context, n, ns, p string) error { return nil }
+func (m *MockK8sClient) WaitApplicationHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error {
+	return nil
+}
 
 // Tests
 
@@ -126,7 +129,7 @@ func TestBootstrapService_PhaseSystemBootstrap(t *testing.T) {
 	}
 
 	svc := NewService(runner, fsys, k8s)
-	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6")
+	err := svc.phaseSystemBootstrap(ctx, "/infra", "argo/argo-cd", "5.51.6", nil)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
