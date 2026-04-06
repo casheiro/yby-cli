@@ -56,6 +56,35 @@ func main() {
 	handlePluginRequest()
 }
 
+// printSentinelHelp exibe a ajuda do Sentinel.
+func printSentinelHelp() {
+	fmt.Println("Sentinel - Auditoria de seguranca e conformidade K8s")
+	fmt.Println()
+	fmt.Println("Uso: yby sentinel <subcomando> [flags]")
+	fmt.Println()
+	fmt.Println("Subcomandos:")
+	fmt.Println("  scan                  Escaneia vulnerabilidades de seguranca")
+	fmt.Println("  investigate <pod>     Investiga um pod com IA")
+	fmt.Println()
+	fmt.Println("Flags (scan):")
+	fmt.Println("  -n, --namespace       Namespace a escanear (padrao: default)")
+	fmt.Println("  -o, --output          Formato de saida: terminal, json, markdown")
+	fmt.Println("  -f, --file            Salvar resultado em arquivo")
+	fmt.Println("  -p, --profile         Perfil de compliance: cis-l1, cis-l2, pci-dss, soc2")
+	fmt.Println("  --fix-dry-run         Mostrar patches de remediacao sem aplicar")
+	fmt.Println("  --fix                 Aplicar patches de remediacao")
+	fmt.Println()
+	fmt.Println("Flags (investigate):")
+	fmt.Println("  -n, --namespace       Namespace do pod (padrao: default)")
+	fmt.Println("  --no-cache            Ignorar cache de analises anteriores")
+	fmt.Println()
+	fmt.Println("Exemplos:")
+	fmt.Println("  yby sentinel scan -n default")
+	fmt.Println("  yby sentinel scan -n production --profile cis-l1")
+	fmt.Println("  yby sentinel scan -n default --fix-dry-run")
+	fmt.Println("  yby sentinel investigate meu-pod -n default")
+}
+
 // AnalysisResult define a estrutura esperada da resposta da IA
 type AnalysisResult struct {
 	RootCause       string  `json:"root_cause"`
@@ -80,7 +109,12 @@ func handlePluginRequest() {
 		args := sdk.GetArgs() // Use SDK args
 
 		if len(args) == 0 {
-			fmt.Println("❌ Subcomando obrigatório. Uso: yby sentinel <investigate|scan> [flags]")
+			printSentinelHelp()
+			return
+		}
+
+		if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+			printSentinelHelp()
 			return
 		}
 
@@ -211,7 +245,8 @@ func handlePluginRequest() {
 			scanNamespace(namespace, outputFormat, outputFile, profile, fix, fixDryRun)
 
 		default:
-			fmt.Printf("❌ Subcomando desconhecido: %s. Uso: yby sentinel <investigate|scan> [flags]\n", args[0])
+			fmt.Printf("Subcomando desconhecido: %s\n\n", args[0])
+			printSentinelHelp()
 		}
 	default:
 		// Se rodar sem hook mas com args via main, talvez seja uso direto?

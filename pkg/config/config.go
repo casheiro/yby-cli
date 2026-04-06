@@ -23,6 +23,7 @@ type AIConfig struct {
 	Provider  string          `mapstructure:"provider"`
 	Model     string          `mapstructure:"model"`
 	Language  string          `mapstructure:"language"`
+	Priority  []string        `mapstructure:"priority"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 }
 
@@ -68,6 +69,7 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("ai.provider", "YBY_AI_PROVIDER")
 	_ = v.BindEnv("ai.model", "YBY_AI_MODEL")
 	_ = v.BindEnv("ai.language", "YBY_AI_LANGUAGE")
+	_ = v.BindEnv("ai.priority", "YBY_AI_PRIORITY")
 	_ = v.BindEnv("log.level", "YBY_LOG_LEVEL")
 	_ = v.BindEnv("log.format", "YBY_LOG_FORMAT")
 	_ = v.BindEnv("telemetry.enabled", "YBY_TELEMETRY_ENABLED")
@@ -113,10 +115,24 @@ func Load() (*Config, error) {
 
 // Validate verifica se os valores de configuração são válidos.
 func (c *Config) Validate() error {
-	validProviders := map[string]bool{"": true, "ollama": true, "gemini": true, "openai": true}
+	validProviders := map[string]bool{
+		"": true, "auto": true, "ollama": true, "gemini": true, "openai": true,
+		"claude-cli": true, "gemini-cli": true,
+	}
 	if !validProviders[c.AI.Provider] {
 		return ybyerrors.New(ybyerrors.ErrCodeConfig,
-			fmt.Sprintf("ai.provider inválido: %q (valores aceitos: ollama, gemini, openai)", c.AI.Provider))
+			fmt.Sprintf("ai.provider inválido: %q (valores aceitos: ollama, gemini, openai, claude-cli, gemini-cli)", c.AI.Provider))
+	}
+
+	// Validar cada item da lista de prioridade
+	for _, p := range c.AI.Priority {
+		if p == "" || p == "auto" {
+			continue
+		}
+		if !validProviders[p] {
+			return ybyerrors.New(ybyerrors.ErrCodeConfig,
+				fmt.Sprintf("ai.priority contém provider inválido: %q (valores aceitos: ollama, gemini, openai, claude-cli, gemini-cli)", p))
+		}
 	}
 
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}

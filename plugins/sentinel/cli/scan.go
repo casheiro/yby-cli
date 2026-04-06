@@ -6,7 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
@@ -67,74 +70,100 @@ func scanNamespace(namespace, outputFormat, outputFile, profile string, fix, fix
 		Findings:  findings,
 	}
 
-	// Gerar recomendações via IA se houver findings
-	if len(findings) > 0 {
-		fmt.Printf("\n⚠️  %d vulnerabilidades encontradas. Gerando recomendações...\n", len(findings))
+	if len(findings) == 0 {
+		fmt.Println("\nNenhuma vulnerabilidade encontrada!")
+		return
+	}
 
-		provider := ai.GetProvider(ctx, "auto")
-		if provider != nil {
-			findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
-			recommendations, err := provider.Completion(ctx, ScanSystemPrompt, string(findingsJSON))
-			if err == nil {
-				report.Recommendations = recommendations
-			}
+	fmt.Printf("\n%d vulnerabilidades encontradas.\n", len(findings))
+
+	// Gerar recomendações via IA
+	provider := ai.GetProvider(ctx, "auto")
+	if provider != nil {
+		fmt.Println("Gerando recomendacoes com IA...")
+		findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
+		recommendations, err := provider.Completion(ctx, ScanSystemPrompt, string(findingsJSON))
+		if err == nil {
+			report.Recommendations = recommendations
+		} else {
+			fmt.Fprintf(os.Stderr, "aviso: recomendacoes IA indisponiveis: %v\n", err)
 		}
-	} else {
-		fmt.Println("\n✅ Nenhuma vulnerabilidade encontrada!")
 	}
 
 	// Remediation
-	if len(findings) > 0 && (fix || fixDryRun) {
+	if fix || fixDryRun {
 		patches := remediation.GeneratePatches(findings)
 		if len(patches) == 0 {
-			fmt.Println("\n⚠️  Nenhum patch de remediação disponível para os findings encontrados.")
+			fmt.Println("\nNenhum patch de remediacao disponivel para os findings encontrados.")
 		} else if fixDryRun {
-			fmt.Printf("\n🔧 Dry-run: %d patches de remediação gerados:\n", len(patches))
+			fmt.Printf("\nDry-run: %d patches de remediacao gerados:\n", len(patches))
 			for i, p := range patches {
-				fmt.Printf("  %d. [%s] %s/%s — %s\n", i+1, p.ResourceKind, p.Namespace, p.ResourceName, p.Description)
+				fmt.Printf("  %d. [%s] %s/%s - %s\n", i+1, p.ResourceKind, p.Namespace, p.ResourceName, p.Description)
 				fmt.Printf("     Patch: %s\n", p.Patch)
 			}
 		} else {
-			fmt.Printf("\n🔧 Aplicando %d patches de remediação...\n", len(patches))
+			fmt.Printf("\nAplicando %d patches de remediacao...\n", len(patches))
 			errs := remediation.ApplyPatches(ctx, k8sClient, patches)
 			if len(errs) > 0 {
 				for _, e := range errs {
-					fmt.Printf("  ❌ %v\n", e)
+					fmt.Printf("  Erro: %v\n", e)
 				}
 			} else {
-				fmt.Printf("  ✅ Todos os %d patches aplicados com sucesso!\n", len(patches))
+				fmt.Printf("  Todos os %d patches aplicados com sucesso!\n", len(patches))
 			}
 		}
 	}
 
-	// Output
+	// Output: JSON ou Markdown explícito vai pro arquivo especificado
 	if outputFormat == "json" {
 		data, _ := json.MarshalIndent(report, "", "  ")
-		content := string(data)
-		if err := writeReport(content, outputFile); err != nil {
-			fmt.Printf("❌ Erro ao escrever relatório: %v\n", err)
+		if err := writeReport(string(data), outputFile); err != nil {
+			fmt.Printf("Erro ao escrever relatorio: %v\n", err)
 			return
 		}
 		if outputFile != "" {
-			fmt.Printf("✅ Relatório JSON salvo em %s\n", outputFile)
+			fmt.Printf("Relatorio JSON salvo em %s\n", outputFile)
 		}
 		return
 	}
 
-	if outputFormat == "markdown" {
+	if outputFormat == "markdown" && outputFile != "" {
 		content := exportScanMarkdown(report)
 		if err := writeReport(content, outputFile); err != nil {
-			fmt.Printf("❌ Erro ao escrever relatório: %v\n", err)
+			fmt.Printf("Erro ao escrever relatorio: %v\n", err)
 			return
 		}
-		if outputFile != "" {
-			fmt.Printf("✅ Relatório Markdown salvo em %s\n", outputFile)
-		}
+		fmt.Printf("Relatorio Markdown salvo em %s\n", outputFile)
 		return
 	}
 
-	// Renderização visual (padrão)
-	renderScanResult(report)
+	// Padrão: resumo no terminal + relatório completo em ~/.yby/reports/
+	reportPath := saveReportToGlobal(report, namespace)
+	renderScanSummary(report, reportPath)
+}
+
+// saveReportToGlobal salva o relatório completo em ~/.yby/reports/.
+func saveReportToGlobal(report ScanReport, namespace string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	reportsDir := filepath.Join(home, ".yby", "reports")
+	if err := os.MkdirAll(reportsDir, 0755); err != nil {
+		return ""
+	}
+
+	date := time.Now().Format("2006-01-02")
+	filename := fmt.Sprintf("sentinel-scan-%s-%s.md", namespace, date)
+	reportPath := filepath.Join(reportsDir, filename)
+
+	content := exportScanMarkdown(report)
+	if err := os.WriteFile(reportPath, []byte(content), 0644); err != nil {
+		return ""
+	}
+
+	return reportPath
 }
 
 // exportScanMarkdown gera o relatório de scan em formato Markdown.
@@ -171,32 +200,39 @@ func exportScanMarkdown(report ScanReport) string {
 	return sb.String()
 }
 
-// renderScanResult renderiza o resultado do scan com estilo visual.
-func renderScanResult(report ScanReport) {
-	width := 80
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		Padding(0, 1).
-		BorderForeground(lipgloss.Color("63")).
-		Width(width)
-
-	var sb strings.Builder
+// renderScanSummary renderiza um resumo compacto do scan no terminal.
+func renderScanSummary(report ScanReport, reportPath string) {
+	// Contar por severidade
+	bySeverity := make(map[string]int)
+	byCategory := make(map[string]int)
 
 	for _, f := range report.Findings {
-		color := "220" // amarelo
-		icon := "⚠️"
-		if f.Type == "critical" {
-			color = "196" // vermelho
-			icon = "🚨"
+		sev := string(f.Severity)
+		if sev == "" {
+			sev = f.Type // backward compat
 		}
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(
-			fmt.Sprintf("%s [%s] %s: %s", icon, f.Category, f.Resource, f.Description)) + "\n")
+		bySeverity[sev]++
+		byCategory[string(f.Category)]++
 	}
 
-	if report.Recommendations != "" {
-		sb.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("💡 Recomendações da IA:") + "\n")
-		sb.WriteString(report.Recommendations + "\n")
+	fmt.Println()
+	fmt.Println("  Por severidade:")
+	severityOrder := []string{"critical", "high", "medium", "low", "info"}
+	for _, s := range severityOrder {
+		if count, ok := bySeverity[s]; ok {
+			fmt.Printf("    %-12s %d\n", s, count)
+		}
 	}
 
-	fmt.Println(boxStyle.Render(sb.String()))
+	fmt.Println()
+	fmt.Println("  Por categoria:")
+	for cat, count := range byCategory {
+		fmt.Printf("    %-20s %d\n", cat, count)
+	}
+
+	if reportPath != "" {
+		fmt.Println()
+		fmt.Printf("  Relatorio completo: %s\n", reportPath)
+	}
+	fmt.Println()
 }

@@ -9,14 +9,14 @@ import (
 
 func TestGenerateMermaid_BlueprintVazio(t *testing.T) {
 	bp := &discovery.Blueprint{Components: []discovery.Component{}}
-	result := GenerateMermaid(bp)
+	result := GenerateMermaid(bp, "")
 	if result != "flowchart TD\n" {
 		t.Errorf("esperado flowchart vazio, obtido: %s", result)
 	}
 }
 
 func TestGenerateMermaid_BlueprintNil(t *testing.T) {
-	result := GenerateMermaid(nil)
+	result := GenerateMermaid(nil, "")
 	if result != "flowchart TD\n" {
 		t.Errorf("esperado flowchart vazio para nil, obtido: %s", result)
 	}
@@ -34,7 +34,8 @@ func TestGenerateMermaid_ComComponentes(t *testing.T) {
 		},
 	}
 
-	result := GenerateMermaid(bp)
+	// Paths já relativos, rootPath vazio
+	result := GenerateMermaid(bp, "")
 
 	// Verificar que começa com flowchart
 	if !strings.HasPrefix(result, "flowchart TD\n") {
@@ -68,6 +69,48 @@ func TestGenerateMermaid_ComComponentes(t *testing.T) {
 	}
 }
 
+func TestGenerateMermaid_PathsAbsolutos(t *testing.T) {
+	// Simula o cenário real: componentes com paths absolutos, relações com relativos
+	bp := &discovery.Blueprint{
+		Components: []discovery.Component{
+			{Name: "api", Type: "app", Path: "/home/user/project/services/api", Language: "go"},
+			{Name: "web", Type: "app", Path: "/home/user/project/services/web", Language: "nodejs"},
+		},
+		Relations: []discovery.Relation{
+			{From: "services/api", To: "services/web", Type: "imports"},
+		},
+	}
+
+	result := GenerateMermaid(bp, "/home/user/project")
+
+	// Node IDs devem usar paths relativos, batendo com as relações
+	if !strings.Contains(result, "services_api") {
+		t.Error("deve conter nó com path relativo services_api")
+	}
+	if !strings.Contains(result, "-->|imports|") {
+		t.Error("deve conter edge imports (paths devem bater)")
+	}
+}
+
+func TestGenerateMermaid_EdgesOrfasIgnoradas(t *testing.T) {
+	bp := &discovery.Blueprint{
+		Components: []discovery.Component{
+			{Name: "api", Type: "app", Path: "services/api"},
+		},
+		Relations: []discovery.Relation{
+			// Edge para nó inexistente
+			{From: "services/api", To: "nao/existe", Type: "imports"},
+		},
+	}
+
+	result := GenerateMermaid(bp, "")
+
+	// Edge não deve aparecer pois o destino não existe
+	if strings.Contains(result, "-->|imports|") {
+		t.Error("edge para nó inexistente não deve ser incluída")
+	}
+}
+
 func TestGenerateMermaid_SubgraphsAgrupadosPorTipo(t *testing.T) {
 	bp := &discovery.Blueprint{
 		Components: []discovery.Component{
@@ -77,7 +120,7 @@ func TestGenerateMermaid_SubgraphsAgrupadosPorTipo(t *testing.T) {
 		},
 	}
 
-	result := GenerateMermaid(bp)
+	result := GenerateMermaid(bp, "")
 
 	// Contar subgraphs
 	subgraphCount := strings.Count(result, "subgraph ")
@@ -86,16 +129,40 @@ func TestGenerateMermaid_SubgraphsAgrupadosPorTipo(t *testing.T) {
 	}
 }
 
+func TestValidateDiagram(t *testing.T) {
+	bp := &discovery.Blueprint{
+		Components: []discovery.Component{
+			{Name: "api", Type: "app", Path: "services/api"},
+			{Name: "web", Type: "app", Path: "services/web"},
+		},
+		Relations: []discovery.Relation{
+			{From: "services/api", To: "services/web", Type: "imports"},
+			{From: "services/api", To: "nao/existe", Type: "broken"},
+		},
+	}
+
+	stats := ValidateDiagram(bp, "")
+	if stats.Components != 2 {
+		t.Errorf("esperado 2 componentes, obtido %d", stats.Components)
+	}
+	if stats.ValidEdges != 1 {
+		t.Errorf("esperado 1 edge válida, obtido %d", stats.ValidEdges)
+	}
+	if stats.OrphanedEdges != 1 {
+		t.Errorf("esperado 1 edge órfã, obtido %d", stats.OrphanedEdges)
+	}
+}
+
 func TestGenerateC4_BlueprintVazio(t *testing.T) {
 	bp := &discovery.Blueprint{Components: []discovery.Component{}}
-	result := GenerateC4(bp)
+	result := GenerateC4(bp, "")
 	if result != "C4Context\n" {
 		t.Errorf("esperado C4Context vazio, obtido: %s", result)
 	}
 }
 
 func TestGenerateC4_BlueprintNil(t *testing.T) {
-	result := GenerateC4(nil)
+	result := GenerateC4(nil, "")
 	if result != "C4Context\n" {
 		t.Errorf("esperado C4Context vazio para nil, obtido: %s", result)
 	}
@@ -112,7 +179,7 @@ func TestGenerateC4_ComComponentes(t *testing.T) {
 		},
 	}
 
-	result := GenerateC4(bp)
+	result := GenerateC4(bp, "")
 
 	if !strings.HasPrefix(result, "C4Context\n") {
 		t.Error("resultado deve começar com 'C4Context'")
