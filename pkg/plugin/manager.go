@@ -44,7 +44,7 @@ type LoadedPlugin struct {
 func NewManager() *Manager {
 	return &Manager{
 		executor:         &Executor{Timeout: 30 * time.Second, SkipTrustCheck: true},
-		manifestExecutor: &Executor{Timeout: 30 * time.Second, SkipTrustCheck: true},
+		manifestExecutor: &Executor{Timeout: 3 * time.Second, SkipTrustCheck: true},
 		plugins:          make([]LoadedPlugin, 0),
 	}
 }
@@ -262,44 +262,49 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 		return ybyerrors.New(ybyerrors.ErrCodePluginNotFound, fmt.Sprintf("plugin %s não encontrado", pluginName))
 	}
 
-	// Prepare Request
-	// 1. Load Core Context (Synapstor / README / Identity)
-	cwd, _ := os.Getwd()
-	coreCtx, err := projectContext.GetCoreContext(cwd)
-	if err != nil {
-		slog.Warn("Falha ao carregar contexto core", "error", err)
-		// Fallback to empty core context
-		coreCtx = &projectContext.CoreContext{
-			ProjectName: "unknown",
-			Environment: "unknown",
+	// Verifica se o plugin precisa de contexto enriquecido.
+	// Plugins que declaram hook "context" recebem dados de outros plugins (atlas, synapstor).
+	// Plugins que só têm "command" (ex: viz) iniciam direto, sem esperar hooks.
+	needsContext := false
+	for _, h := range targetPlugin.Manifest.Hooks {
+		if h == "context" {
+			needsContext = true
+			break
 		}
 	}
 
-	// 2. Prepare BlueprintContext for plugin enrichment
-	// We map CoreContext fields into the Data map so they are available to plugins (and consumers like Bard)
-	initialData := make(map[string]interface{})
+	var fullCtxMap map[string]interface{}
 
-	// Convert CoreContext struct to map for Data bucket
-	// We do this manually or via JSON roundtrip to be safe
-	coreBytes, _ := json.Marshal(coreCtx)
-	_ = json.Unmarshal(coreBytes, &initialData)
+	if needsContext {
+		cwd, _ := os.Getwd()
+		coreCtx, err := projectContext.GetCoreContext(cwd)
+		if err != nil {
+			slog.Warn("Falha ao carregar contexto core", "error", err)
+			coreCtx = &projectContext.CoreContext{
+				ProjectName: "unknown",
+				Environment: "unknown",
+			}
+		}
 
-	blueprintCtx := &scaffold.BlueprintContext{
-		ProjectName: coreCtx.ProjectName,
-		Environment: coreCtx.Environment,
-		Data:        initialData,
+		initialData := make(map[string]interface{})
+		coreBytes, _ := json.Marshal(coreCtx)
+		_ = json.Unmarshal(coreBytes, &initialData)
+
+		blueprintCtx := &scaffold.BlueprintContext{
+			ProjectName: coreCtx.ProjectName,
+			Environment: coreCtx.Environment,
+			Data:        initialData,
+		}
+
+		fullCtx, _, err := m.BuildPluginContext(coreCtx, blueprintCtx, cwd)
+		if err != nil {
+			slog.Warn("Erro ao construir contexto do plugin", "error", err)
+		}
+
+		fullCtxMap = make(map[string]interface{})
+		fullCtxBytes, _ := json.Marshal(fullCtx)
+		_ = json.Unmarshal(fullCtxBytes, &fullCtxMap)
 	}
-
-	// 3. Resolve Environment & Infrastructure, and 4. Apply Context Hooks
-	fullCtx, _, err := m.BuildPluginContext(coreCtx, blueprintCtx, cwd)
-	if err != nil {
-		slog.Warn("Erro ao construir contexto do plugin", "error", err)
-	}
-
-	// Converter struct FullContext para map
-	fullCtxMap := make(map[string]interface{})
-	fullCtxBytes, _ := json.Marshal(fullCtx)
-	_ = json.Unmarshal(fullCtxBytes, &fullCtxMap)
 
 	req := PluginRequest{
 		Hook:    "command",
@@ -336,9 +341,8 @@ func (m *Manager) BuildPluginContext(coreCtx *projectContext.CoreContext, bluepr
 					}
 				}
 
-				// Resolve Infra
+				// Resolve Infra (sem expor KubeConfig path por segurança)
 				infraCtx = PluginInfrastructure{
-					KubeConfig:  expandPath(envDef.KubeConfig),
 					KubeContext: envDef.KubeContext,
 					Namespace:   envDef.Namespace,
 				}

@@ -12,6 +12,11 @@ type RetryClient struct {
 	baseDelay  time.Duration
 }
 
+// Inner retorna o client interno envolto pelo retry
+func (r *RetryClient) Inner() Client {
+	return r.inner
+}
+
 // NewRetryClient cria um RetryClient com configuração padrão (3 tentativas, 1s base)
 func NewRetryClient(inner Client) *RetryClient {
 	return &RetryClient{
@@ -74,6 +79,86 @@ func (r *RetryClient) GetNodes(filter ListFilter) ([]Node, error) {
 	var lastErr error
 	for i := 0; i < r.maxRetries; i++ {
 		data, err := r.inner.GetNodes(filter)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if i < r.maxRetries-1 {
+			time.Sleep(r.baseDelay * time.Duration(1<<uint(i)))
+		}
+	}
+	return nil, fmt.Errorf("falha após %d tentativas: %w", r.maxRetries, lastErr)
+}
+
+// GetStatefulSets tenta obter statefulsets com retry e backoff exponencial
+func (r *RetryClient) GetStatefulSets(filter ListFilter) ([]StatefulSet, error) {
+	var lastErr error
+	for i := 0; i < r.maxRetries; i++ {
+		data, err := r.inner.GetStatefulSets(filter)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if i < r.maxRetries-1 {
+			time.Sleep(r.baseDelay * time.Duration(1<<uint(i)))
+		}
+	}
+	return nil, fmt.Errorf("falha após %d tentativas: %w", r.maxRetries, lastErr)
+}
+
+// GetJobs tenta obter jobs com retry e backoff exponencial
+func (r *RetryClient) GetJobs(filter ListFilter) ([]Job, error) {
+	var lastErr error
+	for i := 0; i < r.maxRetries; i++ {
+		data, err := r.inner.GetJobs(filter)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if i < r.maxRetries-1 {
+			time.Sleep(r.baseDelay * time.Duration(1<<uint(i)))
+		}
+	}
+	return nil, fmt.Errorf("falha após %d tentativas: %w", r.maxRetries, lastErr)
+}
+
+// GetIngresses tenta obter ingresses com retry e backoff exponencial
+func (r *RetryClient) GetIngresses(filter ListFilter) ([]Ingress, error) {
+	var lastErr error
+	for i := 0; i < r.maxRetries; i++ {
+		data, err := r.inner.GetIngresses(filter)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if i < r.maxRetries-1 {
+			time.Sleep(r.baseDelay * time.Duration(1<<uint(i)))
+		}
+	}
+	return nil, fmt.Errorf("falha após %d tentativas: %w", r.maxRetries, lastErr)
+}
+
+// GetConfigMaps tenta obter configmaps com retry e backoff exponencial
+func (r *RetryClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
+	var lastErr error
+	for i := 0; i < r.maxRetries; i++ {
+		data, err := r.inner.GetConfigMaps(filter)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if i < r.maxRetries-1 {
+			time.Sleep(r.baseDelay * time.Duration(1<<uint(i)))
+		}
+	}
+	return nil, fmt.Errorf("falha após %d tentativas: %w", r.maxRetries, lastErr)
+}
+
+// GetEvents tenta obter eventos com retry e backoff exponencial
+func (r *RetryClient) GetEvents(filter ListFilter) ([]Event, error) {
+	var lastErr error
+	for i := 0; i < r.maxRetries; i++ {
+		data, err := r.inner.GetEvents(filter)
 		if err == nil {
 			return data, nil
 		}

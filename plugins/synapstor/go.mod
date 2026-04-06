@@ -1,6 +1,6 @@
 module github.com/casheiro/yby-cli/plugins/synapstor
 
-go 1.24.0
+go 1.24.2
 
 replace github.com/casheiro/yby-cli => ../../
 

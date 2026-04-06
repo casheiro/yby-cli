@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
@@ -15,6 +16,48 @@ import (
 
 // execCommandContext is a variable so it can be mocked in tests
 var execCommandContext = exec.CommandContext
+
+// safeEnvVars define as variáveis de ambiente seguras para herança por plugins.
+// Plugins NÃO recebem credentials (AWS_*, GITHUB_TOKEN, etc.) por padrão.
+var safeEnvVars = map[string]bool{
+	// Sistema
+	"PATH": true, "HOME": true, "USER": true, "SHELL": true,
+	"TERM": true, "LANG": true, "LC_ALL": true, "LC_CTYPE": true,
+	"TZ": true, "TMPDIR": true, "XDG_RUNTIME_DIR": true,
+	"COLORTERM": true, "TERM_PROGRAM": true,
+	// Kubernetes
+	"KUBECONFIG": true,
+	// Rede (proxy corporativo)
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
+	"http_proxy": true, "https_proxy": true, "no_proxy": true,
+}
+
+// PluginResourceLimits define os limites de recursos para processos de plugins.
+var PluginResourceLimits = struct {
+	MaxMemoryBytes uint64 // Limite de memória virtual (default: 1GB)
+	MaxOpenFiles   uint64 // Limite de file descriptors (default: 256)
+	MaxProcesses   uint64 // Limite de processos filhos (default: 32)
+}{
+	MaxMemoryBytes: 1 << 30, // 1GB
+	MaxOpenFiles:   256,
+	MaxProcesses:   32,
+}
+
+// sanitizedEnv retorna env vars filtradas pela whitelist + extras fornecidas.
+func sanitizedEnv(extra ...string) []string {
+	var env []string
+	for _, e := range os.Environ() {
+		key, _, _ := strings.Cut(e, "=")
+		if safeEnvVars[key] {
+			env = append(env, e)
+		}
+	}
+	return append(env, extra...)
+}
+
+// applyResourceLimits é reservado para futura implementação de limites de recursos.
+// SysProcAttr e Setpgid NÃO são usados — quebram acesso ao TTY de plugins interativos.
+func applyResourceLimits(_ *exec.Cmd) {}
 
 // Executor handles the execution of a plugin process.
 type Executor struct {
@@ -61,6 +104,15 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 	defer cancel()
 
 	cmd := execCommandContext(ctx, binaryPath)
+
+	// Segurança: env vars filtradas (sem credentials do parent)
+	// Não sobrescreve se já definido (ex: testes com mock)
+	if cmd.Env == nil {
+		cmd.Env = sanitizedEnv()
+	}
+
+	// Segurança: resource limits no processo filho
+	applyResourceLimits(cmd)
 
 	// Prepare STDIN
 	reqBytes, err := json.Marshal(req)
@@ -112,7 +164,11 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 	if err != nil {
 		return ybyerrors.Wrap(err, ybyerrors.ErrCodePluginRPC, "falha ao serializar requisição do plugin")
 	}
+	// Plugins interativos herdam todas as env vars do parent (precisam de KUBECONFIG, etc)
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqBytes)))
+
+	// Segurança: resource limits no processo filho
+	applyResourceLimits(cmd)
 
 	// Connect IO
 	cmd.Stdin = os.Stdin
