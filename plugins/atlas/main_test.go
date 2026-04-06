@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
@@ -90,7 +91,7 @@ func TestHookManifest_RetornaJSONValido(t *testing.T) {
 		t.Error("hooks não deve estar vazio")
 	}
 
-	// Verificar que 'manifest' e 'context' estão nos hooks
+	// Verificar que 'manifest', 'context' e 'command' estão nos hooks
 	hookSet := make(map[string]bool)
 	for _, h := range manifest.Hooks {
 		hookSet[h] = true
@@ -100,6 +101,9 @@ func TestHookManifest_RetornaJSONValido(t *testing.T) {
 	}
 	if !hookSet["context"] {
 		t.Error("hooks deve conter 'context'")
+	}
+	if !hookSet["command"] {
+		t.Error("hooks deve conter 'command'")
 	}
 }
 
@@ -341,6 +345,266 @@ rules:
 	}
 	if encontrouIgnorado {
 		t.Error("componente no diretório 'ignorar-este' deveria ter sido ignorado")
+	}
+}
+
+// TestHookCommand_SubcomandoDiagram verifica que o subcomando "diagram" retorna blueprint.
+func TestHookCommand_SubcomandoDiagram(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	tmpDir := t.TempDir()
+	serviceDir := filepath.Join(tmpDir, "meu-servico")
+	if err := os.MkdirAll(serviceDir, 0755); err != nil {
+		t.Fatalf("falha ao criar diretório: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(serviceDir, "go.mod"), []byte("module meu-servico\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar go.mod: %v", err)
+	}
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"diagram"}}
+	reqJSON, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("falha ao serializar requisição: %v", err)
+	}
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar atlas command diagram: %v", err)
+	}
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v\nSaída: %s", err, output)
+	}
+
+	if resp.Error != "" {
+		t.Fatalf("resposta contém erro: %s", resp.Error)
+	}
+
+	dataMap, ok := resp.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Data não é map[string]interface{}, tipo: %T", resp.Data)
+	}
+
+	diagram, ok := dataMap["diagram"].(string)
+	if !ok || diagram == "" {
+		t.Fatal("resposta não contém campo 'diagram' válido")
+	}
+
+	if !strings.Contains(diagram, "flowchart TD") {
+		t.Error("diagrama mermaid deve conter 'flowchart TD'")
+	}
+
+	if fmt, ok := dataMap["format"].(string); !ok || fmt != "mermaid" {
+		t.Errorf("formato esperado 'mermaid', obtido %v", dataMap["format"])
+	}
+}
+
+// TestHookCommand_SubcomandoDiagramC4 verifica que o formato c4 é passado corretamente.
+func TestHookCommand_SubcomandoDiagramC4(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module teste\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar go.mod: %v", err)
+	}
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"diagram", "c4"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar: %v", err)
+	}
+
+	var resp plugin.PluginResponse
+	json.Unmarshal(output, &resp)
+
+	dataMap, _ := resp.Data.(map[string]interface{})
+	if fmt, ok := dataMap["format"].(string); !ok || fmt != "c4" {
+		t.Errorf("formato esperado 'c4', obtido %v", dataMap["format"])
+	}
+
+	diagram, ok := dataMap["diagram"].(string)
+	if !ok || diagram == "" {
+		t.Fatal("resposta não contém campo 'diagram' válido")
+	}
+	if !strings.Contains(diagram, "C4Context") {
+		t.Error("diagrama c4 deve conter 'C4Context'")
+	}
+}
+
+// TestHookCommand_SubcomandoCycles verifica que o subcomando "cycles" retorna blueprint.
+func TestHookCommand_SubcomandoCycles(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module teste\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar go.mod: %v", err)
+	}
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"cycles"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar: %v", err)
+	}
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v", err)
+	}
+
+	if resp.Error != "" {
+		t.Fatalf("resposta contém erro: %s", resp.Error)
+	}
+}
+
+// TestHookCommand_SubcomandoMetrics verifica que o subcomando "metrics" retorna blueprint.
+func TestHookCommand_SubcomandoMetrics(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module teste\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar go.mod: %v", err)
+	}
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"metrics"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar: %v", err)
+	}
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v", err)
+	}
+
+	if resp.Error != "" {
+		t.Fatalf("resposta contém erro: %s", resp.Error)
+	}
+}
+
+// TestHookCommand_SubcomandoDiff verifica que o subcomando "diff" compara blueprints.
+func TestHookCommand_SubcomandoDiff(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	// Diretório atual com um componente
+	currentDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(currentDir, "go.mod"), []byte("module teste\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar go.mod: %v", err)
+	}
+
+	// Diretório base vazio (sem componentes)
+	baseDir := t.TempDir()
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"diff", baseDir}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = currentDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar: %v", err)
+	}
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v\nSaída: %s", err, output)
+	}
+
+	if resp.Error != "" {
+		t.Fatalf("resposta contém erro: %s", resp.Error)
+	}
+
+	dataMap, _ := resp.Data.(map[string]interface{})
+	if _, ok := dataMap["diff"]; !ok {
+		t.Fatal("resposta não contém campo 'diff'")
+	}
+}
+
+// TestHookCommand_DiffSemArgs verifica que diff sem argumento retorna erro.
+func TestHookCommand_DiffSemArgs(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"diff"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+
+	output, _ := cmd.Output()
+
+	var resp plugin.PluginResponse
+	json.Unmarshal(output, &resp)
+
+	if resp.Error == "" {
+		t.Error("esperado erro para diff sem caminho base")
+	}
+}
+
+// TestHookCommand_SemSubcomando verifica que hook command sem args retorna erro.
+func TestHookCommand_SemSubcomando(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+
+	output, _ := cmd.Output()
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v", err)
+	}
+
+	if resp.Error == "" {
+		t.Error("esperado erro para command sem subcomando")
+	}
+}
+
+// TestHookCommand_SubcomandoInvalido verifica que subcomando inválido retorna erro.
+func TestHookCommand_SubcomandoInvalido(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"invalido"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+
+	output, _ := cmd.Output()
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v", err)
+	}
+
+	if resp.Error == "" {
+		t.Error("esperado erro para subcomando inválido")
 	}
 }
 

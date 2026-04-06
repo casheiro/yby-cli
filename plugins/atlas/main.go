@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/plugins/atlas/analysis"
 	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
 )
 
@@ -38,38 +39,20 @@ func run() error {
 	case "manifest":
 		return respond(plugin.PluginManifest{
 			Name:        "atlas",
-			Version:     "0.1.0",
+			Version:     "0.2.0",
 			Description: "Mapeamento contínuo de recursos e blueprint do cluster",
-			Hooks:       []string{"context", "manifest"},
+			Hooks:       []string{"context", "manifest", "command"},
 		})
 	case "context":
-		// Executar descoberta
-		cwd, err := os.Getwd()
+		blueprint, err := scanProject()
 		if err != nil {
 			return fail(err)
 		}
-
-		cfg := loadConfig()
-		ignores := []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
-		var rules []discovery.Rule
-		if cfg != nil {
-			if len(cfg.Ignores) > 0 {
-				ignores = append(ignores, cfg.Ignores...)
-			}
-			rules = discovery.MergeRules(cfg.Rules)
-		} else {
-			rules = discovery.DefaultRules
-		}
-
-		blueprint, err := discovery.ScanWithRules(cwd, ignores, rules)
-		if err != nil {
-			return fail(err)
-		}
-
-		// Retornar como ContextPatch
 		return respond(map[string]interface{}{
 			"blueprint": blueprint,
 		})
+	case "command":
+		return handleCommand(req.Args)
 	default:
 		return fail(fmt.Errorf("hook desconhecido: %s", req.Hook))
 	}
@@ -103,4 +86,128 @@ func fail(err error) error {
 	resp := plugin.PluginResponse{Error: err.Error()}
 	_ = json.NewEncoder(os.Stdout).Encode(resp)
 	return err
+}
+
+// scanProject executa a descoberta de componentes no diretório atual,
+// aplicando configuração externa quando disponível.
+func scanProject() (*discovery.Blueprint, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := loadConfig()
+	ignores := []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
+	var rules []discovery.Rule
+	if cfg != nil {
+		if len(cfg.Ignores) > 0 {
+			ignores = append(ignores, cfg.Ignores...)
+		}
+		rules = discovery.MergeRules(cfg.Rules)
+	} else {
+		rules = discovery.DefaultRules
+	}
+
+	return discovery.ScanWithRules(cwd, ignores, rules)
+}
+
+// handleCommand roteia subcomandos do hook "command".
+func handleCommand(args []string) error {
+	if len(args) == 0 {
+		return fail(fmt.Errorf("subcomando obrigatório: diagram, cycles, metrics, diff"))
+	}
+
+	subcommand := args[0]
+	subArgs := args[1:]
+
+	switch subcommand {
+	case "diagram":
+		return handleDiagram(subArgs)
+	case "cycles":
+		return handleCycles()
+	case "metrics":
+		return handleMetrics()
+	case "diff":
+		return handleDiff(subArgs)
+	default:
+		return fail(fmt.Errorf("subcomando desconhecido: %s (disponíveis: diagram, cycles, metrics, diff)", subcommand))
+	}
+}
+
+// handleDiagram gera diagrama do blueprint no formato especificado.
+func handleDiagram(args []string) error {
+	bp, err := scanProject()
+	if err != nil {
+		return fail(err)
+	}
+
+	format := "mermaid"
+	if len(args) > 0 {
+		format = args[0]
+	}
+
+	var diagram string
+	switch format {
+	case "c4":
+		diagram = analysis.GenerateC4(bp)
+	default:
+		diagram = analysis.GenerateMermaid(bp)
+	}
+
+	return respond(map[string]interface{}{
+		"diagram": diagram,
+		"format":  format,
+	})
+}
+
+// handleCycles detecta ciclos de dependência no blueprint.
+func handleCycles() error {
+	bp, err := scanProject()
+	if err != nil {
+		return fail(err)
+	}
+
+	cycles := analysis.DetectCycles(bp)
+	return respond(map[string]interface{}{
+		"cycles":     cycles,
+		"has_cycles": len(cycles) > 0,
+		"count":      len(cycles),
+	})
+}
+
+// handleMetrics calcula métricas de acoplamento/coesão.
+func handleMetrics() error {
+	bp, err := scanProject()
+	if err != nil {
+		return fail(err)
+	}
+
+	metrics := analysis.CalculateMetrics(bp)
+	return respond(map[string]interface{}{
+		"metrics": metrics,
+	})
+}
+
+// handleDiff compara o blueprint atual com um blueprint base escaneado de outro diretório.
+func handleDiff(args []string) error {
+	currentBP, err := scanProject()
+	if err != nil {
+		return fail(err)
+	}
+
+	if len(args) == 0 {
+		return fail(fmt.Errorf("caminho base obrigatório para diff (ex: atlas diff /path/to/base)"))
+	}
+
+	basePath := args[0]
+	ignores := []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
+	baseBP, err := discovery.Scan(basePath, ignores)
+	if err != nil {
+		return fail(fmt.Errorf("falha ao escanear diretório base %s: %w", basePath, err))
+	}
+
+	diff := analysis.DiffBlueprints(baseBP, currentBP)
+	return respond(map[string]interface{}{
+		"diff": diff,
+	})
 }

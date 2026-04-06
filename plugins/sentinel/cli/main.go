@@ -159,8 +159,9 @@ func handlePluginRequest() {
 			investigate(podName, namespace, outputFormat, outputFile, noCache)
 
 		case "scan":
-			// Expect "yby sentinel scan [-n namespace] [-o format] [-f file]"
-			var namespace, outputFormat, outputFile string
+			// Expect "yby sentinel scan [-n namespace] [-o format] [-f file] [--profile name] [--fix] [--fix-dry-run]"
+			var namespace, outputFormat, outputFile, profile string
+			var fix, fixDryRun bool
 			remainingArgs := args[1:]
 
 			for i := 0; i < len(remainingArgs); i++ {
@@ -186,13 +187,28 @@ func handlePluginRequest() {
 					}
 					continue
 				}
+				if arg == "--profile" || arg == "-p" {
+					if i+1 < len(remainingArgs) {
+						profile = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+				if arg == "--fix" {
+					fix = true
+					continue
+				}
+				if arg == "--fix-dry-run" {
+					fixDryRun = true
+					continue
+				}
 			}
 
 			if namespace == "" {
 				namespace = "default"
 			}
 
-			scanNamespace(namespace, outputFormat, outputFile)
+			scanNamespace(namespace, outputFormat, outputFile, profile, fix, fixDryRun)
 
 		default:
 			fmt.Printf("❌ Subcomando desconhecido: %s. Uso: yby sentinel <investigate|scan> [flags]\n", args[0])

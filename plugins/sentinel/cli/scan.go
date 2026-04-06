@@ -9,33 +9,24 @@ import (
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
 	"github.com/charmbracelet/lipgloss"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-// SecurityFinding representa uma vulnerabilidade encontrada.
-type SecurityFinding struct {
-	Resource    string `json:"resource"`
-	Namespace   string `json:"namespace"`
-	Type        string `json:"type"`     // "warning", "critical"
-	Category    string `json:"category"` // "root_container", "no_limits", "image_pull_policy", "exposed_secrets"
-	Description string `json:"description"`
-}
 
 // ScanReport contém o resultado completo do scan de segurança.
 type ScanReport struct {
-	Namespace       string            `json:"namespace"`
-	Findings        []SecurityFinding `json:"findings"`
-	Recommendations string            `json:"recommendations,omitempty"`
+	Namespace       string                   `json:"namespace"`
+	Findings        []checks.SecurityFinding `json:"findings"`
+	Recommendations string                   `json:"recommendations,omitempty"`
 }
 
-func scanNamespace(namespace, outputFormat, outputFile string) {
+func scanNamespace(namespace, outputFormat, outputFile, profile string, fix, fixDryRun bool) {
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Padding(0, 1)
 	fmt.Println(titleStyle.Render(fmt.Sprintf("\n🔍 Sentinel Security Scan: %s", namespace)))
 
-	k8sClient, err := sdk.GetKubeClient()
+	k8sClient, err := getKubeClient()
 	if err != nil {
 		fmt.Printf("⚠️  Falha ao obter cliente Kubernetes: %v\n", err)
 		return
@@ -43,22 +34,32 @@ func scanNamespace(namespace, outputFormat, outputFile string) {
 
 	ctx := context.Background()
 
-	// Listar pods no namespace
-	pods, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		fmt.Printf("❌ Falha ao listar pods: %v\n", err)
-		return
+	// Selecionar checks baseado no profile ou usar todos
+	var selectedChecks []checks.SecurityCheck
+	if profile != "" {
+		p, ok := profiles.GetProfile(profile)
+		if !ok {
+			fmt.Printf("❌ Perfil de compliance '%s' não encontrado. Perfis disponíveis:\n", profile)
+			for _, prof := range profiles.ListProfiles() {
+				fmt.Printf("  - %s: %s\n", prof.Name, prof.Description)
+			}
+			return
+		}
+		selectedChecks = checks.GetByIDs(p.CheckIDs)
+		fmt.Printf("📋 Usando perfil de compliance: %s (%d checks)\n", p.Name, len(selectedChecks))
+	} else {
+		selectedChecks = checks.GetAll()
 	}
 
-	var findings []SecurityFinding
+	var findings []checks.SecurityFinding
 
-	for _, pod := range pods.Items {
-		for _, container := range pod.Spec.Containers {
-			findings = append(findings, checkRootContainer(pod, container, namespace)...)
-			findings = append(findings, checkResourceLimits(pod, container, namespace)...)
-			findings = append(findings, checkImagePullPolicy(pod, container, namespace)...)
-			findings = append(findings, checkExposedSecrets(pod, container, namespace)...)
+	for _, check := range selectedChecks {
+		checkFindings, err := check.Run(ctx, k8sClient, namespace)
+		if err != nil {
+			fmt.Printf("⚠️  Erro no check '%s': %v\n", check.Name(), err)
+			continue
 		}
+		findings = append(findings, checkFindings...)
 	}
 
 	report := ScanReport{
@@ -80,6 +81,30 @@ func scanNamespace(namespace, outputFormat, outputFile string) {
 		}
 	} else {
 		fmt.Println("\n✅ Nenhuma vulnerabilidade encontrada!")
+	}
+
+	// Remediation
+	if len(findings) > 0 && (fix || fixDryRun) {
+		patches := remediation.GeneratePatches(findings)
+		if len(patches) == 0 {
+			fmt.Println("\n⚠️  Nenhum patch de remediação disponível para os findings encontrados.")
+		} else if fixDryRun {
+			fmt.Printf("\n🔧 Dry-run: %d patches de remediação gerados:\n", len(patches))
+			for i, p := range patches {
+				fmt.Printf("  %d. [%s] %s/%s — %s\n", i+1, p.ResourceKind, p.Namespace, p.ResourceName, p.Description)
+				fmt.Printf("     Patch: %s\n", p.Patch)
+			}
+		} else {
+			fmt.Printf("\n🔧 Aplicando %d patches de remediação...\n", len(patches))
+			errs := remediation.ApplyPatches(ctx, k8sClient, patches)
+			if len(errs) > 0 {
+				for _, e := range errs {
+					fmt.Printf("  ❌ %v\n", e)
+				}
+			} else {
+				fmt.Printf("  ✅ Todos os %d patches aplicados com sucesso!\n", len(patches))
+			}
+		}
 	}
 
 	// Output
@@ -110,89 +135,6 @@ func scanNamespace(namespace, outputFormat, outputFile string) {
 
 	// Renderização visual (padrão)
 	renderScanResult(report)
-}
-
-// checkRootContainer verifica se um container roda como root ou não define runAsNonRoot.
-func checkRootContainer(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
-	var findings []SecurityFinding
-
-	if container.SecurityContext != nil && container.SecurityContext.RunAsUser != nil && *container.SecurityContext.RunAsUser == 0 {
-		findings = append(findings, SecurityFinding{
-			Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-			Namespace:   namespace,
-			Type:        "critical",
-			Category:    "root_container",
-			Description: fmt.Sprintf("Container '%s' no pod '%s' roda como root (UID 0)", container.Name, pod.Name),
-		})
-	}
-
-	if container.SecurityContext == nil || container.SecurityContext.RunAsNonRoot == nil || !*container.SecurityContext.RunAsNonRoot {
-		if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil {
-			findings = append(findings, SecurityFinding{
-				Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-				Namespace:   namespace,
-				Type:        "warning",
-				Category:    "root_container",
-				Description: fmt.Sprintf("Container '%s' no pod '%s' não define runAsNonRoot=true", container.Name, pod.Name),
-			})
-		}
-	}
-
-	return findings
-}
-
-// checkResourceLimits verifica se um container possui limites de CPU/memória definidos.
-func checkResourceLimits(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
-	var findings []SecurityFinding
-
-	if container.Resources.Limits == nil || (container.Resources.Limits.Cpu().IsZero() && container.Resources.Limits.Memory().IsZero()) {
-		findings = append(findings, SecurityFinding{
-			Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-			Namespace:   namespace,
-			Type:        "warning",
-			Category:    "no_limits",
-			Description: fmt.Sprintf("Container '%s' no pod '%s' sem limites de CPU/memória definidos", container.Name, pod.Name),
-		})
-	}
-
-	return findings
-}
-
-// checkImagePullPolicy verifica se o ImagePullPolicy do container é Always.
-func checkImagePullPolicy(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
-	var findings []SecurityFinding
-
-	if container.ImagePullPolicy != corev1.PullAlways {
-		findings = append(findings, SecurityFinding{
-			Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-			Namespace:   namespace,
-			Type:        "warning",
-			Category:    "image_pull_policy",
-			Description: fmt.Sprintf("Container '%s' no pod '%s' com ImagePullPolicy=%s (recomendado: Always)", container.Name, pod.Name, container.ImagePullPolicy),
-		})
-	}
-
-	return findings
-}
-
-// checkExposedSecrets verifica se variáveis de ambiente contêm secrets com valores hardcoded.
-func checkExposedSecrets(pod corev1.Pod, container corev1.Container, namespace string) []SecurityFinding {
-	var findings []SecurityFinding
-
-	for _, env := range container.Env {
-		lowerName := strings.ToLower(env.Name)
-		if (strings.Contains(lowerName, "password") || strings.Contains(lowerName, "secret") || strings.Contains(lowerName, "token") || strings.Contains(lowerName, "key")) && env.ValueFrom == nil {
-			findings = append(findings, SecurityFinding{
-				Resource:    fmt.Sprintf("%s/%s", pod.Name, container.Name),
-				Namespace:   namespace,
-				Type:        "critical",
-				Category:    "exposed_secrets",
-				Description: fmt.Sprintf("Container '%s' no pod '%s' tem env '%s' com valor hardcoded (use secretKeyRef)", container.Name, pod.Name, env.Name),
-			})
-		}
-	}
-
-	return findings
 }
 
 // exportScanMarkdown gera o relatório de scan em formato Markdown.

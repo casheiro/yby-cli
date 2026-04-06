@@ -17,6 +17,8 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/plugins/bard/tools"
+	"github.com/casheiro/yby-cli/plugins/bard/tui"
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 )
@@ -96,18 +98,35 @@ func startChat(ctxData map[string]interface{}) error {
 		return runBatchMode(ctx, provider, vectorStore, bardCfg, ctxData)
 	}
 
-	// 4. Gerar SessionID para esta sessão interativa
+	// 4. Enriquecer contexto do cluster (non-fatal)
+	clusterCtx := EnrichContext(ctx)
+
+	// 5. Gerar SessionID para esta sessão interativa
 	sessionID := time.Now().Format("20060102-150405")
 
-	// 5. Carregar histórico de sessões anteriores
+	// 6. Carregar histórico de sessões anteriores
 	history := loadHistory()
 
-	// 6. Construir system prompt enriquecido
-	systemPrompt := buildSystemPrompt(ctxData, bardCfg, history)
+	// 7. Construir system prompt enriquecido
+	systemPrompt := buildSystemPrompt(ctxData, bardCfg, history, clusterCtx)
+
+	// 8. Usar Rich TUI (Bubbletea) por padrão, legacy UI via env var
+	if os.Getenv("YBY_BARD_LEGACY_UI") == "" {
+		tuiConfig := tui.Config{
+			SystemPrompt: systemPrompt,
+			SessionID:    sessionID,
+			SaveMessage:  saveMessage,
+		}
+		if clusterCtx != nil {
+			tuiConfig.Namespace = clusterCtx.Namespace
+			tuiConfig.Cluster = clusterCtx.Cluster
+		}
+		return tui.Run(provider, vectorStore, tuiConfig)
+	}
 
 	historyCtx := formatHistoryContext(history)
 
-	// Configuração da UI
+	// Configuração da UI (legacy)
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("🤖 Yby Bard"))
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Digite 'exit' para sair. '/clear' para limpar histórico. '/sessions' para listar sessões."))
 
@@ -160,7 +179,7 @@ func startChat(ctxData map[string]interface{}) error {
 			}
 			// Atualizar contexto de histórico com a sessão carregada
 			historyCtx = formatHistoryContext(sessionEntries)
-			systemPrompt = buildSystemPrompt(ctxData, bardCfg, sessionEntries)
+			systemPrompt = buildSystemPrompt(ctxData, bardCfg, sessionEntries, clusterCtx)
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render(
 				fmt.Sprintf("Carregada sessão %s (%d mensagens)", targetID, len(sessionEntries)),
 			))
@@ -214,31 +233,116 @@ func startChat(ctxData map[string]interface{}) error {
 			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", truncatedRAG, input)
 		}
 
-		var responseBuf bytes.Buffer
-		writer := io.MultiWriter(os.Stdout, &responseBuf)
+		// Loop de tool calling (máximo 5 iterações)
+		const maxToolIterations = 5
+		currentInput := runInput
+		var finalResponse string
 
-		retryOpts := retry.Options{
-			InitialInterval:     2 * time.Second,
-			MaxInterval:         10 * time.Second,
-			MaxElapsedTime:      30 * time.Second,
-			RandomizationFactor: 0.3,
-			Multiplier:          2.0,
+		for iteration := 0; iteration <= maxToolIterations; iteration++ {
+			var responseBuf bytes.Buffer
+
+			// Na primeira iteração, mostrar stream para o usuário
+			// Em iterações de tool calling, capturar silenciosamente
+			var writer io.Writer
+			if iteration == 0 {
+				writer = io.MultiWriter(os.Stdout, &responseBuf)
+			} else {
+				writer = &responseBuf
+			}
+
+			retryOpts := retry.Options{
+				InitialInterval:     2 * time.Second,
+				MaxInterval:         10 * time.Second,
+				MaxElapsedTime:      30 * time.Second,
+				RandomizationFactor: 0.3,
+				Multiplier:          2.0,
+			}
+
+			attempt := 0
+			err := retry.Do(ctx, retryOpts, func() error {
+				attempt++
+				if attempt > 1 {
+					fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("\n🔄 Tentando novamente..."))
+					responseBuf.Reset()
+				}
+				return provider.StreamCompletion(ctx, systemPrompt, currentInput, writer)
+			})
+
+			if err != nil {
+				fmt.Printf("\nErro: %v\n", err)
+				break
+			}
+
+			response := responseBuf.String()
+
+			// Parsear tool calls da resposta
+			toolCalls, remainingText := tools.ParseToolCalls(response)
+			if len(toolCalls) == 0 {
+				// Sem tool calls — resposta final
+				finalResponse = response
+				break
+			}
+
+			// Executar tool calls
+			var toolResults []tools.ToolResult
+			for _, call := range toolCalls {
+				// Validar guardrails antes de executar
+				if guardErr := tools.ValidateToolCall(call); guardErr != nil {
+					toolResults = append(toolResults, tools.ToolResult{
+						ToolName: call.Name,
+						Error:    fmt.Sprintf("bloqueado por guardrail: %v", guardErr),
+					})
+					fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("\n⛔ %s bloqueado: %v"), call.Name, guardErr)
+					continue
+				}
+
+				tool := tools.Get(call.Name)
+				if tool == nil {
+					toolResults = append(toolResults, tools.ToolResult{
+						ToolName: call.Name,
+						Error:    fmt.Sprintf("ferramenta '%s' não encontrada", call.Name),
+					})
+					continue
+				}
+
+				fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Render("\n🔧 Executando %s..."), call.Name)
+
+				output, execErr := tool.Execute(ctx, call.Params)
+				result := tools.ToolResult{ToolName: call.Name, Output: output}
+				if execErr != nil {
+					result.Error = execErr.Error()
+				}
+				toolResults = append(toolResults, result)
+			}
+
+			// Construir input para próxima iteração com resultados
+			var sb strings.Builder
+			if remainingText != "" {
+				sb.WriteString(remainingText)
+				sb.WriteString("\n\n")
+			}
+			for _, result := range toolResults {
+				sb.WriteString(fmt.Sprintf("Resultado da ferramenta %s:\n", result.ToolName))
+				if result.Error != "" {
+					sb.WriteString(fmt.Sprintf("Erro: %s\n", result.Error))
+				}
+				if result.Output != "" {
+					sb.WriteString(result.Output)
+					sb.WriteString("\n")
+				}
+				sb.WriteString("\n")
+			}
+			sb.WriteString("Continue respondendo ao usuário com base nos resultados das ferramentas.")
+			currentInput = sb.String()
+
+			// Limpar output anterior se estava mostrando stream
+			if iteration == 0 {
+				fmt.Println()
+			}
 		}
 
-		attempt := 0
-		err := retry.Do(ctx, retryOpts, func() error {
-			attempt++
-			if attempt > 1 {
-				fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("\n🔄 Tentando novamente..."))
-				responseBuf.Reset()
-			}
-			return provider.StreamCompletion(ctx, systemPrompt, runInput, writer)
-		})
-
-		if err != nil {
-			fmt.Printf("\nErro: %v\n", err)
-		} else {
-			saveMessage("assistant", responseBuf.String(), sessionID)
+		if finalResponse != "" {
+			saveMessage("assistant", finalResponse, sessionID)
 		}
 		fmt.Println() // Nova linha após o stream
 	}
@@ -246,7 +350,7 @@ func startChat(ctxData map[string]interface{}) error {
 }
 
 // buildSystemPrompt constrói o system prompt enriquecido com contexto e histórico.
-func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, history []HistoryEntry) string {
+func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, history []HistoryEntry, clusterCtx ...*ClusterContext) string {
 	overview, _ := ctxData["overview"].(string)
 	backlog, _ := ctxData["backlog"].(string)
 
@@ -268,6 +372,14 @@ func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, histo
 `, overview, backlog, blueprintSummary)
 
 	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
+	systemPrompt = strings.ReplaceAll(systemPrompt, "{{ tools_prompt }}", buildToolsSection())
+
+	// Injetar contexto do cluster se disponível
+	clusterSection := ""
+	if len(clusterCtx) > 0 && clusterCtx[0] != nil {
+		clusterSection = FormatClusterContext(clusterCtx[0])
+	}
+	systemPrompt = strings.ReplaceAll(systemPrompt, "{{ cluster_context }}", clusterSection)
 
 	historyCtx := formatHistoryContext(history)
 	if historyCtx != "" {
