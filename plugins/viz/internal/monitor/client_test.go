@@ -8,13 +8,27 @@ import (
 // FakeClient implementa a interface Client para testes,
 // sem necessidade de conexão real com o cluster K8s.
 type FakeClient struct {
-	pods []Pod
-	err  error
+	pods         []Pod
+	deployments  []Deployment
+	services     []Service
+	nodes        []Node
+	statefulsets []StatefulSet
+	jobs         []Job
+	ingresses    []Ingress
+	configmaps   []ConfigMap
+	events       []Event
+	err          error
 }
 
-func (f *FakeClient) GetPods() ([]Pod, error) {
-	return f.pods, f.err
-}
+func (f *FakeClient) GetPods(_ ListFilter) ([]Pod, error)               { return f.pods, f.err }
+func (f *FakeClient) GetDeployments(_ ListFilter) ([]Deployment, error) { return f.deployments, f.err }
+func (f *FakeClient) GetServices(_ ListFilter) ([]Service, error)       { return f.services, f.err }
+func (f *FakeClient) GetNodes(_ ListFilter) ([]Node, error)             { return f.nodes, f.err }
+func (f *FakeClient) GetStatefulSets(_ ListFilter) ([]StatefulSet, error) { return f.statefulsets, f.err }
+func (f *FakeClient) GetJobs(_ ListFilter) ([]Job, error)                 { return f.jobs, f.err }
+func (f *FakeClient) GetIngresses(_ ListFilter) ([]Ingress, error)        { return f.ingresses, f.err }
+func (f *FakeClient) GetConfigMaps(_ ListFilter) ([]ConfigMap, error)     { return f.configmaps, f.err }
+func (f *FakeClient) GetEvents(_ ListFilter) ([]Event, error)             { return f.events, f.err }
 
 // TestClientInterface verifica que FakeClient satisfaz a interface Client.
 func TestClientInterface(t *testing.T) {
@@ -22,17 +36,19 @@ func TestClientInterface(t *testing.T) {
 	var _ Client = &K8sClient{}
 }
 
+// --- Testes de Pods ---
+
 // TestFakeClient_GetPods_Sucesso verifica que o fake client retorna pods
 // corretamente quando não há erro.
 func TestFakeClient_GetPods_Sucesso(t *testing.T) {
 	fake := &FakeClient{
 		pods: []Pod{
-			{Name: "nginx-abc123", Namespace: "default", Status: "Running", CPU: "10m"},
-			{Name: "redis-xyz789", Namespace: "cache", Status: "Running", CPU: "5m"},
+			{Name: "nginx-abc123", Namespace: "default", Status: "Running", CPU: "10m", Memory: "64Mi"},
+			{Name: "redis-xyz789", Namespace: "cache", Status: "Running", CPU: "5m", Memory: "32Mi"},
 		},
 	}
 
-	pods, err := fake.GetPods()
+	pods, err := fake.GetPods(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -59,7 +75,7 @@ func TestFakeClient_GetPods_Erro(t *testing.T) {
 		err: fmt.Errorf("conexão recusada"),
 	}
 
-	pods, err := fake.GetPods()
+	pods, err := fake.GetPods(ListFilter{})
 	if err == nil {
 		t.Fatal("esperava erro, mas obteve nil")
 	}
@@ -76,7 +92,7 @@ func TestFakeClient_GetPods_Vazio(t *testing.T) {
 		pods: []Pod{},
 	}
 
-	pods, err := fake.GetPods()
+	pods, err := fake.GetPods(ListFilter{})
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -93,6 +109,7 @@ func TestPodStruct(t *testing.T) {
 		Namespace: "producao",
 		Status:    "Running",
 		CPU:       "100m",
+		Memory:    "128Mi",
 	}
 
 	if pod.Name != "meu-app-abc123" {
@@ -106,6 +123,9 @@ func TestPodStruct(t *testing.T) {
 	}
 	if pod.CPU != "100m" {
 		t.Errorf("cpu esperado '100m', obtido '%s'", pod.CPU)
+	}
+	if pod.Memory != "128Mi" {
+		t.Errorf("memory esperado '128Mi', obtido '%s'", pod.Memory)
 	}
 }
 
@@ -129,11 +149,453 @@ func TestPodStatus(t *testing.T) {
 				Namespace: "default",
 				Status:    tt.status,
 				CPU:       "N/A",
+				Memory:    "N/A",
 			}
 
 			if pod.Status != tt.status {
 				t.Errorf("status esperado '%s', obtido '%s'", tt.status, pod.Status)
 			}
 		})
+	}
+}
+
+// --- Testes de Deployments ---
+
+// TestFakeClient_GetDeployments_Sucesso verifica que o fake client retorna
+// deployments corretamente.
+func TestFakeClient_GetDeployments_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		deployments: []Deployment{
+			{Name: "nginx-deploy", Namespace: "default", Replicas: 3, Ready: 3, Available: 3},
+			{Name: "api-deploy", Namespace: "backend", Replicas: 2, Ready: 1, Available: 1},
+		},
+	}
+
+	deps, err := fake.GetDeployments(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if len(deps) != 2 {
+		t.Fatalf("esperado 2 deployments, obtido %d", len(deps))
+	}
+
+	if deps[0].Name != "nginx-deploy" {
+		t.Errorf("nome do deployment[0] esperado 'nginx-deploy', obtido '%s'", deps[0].Name)
+	}
+	if deps[0].Replicas != 3 {
+		t.Errorf("replicas esperadas 3, obtido %d", deps[0].Replicas)
+	}
+	if deps[1].Ready != 1 {
+		t.Errorf("ready esperado 1, obtido %d", deps[1].Ready)
+	}
+}
+
+// TestFakeClient_GetDeployments_Erro verifica propagação de erro em deployments.
+func TestFakeClient_GetDeployments_Erro(t *testing.T) {
+	fake := &FakeClient{
+		err: fmt.Errorf("acesso negado"),
+	}
+
+	deps, err := fake.GetDeployments(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if deps != nil {
+		t.Errorf("esperava deployments nil quando há erro, obtido %v", deps)
+	}
+}
+
+// TestFakeClient_GetDeployments_Vazio verifica lista vazia de deployments.
+func TestFakeClient_GetDeployments_Vazio(t *testing.T) {
+	fake := &FakeClient{
+		deployments: []Deployment{},
+	}
+
+	deps, err := fake.GetDeployments(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(deps) != 0 {
+		t.Errorf("esperado 0 deployments, obtido %d", len(deps))
+	}
+}
+
+// TestDeploymentStruct verifica a estrutura Deployment e seus campos.
+func TestDeploymentStruct(t *testing.T) {
+	dep := Deployment{
+		Name:      "meu-deploy",
+		Namespace: "producao",
+		Replicas:  3,
+		Ready:     2,
+		Available: 2,
+	}
+
+	if dep.Name != "meu-deploy" {
+		t.Errorf("nome esperado 'meu-deploy', obtido '%s'", dep.Name)
+	}
+	if dep.Replicas != 3 {
+		t.Errorf("replicas esperadas 3, obtido %d", dep.Replicas)
+	}
+	if dep.Ready != 2 {
+		t.Errorf("ready esperado 2, obtido %d", dep.Ready)
+	}
+	if dep.Available != 2 {
+		t.Errorf("available esperado 2, obtido %d", dep.Available)
+	}
+}
+
+// --- Testes de Services ---
+
+// TestFakeClient_GetServices_Sucesso verifica que o fake client retorna
+// services corretamente.
+func TestFakeClient_GetServices_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		services: []Service{
+			{Name: "nginx-svc", Namespace: "default", Type: "ClusterIP", ClusterIP: "10.96.0.1", Ports: "80/TCP"},
+			{Name: "api-svc", Namespace: "backend", Type: "LoadBalancer", ClusterIP: "10.96.0.2", Ports: "443/TCP, 80/TCP"},
+		},
+	}
+
+	svcs, err := fake.GetServices(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if len(svcs) != 2 {
+		t.Fatalf("esperado 2 services, obtido %d", len(svcs))
+	}
+
+	if svcs[0].Name != "nginx-svc" {
+		t.Errorf("nome do service[0] esperado 'nginx-svc', obtido '%s'", svcs[0].Name)
+	}
+	if svcs[0].Type != "ClusterIP" {
+		t.Errorf("tipo esperado 'ClusterIP', obtido '%s'", svcs[0].Type)
+	}
+	if svcs[1].Ports != "443/TCP, 80/TCP" {
+		t.Errorf("portas esperadas '443/TCP, 80/TCP', obtido '%s'", svcs[1].Ports)
+	}
+}
+
+// TestFakeClient_GetServices_Erro verifica propagação de erro em services.
+func TestFakeClient_GetServices_Erro(t *testing.T) {
+	fake := &FakeClient{
+		err: fmt.Errorf("timeout"),
+	}
+
+	svcs, err := fake.GetServices(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if svcs != nil {
+		t.Errorf("esperava services nil quando há erro, obtido %v", svcs)
+	}
+}
+
+// TestFakeClient_GetServices_Vazio verifica lista vazia de services.
+func TestFakeClient_GetServices_Vazio(t *testing.T) {
+	fake := &FakeClient{
+		services: []Service{},
+	}
+
+	svcs, err := fake.GetServices(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(svcs) != 0 {
+		t.Errorf("esperado 0 services, obtido %d", len(svcs))
+	}
+}
+
+// TestServiceStruct verifica a estrutura Service e seus campos.
+func TestServiceStruct(t *testing.T) {
+	svc := Service{
+		Name:      "meu-svc",
+		Namespace: "producao",
+		Type:      "NodePort",
+		ClusterIP: "10.96.0.5",
+		Ports:     "8080/TCP",
+	}
+
+	if svc.Name != "meu-svc" {
+		t.Errorf("nome esperado 'meu-svc', obtido '%s'", svc.Name)
+	}
+	if svc.Type != "NodePort" {
+		t.Errorf("tipo esperado 'NodePort', obtido '%s'", svc.Type)
+	}
+	if svc.ClusterIP != "10.96.0.5" {
+		t.Errorf("clusterIP esperado '10.96.0.5', obtido '%s'", svc.ClusterIP)
+	}
+}
+
+// --- Testes de Nodes ---
+
+// TestFakeClient_GetNodes_Sucesso verifica que o fake client retorna
+// nodes corretamente.
+func TestFakeClient_GetNodes_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		nodes: []Node{
+			{Name: "node-1", Status: "Ready", CPUCapacity: "4", MemoryCapacity: "8Gi", Version: "v1.29.0"},
+			{Name: "node-2", Status: "NotReady", CPUCapacity: "2", MemoryCapacity: "4Gi", Version: "v1.29.0"},
+		},
+	}
+
+	nodes, err := fake.GetNodes(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	if len(nodes) != 2 {
+		t.Fatalf("esperado 2 nodes, obtido %d", len(nodes))
+	}
+
+	if nodes[0].Name != "node-1" {
+		t.Errorf("nome do node[0] esperado 'node-1', obtido '%s'", nodes[0].Name)
+	}
+	if nodes[0].Status != "Ready" {
+		t.Errorf("status esperado 'Ready', obtido '%s'", nodes[0].Status)
+	}
+	if nodes[1].Status != "NotReady" {
+		t.Errorf("status esperado 'NotReady', obtido '%s'", nodes[1].Status)
+	}
+}
+
+// TestFakeClient_GetNodes_Erro verifica propagação de erro em nodes.
+func TestFakeClient_GetNodes_Erro(t *testing.T) {
+	fake := &FakeClient{
+		err: fmt.Errorf("cluster inacessível"),
+	}
+
+	nodes, err := fake.GetNodes(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if nodes != nil {
+		t.Errorf("esperava nodes nil quando há erro, obtido %v", nodes)
+	}
+}
+
+// TestFakeClient_GetNodes_Vazio verifica lista vazia de nodes.
+func TestFakeClient_GetNodes_Vazio(t *testing.T) {
+	fake := &FakeClient{
+		nodes: []Node{},
+	}
+
+	nodes, err := fake.GetNodes(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Errorf("esperado 0 nodes, obtido %d", len(nodes))
+	}
+}
+
+// TestNodeStruct verifica a estrutura Node e seus campos.
+func TestNodeStruct(t *testing.T) {
+	node := Node{
+		Name:           "meu-node",
+		Status:         "Ready",
+		CPUCapacity:    "8",
+		MemoryCapacity: "16Gi",
+		Version:        "v1.29.0",
+	}
+
+	if node.Name != "meu-node" {
+		t.Errorf("nome esperado 'meu-node', obtido '%s'", node.Name)
+	}
+	if node.Status != "Ready" {
+		t.Errorf("status esperado 'Ready', obtido '%s'", node.Status)
+	}
+	if node.CPUCapacity != "8" {
+		t.Errorf("cpu esperado '8', obtido '%s'", node.CPUCapacity)
+	}
+	if node.MemoryCapacity != "16Gi" {
+		t.Errorf("memória esperada '16Gi', obtida '%s'", node.MemoryCapacity)
+	}
+	if node.Version != "v1.29.0" {
+		t.Errorf("versão esperada 'v1.29.0', obtida '%s'", node.Version)
+	}
+}
+
+// --- Testes de StatefulSets ---
+
+// TestFakeClient_GetStatefulSets_Sucesso verifica que o fake client retorna
+// statefulsets corretamente.
+func TestFakeClient_GetStatefulSets_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		statefulsets: []StatefulSet{
+			{Name: "redis-ss", Namespace: "default", Replicas: 3, Ready: 3},
+			{Name: "mongo-ss", Namespace: "db", Replicas: 2, Ready: 1},
+		},
+	}
+
+	sets, err := fake.GetStatefulSets(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(sets) != 2 {
+		t.Fatalf("esperado 2 statefulsets, obtido %d", len(sets))
+	}
+	if sets[0].Name != "redis-ss" {
+		t.Errorf("nome esperado 'redis-ss', obtido '%s'", sets[0].Name)
+	}
+	if sets[1].Ready != 1 {
+		t.Errorf("ready esperado 1, obtido %d", sets[1].Ready)
+	}
+}
+
+// TestFakeClient_GetStatefulSets_Erro verifica propagação de erro em statefulsets.
+func TestFakeClient_GetStatefulSets_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("acesso negado")}
+	sets, err := fake.GetStatefulSets(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if sets != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", sets)
+	}
+}
+
+// --- Testes de Jobs ---
+
+// TestFakeClient_GetJobs_Sucesso verifica que o fake client retorna jobs corretamente.
+func TestFakeClient_GetJobs_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		jobs: []Job{
+			{Name: "backup-job", Namespace: "default", Completions: 1, Active: 0, Succeeded: 1, Failed: 0},
+			{Name: "migrate-job", Namespace: "db", Completions: 3, Active: 1, Succeeded: 1, Failed: 1},
+		},
+	}
+
+	jobs, err := fake.GetJobs(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("esperado 2 jobs, obtido %d", len(jobs))
+	}
+	if jobs[0].Name != "backup-job" {
+		t.Errorf("nome esperado 'backup-job', obtido '%s'", jobs[0].Name)
+	}
+	if jobs[1].Failed != 1 {
+		t.Errorf("failed esperado 1, obtido %d", jobs[1].Failed)
+	}
+}
+
+// TestFakeClient_GetJobs_Erro verifica propagação de erro em jobs.
+func TestFakeClient_GetJobs_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("timeout")}
+	jobs, err := fake.GetJobs(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if jobs != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", jobs)
+	}
+}
+
+// --- Testes de Ingresses ---
+
+// TestFakeClient_GetIngresses_Sucesso verifica que o fake client retorna ingresses corretamente.
+func TestFakeClient_GetIngresses_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		ingresses: []Ingress{
+			{Name: "web-ing", Namespace: "default", Class: "nginx", Hosts: "app.example.com", Paths: "/"},
+		},
+	}
+
+	ings, err := fake.GetIngresses(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(ings) != 1 {
+		t.Fatalf("esperado 1 ingress, obtido %d", len(ings))
+	}
+	if ings[0].Class != "nginx" {
+		t.Errorf("classe esperada 'nginx', obtida '%s'", ings[0].Class)
+	}
+}
+
+// TestFakeClient_GetIngresses_Erro verifica propagação de erro em ingresses.
+func TestFakeClient_GetIngresses_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("não autorizado")}
+	ings, err := fake.GetIngresses(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if ings != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", ings)
+	}
+}
+
+// --- Testes de ConfigMaps ---
+
+// TestFakeClient_GetConfigMaps_Sucesso verifica que o fake client retorna configmaps corretamente.
+func TestFakeClient_GetConfigMaps_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		configmaps: []ConfigMap{
+			{Name: "app-config", Namespace: "default", Keys: 5, DataSize: "2.1Ki"},
+		},
+	}
+
+	cms, err := fake.GetConfigMaps(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(cms) != 1 {
+		t.Fatalf("esperado 1 configmap, obtido %d", len(cms))
+	}
+	if cms[0].Keys != 5 {
+		t.Errorf("keys esperado 5, obtido %d", cms[0].Keys)
+	}
+}
+
+// TestFakeClient_GetConfigMaps_Erro verifica propagação de erro em configmaps.
+func TestFakeClient_GetConfigMaps_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("forbidden")}
+	cms, err := fake.GetConfigMaps(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if cms != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", cms)
+	}
+}
+
+// --- Testes de Events ---
+
+// TestFakeClient_GetEvents_Sucesso verifica que o fake client retorna eventos corretamente.
+func TestFakeClient_GetEvents_Sucesso(t *testing.T) {
+	fake := &FakeClient{
+		events: []Event{
+			{Name: "pod-1", Namespace: "default", Type: "Normal", Reason: "Scheduled", Message: "Pod scheduled", Age: "5m"},
+			{Name: "pod-2", Namespace: "default", Type: "Warning", Reason: "BackOff", Message: "Back-off restarting", Age: "2m"},
+		},
+	}
+
+	events, err := fake.GetEvents(ListFilter{})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("esperado 2 eventos, obtido %d", len(events))
+	}
+	if events[0].Type != "Normal" {
+		t.Errorf("tipo esperado 'Normal', obtido '%s'", events[0].Type)
+	}
+	if events[1].Type != "Warning" {
+		t.Errorf("tipo esperado 'Warning', obtido '%s'", events[1].Type)
+	}
+}
+
+// TestFakeClient_GetEvents_Erro verifica propagação de erro em eventos.
+func TestFakeClient_GetEvents_Erro(t *testing.T) {
+	fake := &FakeClient{err: fmt.Errorf("cluster offline")}
+	events, err := fake.GetEvents(ListFilter{})
+	if err == nil {
+		t.Fatal("esperava erro, mas obteve nil")
+	}
+	if events != nil {
+		t.Errorf("esperava nil quando há erro, obtido %v", events)
 	}
 }

@@ -4,7 +4,7 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
-	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -14,9 +14,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/executor"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -64,12 +64,7 @@ Pré-requisitos (verificados automaticamente):
 			// Smart Local Detection:
 			// If no host provided, and we are on Linux, ask if user wants to provision THIS machine.
 			if host == "" && runtime.GOOS == "linux" {
-				confirmLocal := false
-				prompt := &survey.Confirm{
-					Message: "Nenhum host remoto definido. Deseja provisionar ESTA máquina como uma VPS Yby (localhost)?",
-					Default: false,
-				}
-				_ = survey.AskOne(prompt, &confirmLocal)
+				confirmLocal, _ := prompter.Confirm("Nenhum host remoto definido. Deseja provisionar ESTA máquina como uma VPS Yby (localhost)?", false)
 
 				if confirmLocal {
 					isLocal = true
@@ -222,7 +217,8 @@ Pré-requisitos (verificados automaticamente):
 
 		// 7. Fetch Kubeconfig
 		fmt.Println(stepStyle.Render("🔄 Configurando acesso local (kubeconfig)..."))
-		if err := fetchKubeconfig(execClient, host); err != nil {
+		runner := &shared.RealRunner{}
+		if err := fetchKubeconfig(execClient, host, runner); err != nil {
 			return errors.Wrap(err, errors.ErrCodeConfig, "Erro ao configurar kubeconfig")
 		}
 
@@ -256,7 +252,9 @@ func runEx(e executor.Executor, name, script string) error {
 	return nil
 }
 
-func fetchKubeconfig(e executor.Executor, host string) error {
+func fetchKubeconfig(e executor.Executor, host string, runner shared.Runner) error {
+	ctx := context.Background()
+
 	contentBytes, err := e.FetchFile("/etc/rancher/k3s/k3s.yaml")
 	if err != nil {
 		return err
@@ -287,14 +285,14 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 
 	// 2. Renomear Contexto
 	os.Setenv("KUBECONFIG", tempFile.Name())
-	_ = execCommand("kubectl", "config", "rename-context", "default", clusterName).Run()
-	_ = execCommand("kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443").Run()
+	_ = runner.Run(ctx, "kubectl", "config", "rename-context", "default", clusterName)
+	_ = runner.Run(ctx, "kubectl", "config", "set-cluster", "default", "--server=https://"+host+":6443")
 	if skipTLSVerify {
 		slog.Warn("TLS verify desabilitado — conexão vulnerável a MITM", "host", host)
-		_ = execCommand("kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true").Run()
+		_ = runner.Run(ctx, "kubectl", "config", "set-cluster", "default", "--insecure-skip-tls-verify=true")
 	}
-	_ = execCommand("kubectl", "config", "rename-cluster", "default", clusterName).Run()
-	_ = execCommand("kubectl", "config", "rename-user", "default", clusterName+"-admin").Run()
+	_ = runner.Run(ctx, "kubectl", "config", "rename-cluster", "default", clusterName)
+	_ = runner.Run(ctx, "kubectl", "config", "rename-user", "default", clusterName+"-admin")
 	os.Unsetenv("KUBECONFIG")
 
 	// 3. Merge
@@ -308,16 +306,14 @@ func fetchKubeconfig(e executor.Executor, host string) error {
 		_ = copyFile(mainConfigPath, mainConfigPath+".bak")
 	}
 
-	cmd := execCommand("kubectl", "config", "view", "--flatten")
-	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s:%s", mainConfigPath, tempFile.Name()))
-
-	var merged bytes.Buffer
-	cmd.Stdout = &merged
-	if err := cmd.Run(); err != nil {
+	os.Setenv("KUBECONFIG", fmt.Sprintf("%s:%s", mainConfigPath, tempFile.Name()))
+	merged, err := runner.RunCombinedOutput(ctx, "kubectl", "config", "view", "--flatten")
+	os.Unsetenv("KUBECONFIG")
+	if err != nil {
 		return fmt.Errorf("erro no merge do kubeconfig: %v", err)
 	}
 
-	if err := os.WriteFile(mainConfigPath, merged.Bytes(), 0600); err != nil {
+	if err := os.WriteFile(mainConfigPath, merged, 0600); err != nil {
 		return err
 	}
 

@@ -18,13 +18,13 @@ jobs:
 
     steps:
       - name: 📥 Checkout develop
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           ref: "develop"
           fetch-depth: 0 # Need full history to calculate version
 
       - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4.1.0
         with:
           node-version: "18"
 

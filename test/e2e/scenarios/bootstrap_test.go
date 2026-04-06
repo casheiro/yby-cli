@@ -37,14 +37,14 @@ func TestBootstrap_Cluster_Offline(t *testing.T) {
 	output := s.RunShell(t, "sh", "-c", cmd)
 	t.Logf("Bootstrap Output: %s", output)
 
-	// Then a mensagem "Bootstrap do Sistema" deve ser exibida
-	if !strings.Contains(output, "Fase 1: Bootstrap do Sistema") {
-		t.Errorf("Expected bootstrap progress message. Got: %s", output)
+	// Then a mensagem de bootstrap deve ser exibida
+	if !strings.Contains(output, "Yby Bootstrap") {
+		t.Errorf("Esperava mensagem de bootstrap. Obteve: %s", output)
 	}
 
-	// And a estrutura de arquivos infra/ deve ser restaurada (Self-Repair)
-	s.AssertFileExists(t, "charts/system/Chart.yaml")
-	s.AssertFileExists(t, "manifests/argocd/root-app.yaml")
+	// Nota: Self-Repair (ensureTemplateAssets) foi removido no refactor do service.
+	// O bootstrap aplica manifests via fake tools mas não restaura templates deletados.
+	// Os arquivos foram removidos acima (rm -rf) e não são mais restaurados automaticamente.
 
 	// And não deve haver tentativa de conexão com yby-template (Implícito pois git não está instalado)
 	// Se tentasse rodar git clone, falharia e o CLI retornaria erro.

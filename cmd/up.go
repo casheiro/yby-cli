@@ -15,6 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var plainSecrets bool
+
 // upCmd represents the up command
 var upCmd = &cobra.Command{
 	Use:     "up",
@@ -75,6 +77,8 @@ Comportamento por Ambiente:
 
 func init() {
 	rootCmd.AddCommand(upCmd)
+	upCmd.Flags().BoolVar(&plainSecrets, "plain-secrets", false,
+		"Usa secrets simples (não encriptados) no ambiente local. Evita problemas ao recriar clusters.")
 }
 
 // newLocalEnvironmentService cria o serviço de ambiente local com todas as dependências (mockável em testes)
@@ -99,9 +103,10 @@ func runLocalUp(ctx context.Context, root string) error {
 	}
 
 	opts := environment.UpOptions{
-		Root:        root,
-		Environment: "local",
-		ClusterName: clusterName,
+		Root:         root,
+		Environment:  "local",
+		ClusterName:  clusterName,
+		PlainSecrets: plainSecrets,
 	}
 
 	// 3. Execution

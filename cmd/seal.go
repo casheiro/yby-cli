@@ -22,20 +22,53 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/spf13/cobra"
 )
 
-// surveyAsk é uma variável para permitir mocking nos testes
-var surveyAsk = survey.Ask
+// sealPrompt abstrai a coleta de dados do seal para testes.
+// Retorna (name, namespace, key, value, error).
+var sealPrompt = func() (string, string, string, string, error) {
+	name, err := prompter.Input("Nome do Secret:", "")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if name == "" {
+		return "", "", "", "", fmt.Errorf("nome é obrigatório")
+	}
+	ns, err := prompter.Input("Namespace:", "default")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if ns == "" {
+		return "", "", "", "", fmt.Errorf("namespace é obrigatório")
+	}
+	key, err := prompter.Input("Chave do Dado (ex: password):", "")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if err := validateSecretKey(key); err != nil {
+		return "", "", "", "", err
+	}
+	value, err := prompter.Password("Valor do Dado:")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	if value == "" {
+		return "", "", "", "", fmt.Errorf("valor é obrigatório")
+	}
+	return name, ns, key, value, nil
+}
+
+// sealPathPrompt abstrai a coleta do caminho de salvamento para testes.
+var sealPathPrompt = func(defaultPath string) (string, error) {
+	return prompter.Input("Onde salvar o arquivo?", defaultPath)
+}
 
 var sealStrategy string
 
@@ -66,86 +99,36 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			}
 		}
 
-		answers := struct {
-			Name      string
-			Namespace string
-			Key       string
-			Value     string
-		}{}
-
-		qs := []*survey.Question{
-			{
-				Name: "Name",
-				Prompt: &survey.Input{
-					Message: "Nome do Secret:",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Namespace",
-				Prompt: &survey.Input{
-					Message: "Namespace:",
-					Default: "default",
-				},
-				Validate: survey.Required,
-			},
-			{
-				Name: "Key",
-				Prompt: &survey.Input{
-					Message: "Chave do Dado (ex: password):",
-				},
-				Validate: validateSecretKey,
-			},
-			{
-				Name: "Value",
-				Prompt: &survey.Password{
-					Message: "Valor do Dado:",
-				},
-				Validate: survey.Required,
-			},
-		}
-
-		err := surveyAsk(qs, &answers)
+		name, namespace, key, value, err := sealPrompt()
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados do secret")
 		}
 
-		// 1. Gerar Secret (Dry Run)
-		fmt.Println("Gerando Secret...")
-		kubectlCmd := execCommand("kubectl", "create", "secret", "generic", answers.Name,
-			"--namespace", answers.Namespace,
-			fmt.Sprintf("--from-literal=%s=%s", answers.Key, answers.Value),
-			"--dry-run=client", "-o", "yaml")
+		// 1. Criar serviço e gerar Secret (Dry Run)
+		runner := &shared.RealRunner{}
+		fsys := &shared.RealFilesystem{}
+		svc := newSecretsService(runner, fsys)
 
-		var secretYaml bytes.Buffer
-		kubectlCmd.Stdout = &secretYaml
-		if err := kubectlCmd.Run(); err != nil {
+		fmt.Println("Gerando Secret...")
+		secretYaml, err := svc.GenerateSecretYAML(cmd.Context(), name, namespace, key, value)
+		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret")
 		}
 
-		root, err := FindInfraRoot()
-		if err != nil {
+		root, errRoot := FindInfraRoot()
+		if errRoot != nil {
 			root = "."
 		}
 
 		if sealStrategy == "sops" {
 			// 2a. Encriptar com SOPS + age
 			fmt.Println("Encriptando com SOPS...")
-			filename := fmt.Sprintf("sops-secret-%s.yaml", answers.Name)
+			filename := fmt.Sprintf("sops-secret-%s.yaml", name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/secrets")
 
-			pathPrompt := &survey.Input{
-				Message: "Onde salvar o arquivo?",
-				Default: filepath.Join(targetDir, filename),
-			}
-			var finalPath string
-			_ = askOne(pathPrompt, &finalPath)
+			finalPath, _ := sealPathPrompt(filepath.Join(targetDir, filename))
 
-			runner := &shared.RealRunner{}
-			fsys := &shared.RealFilesystem{}
-			svc := newSecretsService(runner, fsys)
-
-			if err := svc.EncryptWithSOPS(cmd.Context(), "", secretYaml.Bytes(), finalPath); err != nil {
+			if err := svc.EncryptWithSOPS(cmd.Context(), "", secretYaml, finalPath); err != nil {
 				return errors.Wrap(err, errors.ErrCodeExec, "falha ao encriptar secret com SOPS")
 			}
 
@@ -153,32 +136,15 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 			fmt.Println("Proximo passo: Commit e Push para o GitOps aplicar.")
 			fmt.Println("Para decriptar no cluster: sops --decrypt " + finalPath + " | kubectl apply -f -")
 		} else {
-			// 2b. Selar com Kubeseal (comportamento original)
+			// 2b. Selar com Kubeseal
 			fmt.Println("Selando com Kubeseal...")
-			kubesealCmd := execCommand("kubeseal", "--format", "yaml")
-			kubesealCmd.Stdin = &secretYaml
-
-			var sealedYaml bytes.Buffer
-			kubesealCmd.Stdout = &sealedYaml
-
-			if err := kubesealCmd.Run(); err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")
-			}
-
-			filename := fmt.Sprintf("sealed-secret-%s.yaml", answers.Name)
+			filename := fmt.Sprintf("sealed-secret-%s.yaml", name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/events")
 
-			pathPrompt := &survey.Input{
-				Message: "Onde salvar o arquivo?",
-				Default: filepath.Join(targetDir, filename),
-			}
-			var finalPath string
-			_ = askOne(pathPrompt, &finalPath)
+			finalPath, _ := sealPathPrompt(filepath.Join(targetDir, filename))
 
-			_ = os.MkdirAll(filepath.Dir(finalPath), 0755)
-
-			if err := os.WriteFile(finalPath, sealedYaml.Bytes(), 0600); err != nil {
-				return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar sealed secret")
+			if err := svc.SealWithKubeseal(cmd.Context(), secretYaml, finalPath); err != nil {
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")
 			}
 
 			fmt.Printf("\nSealedSecret salvo em: %s\n", finalPath)

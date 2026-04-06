@@ -169,6 +169,14 @@ func TestOllamaEmbedDocuments_MockServer_Success(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"models": []map[string]interface{}{{"name": "llama3"}},
 			})
+		case "/api/embed":
+			var req ollamaEmbedRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			embeddings := make([][]float32, len(req.Input))
+			for i := range req.Input {
+				embeddings[i] = []float32{0.1, 0.2, 0.3}
+			}
+			json.NewEncoder(w).Encode(ollamaEmbedResponse{Embeddings: embeddings})
 		case "/api/embeddings":
 			json.NewEncoder(w).Encode(ollamaEmbeddingResponse{
 				Embedding: []float32{0.1, 0.2, 0.3},

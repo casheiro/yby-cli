@@ -2,15 +2,16 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/AlecAivazis/survey/v2"
+	"github.com/casheiro/yby-cli/pkg/services/secrets"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -88,19 +89,16 @@ func TestValidateSecretKey_ChavesValidasComplexas(t *testing.T) {
 }
 
 func TestValidateSecretKey_MensagensDeErroEspecificas(t *testing.T) {
-	// Verifica que o sinal de igual tem mensagem específica
 	err := validateSecretKey("chave=valor")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "não pode conter '='",
 		"Erro para '=' deveria ter mensagem específica")
 
-	// Verifica que caractere inválido mostra o caractere no erro
 	err = validateSecretKey("chave@valor")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "@",
 		"Erro deveria mostrar o caractere inválido")
 
-	// Verifica que string vazia indica obrigatoriedade
 	err = validateSecretKey("")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "obrigatória",
@@ -130,22 +128,18 @@ func TestValidateSecretKey_TiposInvalidos(t *testing.T) {
 }
 
 func TestValidateSecretKey_ChaveComEspacosInternos(t *testing.T) {
-	// Espaço no meio da chave
 	err := validateSecretKey("my key")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "caractere inválido")
 
-	// Tab na chave
 	err = validateSecretKey("my\tkey")
 	assert.Error(t, err)
 
-	// Newline na chave
 	err = validateSecretKey("my\nkey")
 	assert.Error(t, err)
 }
 
 func TestValidateSecretKey_PrimeiroCaractereInvalido(t *testing.T) {
-	// Garante que a validação pega o primeiro caractere inválido
 	err := validateSecretKey(" leadingspace")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), " ",
@@ -153,8 +147,6 @@ func TestValidateSecretKey_PrimeiroCaractereInvalido(t *testing.T) {
 }
 
 func TestValidateSecretKey_ChaveMuitoLonga(t *testing.T) {
-	// Kubernetes tem limite de 253 caracteres para nomes, mas a função
-	// não valida tamanho - apenas caracteres. Chave de 1000 chars deveria passar.
 	longKey := strings.Repeat("a", 1000)
 	err := validateSecretKey(longKey)
 	assert.NoError(t, err, "Chave longa com caracteres válidos deveria ser aceita")
@@ -165,7 +157,6 @@ func TestValidateSecretKey_ChaveMuitoLonga(t *testing.T) {
 // ========================================================
 
 func TestSealCmd_TemRunEDefinido(t *testing.T) {
-	// RunE deve estar definido
 	assert.NotNil(t, sealCmd.RunE, "sealCmd.RunE não deveria ser nil")
 }
 
@@ -180,7 +171,6 @@ func TestSealCmd_LongDescription(t *testing.T) {
 // sealCmd.Run — testes de fluxo com mocks
 // ========================================================
 
-// captureOutput captura a saída padrão durante a execução de uma função
 func captureOutput(f func()) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
@@ -194,6 +184,34 @@ func captureOutput(f func()) string {
 	var buf bytes.Buffer
 	buf.ReadFrom(r)
 	return buf.String()
+}
+
+// mockSealDeps configura lookPath, sealPrompt e newSecretsService para testes do seal.
+func mockSealDeps(runner *testutil.MockRunner, fs *testutil.MockFilesystem) func() {
+	origLookPath := lookPath
+	origSealPrompt := sealPrompt
+	origFactory := newSecretsService
+
+	lookPath = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+
+	newSecretsService = func(r shared.Runner, f shared.Filesystem) secrets.Service {
+		return secrets.NewService(runner, fs)
+	}
+
+	return func() {
+		lookPath = origLookPath
+		sealPrompt = origSealPrompt
+		newSecretsService = origFactory
+	}
+}
+
+// mockSealAnswers configura sealPrompt para retornar respostas fixas
+func mockSealAnswers(name, namespace, key, value string) {
+	sealPrompt = func() (string, string, string, string, error) {
+		return name, namespace, key, value, nil
+	}
 }
 
 func TestSealCmd_KubectlNotFound(t *testing.T) {
@@ -236,44 +254,44 @@ func TestSealCmd_KubesealNotFound(t *testing.T) {
 		"Deveria informar que não foi encontrado")
 }
 
-func TestSealCmd_SurveyError(t *testing.T) {
+func TestSealCmd_PromptError(t *testing.T) {
 	origLookPath := lookPath
-	origSurveyAsk := surveyAsk
+	origSealPrompt := sealPrompt
 	defer func() {
 		lookPath = origLookPath
-		surveyAsk = origSurveyAsk
+		sealPrompt = origSealPrompt
 	}()
 
 	lookPath = func(file string) (string, error) {
 		return "/usr/bin/" + file, nil
 	}
 
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		return fmt.Errorf("prompt interrompido pelo usuário")
+	sealPrompt = func() (string, string, string, string, error) {
+		return "", "", "", "", fmt.Errorf("prompt interrompido pelo usuário")
 	}
 
 	err := sealCmd.RunE(sealCmd, []string{})
 
-	assert.Error(t, err, "Deveria retornar erro quando survey falha")
+	assert.Error(t, err, "Deveria retornar erro quando prompt falha")
 	assert.Contains(t, err.Error(), "prompt interrompido pelo usuário",
-		"Deveria conter a mensagem de erro do survey")
+		"Deveria conter a mensagem de erro do prompt")
 }
 
 func TestSealCmd_KubectlCreateFails(t *testing.T) {
-	teardown := mockExecCommand()
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if name == "kubectl" {
+				return nil, fmt.Errorf("kubectl create failed")
+			}
+			return []byte(""), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{}
+
+	teardown := mockSealDeps(runner, fs)
 	defer teardown()
 
-	origSurveyAsk := surveyAsk
-	defer func() { surveyAsk = origSurveyAsk }()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("fail-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
-	}
+	mockSealAnswers("fail-secret", "default", "password", "secret123")
 
 	err := sealCmd.RunE(sealCmd, []string{})
 
@@ -283,39 +301,28 @@ func TestSealCmd_KubectlCreateFails(t *testing.T) {
 }
 
 func TestSealCmd_KubesealFails(t *testing.T) {
-	// Configurar execCommand com mock customizado para kubeseal falhar
-	originalExecCommand := execCommand
-	originalLookPath := lookPath
-	origSurveyAsk := surveyAsk
-	defer func() {
-		execCommand = originalExecCommand
-		lookPath = originalLookPath
-		surveyAsk = origSurveyAsk
-	}()
-
-	lookPath = func(file string) (string, error) {
-		return "/usr/bin/" + file, nil
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			if name == "kubeseal" {
+				return nil, fmt.Errorf("kubeseal failed")
+			}
+			return []byte("sealed"), nil
+		},
 	}
+	fs := &testutil.MockFilesystem{}
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		env := []string{"GO_WANT_HELPER_PROCESS=1"}
-		if name == "kubeseal" {
-			env = append(env, "GO_KUBESEAL_FAIL=1")
-		}
-		cmd.Env = env
-		return cmd
-	}
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
 
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
+	mockSealAnswers("test-secret", "default", "password", "secret123")
+
+	origSealPathPrompt := sealPathPrompt
+	defer func() { sealPathPrompt = origSealPathPrompt }()
+	sealPathPrompt = func(defaultPath string) (string, error) {
+		return "/tmp/sealed-test.yaml", nil
 	}
 
 	err := sealCmd.RunE(sealCmd, []string{})
@@ -325,31 +332,31 @@ func TestSealCmd_KubesealFails(t *testing.T) {
 		"Deveria informar erro ao selar com kubeseal")
 }
 
-func TestSealCmd_SurveySuccess(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
-	origSurveyAsk := surveyAsk
-	origAskOne := askOne
-	defer func() {
-		surveyAsk = origSurveyAsk
-		askOne = origAskOne
-	}()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
+func TestSealCmd_Success(t *testing.T) {
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-content"), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{
+		MkdirAllFunc:  func(path string, perm os.FileMode) error { return nil },
+		WriteFileFunc: func(name string, data []byte, perm os.FileMode) error { return nil },
 	}
 
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
+
+	mockSealAnswers("test-secret", "default", "password", "secret123")
+
+	origSealPathPrompt := sealPathPrompt
+	defer func() { sealPathPrompt = origSealPathPrompt }()
+
 	tmpDir := t.TempDir()
-	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
-		r := response.(*string)
-		*r = filepath.Join(tmpDir, "sealed-secret-test.yaml")
-		return nil
+	sealPathPrompt = func(defaultPath string) (string, error) {
+		return filepath.Join(tmpDir, "sealed-secret-test.yaml"), nil
 	}
 
 	output := captureOutput(func() {
@@ -363,31 +370,35 @@ func TestSealCmd_SurveySuccess(t *testing.T) {
 }
 
 func TestSealCmd_SaveFileSuccess(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
-	origSurveyAsk := surveyAsk
-	origAskOne := askOne
-	defer func() {
-		surveyAsk = origSurveyAsk
-		askOne = origAskOne
-	}()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
-	}
-
 	tmpDir := t.TempDir()
 	savedPath := filepath.Join(tmpDir, "subdir", "sealed-secret-test.yaml")
-	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
-		r := response.(*string)
-		*r = savedPath
-		return nil
+
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-content"), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{
+		MkdirAllFunc: func(path string, perm os.FileMode) error {
+			return os.MkdirAll(path, perm)
+		},
+		WriteFileFunc: func(name string, data []byte, perm os.FileMode) error {
+			return os.WriteFile(name, data, perm)
+		},
+	}
+
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
+
+	mockSealAnswers("test-secret", "default", "password", "secret123")
+
+	origSealPathPrompt := sealPathPrompt
+	defer func() { sealPathPrompt = origSealPathPrompt }()
+	sealPathPrompt = func(defaultPath string) (string, error) {
+		return savedPath, nil
 	}
 
 	output := captureOutput(func() {
@@ -399,46 +410,46 @@ func TestSealCmd_SaveFileSuccess(t *testing.T) {
 	assert.Contains(t, output, savedPath,
 		"Deveria mostrar o caminho do arquivo salvo")
 
-	// Verificar que o arquivo foi realmente criado
 	_, err := os.Stat(savedPath)
 	assert.NoError(t, err, "O arquivo selado deveria existir em disco")
 
-	// Verificar conteúdo do arquivo
 	content, err := os.ReadFile(savedPath)
 	assert.NoError(t, err, "Deveria ser possível ler o arquivo salvo")
 	assert.NotEmpty(t, content, "O arquivo salvo não deveria estar vazio")
 }
 
 func TestSealCmd_SaveFileInvalidPath(t *testing.T) {
-	teardown := mockExecCommand()
-	defer teardown()
-
-	origSurveyAsk := surveyAsk
-	origAskOne := askOne
-	defer func() {
-		surveyAsk = origSurveyAsk
-		askOne = origAskOne
-	}()
-
-	surveyAsk = func(qs []*survey.Question, response interface{}, opts ...survey.AskOpt) error {
-		v := reflect.ValueOf(response).Elem()
-		v.FieldByName("Name").SetString("test-secret")
-		v.FieldByName("Namespace").SetString("default")
-		v.FieldByName("Key").SetString("password")
-		v.FieldByName("Value").SetString("secret123")
-		return nil
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("apiVersion: v1\nkind: Secret\n"), nil
+		},
+		RunStdinOutputFunc: func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-content"), nil
+		},
+	}
+	fs := &testutil.MockFilesystem{
+		MkdirAllFunc: func(path string, perm os.FileMode) error {
+			return os.MkdirAll(path, perm)
+		},
+		WriteFileFunc: func(name string, data []byte, perm os.FileMode) error {
+			return os.WriteFile(name, data, perm)
+		},
 	}
 
-	// Caminho inválido: diretório que não pode ser criado
-	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
-		r := response.(*string)
-		*r = "/dev/null/impossivel/sealed.yaml"
-		return nil
+	teardown := mockSealDeps(runner, fs)
+	defer teardown()
+
+	mockSealAnswers("test-secret", "default", "password", "secret123")
+
+	origSealPathPrompt := sealPathPrompt
+	defer func() { sealPathPrompt = origSealPathPrompt }()
+	sealPathPrompt = func(defaultPath string) (string, error) {
+		return "/dev/null/impossivel/sealed.yaml", nil
 	}
 
 	err := sealCmd.RunE(sealCmd, []string{})
 
 	assert.Error(t, err, "Deveria retornar erro ao salvar em caminho inválido")
-	assert.Contains(t, err.Error(), "falha ao salvar sealed secret",
-		"Deveria informar erro ao salvar em caminho inválido")
+	assert.Contains(t, err.Error(), "falha ao selar secret",
+		"Deveria informar erro ao selar em caminho inválido")
 }

@@ -13,31 +13,26 @@ func TestInit_Topology_Single(t *testing.T) {
 	s.Start(t)
 	defer s.Stop()
 
-	// Single Topology: Should only create production configs
+	// Single Topology: gera apenas ambiente local (mudança intencional em refactor anterior)
 	output := s.RunCLI(t, "init",
 		"--topology", "single",
 		"--workflow", "essential",
 		"--git-repo", "https://github.com/test/single",
-		"--env", "prod",
-		"--include-ci=false", // Minimal
+		"--env", "local",
+		"--include-ci=false",
 	)
 	t.Logf("Output: %s", output)
 
 	// Validate Environments
 	s.AssertFileExists(t, ".yby/environments.yaml")
-	s.AssertFileContains(t, ".yby/environments.yaml", "current: prod")
+	s.AssertFileContains(t, ".yby/environments.yaml", "current: local")
+	s.AssertFileContains(t, ".yby/environments.yaml", "local:")
 
-	// Should contain prod
-	s.AssertFileContains(t, ".yby/environments.yaml", "prod:")
+	// Single topology cria apenas values-local
+	s.AssertFileExists(t, "config/values-local.yaml")
 
-	// Should NOT contain local, dev, staging
-	// sandbox.AssertFileNotContains doesn't exist, we can inspect content manually or implement it.
-	// For now let's rely on file existence of config/values-*
-
-	s.AssertFileExists(t, "config/values-prod.yaml")
-
-	// Ensure other env values are NOT created
-	s.AssertFileNotExists(t, "config/values-local.yaml")
+	// Não deve criar outros ambientes
+	s.AssertFileNotExists(t, "config/values-prod.yaml")
 	s.AssertFileNotExists(t, "config/values-dev.yaml")
 	s.AssertFileNotExists(t, "config/values-staging.yaml")
 }

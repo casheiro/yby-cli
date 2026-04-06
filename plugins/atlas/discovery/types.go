@@ -9,11 +9,13 @@ type Blueprint struct {
 
 // Component representa uma unidade de software descoberta.
 type Component struct {
-	Name     string            `json:"name"`
-	Type     string            `json:"type"` // "app", "lib", "infra", "config", "helm", "kustomize"
-	Path     string            `json:"path"`
-	Tags     []string          `json:"tags,omitempty"`
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Name      string            `json:"name"`
+	Type      string            `json:"type"` // "app", "lib", "infra", "config", "helm", "kustomize"
+	Path      string            `json:"path"`
+	Language  string            `json:"language,omitempty"`  // "go", "nodejs", "python", "java", "rust", "csharp"
+	Framework string            `json:"framework,omitempty"` // ex: "gin", "express", "django", "spring-boot"
+	Tags      []string          `json:"tags,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
 // Relation representa um relacionamento entre componentes.

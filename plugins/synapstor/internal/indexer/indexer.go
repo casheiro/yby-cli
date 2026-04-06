@@ -80,53 +80,60 @@ func fileHash(path string) (string, error) {
 	return fmt.Sprintf("%x", h), nil
 }
 
-// Run executes the indexing pipeline
-func (i *Indexer) Run(ctx context.Context) error {
-	fmt.Println("🚀 Iniciando Indexação Semântica...")
+// IndexReport contém métricas coletadas durante o processo de indexação.
+type IndexReport struct {
+	FilesScanned      int
+	FilesSkipped      int
+	ChunksGenerated   int
+	EmbeddingsCreated int
+	Duration          time.Duration
+}
 
-	// 1. Gather files
+// Run executa o pipeline de indexação e retorna um relatório com métricas.
+func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
+	start := time.Now()
+	report := &IndexReport{}
+
+	// 1. Coletar arquivos
 	files, err := i.scanFiles()
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	report.FilesScanned = len(files)
 
 	if len(files) == 0 {
-		fmt.Println("⚠️  Nenhum arquivo markdown encontrado para indexar.")
-		return nil
+		report.Duration = time.Since(start)
+		return report, nil
 	}
-
-	fmt.Printf("📂 Encontrados %d arquivos. Processando chunks...\n", len(files))
 
 	// 2. Carregar manifest para indexação incremental
 	manifest := i.loadManifest()
 	newManifest := &IndexManifest{Files: make(map[string]IndexedFile)}
 
-	// 3. Process Files -> Chunks
+	// 3. Processar arquivos -> chunks
 	var allChunks []string
 	var allMetadatas []map[string]string
 	var allIDs []string
-	skipped := 0
 
 	for _, path := range files {
 		relPath, _ := filepath.Rel(i.RootDir, path)
 		hash, err := fileHash(path)
 		if err != nil {
-			fmt.Printf("⚠️  Erro ao calcular hash de %s: %v\n", relPath, err)
 			continue
 		}
 
 		// Verificar se já indexado e não mudou
 		if !i.FullReindex {
 			if existing, ok := manifest.Files[relPath]; ok && existing.SHA256 == hash {
-				newManifest.Files[relPath] = existing // Manter no novo manifest
-				skipped++
-				continue // Pular - já indexado
+				newManifest.Files[relPath] = existing
+				report.FilesSkipped++
+				continue
 			}
 		}
 
 		content, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Printf("⚠️  Erro ao ler %s: %v\n", path, err)
 			continue
 		}
 
@@ -141,7 +148,6 @@ func (i *Indexer) Run(ctx context.Context) error {
 				"filename": baseName,
 			}
 
-			// Extrair título do chunk se possível
 			lines := strings.Split(chunk, "\n")
 			for _, line := range lines {
 				if strings.HasPrefix(line, "# ") {
@@ -161,38 +167,54 @@ func (i *Indexer) Run(ctx context.Context) error {
 		}
 	}
 
-	if skipped > 0 {
-		fmt.Printf("⏭️  %d arquivos inalterados (pulados). Use --full para forçar reindexação.\n", skipped)
+	report.ChunksGenerated = len(allChunks)
+
+	// 3.5. Detectar arquivos removidos (presentes no manifest antigo, ausentes no novo)
+	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
+	var removedFiles []string
+	for relPath := range manifest.Files {
+		if _, exists := newManifest.Files[relPath]; !exists {
+			removedFiles = append(removedFiles, relPath)
+		}
+	}
+	if len(removedFiles) > 0 {
+		vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
+		if err == nil {
+			for _, relPath := range removedFiles {
+				_ = vs.DeleteByMetadata(ctx, map[string]string{"source": relPath})
+			}
+		}
 	}
 
 	// 4. Se não há chunks novos, salvar manifest e retornar
 	if len(allChunks) == 0 {
 		if err := i.saveManifest(newManifest); err != nil {
-			fmt.Printf("⚠️  Erro ao salvar manifest de indexação: %v\n", err)
+			return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)
 		}
-		fmt.Println("✅ Nenhum arquivo novo ou modificado para indexar.")
-		return nil
+		report.Duration = time.Since(start)
+		return report, nil
 	}
 
-	// 5. Initialize Vector Store
-	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
+	// 5. Inicializar Vector Store
 	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
 	if err != nil {
-		return fmt.Errorf("falha ao inicializar vector store: %w", err)
+		return nil, fmt.Errorf("falha ao inicializar vector store: %w", err)
 	}
 
-	// 6. Index
+	// 6. Indexar
 	if err := vs.AddDocuments(ctx, allChunks, allMetadatas, allIDs); err != nil {
-		return err
+		return nil, err
 	}
+
+	report.EmbeddingsCreated = len(allChunks)
 
 	// 7. Salvar manifest atualizado
 	if err := i.saveManifest(newManifest); err != nil {
-		fmt.Printf("⚠️  Erro ao salvar manifest de indexação: %v\n", err)
+		return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)
 	}
 
-	fmt.Printf("✅ Indexação concluída! %d fragmentos de conhecimento salvos em %s\n", len(allChunks), storePath)
-	return nil
+	report.Duration = time.Since(start)
+	return report, nil
 }
 
 func (i *Indexer) scanFiles() ([]string, error) {

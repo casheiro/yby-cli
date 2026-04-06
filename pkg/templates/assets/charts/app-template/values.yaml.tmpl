@@ -46,9 +46,9 @@ service:
 
 ingress:
   enabled: true
-  className: "traefik"
+  className: "{{ resolveIngress "traefik" }}"
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: {{ resolveTLSIssuer "letsencrypt-prod" }}
   hosts:
     - host: {{ .ProjectName }}.{{ .Domain }}
       paths:

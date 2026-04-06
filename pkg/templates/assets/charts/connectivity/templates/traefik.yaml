@@ -16,7 +16,7 @@ metadata:
     traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
     {{- end }}
 spec:
-  ingressClassName: traefik
+  ingressClassName: {{ .Values.ingress.className | default "traefik" }}
   {{- if $tlsEnabled }}
   tls:
   - hosts:
@@ -48,7 +48,7 @@ metadata:
     traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
     {{- end }}
 spec:
-  ingressClassName: traefik
+  ingressClassName: {{ .Values.ingress.className | default "traefik" }}
   {{- if $tlsEnabled }}
   tls:
   - hosts:
@@ -80,7 +80,7 @@ metadata:
     traefik.ingress.kubernetes.io/ipwhitelist-sourceRange: {{ join "," $whitelist.sourceRanges | quote }}
     {{- end }}
 spec:
-  ingressClassName: traefik
+  ingressClassName: {{ .Values.ingress.className | default "traefik" }}
   {{- if $tlsEnabled }}
   tls:
   - hosts:

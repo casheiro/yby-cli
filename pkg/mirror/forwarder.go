@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,8 +85,9 @@ type PortForwarder struct {
 	out       io.Writer
 
 	// Interfaces injetáveis para testes
-	podLister    PodLister
-	tunnelDialer TunnelDialer
+	podLister     PodLister
+	tunnelDialer  TunnelDialer
+	healthChecker HealthChecker
 }
 
 // NewPortForwarder creates a new PortForwarder instance
@@ -106,16 +108,17 @@ func NewPortForwarder(namespace, service string, targetPort int) (*PortForwarder
 	}
 
 	return &PortForwarder{
-		Namespace:    namespace,
-		Service:      service,
-		TargetPort:   targetPort,
-		stopCh:       make(chan struct{}),
-		readyCh:      make(chan struct{}),
-		clientset:    clientset,
-		config:       config,
-		out:          io.Discard,
-		podLister:    &k8sPodLister{clientset: clientset},
-		tunnelDialer: &k8sTunnelDialer{clientset: clientset, config: config},
+		Namespace:     namespace,
+		Service:       service,
+		TargetPort:    targetPort,
+		stopCh:        make(chan struct{}),
+		readyCh:       make(chan struct{}),
+		clientset:     clientset,
+		config:        config,
+		out:           io.Discard,
+		podLister:     &k8sPodLister{clientset: clientset},
+		tunnelDialer:  &k8sTunnelDialer{clientset: clientset, config: config},
+		healthChecker: NewTCPHealthChecker(3 * time.Second),
 	}, nil
 }
 
@@ -183,4 +186,12 @@ func (pf *PortForwarder) Start(ctx context.Context) (int, error) {
 // Stop terminates the port forwarding session
 func (pf *PortForwarder) Stop() {
 	close(pf.stopCh)
+}
+
+// HealthCheck verifica se o port-forward está ativo
+func (pf *PortForwarder) HealthCheck(ctx context.Context) error {
+	if pf.healthChecker == nil {
+		return fmt.Errorf("health checker não configurado")
+	}
+	return pf.healthChecker.Check(ctx, pf.LocalPort)
 }

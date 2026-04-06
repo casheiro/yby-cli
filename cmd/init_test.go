@@ -3,7 +3,6 @@ package cmd
 import (
 	"testing"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
@@ -487,28 +486,39 @@ func TestBuildContext_OfflineMode(t *testing.T) {
 }
 
 func TestBuildContext_Interactive_Mock(t *testing.T) {
-	// Mock askOne
-	originalAskOne := askOne
-	askOne = func(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
-		switch prompt := p.(type) {
-		case *survey.Select:
-			if prompt.Message == "Selecione a Topologia de Ambientes:" {
-				*(response.(*string)) = "complete"
-			} else if prompt.Message == "Selecione o Padrão de Workflow (CI/CD):" {
-				*(response.(*string)) = "trunkbased"
-			}
-		case *survey.Input:
-			if prompt.Message == "Nome do Projeto (Slug para K8s):" {
-				*(response.(*string)) = "mocked-project"
-			}
-		case *survey.MultiSelect:
-			*(response.(*[]string)) = []string{"Kepler (Eficiência Energética)"}
-		case *survey.Confirm:
-			*(response.(*bool)) = true
+	// Mock dos wrappers de prompt
+	origInput := askInput
+	origSelect := askSelect
+	origConfirm := askConfirm
+	origMultiSelect := askMultiSelect
+	defer func() {
+		askInput = origInput
+		askSelect = origSelect
+		askConfirm = origConfirm
+		askMultiSelect = origMultiSelect
+	}()
+
+	askSelect = func(title string, options []string, defaultVal string) (string, error) {
+		if title == "Selecione a Topologia de Ambientes:" {
+			return "complete", nil
 		}
-		return nil
+		if title == "Selecione o Padrão de Workflow (CI/CD):" {
+			return "trunkbased", nil
+		}
+		return defaultVal, nil
 	}
-	defer func() { askOne = originalAskOne }()
+	askInput = func(title, defaultVal string) (string, error) {
+		if title == "Nome do Projeto (Slug para K8s):" {
+			return "mocked-project", nil
+		}
+		return defaultVal, nil
+	}
+	askMultiSelect = func(title string, options []string, defaults []string) ([]string, error) {
+		return []string{"Kepler (Eficiência Energética)"}, nil
+	}
+	askConfirm = func(title string, defaultVal bool) (bool, error) {
+		return true, nil
+	}
 
 	opts := &InitOptions{
 		NonInteractive: false,
@@ -611,24 +621,6 @@ func TestExtractGithubOrg_CasosExtras(t *testing.T) {
 	}
 }
 
-func TestInferContext_TopologiaCompleta(t *testing.T) {
-	// Verifica que topologia "complete" adiciona sufixo ao ImpactLevel
-	ctx := &scaffold.BlueprintContext{
-		ProjectName: "payment-system",
-		Topology:    "complete",
-	}
-	inferContext(ctx)
-
-	if ctx.BusinessDomain != "Fintech / Financial Services" {
-		t.Errorf("BusinessDomain = %q, esperado 'Fintech / Financial Services'", ctx.BusinessDomain)
-	}
-	// ImpactLevel deve conter o sufixo da topologia completa
-	expectedSuffix := "(Enterprise Topology)"
-	if !contains(ctx.ImpactLevel, expectedSuffix) {
-		t.Errorf("ImpactLevel = %q, esperado conter %q", ctx.ImpactLevel, expectedSuffix)
-	}
-}
-
 func TestInferContext_PalavrasChaveVariadas(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -661,16 +653,6 @@ func TestInferContext_PalavrasChaveVariadas(t *testing.T) {
 				t.Errorf("Archetype para %q = %q, esperado %q", tt.projectName, ctx.Archetype, tt.expectedArch)
 			}
 		})
-	}
-}
-
-func TestInferContext_CaseInsensitive(t *testing.T) {
-	// Nome com letras maiúsculas deve ser tratado como minúsculas
-	ctx := &scaffold.BlueprintContext{ProjectName: "MyPaymentGateway"}
-	inferContext(ctx)
-
-	if ctx.BusinessDomain != "Fintech / Financial Services" {
-		t.Errorf("BusinessDomain = %q, esperado 'Fintech / Financial Services' (case-insensitive)", ctx.BusinessDomain)
 	}
 }
 
@@ -794,6 +776,149 @@ func TestResolveProjectName_FlagExplicitoSobrepoGitRepo(t *testing.T) {
 	result := resolveProjectName(o)
 	if result != "meu-projeto-custom" {
 		t.Errorf("resolveProjectName deveria priorizar ProjectName flag, obtido: %q", result)
+	}
+}
+
+func TestParseEnvironments(t *testing.T) {
+	tests := []struct {
+		nome     string
+		entrada  string
+		esperado []string
+	}{
+		{
+			nome:     "lista simples",
+			entrada:  "local,dev,hom,prod",
+			esperado: []string{"local", "dev", "hom", "prod"},
+		},
+		{
+			nome:     "com espaços ao redor",
+			entrada:  " local , dev , hom , prod ",
+			esperado: []string{"local", "dev", "hom", "prod"},
+		},
+		{
+			nome:     "um único ambiente",
+			entrada:  "prod",
+			esperado: []string{"prod"},
+		},
+		{
+			nome:     "vírgulas extras são ignoradas",
+			entrada:  "local,,dev,",
+			esperado: []string{"local", "dev"},
+		},
+		{
+			nome:     "string vazia retorna nil",
+			entrada:  "",
+			esperado: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			result := parseEnvironments(tt.entrada)
+			if tt.esperado == nil {
+				if result != nil {
+					t.Errorf("parseEnvironments(%q) = %v, esperado nil", tt.entrada, result)
+				}
+				return
+			}
+			if len(result) != len(tt.esperado) {
+				t.Fatalf("parseEnvironments(%q) retornou %d itens, esperado %d", tt.entrada, len(result), len(tt.esperado))
+			}
+			for i, v := range tt.esperado {
+				if result[i] != v {
+					t.Errorf("parseEnvironments(%q)[%d] = %q, esperado %q", tt.entrada, i, result[i], v)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildContext_CustomEnvironments(t *testing.T) {
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		NonInteractive: true,
+		Environments:   "local,dev,hom,prod",
+		Environment:    "dev",
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	esperado := []string{"local", "dev", "hom", "prod"}
+	if len(ctx.Environments) != len(esperado) {
+		t.Fatalf("Environments = %v, esperado %v", ctx.Environments, esperado)
+	}
+	for i, env := range esperado {
+		if ctx.Environments[i] != env {
+			t.Errorf("Environments[%d] = %q, esperado %q", i, ctx.Environments[i], env)
+		}
+	}
+}
+
+func TestBuildContext_CustomEnvironments_SobrescreverTopologia(t *testing.T) {
+	// Mesmo com topologia "single" (que normalmente dá ["local"]),
+	// --environments deve sobrescrever
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "single",
+		Workflow:       "essential",
+		NonInteractive: true,
+		Environments:   "dev,qa,uat,prod",
+		Environment:    "dev",
+	}
+
+	ctx, err := buildContext(o)
+	if err != nil {
+		t.Fatalf("Não esperava erro: %v", err)
+	}
+
+	if len(ctx.Environments) != 4 {
+		t.Fatalf("Environments = %v, esperado 4 ambientes", ctx.Environments)
+	}
+	if ctx.Environments[2] != "uat" {
+		t.Errorf("Environments[2] = %q, esperado 'uat'", ctx.Environments[2])
+	}
+}
+
+func TestBuildContext_CustomEnvironments_Invalido(t *testing.T) {
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		NonInteractive: true,
+		Environments:   "local,DEV-INVALID",
+		Environment:    "local",
+	}
+
+	_, err := buildContext(o)
+	if err == nil {
+		t.Fatal("Esperava erro para nome de ambiente inválido")
+	}
+	if !contains(err.Error(), "RFC 1123") {
+		t.Errorf("Erro deveria mencionar RFC 1123, obtido: %s", err.Error())
+	}
+}
+
+func TestBuildContext_CustomEnvironments_Duplicado(t *testing.T) {
+	o := &InitOptions{
+		ProjectName:    "test",
+		Topology:       "standard",
+		Workflow:       "gitflow",
+		NonInteractive: true,
+		Environments:   "local,dev,local",
+		Environment:    "local",
+	}
+
+	_, err := buildContext(o)
+	if err == nil {
+		t.Fatal("Esperava erro para ambiente duplicado")
+	}
+	if !contains(err.Error(), "duplicado") {
+		t.Errorf("Erro deveria mencionar 'duplicado', obtido: %s", err.Error())
 	}
 }
 

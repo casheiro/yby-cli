@@ -124,12 +124,126 @@ func TestEnvironmentService_Up_BootstrapError(t *testing.T) {
 	}
 }
 
-func TestEnvironmentService_Up_Remote(t *testing.T) {
+func TestEnvironmentService_Up_PlainSecrets_PropagarParaBootstrap(t *testing.T) {
+	var receivedPlainSecrets bool
+	cluster := &MockClusterManager{
+		ExistsFunc: func(ctx context.Context, name string) (bool, error) { return true, nil },
+		StartFunc:  func(ctx context.Context, name string) error { return nil },
+	}
+	mirror := &MockMirrorService{}
+	bs := &MockBootstrapService{
+		RunFunc: func(ctx context.Context, opts bootstrap.BootstrapOptions) error {
+			receivedPlainSecrets = opts.PlainSecrets
+			return nil
+		},
+	}
 	runner := &MockRunner{}
-	svc := NewEnvironmentService(runner, nil, nil, nil, nil)
-	// Remote environment should not fail (just prints message)
-	err := svc.Up(context.Background(), UpOptions{Environment: "staging"})
+	svc := NewEnvironmentService(runner, nil, cluster, mirror, bs)
+
+	err := svc.Up(context.Background(), UpOptions{
+		Root:         "/tmp/infra",
+		Environment:  "local",
+		ClusterName:  "yby-test",
+		PlainSecrets: true,
+	})
 	if err != nil {
-		t.Errorf("expected no error for remote environment, got: %v", err)
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !receivedPlainSecrets {
+		t.Error("PlainSecrets deveria ser propagado para BootstrapOptions")
+	}
+}
+
+func TestEnvironmentService_Up_Remote_Sucesso(t *testing.T) {
+	runner := &MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("Kubernetes control plane is running"), nil
+		},
+	}
+	svc := NewEnvironmentService(runner, nil, nil, nil, nil)
+	err := svc.Up(context.Background(), UpOptions{Environment: "staging", Namespace: "default"})
+	if err != nil {
+		t.Errorf("esperado sem erro para ambiente remoto com cluster acessível, obtido: %v", err)
+	}
+}
+
+func TestEnvironmentService_Up_Remote_ClusterOffline(t *testing.T) {
+	runner := &MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, errors.New("connection refused")
+		},
+	}
+	svc := NewEnvironmentService(runner, nil, nil, nil, nil)
+	err := svc.Up(context.Background(), UpOptions{Environment: "staging"})
+	if err == nil {
+		t.Error("esperado erro quando cluster remoto está offline, obtido nil")
+	}
+}
+
+func TestEnvironmentService_Up_Remote_NamespaceNaoExiste_CriadoComSucesso(t *testing.T) {
+	calls := []string{}
+	runner := &MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if len(args) > 0 && args[0] == "cluster-info" {
+				return []byte("Kubernetes control plane is running"), nil
+			}
+			if len(args) > 1 && args[0] == "get" && args[1] == "namespace" {
+				return nil, errors.New("not found")
+			}
+			// get pods argocd
+			return []byte("argocd-server-abc123 1/1 Running"), nil
+		},
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			calls = append(calls, name+" "+args[0])
+			return nil
+		},
+	}
+	svc := NewEnvironmentService(runner, nil, nil, nil, nil)
+	err := svc.Up(context.Background(), UpOptions{Environment: "staging", Namespace: "my-app"})
+	if err != nil {
+		t.Errorf("esperado sem erro, obtido: %v", err)
+	}
+	found := false
+	for _, c := range calls {
+		if c == "kubectl create" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("esperado que namespace fosse criado via kubectl create")
+	}
+}
+
+func TestEnvironmentService_Up_Remote_NamespaceCriacaoFalha(t *testing.T) {
+	runner := &MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if len(args) > 0 && args[0] == "cluster-info" {
+				return []byte("Kubernetes control plane is running"), nil
+			}
+			// namespace get falha
+			return nil, errors.New("not found")
+		},
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			return errors.New("forbidden")
+		},
+	}
+	svc := NewEnvironmentService(runner, nil, nil, nil, nil)
+	err := svc.Up(context.Background(), UpOptions{Environment: "staging", Namespace: "restricted-ns"})
+	if err == nil {
+		t.Error("esperado erro quando criação de namespace falha, obtido nil")
+	}
+}
+
+func TestEnvironmentService_Up_Remote_NamespacePadrao(t *testing.T) {
+	runner := &MockRunner{
+		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("ok"), nil
+		},
+	}
+	svc := NewEnvironmentService(runner, nil, nil, nil, nil)
+	// Namespace vazio deve usar "default"
+	err := svc.Up(context.Background(), UpOptions{Environment: "production"})
+	if err != nil {
+		t.Errorf("esperado sem erro, obtido: %v", err)
 	}
 }

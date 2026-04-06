@@ -19,19 +19,19 @@ spec:
   # Clusters de destino permitidos (namespaces restritos ao projeto)
   destinations:
   - namespace: {{ .ProjectName }}
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
   - namespace: argocd
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
   - namespace: ingress-system
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
   - namespace: argo-events
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
   - namespace: monitoring
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
   - namespace: storage
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
   - namespace: sealed-secrets
-    server: https://kubernetes.default.svc
+    server: {{ .DestinationServer | default "https://kubernetes.default.svc" }}
 
   # Recursos cluster-wide permitidos (restrito ao necessário)
   clusterResourceWhitelist:

@@ -13,10 +13,14 @@ spec:
       template:
         spec:
           serviceAccountName: argo-workflow-executor
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           restartPolicy: OnFailure
           containers:
           - name: health-check
-            image: bitnami/kubectl:1.31
+            image: {{ .Values.images.kubectl }}
             command: [bash, -c]
             args:
             - |

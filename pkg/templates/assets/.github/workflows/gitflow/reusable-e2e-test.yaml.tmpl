@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0 # Full history might be needed for some git commands in tests
 
@@ -29,7 +29,7 @@ jobs:
         run: k3d cluster create {{ .ProjectName }}-ci-test --wait
 
       - name: 🧰 Setup yq
-        uses: mikefarah/yq@master
+        uses: mikefarah/yq@v4.44.6
 
       - name: 📝 Mock Config (Bypass Init)
         run: |

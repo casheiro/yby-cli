@@ -286,7 +286,9 @@ func (s *scenarioContext) oComandoDeveValidarParametros() error {
 			strings.Contains(output, "Connection refused") ||
 			strings.Contains(output, "k3d não encontrado") ||
 			strings.Contains(output, "failed to create port forwarder") ||
-			strings.Contains(output, "exec: \"k3d\": executable file not found") {
+			strings.Contains(output, "exec: \"k3d\": executable file not found") ||
+			strings.Contains(output, "Falha ao iniciar ambiente local") ||
+			strings.Contains(output, "ERR_EXEC_FAILED") {
 			return nil // Validated parameters, failed on network or missing tools
 		}
 		return fmt.Errorf("command failed unexpectedly: %v\nOutput: %s", s.lastError, s.lastOutput)

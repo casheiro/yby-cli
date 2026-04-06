@@ -140,6 +140,111 @@ func TestSOPSStrategy_Name(t *testing.T) {
 	assert.Equal(t, "sops", s.Name())
 }
 
+func TestSealedSecretsStrategy_GenerateSecret_Success(t *testing.T) {
+	ctx := context.Background()
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("secret-yaml"), nil
+		},
+		RunStdinOutputFunc: func(_ context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return []byte("sealed-yaml"), nil
+		},
+	}
+	fsys := &testutil.MockFilesystem{
+		MkdirAllFunc:  func(path string, perm fs.FileMode) error { return nil },
+		WriteFileFunc: func(name string, data []byte, perm fs.FileMode) error { return nil },
+	}
+
+	strategy := NewSealedSecretsStrategy(runner, fsys)
+	err := strategy.GenerateSecret(ctx, SecretOpts{
+		Name:       "meu-secret",
+		Namespace:  "default",
+		OutputPath: "/tmp/sealed.yaml",
+		Data:       map[string]string{"chave": "valor"},
+	})
+	assert.NoError(t, err)
+}
+
+func TestSealedSecretsStrategy_GenerateSecret_KubectlError(t *testing.T) {
+	ctx := context.Background()
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("kubectl falhou")
+		},
+	}
+	fsys := &testutil.MockFilesystem{}
+
+	strategy := NewSealedSecretsStrategy(runner, fsys)
+	err := strategy.GenerateSecret(ctx, SecretOpts{
+		Name:       "s",
+		Namespace:  "ns",
+		OutputPath: "/tmp/out.yaml",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "kubectl falhou")
+}
+
+func TestSealedSecretsStrategy_GenerateSecret_SealAndSaveError(t *testing.T) {
+	ctx := context.Background()
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("secret-yaml"), nil
+		},
+		RunStdinOutputFunc: func(_ context.Context, stdin string, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("kubeseal falhou")
+		},
+	}
+	fsys := &testutil.MockFilesystem{}
+
+	strategy := NewSealedSecretsStrategy(runner, fsys)
+	err := strategy.GenerateSecret(ctx, SecretOpts{
+		Name:       "s",
+		Namespace:  "ns",
+		OutputPath: "/tmp/out.yaml",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "kubeseal")
+}
+
+func TestExternalSecretsStrategy_GenerateSecret_MkdirAllError(t *testing.T) {
+	ctx := context.Background()
+	runner := &testutil.MockRunner{}
+	fsys := &testutil.MockFilesystem{
+		MkdirAllFunc: func(path string, perm fs.FileMode) error { return fmt.Errorf("mkdir falhou") },
+	}
+
+	strategy := NewExternalSecretsStrategy(runner, fsys)
+	err := strategy.GenerateSecret(ctx, SecretOpts{
+		Name:       "s",
+		Namespace:  "ns",
+		OutputPath: "/tmp/dir/out.yaml",
+		Data:       map[string]string{"k": "v"},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "erro ao criar diretório")
+}
+
+func TestExternalSecretsStrategy_GenerateSecret_CustomStoreRef(t *testing.T) {
+	ctx := context.Background()
+	var writtenData []byte
+	runner := &testutil.MockRunner{}
+	fsys := &testutil.MockFilesystem{
+		MkdirAllFunc:  func(path string, perm fs.FileMode) error { return nil },
+		WriteFileFunc: func(name string, data []byte, perm fs.FileMode) error { writtenData = data; return nil },
+	}
+
+	strategy := NewExternalSecretsStrategy(runner, fsys)
+	err := strategy.GenerateSecret(ctx, SecretOpts{
+		Name:       "s",
+		Namespace:  "ns",
+		OutputPath: "/tmp/es.yaml",
+		StoreRef:   "custom-store",
+		Data:       map[string]string{"k": "v"},
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, string(writtenData), "custom-store")
+}
+
 func TestSecretOpts_Structure(t *testing.T) {
 	opts := SecretOpts{
 		Name:       "my-secret",

@@ -2,11 +2,14 @@ package scaffold
 
 // EnvironmentOverrides contém os valores específicos por ambiente para geração de values files.
 type EnvironmentOverrides struct {
-	Environment string
-	TLSIssuer   string
-	Insecure    bool
-	Retention   string
-	Resources   ResourceOverrides
+	Environment  string
+	TLSIssuer    string
+	Insecure     bool
+	Retention    string
+	Resources    ResourceOverrides
+	EnableKepler *bool
+	EnableKEDA   *bool
+	EnableMinio  *bool
 }
 
 // ResourceOverrides contém overrides de recursos por ambiente.
@@ -70,9 +73,38 @@ func GetEnvironmentOverrides(env string) EnvironmentOverrides {
 	}
 }
 
+// resolveFeature retorna o valor per-environment se definido, senão usa o fallback global.
+func resolveFeature(override *bool, global bool) bool {
+	if override != nil {
+		return *override
+	}
+	return global
+}
+
 // RenderEnvironmentValues gera o conteúdo YAML de um values file para um ambiente específico.
 func RenderEnvironmentValues(ctx *BlueprintContext, env string) string {
 	ov := GetEnvironmentOverrides(env)
+
+	// Enterprise override: se TLS issuer estiver definido, sobrescreve o default por ambiente
+	if ctx.Overrides != nil && ctx.Overrides.TLS.Issuer != "" {
+		ov.TLSIssuer = ctx.Overrides.TLS.Issuer
+	}
+
+	// Enterprise override: se resource profile estiver definido, ajustar PrometheusMemory
+	if ctx.Overrides != nil && ctx.Overrides.Profiles.Resources != "" {
+		rp := ctx.Overrides.ResourceProfile()
+		ov.Resources.PrometheusMemory = rp.MemoryRequest
+	}
+
+	// Enterprise override: observability mode
+	observabilityMode := "prometheus"
+	if ctx.Overrides != nil && ctx.Overrides.Observability.Mode != "" {
+		observabilityMode = ctx.Overrides.Observability.Mode
+	}
+
+	keplerEnabled := resolveFeature(ov.EnableKepler, ctx.EnableKepler)
+	kedaEnabled := resolveFeature(ov.EnableKEDA, ctx.EnableKEDA)
+	minioEnabled := resolveFeature(ov.EnableMinio, ctx.EnableMinio)
 
 	insecureStr := "false"
 	if ov.Insecure {
@@ -119,7 +151,7 @@ ingress:
     issuer: ` + ov.TLSIssuer + `
 
 observability:
-  mode: prometheus
+  mode: ` + observabilityMode + `
   prometheus:
     retention: "` + ov.Retention + `"
     resources:
@@ -127,14 +159,14 @@ observability:
         memory: ` + ov.Resources.PrometheusMemory + `
 
 kepler:
-  enabled: ` + boolStr(ctx.EnableKepler) + `
+  enabled: ` + boolStr(keplerEnabled) + `
 
 keda:
-  enabled: ` + boolStr(ctx.EnableKEDA) + `
+  enabled: ` + boolStr(kedaEnabled) + `
 
 storage:
   minio:
-    enabled: ` + boolStr(ctx.EnableMinio) + `
+    enabled: ` + boolStr(minioEnabled) + `
 `
 }
 

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/plugin"
@@ -82,18 +84,22 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 }
 
 // handleExecutionError trata erros de execução, diferenciando YbyError de erros genéricos.
+// Exibe hints (sugestões de correção) quando disponíveis.
 func handleExecutionError(err error) {
 	var yerr *errors.YbyError
 	if stdErr.As(err, &yerr) {
 		if logLevelFlag == "debug" {
-			// Na flag verbose/debug, printa o stack trace verboso %+v
 			slog.Error("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
 		} else {
-			// Se for normal, printa só a mensagem controlada
 			slog.Error("Falha na execução", "code", yerr.Code, "message", yerr.Message)
+		}
+		// Exibe hint do erro ou do registry padrão
+		if hint := yerr.GetHint(); hint != "" {
+			slog.Info("Dica", "sugestão", hint)
 		}
 	} else {
 		slog.Error("Falha inesperada", "erro", err)
+		slog.Info("Dica", "sugestão", errors.GenericHint)
 	}
 }
 
@@ -101,6 +107,7 @@ func handleExecutionError(err error) {
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	pm := newRootPluginManager()
+	pm.EnableTrustCheck()
 	discoverPlugins(rootCmd, pm)
 
 	start := time.Now()
@@ -108,6 +115,11 @@ func Execute() {
 
 	telemetry.Record("yby-cli", time.Since(start), err)
 	telemetry.Flush()
+
+	cfg := config.Get()
+	if flushErr := telemetry.FlushToFile(cfg.Telemetry.Enabled); flushErr != nil {
+		slog.Debug("Falha ao persistir telemetria", "erro", flushErr)
+	}
 
 	if err != nil {
 		handleExecutionError(err)
@@ -122,17 +134,67 @@ func init() {
 
 }
 
-// initConfig reads in config file and ENV variables if set.
+// initConfig carrega a configuração global e inicializa o logger.
+// Precedência: flags > env vars > config file > defaults.
 func initConfig(cmd *cobra.Command, args []string) {
-	// Initialize Global Logger
+	// Carrega configuração global (~/.yby/config.yaml + env vars + defaults)
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Warn("Falha ao carregar configuração global, usando defaults", "erro", err)
+		cfg = config.DefaultConfig()
+	}
+
+	// Flags sobrescrevem config/env (só se foram explicitamente informadas)
+	logLevel := cfg.Log.Level
+	if cmd.Flags().Changed("log-level") {
+		logLevel = logLevelFlag
+	}
+
+	logFormat := cfg.Log.Format
+	if cmd.Flags().Changed("log-format") {
+		logFormat = logFormatFlag
+	}
+
+	// Inicializa logger global
 	logger.InitGlobal(logger.Config{
-		Level:  logLevelFlag,
-		Format: logFormatFlag,
+		Level:  logLevel,
+		Format: logFormat,
 	})
 
-	// If context flag is set, we override using the standard Env Var mechanism
-	// capable of being read by pkg/context
+	// Primeiro uso: se o arquivo de config não existe, pergunta sobre telemetria
+	if home, err := os.UserHomeDir(); err == nil {
+		configPath := filepath.Join(home, ".yby", "config.yaml")
+		if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+			askTelemetryOptIn(configPath)
+		}
+	}
+
+	// Se a flag --context foi informada, propaga via env var para pkg/context
 	if contextFlag != "" {
 		os.Setenv("YBY_ENV", contextFlag)
+	}
+}
+
+// askTelemetryOptIn pergunta ao usuário se deseja habilitar telemetria no primeiro uso.
+func askTelemetryOptIn(configPath string) {
+	enabled, err := prompter.Confirm("Deseja habilitar telemetria anônima para ajudar a melhorar o Yby CLI?", false)
+	if err != nil {
+		slog.Debug("Falha ao solicitar opt-in de telemetria", "erro", err)
+		return
+	}
+
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		slog.Debug("Falha ao criar diretório de config", "erro", err)
+		return
+	}
+
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+	content := fmt.Sprintf("telemetry:\n  enabled: %s\n", val)
+	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
+		slog.Debug("Falha ao salvar preferência de telemetria", "erro", err)
 	}
 }

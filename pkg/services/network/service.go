@@ -29,9 +29,9 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 		if err != nil {
 			return fmt.Errorf("Erro ao detectar contexto atual: %v", err)
 		}
-		fmt.Printf("📍 Contexto: %s (detectado automaticamente)\n", targetContext)
+		slog.Info("Contexto detectado automaticamente", "contexto", targetContext)
 	} else {
-		fmt.Printf("📍 Contexto: %s (definido via flag)\n", targetContext)
+		slog.Info("Contexto definido via flag", "contexto", targetContext)
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -39,9 +39,9 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 	// 1. Argo CD
 	argoPwd, err := s.getArgoPassword(gctx, targetContext)
 	if err != nil {
-		fmt.Printf("⚠️  Argo CD: Não foi possível obter senha (talvez não instalado no namespace 'argocd'?): %v\n", err)
+		slog.Warn("Argo CD: não foi possível obter senha", "error", err)
 	} else {
-		fmt.Println("🔌 Conectando Argo CD...")
+		slog.Info("Conectando Argo CD")
 		s.Network.KillPortForward("8085")
 		g.Go(func() error {
 			return retry.DoWithDefault(gctx, func() error {
@@ -54,7 +54,7 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 	// 2. MinIO
 	minioSvc, minioNs := s.findMinioService(gctx, targetContext)
 	if minioSvc != "" {
-		fmt.Printf("🔌 Detectado MinIO (%s/%s)! Conectando...\n", minioNs, minioSvc)
+		slog.Info("MinIO detectado, conectando", "namespace", minioNs, "service", minioSvc)
 		s.Network.KillPortForward("9000")
 		s.Network.KillPortForward("9001")
 		g.Go(func() error {
@@ -83,13 +83,13 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 		fmt.Printf("   -> MinIO API: http://localhost:9000\n")
 		fmt.Printf("   -> MinIO Console: http://localhost:9001 (%s / %s)\n", user, pass)
 	} else {
-		fmt.Println("ℹ️  MinIO não detectado (ou não instalado).")
+		slog.Info("MinIO não detectado")
 	}
 
 	// 3. Prometheus & Grafana
 	promSvc, promNs := s.findPrometheusService(gctx, targetContext)
 	if promSvc != "" {
-		fmt.Printf("🔌 Detectado Prometheus (%s/%s)! Conectando para Grafana...\n", promNs, promSvc)
+		slog.Info("Prometheus detectado, conectando", "namespace", promNs, "service", promSvc)
 		s.Network.KillPortForward("9090")
 		g.Go(func() error {
 			return retry.DoWithDefault(gctx, func() error {
@@ -97,30 +97,30 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 			})
 		})
 
-		fmt.Println("🐳 Iniciando Grafana Local (Docker)...")
+		slog.Info("Iniciando Grafana Local via Docker")
 		if s.Container.IsAvailable() {
 			if err := s.Container.StartGrafana(gctx); err != nil {
-				fmt.Printf("⚠️  Falha ao iniciar Grafana Docker: %v\n", err)
+				slog.Warn("Falha ao iniciar Grafana Docker", "error", err)
 			} else {
 				fmt.Println("   -> Grafana: http://localhost:3001 (admin/admin)")
 				fmt.Println("      (Dados persistidos no volume 'yby-grafana-data')")
 			}
 		} else {
-			fmt.Println("⚠️  Docker não está disponível no PATH. Grafana local não será iniciado.")
+			slog.Warn("Docker não disponível no PATH, Grafana local não será iniciado")
 		}
 	} else {
-		fmt.Println("⚠️  Prometheus não encontrado. Grafana local não será iniciado.")
+		slog.Warn("Prometheus não encontrado, Grafana local não será iniciado")
 	}
 
 	// 4. Token Headlamp
 	token, err := s.Network.CreateToken(gctx, targetContext, "kube-system", "admin-user", "24h")
 	if err == nil {
-		fmt.Println("\n🔑 Token Headlamp (copie abaixo):")
+		fmt.Println("\nToken Headlamp (copie abaixo):")
 		fmt.Println(token)
 		slog.Debug("token gerado", "token_preview", maskToken(token))
 	}
 
-	fmt.Println("\nℹ️  Pressione Ctrl+C para encerrar os túneis...")
+	slog.Info("Túneis ativos, pressione Ctrl+C para encerrar")
 
 	if err := g.Wait(); err != nil && err != context.Canceled {
 		return fmt.Errorf("Erro nos túneis: %w", err)

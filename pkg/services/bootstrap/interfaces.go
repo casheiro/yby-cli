@@ -14,4 +14,5 @@ type K8sClient interface {
 	CreateNamespace(ctx context.Context, ns string) error
 	ApplyManifest(ctx context.Context, path string, namespace string) error
 	PatchApplication(ctx context.Context, name, namespace, patch string) error
+	WaitApplicationHealthy(ctx context.Context, name, namespace string, timeoutSeconds int) error
 }

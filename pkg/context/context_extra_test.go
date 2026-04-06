@@ -55,11 +55,70 @@ func TestManager_SetCurrent_LoadManifestFalha(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestManager_AddEnvironment_LoadManifestFalha cobre a linha 111 onde LoadManifest
+// TestManager_AddEnvironment_LoadManifestFalha cobre o branch onde LoadManifest
 // retorna erro dentro de AddEnvironment.
 func TestManager_AddEnvironment_LoadManifestFalha(t *testing.T) {
 	m := NewManager("/caminho/inexistente/xyz")
-	err := m.AddEnvironment("staging", "remote", "Staging")
+	env := Environment{Type: "remote", Description: "Staging"}
+	err := m.AddEnvironment("staging", env, "")
+	assert.Error(t, err)
+}
+
+// TestManager_ValidateIntegrity_Integro verifica que não há warnings quando todos
+// os arquivos de values existem.
+func TestManager_ValidateIntegrity_Integro(t *testing.T) {
+	dir := t.TempDir()
+	ybyDir := filepath.Join(dir, ".yby")
+	require.NoError(t, os.MkdirAll(ybyDir, 0755))
+
+	configDir := filepath.Join(dir, "config")
+	require.NoError(t, os.MkdirAll(configDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "values-local.yaml"), []byte("# local"), 0644))
+
+	yaml := `current: local
+environments:
+  local:
+    type: local
+    description: Local
+    values: config/values-local.yaml
+`
+	require.NoError(t, os.WriteFile(filepath.Join(ybyDir, "environments.yaml"), []byte(yaml), 0644))
+
+	m := NewManager(dir)
+	warnings, err := m.ValidateIntegrity()
+	assert.NoError(t, err)
+	assert.Empty(t, warnings)
+}
+
+// TestManager_ValidateIntegrity_ArquivoAusente verifica que um warning é retornado
+// quando o arquivo de values não existe.
+func TestManager_ValidateIntegrity_ArquivoAusente(t *testing.T) {
+	dir := t.TempDir()
+	ybyDir := filepath.Join(dir, ".yby")
+	require.NoError(t, os.MkdirAll(ybyDir, 0755))
+
+	yaml := `current: local
+environments:
+  local:
+    type: local
+    description: Local
+    values: config/values-local.yaml
+`
+	require.NoError(t, os.WriteFile(filepath.Join(ybyDir, "environments.yaml"), []byte(yaml), 0644))
+
+	m := NewManager(dir)
+	warnings, err := m.ValidateIntegrity()
+	assert.NoError(t, err)
+	assert.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "ambiente 'local'")
+	assert.Contains(t, warnings[0], "não encontrado")
+}
+
+// TestManager_ValidateIntegrity_LoadManifestFalha cobre o branch de erro
+// quando LoadManifest falha em ValidateIntegrity.
+func TestManager_ValidateIntegrity_LoadManifestFalha(t *testing.T) {
+	m := NewManager("/caminho/inexistente/xyz")
+	_, err := m.ValidateIntegrity()
 	assert.Error(t, err)
 }
 

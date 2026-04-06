@@ -12,6 +12,7 @@ type BardConfig struct {
 	TopK               int     `yaml:"top_k"`
 	RelevanceThreshold float64 `yaml:"relevance_threshold"`
 	SystemPromptExtra  string  `yaml:"system_prompt_extra"`
+	MaxTokens          int     `yaml:"max_tokens"`
 }
 
 // loadBardConfig carrega a configuração do Bard a partir de .yby/bard.yaml.
@@ -20,6 +21,7 @@ func loadBardConfig() BardConfig {
 	cfg := BardConfig{
 		TopK:               5,
 		RelevanceThreshold: 0.6,
+		MaxTokens:          32000,
 	}
 
 	data, err := os.ReadFile(".yby/bard.yaml")
