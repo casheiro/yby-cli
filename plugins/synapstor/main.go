@@ -13,7 +13,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/agent"
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/decay"
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/exporter"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/indexer"
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/quality"
 )
 
 func main() {
@@ -55,8 +58,8 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 	case "manifest":
 		respond(plugin.PluginManifest{
 			Name:        "synapstor",
-			Version:     "0.1.0",
-			Description: "Governança semântica e gestão de conhecimento (UKIs)",
+			Version:     "1.0.0",
+			Description: "Gestao de conhecimento com knowledge graph, quality scoring e export multi-formato",
 			Hooks:       []string{"command", "context"},
 		})
 		return nil
@@ -79,6 +82,10 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		agt := agent.NewAgent(provider, cwd)
 
 		cmd := req.Args[0]
+		if cmd == "--help" || cmd == "-h" || cmd == "help" {
+			printHelp()
+			return nil
+		}
 		switch cmd {
 		case "capture":
 			if len(req.Args) < 2 {
@@ -106,6 +113,12 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 				}
 			}
 			return runIndex(fullReindex)
+		case "quality":
+			return runQuality()
+		case "decay":
+			return runDecay()
+		case "export":
+			return runExport(req.Args[1:])
 		default:
 			printHelp()
 			return nil
@@ -116,9 +129,9 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 
 func runIndex(fullReindex bool) error {
 	ctx := context.Background()
-	provider := ai.GetProvider(ctx, "auto")
+	provider := ai.GetEmbeddingProvider(ctx)
 	if provider == nil {
-		return fmt.Errorf("nenhum provedor de IA configurado. Defina GEMINI_API_KEY, OPENAI_API_KEY ou OLLAMA_HOST")
+		return fmt.Errorf("nenhum provedor com suporte a embeddings disponivel (ollama, gemini, openai)")
 	}
 
 	cwd, _ := os.Getwd()
@@ -195,10 +208,111 @@ func respond(data interface{}) {
 	_ = json.NewEncoder(os.Stdout).Encode(resp)
 }
 
+func runQuality() error {
+	cwd, _ := os.Getwd()
+	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
+
+	scores, err := quality.ScoreAll(ukiDir)
+	if err != nil {
+		return fmt.Errorf("erro ao avaliar qualidade: %w", err)
+	}
+
+	if len(scores) == 0 {
+		fmt.Println("Nenhum UKI encontrado.")
+		return nil
+	}
+
+	fmt.Println("Avaliação de Qualidade dos UKIs:")
+	fmt.Println()
+	for _, s := range scores {
+		fmt.Println(quality.FormatScore(s))
+	}
+	return nil
+}
+
+func runDecay() error {
+	cwd, _ := os.Getwd()
+	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
+
+	infos, err := decay.AnalyzeDecay(ukiDir, cwd)
+	if err != nil {
+		return fmt.Errorf("erro ao analisar decay: %w", err)
+	}
+
+	if len(infos) == 0 {
+		fmt.Println("Nenhum UKI encontrado.")
+		return nil
+	}
+
+	stale := decay.FindStale(infos)
+	fmt.Printf("Análise de Decay: %d UKIs analisados, %d stale (>%d dias)\n", len(infos), len(stale), decay.StaleThresholdDays)
+	fmt.Println()
+
+	for _, info := range infos {
+		status := "ativo"
+		if info.IsStale {
+			status = "STALE"
+		}
+		fmt.Printf("[%s] %s (%d dias sem atividade)\n", status, info.Title, info.DaysSinceActivity)
+	}
+	return nil
+}
+
+func runExport(args []string) error {
+	format := "markdown"
+	outputDir := ""
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--format":
+			if i+1 < len(args) {
+				format = args[i+1]
+				i++
+			}
+		case "--output":
+			if i+1 < len(args) {
+				outputDir = args[i+1]
+				i++
+			}
+		}
+	}
+
+	cwd, _ := os.Getwd()
+	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
+
+	if outputDir == "" {
+		outputDir = filepath.Join(cwd, ".synapstor", "export", format)
+	}
+
+	ukis, err := exporter.LoadUKIs(ukiDir)
+	if err != nil {
+		return fmt.Errorf("erro ao carregar UKIs: %w", err)
+	}
+
+	exp, err := exporter.NewExporter(format)
+	if err != nil {
+		return err
+	}
+
+	if err := exp.Export(ukis, outputDir); err != nil {
+		return fmt.Errorf("erro na exportação: %w", err)
+	}
+
+	fmt.Printf("Exportação %s concluída: %d UKIs exportados para %s\n", format, len(ukis), outputDir)
+	return nil
+}
+
 func printHelp() {
-	fmt.Println("Synapstor Agent Commands:")
-	fmt.Println("  capture [text]        - Captura e estrutura conhecimento")
-	fmt.Println("  study [topic]         - Lê código e gera documentação")
-	fmt.Println("  search [query]        - Busca semântica no índice de conhecimento [--top-k N]")
-	fmt.Println("  index [--full]        - Atualiza índice de busca (--full força reindexação completa)")
+	fmt.Println("Synapstor - Gestao de conhecimento do projeto")
+	fmt.Println()
+	fmt.Println("Uso: yby synapstor <subcomando> [opcoes]")
+	fmt.Println()
+	fmt.Println("Subcomandos:")
+	fmt.Println("  capture \"texto\"        Captura e estrutura conhecimento via IA")
+	fmt.Println("  study \"topico\"         Analisa codigo e gera documentacao via IA")
+	fmt.Println("  search \"query\"         Busca semantica nos UKIs indexados [--top-k N]")
+	fmt.Println("  index [--full]         Indexa UKIs com embeddings (incremental)")
+	fmt.Println("  quality                Avalia qualidade dos UKIs (score 0-100)")
+	fmt.Println("  decay                  Detecta UKIs desatualizados (>90 dias)")
+	fmt.Println("  export                 Exporta UKIs (--format docusaurus|obsidian|markdown --output dir)")
 }

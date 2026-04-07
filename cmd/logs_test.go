@@ -42,7 +42,7 @@ func (m *mockLogsService) DetectNamespace(_ context.Context, _ string) (string, 
 	return m.namespace, nil
 }
 
-// TestLogsCmd_ComPodArg verifica execuç��o com argumento de pod.
+// TestLogsCmd_ComPodArg verifica execução com argumento de pod.
 func TestLogsCmd_ComPodArg(t *testing.T) {
 	origFactory := newLogsService
 	defer func() { newLogsService = origFactory }()

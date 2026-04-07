@@ -122,9 +122,11 @@ func TestGetProvider_AutoComOllama(t *testing.T) {
 	t.Setenv("YBY_AI_PROVIDER", "")
 
 	p := GetProvider(context.Background(), "auto")
-	// Ollama com mock server deve ser detectado
+	// Ollama com mock server deve ser detectado, ou CLI se disponível
 	if p != nil {
-		assert.Contains(t, p.Name(), "Ollama")
+		name := p.Name()
+		assert.True(t, containsOllama(name) || isCLIProvider(name),
+			"Esperado Ollama ou CLI provider, obtido: %s", name)
 	}
 }
 
@@ -167,14 +169,13 @@ func TestGetProvider_AutoDetect_FallbackParaGemini(t *testing.T) {
 	// Nota: se Ollama real estiver rodando no host, p pode ser Ollama
 	if p != nil {
 		name := p.Name()
-		assert.True(t, name == "Google Gemini (Cloud)" || containsOllama(name),
-			"Esperado Gemini ou Ollama, obtido: %s", name)
+		assert.True(t, name == "Google Gemini (Cloud)" || containsOllama(name) || isCLIProvider(name),
+			"Esperado Gemini, Ollama ou CLI, obtido: %s", name)
 	}
 }
 
 func TestGetProvider_AutoDetect_FallbackParaOpenAI(t *testing.T) {
 	// Ollama indisponível, Gemini sem chave, OpenAI com chave
-	// Testa as linhas 57-65 de factory.go (auto-detect Ollama e Gemini falham, cai em OpenAI)
 	t.Setenv("OLLAMA_HOST", "http://localhost:19999")
 	t.Setenv("GEMINI_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "sk-test-auto")
@@ -183,24 +184,24 @@ func TestGetProvider_AutoDetect_FallbackParaOpenAI(t *testing.T) {
 	p := GetProvider(context.Background(), "")
 	if p != nil {
 		name := p.Name()
-		assert.True(t, name == "OpenAI (Cloud)" || containsOllama(name),
-			"Esperado OpenAI ou Ollama, obtido: %s", name)
+		assert.True(t, name == "OpenAI (Cloud)" || containsOllama(name) || isCLIProvider(name),
+			"Esperado OpenAI, Ollama ou CLI, obtido: %s", name)
 	}
 }
 
 func TestGetProvider_AutoDetect_NenhumDisponivel(t *testing.T) {
-	// Todos indisponíveis — cobre a linha 68 (return nil final)
+	// Todos indisponíveis — sem APIs, sem CLIs
 	t.Setenv("OLLAMA_HOST", "http://localhost:19999")
 	t.Setenv("GEMINI_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("YBY_AI_PROVIDER", "")
 
 	p := GetProvider(context.Background(), "")
-	// Se Ollama real não estiver rodando, retorna nil
-	// Se Ollama real estiver rodando, retorna Ollama
+	// Pode retornar nil ou um CLI provider se disponível no ambiente
 	if p != nil {
-		assert.True(t, containsOllama(p.Name()),
-			"Se retornou algo, só pode ser Ollama real do ambiente")
+		name := p.Name()
+		assert.True(t, containsOllama(name) || isCLIProvider(name),
+			"Se retornou algo, deve ser Ollama ou CLI do ambiente, obtido: %s", name)
 	}
 }
 
@@ -249,6 +250,10 @@ func TestGetProvider_EnvVarDesconhecido(t *testing.T) {
 }
 
 // containsOllama verifica se o nome contém "Ollama"
+func isCLIProvider(name string) bool {
+	return name == "Claude Code CLI" || name == "Gemini CLI"
+}
+
 func containsOllama(name string) bool {
 	for i := 0; i+6 <= len(name); i++ {
 		if name[i:i+6] == "Ollama" {

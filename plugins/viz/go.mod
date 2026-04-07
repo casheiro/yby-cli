@@ -1,6 +1,6 @@
 module github.com/casheiro/yby-cli/plugins/viz
 
-go 1.24.0
+go 1.26.1
 
 require (
 	github.com/charmbracelet/bubbletea v0.25.0

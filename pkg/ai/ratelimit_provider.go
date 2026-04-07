@@ -17,7 +17,7 @@ const (
 	defaultOllamaRate = 0.0 // sem limite
 )
 
-// ─── Circuit Breaker ───────────��────────────────────────────────────────────
+// ─── Circuit Breaker ──────────────────────────────────────────────────────
 
 type circuitState int
 
@@ -104,7 +104,7 @@ func (cb *CircuitBreaker) recordFailure(statusCode int) bool {
 	return false
 }
 
-// ─── Rate Limit Provider ─────────��──────────────────────────────────────────
+// ─── Rate Limit Provider ──────────────────────────────────────────────────────
 
 // RateLimitProvider é um decorator que implementa Provider com rate limiting
 // via token bucket e circuit breaker embutido.

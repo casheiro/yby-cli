@@ -13,22 +13,22 @@ type tickMsg time.Time
 
 // Model é o modelo principal do Bubbletea para o Viz
 type Model struct {
-	client        monitor.Client
-	activeTab     ResourceTab
-	pods          []monitor.Pod
-	deployments   []monitor.Deployment
-	services      []monitor.Service
-	nodes         []monitor.Node
-	statefulsets  []monitor.StatefulSet
-	jobs          []monitor.Job
-	ingresses     []monitor.Ingress
-	configmaps    []monitor.ConfigMap
-	events        []monitor.Event
-	err           error
-	width         int
-	height        int
-	scrollY       int
-	selectedIndex int
+	client         monitor.Client
+	activeTab      ResourceTab
+	pods           []monitor.Pod
+	deployments    []monitor.Deployment
+	services       []monitor.Service
+	nodes          []monitor.Node
+	statefulsets   []monitor.StatefulSet
+	jobs           []monitor.Job
+	ingresses      []monitor.Ingress
+	configmaps     []monitor.ConfigMap
+	events         []monitor.Event
+	err            error
+	width          int
+	height         int
+	scrollY        int
+	selectedIndex  int
 	reconnecting   bool
 	retryCount     int
 	filter         FilterState

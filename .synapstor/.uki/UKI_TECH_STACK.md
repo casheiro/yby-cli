@@ -8,7 +8,7 @@ tags: [stack, technology, tools]
 # Pilha Tecnológica (Yby CLI)
 
 ## Núcleo
-- **Language:** Go 1.24+
+- **Language:** Go 1.26+
 - **CLI Framework:** Cobra + Viper
 - **Logging:** `log/slog` estruturado (text/json via `--log-format`)
 - **UI:** Charmbracelet Bubbletea (TUI interativa)

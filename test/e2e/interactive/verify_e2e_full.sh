@@ -41,7 +41,7 @@ echo "📦 Preparing Environment..."
 docker exec $CONTAINER_NAME apt-get update && docker exec $CONTAINER_NAME apt-get install -y git curl sudo vim
 
 echo "📦 Installing Go Next (Manual)..."
-docker exec $CONTAINER_NAME bash -c "curl -L https://go.dev/dl/go1.24.0.linux-amd64.tar.gz -o go.tar.gz && tar -C /usr/local -xzf go.tar.gz && rm go.tar.gz"
+docker exec $CONTAINER_NAME bash -c "curl -L https://go.dev/dl/go1.26.1.linux-amd64.tar.gz -o go.tar.gz && tar -C /usr/local -xzf go.tar.gz && rm go.tar.gz"
 
 echo "📦 Copying Source..."
 docker cp . $CONTAINER_NAME:/app
