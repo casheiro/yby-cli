@@ -159,7 +159,7 @@ func TestHookContext_DescobertaDeComponentes(t *testing.T) {
 	if err := os.MkdirAll(serviceDir, 0755); err != nil {
 		t.Fatalf("falha ao criar diretório: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(serviceDir, "go.mod"), []byte("module meu-servico\n\ngo 1.21\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(serviceDir, "go.mod"), []byte("module meu-servico\n\ngo 1.26\n"), 0644); err != nil {
 		t.Fatalf("falha ao criar go.mod: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(serviceDir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {

@@ -22,8 +22,8 @@ func TestExportScanMarkdown_SemFindings(t *testing.T) {
 	if !strings.Contains(content, "prod") {
 		t.Error("markdown deveria conter o nome do namespace")
 	}
-	if !strings.Contains(content, "0 críticos, 0 avisos") {
-		t.Errorf("resumo esperado '0 críticos, 0 avisos', conteúdo: %s", content)
+	if !strings.Contains(content, "0 criticos, 0 avisos") {
+		t.Errorf("resumo esperado '0 criticos, 0 avisos', conteúdo: %s", content)
 	}
 	if strings.Contains(content, "## Recomendações") {
 		t.Error("não deveria conter seção de recomendações quando não há findings")
@@ -42,8 +42,8 @@ func TestExportScanMarkdown_ContaCriticaisEAvisos(t *testing.T) {
 
 	content := exportScanMarkdown(report)
 
-	if !strings.Contains(content, "2 críticos, 1 avisos") {
-		t.Errorf("resumo esperado '2 críticos, 1 avisos', conteúdo: %s", content)
+	if !strings.Contains(content, "2 criticos, 1 avisos") {
+		t.Errorf("resumo esperado '2 criticos, 1 avisos', conteúdo: %s", content)
 	}
 }
 

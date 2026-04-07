@@ -60,8 +60,8 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 	case "manifest":
 		respond(plugin.PluginManifest{
 			Name:        "bard",
-			Version:     "0.1.0",
-			Description: "Assistente de IA interativo para diagnóstico e operações",
+			Version:     "1.0.0",
+			Description: "Assistente IA interativo com tool calling, TUI e integracao cross-plugin",
 			Hooks:       []string{"command"},
 		})
 		return nil

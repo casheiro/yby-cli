@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
@@ -22,52 +23,99 @@ import (
 type ScanReport struct {
 	Namespace       string                   `json:"namespace"`
 	Findings        []checks.SecurityFinding `json:"findings"`
+	Sources         []string                 `json:"sources,omitempty"`
 	Recommendations string                   `json:"recommendations,omitempty"`
 }
 
 func scanNamespace(namespace, outputFormat, outputFile, profile string, fix, fixDryRun bool) {
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Padding(0, 1)
-	fmt.Println(titleStyle.Render(fmt.Sprintf("\n🔍 Sentinel Security Scan: %s", namespace)))
+	fmt.Println(titleStyle.Render(fmt.Sprintf("\n Sentinel Security Scan: %s", namespace)))
 
 	k8sClient, err := getKubeClient()
 	if err != nil {
-		fmt.Printf("⚠️  Falha ao obter cliente Kubernetes: %v\n", err)
+		fmt.Printf("Falha ao obter cliente Kubernetes: %v\n", err)
 		return
 	}
 
 	ctx := context.Background()
 
-	// Selecionar checks baseado no profile ou usar todos
-	var selectedChecks []checks.SecurityCheck
-	if profile != "" {
-		p, ok := profiles.GetProfile(profile)
-		if !ok {
-			fmt.Printf("❌ Perfil de compliance '%s' não encontrado. Perfis disponíveis:\n", profile)
-			for _, prof := range profiles.ListProfiles() {
-				fmt.Printf("  - %s: %s\n", prof.Name, prof.Description)
-			}
-			return
-		}
-		selectedChecks = checks.GetByIDs(p.CheckIDs)
-		fmt.Printf("📋 Usando perfil de compliance: %s (%d checks)\n", p.Name, len(selectedChecks))
-	} else {
-		selectedChecks = checks.GetAll()
+	// 1. Rodar backends de seguranca (Polaris, OPA)
+	allBackends := []backends.SecurityBackend{
+		backends.NewPolarisBackend(),
+		backends.NewOPABackend(),
 	}
 
-	var findings []checks.SecurityFinding
+	var backendFindings []backends.Finding
+	var sources []string
 
-	for _, check := range selectedChecks {
-		checkFindings, err := check.Run(ctx, k8sClient, namespace)
-		if err != nil {
-			fmt.Printf("⚠️  Erro no check '%s': %v\n", check.Name(), err)
+	for _, b := range allBackends {
+		if !b.IsAvailable() {
 			continue
 		}
-		findings = append(findings, checkFindings...)
+		bf, err := b.ScanCluster(ctx, k8sClient, namespace)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "aviso: backend %s falhou: %v\n", b.Name(), err)
+			continue
+		}
+		if len(bf) > 0 {
+			backendFindings = append(backendFindings, bf...)
+			sources = append(sources, b.Name())
+		}
 	}
+
+	// 2. Converter findings dos backends para o formato SecurityFinding
+	var findings []checks.SecurityFinding
+	for _, bf := range backendFindings {
+		findings = append(findings, checks.SecurityFinding{
+			CheckID:        bf.ID,
+			Severity:       checks.Severity(bf.Severity),
+			Category:       checks.Category(bf.Category),
+			Namespace:      bf.Namespace,
+			Resource:       bf.Resource,
+			Message:        bf.Message,
+			Recommendation: bf.Recommendation,
+			Type:           bf.Severity,
+			Description:    bf.Message,
+		})
+	}
+
+	// 3. Se nenhum backend rodou, fallback para checks artesanais
+	if len(sources) == 0 {
+		fmt.Println("Usando checks internos (nenhum backend disponivel)")
+		sources = append(sources, "checks-internos")
+
+		var selectedChecks []checks.SecurityCheck
+		if profile != "" {
+			p, ok := profiles.GetProfile(profile)
+			if !ok {
+				fmt.Printf("Perfil '%s' nao encontrado. Disponiveis:\n", profile)
+				for _, prof := range profiles.ListProfiles() {
+					fmt.Printf("  - %s: %s\n", prof.Name, prof.Description)
+				}
+				return
+			}
+			selectedChecks = checks.GetByIDs(p.CheckIDs)
+		} else {
+			selectedChecks = checks.GetAll()
+		}
+
+		for _, check := range selectedChecks {
+			checkFindings, err := check.Run(ctx, k8sClient, namespace)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "aviso: check '%s' falhou: %v\n", check.Name(), err)
+				continue
+			}
+			findings = append(findings, checkFindings...)
+		}
+	}
+
+	// 4. Deduplicar findings (mesmo recurso + mesma mensagem)
+	findings = deduplicateFindings(findings)
 
 	report := ScanReport{
 		Namespace: namespace,
 		Findings:  findings,
+		Sources:   sources,
 	}
 
 	if len(findings) == 0 {
@@ -142,6 +190,21 @@ func scanNamespace(namespace, outputFormat, outputFile, profile string, fix, fix
 	renderScanSummary(report, reportPath)
 }
 
+// deduplicateFindings remove findings duplicados (mesmo recurso + mesma mensagem).
+func deduplicateFindings(findings []checks.SecurityFinding) []checks.SecurityFinding {
+	seen := make(map[string]bool)
+	var result []checks.SecurityFinding
+	for _, f := range findings {
+		key := fmt.Sprintf("%s|%s|%s", f.Resource, f.Category, f.Message)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, f)
+	}
+	return result
+}
+
 // saveReportToGlobal salva o relatório completo em ~/.yby/reports/.
 func saveReportToGlobal(report ScanReport, namespace string) string {
 	home, err := os.UserHomeDir()
@@ -181,7 +244,11 @@ func exportScanMarkdown(report ScanReport) string {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("**Resumo:** %d críticos, %d avisos\n\n", criticals, warnings))
+	sb.WriteString(fmt.Sprintf("**Resumo:** %d criticos, %d avisos\n", criticals, warnings))
+	if len(report.Sources) > 0 {
+		sb.WriteString(fmt.Sprintf("**Backends:** %s\n", strings.Join(report.Sources, ", ")))
+	}
+	sb.WriteString("\n")
 	sb.WriteString("## Vulnerabilidades\n\n")
 
 	for _, f := range report.Findings {
@@ -202,6 +269,9 @@ func exportScanMarkdown(report ScanReport) string {
 
 // renderScanSummary renderiza um resumo compacto do scan no terminal.
 func renderScanSummary(report ScanReport, reportPath string) {
+	if len(report.Sources) > 0 {
+		fmt.Printf("  Backends: %s\n", strings.Join(report.Sources, ", "))
+	}
 	// Contar por severidade
 	bySeverity := make(map[string]int)
 	byCategory := make(map[string]int)

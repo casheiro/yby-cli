@@ -33,6 +33,9 @@ func (c *SecretsAccessCheck) Run(ctx context.Context, client kubernetes.Interfac
 		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
 	}
 	for _, role := range clusterRoles.Items {
+		if shouldSkipRBACResource(role.Name) {
+			continue
+		}
 		if hasSecretsAccess(role.Rules) {
 			findings = append(findings, SecurityFinding{
 				CheckID:        c.ID(),

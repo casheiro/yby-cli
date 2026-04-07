@@ -61,8 +61,8 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 	case "manifest":
 		respond(plugin.PluginManifest{
 			Name:        "synapstor",
-			Version:     "0.1.0",
-			Description: "Governança semântica e gestão de conhecimento (UKIs)",
+			Version:     "1.0.0",
+			Description: "Gestao de conhecimento com knowledge graph, quality scoring e export multi-formato",
 			Hooks:       []string{"command", "context"},
 		})
 		return nil

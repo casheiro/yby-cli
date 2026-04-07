@@ -101,8 +101,8 @@ func handlePluginRequest() {
 	case "manifest":
 		respond(plugin.PluginManifest{
 			Name:        "sentinel",
-			Version:     "0.2.0",
-			Description: "Auditoria de segurança e conformidade (CIS/NSA)",
+			Version:     "1.0.0",
+			Description: "Auditoria de seguranca K8s com scan de vulnerabilidades e investigacao IA",
 			Hooks:       []string{"command"},
 		})
 	case "command":
@@ -359,15 +359,29 @@ func investigate(podName, namespace, outputFormat, outputFile string, noCache bo
 		fmt.Println("\r⚠️  Métricas indisponíveis (sem contexto)")
 	}
 
+	// Verificar se o pod tem sinais de problema antes de enviar pra IA
+	pod, podErr := k8sClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if podErr == nil {
+		healthy := isPodHealthy(pod, events)
+		if healthy {
+			fmt.Println("\nPod saudavel — nenhum problema identificado.")
+			fmt.Printf("  Status: %s\n", pod.Status.Phase)
+			for _, cs := range pod.Status.ContainerStatuses {
+				fmt.Printf("  Container %s: Ready=%v, Restarts=%d\n", cs.Name, cs.Ready, cs.RestartCount)
+			}
+			return
+		}
+	}
+
 	// Construct Context for AI
 	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", logsStr, eventsStr, metricsStr)
 
 	if len(strings.TrimSpace(realContext)) < 20 {
-		fmt.Println("❌ Dados insuficientes (logs/eventos) coletados para análise.")
+		fmt.Println("Dados insuficientes (logs/eventos) coletados para analise.")
 		return
 	}
 
-	fmt.Println("\n🤖 Analisando com IA...")
+	fmt.Println("\nAnalisando com IA...")
 
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
@@ -400,6 +414,44 @@ func investigate(podName, namespace, outputFormat, outputFile string, noCache bo
 }
 
 // renderResult lida com a renderização visual ou exportação do resultado da análise.
+// isPodHealthy verifica se o pod está saudável baseado no status e eventos.
+// Retorna true se não há sinais de problema.
+func isPodHealthy(pod *corev1.Pod, events *corev1.EventList) bool {
+	// Pod não está Running
+	if pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+
+	// Algum container não está Ready ou tem restarts recentes
+	for _, cs := range pod.Status.ContainerStatuses {
+		if !cs.Ready {
+			return false
+		}
+		if cs.RestartCount > 0 {
+			// Verificar se o restart foi recente (últimas 2 horas)
+			if cs.LastTerminationState.Terminated != nil {
+				// Tem terminação recente → não saudável
+				return false
+			}
+		}
+		// Container em estado de waiting (CrashLoopBackOff, ImagePullBackOff, etc.)
+		if cs.State.Waiting != nil {
+			return false
+		}
+	}
+
+	// Verificar eventos de Warning
+	if events != nil {
+		for _, e := range events.Items {
+			if e.Type == "Warning" {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 func renderResult(result AnalysisResult, podName, namespace, outputFormat, outputFile string, width int, titleStyle, boxStyle, labelStyle lipgloss.Style) {
 	// Exportar relatório se formato especificado
 	if outputFormat != "" {

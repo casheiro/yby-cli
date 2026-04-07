@@ -24,11 +24,13 @@ func (f *FakeClient) GetPods(_ ListFilter) ([]Pod, error)               { return
 func (f *FakeClient) GetDeployments(_ ListFilter) ([]Deployment, error) { return f.deployments, f.err }
 func (f *FakeClient) GetServices(_ ListFilter) ([]Service, error)       { return f.services, f.err }
 func (f *FakeClient) GetNodes(_ ListFilter) ([]Node, error)             { return f.nodes, f.err }
-func (f *FakeClient) GetStatefulSets(_ ListFilter) ([]StatefulSet, error) { return f.statefulsets, f.err }
-func (f *FakeClient) GetJobs(_ ListFilter) ([]Job, error)                 { return f.jobs, f.err }
-func (f *FakeClient) GetIngresses(_ ListFilter) ([]Ingress, error)        { return f.ingresses, f.err }
-func (f *FakeClient) GetConfigMaps(_ ListFilter) ([]ConfigMap, error)     { return f.configmaps, f.err }
-func (f *FakeClient) GetEvents(_ ListFilter) ([]Event, error)             { return f.events, f.err }
+func (f *FakeClient) GetStatefulSets(_ ListFilter) ([]StatefulSet, error) {
+	return f.statefulsets, f.err
+}
+func (f *FakeClient) GetJobs(_ ListFilter) ([]Job, error)             { return f.jobs, f.err }
+func (f *FakeClient) GetIngresses(_ ListFilter) ([]Ingress, error)    { return f.ingresses, f.err }
+func (f *FakeClient) GetConfigMaps(_ ListFilter) ([]ConfigMap, error) { return f.configmaps, f.err }
+func (f *FakeClient) GetEvents(_ ListFilter) ([]Event, error)         { return f.events, f.err }
 
 // TestClientInterface verifica que FakeClient satisfaz a interface Client.
 func TestClientInterface(t *testing.T) {

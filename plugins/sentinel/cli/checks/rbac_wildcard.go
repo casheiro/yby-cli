@@ -32,6 +32,9 @@ func (c *WildcardRBACCheck) Run(ctx context.Context, client kubernetes.Interface
 		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
 	}
 	for _, role := range clusterRoles.Items {
+		if shouldSkipRBACResource(role.Name) {
+			continue
+		}
 		for _, rule := range role.Rules {
 			hasWildcard := false
 			for _, verb := range rule.Verbs {

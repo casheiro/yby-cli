@@ -66,7 +66,7 @@ Utilizamos **automação total de releases** baseada no [Conventional Commits](h
 
 ## 🧪 Validando Localmente
 
-Pré-requisitos: [Go 1.24+](https://go.dev/doc/install).
+Pré-requisitos: [Go 1.26+](https://go.dev/doc/install).
 
 ```bash
 # Clone o repositório

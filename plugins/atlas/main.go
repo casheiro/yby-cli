@@ -43,8 +43,8 @@ func run() error {
 	case "manifest":
 		return respond(plugin.PluginManifest{
 			Name:        "atlas",
-			Version:     "0.2.0",
-			Description: "Mapeamento contínuo de recursos e blueprint do cluster",
+			Version:     "1.0.0",
+			Description: "Scanner de topologia de infraestrutura com diagramas Mermaid e refinamento IA",
 			Hooks:       []string{"context", "manifest", "command"},
 		})
 	case "context":

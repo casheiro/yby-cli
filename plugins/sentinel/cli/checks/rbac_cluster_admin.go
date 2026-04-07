@@ -32,7 +32,15 @@ func (c *ClusterAdminCheck) Run(ctx context.Context, client kubernetes.Interface
 	var findings []SecurityFinding
 	for _, binding := range bindings.Items {
 		if binding.RoleRef.Name == "cluster-admin" {
+			// Ignorar bindings do sistema e de controllers conhecidos
+			if shouldSkipRBACResource(binding.Name) {
+				continue
+			}
 			for _, subject := range binding.Subjects {
+				// Ignorar system:masters (admin padrão do K8s)
+				if subject.Kind == "Group" && subject.Name == "system:masters" {
+					continue
+				}
 				findings = append(findings, SecurityFinding{
 					CheckID:        c.ID(),
 					Severity:       SeverityCritical,
