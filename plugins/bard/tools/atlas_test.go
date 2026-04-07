@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -36,6 +37,13 @@ func TestAtlasBlueprint_SemBinario(t *testing.T) {
 	if tool == nil {
 		t.Fatal("ferramenta atlas_blueprint não encontrada")
 	}
+
+	// Isolar HOME e diretório de trabalho para que discoverPluginBinary não encontre binários reais
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
 
 	_, err := tool.Execute(context.Background(), map[string]string{})
 	if err == nil {

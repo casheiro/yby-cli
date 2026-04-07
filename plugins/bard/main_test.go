@@ -163,7 +163,7 @@ func TestBardSystemPromptContent(t *testing.T) {
 	keywords := []string{
 		"Yby Bard",
 		"PT-BR",
-		"infrastructure",
+		"infraestrutura",
 	}
 
 	for _, kw := range keywords {
