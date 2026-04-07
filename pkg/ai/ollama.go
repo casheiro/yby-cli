@@ -43,7 +43,7 @@ func NewOllamaProvider() *OllamaProvider {
 
 	model := "llama3"
 	modelConfigured := false
-	if override := getConfiguredModel(); override != "" {
+	if override := getConfiguredModel("ollama"); override != "" {
 		model = override
 		modelConfigured = true
 	}
@@ -316,6 +316,13 @@ func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 			return nil, err
 		}
 	}
+
+	// Usar modelo de embedding específico se configurado
+	origModel := p.Model
+	if embModel := GetEmbeddingModel("ollama"); embModel != "" {
+		p.Model = embModel
+	}
+	defer func() { p.Model = origModel }()
 
 	results, err := p.embedBatch(ctx, texts)
 	if err != nil {

@@ -20,11 +20,13 @@ type RateLimitConfig struct {
 
 // AIConfig armazena configuração do subsistema de IA.
 type AIConfig struct {
-	Provider  string          `mapstructure:"provider"`
-	Model     string          `mapstructure:"model"`
-	Language  string          `mapstructure:"language"`
-	Priority  []string        `mapstructure:"priority"`
-	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+	Provider  string            `mapstructure:"provider"`
+	Model     string            `mapstructure:"model"`
+	Models    map[string]string `mapstructure:"models"`
+	Embedding map[string]string `mapstructure:"embedding"`
+	Language  string            `mapstructure:"language"`
+	Priority  []string          `mapstructure:"priority"`
+	RateLimit RateLimitConfig   `mapstructure:"rate_limit"`
 }
 
 // LogConfig armazena configuração de logging.

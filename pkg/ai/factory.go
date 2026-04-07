@@ -22,13 +22,38 @@ func GetLanguage() string {
 	return cfg.AI.Language
 }
 
-// getConfiguredModel retorna o modelo configurado globalmente, ou vazio se não definido.
-func getConfiguredModel() string {
+// getConfiguredModel retorna o modelo configurado, ou vazio se não definido.
+// Mantém backward compat — chamado sem args ou com provider name.
+func getConfiguredModel(providerNames ...string) string {
 	cfg, err := config.Load()
 	if err != nil {
 		return ""
 	}
+	// Tentar modelo específico do provider
+	if len(providerNames) > 0 && cfg.AI.Models != nil {
+		if model, ok := cfg.AI.Models[providerNames[0]]; ok && model != "" {
+			return model
+		}
+	}
+	// Fallback: modelo global
 	return cfg.AI.Model
+}
+
+// GetEmbeddingModel retorna o modelo de embedding configurado para um provider específico.
+// Se não configurado, retorna vazio (o provider usa seu default).
+// Configuração em ~/.yby/config.yaml:
+//
+//	ai:
+//	  embedding:
+//	    ollama: nomic-embed-text
+//	    gemini: gemini-embedding-001
+//	    openai: text-embedding-3-small
+func GetEmbeddingModel(providerName string) string {
+	cfg, err := config.Load()
+	if err != nil || cfg.AI.Embedding == nil {
+		return ""
+	}
+	return cfg.AI.Embedding[providerName]
 }
 
 // defaultPriority define a ordem padrão de tentativa dos providers.
@@ -119,6 +144,28 @@ func GetAllAvailableProviders(ctx context.Context) []Provider {
 		}
 	}
 	return providers
+}
+
+// embeddingCapableProviders lista os providers que suportam EmbedDocuments.
+// CLIs (claude-cli, gemini-cli) não suportam embeddings.
+var embeddingCapableProviders = map[string]bool{
+	"ollama": true,
+	"gemini": true,
+	"openai": true,
+}
+
+// GetEmbeddingProvider retorna o primeiro provider disponível que suporta embeddings.
+// Ignora providers CLI que só suportam Completion/StreamCompletion.
+func GetEmbeddingProvider(ctx context.Context) Provider {
+	for _, name := range getProviderPriority() {
+		if !embeddingCapableProviders[name] {
+			continue
+		}
+		if p := createProvider(ctx, name); p != nil {
+			return p
+		}
+	}
+	return nil
 }
 
 // wrapProvider encadeia os decorators na ordem:

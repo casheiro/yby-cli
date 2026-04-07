@@ -25,7 +25,7 @@ func NewOpenAIProvider() *OpenAIProvider {
 	}
 
 	model := "gpt-4o-mini" // Default: rápido e econômico
-	if override := getConfiguredModel(); override != "" {
+	if override := getConfiguredModel("openai"); override != "" {
 		model = override
 	}
 
@@ -271,10 +271,17 @@ type openAIEmbeddingResponse struct {
 	} `json:"data"`
 }
 
+func getEmbeddingModelForOpenAI() string {
+	if configured := GetEmbeddingModel("openai"); configured != "" {
+		return configured
+	}
+	return "text-embedding-3-small"
+}
+
 func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	reqBody := openAIEmbeddingRequest{
 		Input:          texts,
-		Model:          "text-embedding-3-small", // Efficient and cheap
+		Model:          getEmbeddingModelForOpenAI(),
 		EncodingFormat: "float",
 	}
 

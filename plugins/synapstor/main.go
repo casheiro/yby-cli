@@ -134,9 +134,9 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 
 func runIndex(fullReindex bool) error {
 	ctx := context.Background()
-	provider := ai.GetProvider(ctx, "auto")
+	provider := ai.GetEmbeddingProvider(ctx)
 	if provider == nil {
-		return fmt.Errorf("nenhum provedor de IA configurado. Defina GEMINI_API_KEY, OPENAI_API_KEY ou OLLAMA_HOST")
+		return fmt.Errorf("nenhum provedor com suporte a embeddings disponivel (ollama, gemini, openai)")
 	}
 
 	cwd, _ := os.Getwd()

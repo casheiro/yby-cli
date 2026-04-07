@@ -27,7 +27,7 @@ func NewGeminiProvider() *GeminiProvider {
 
 	// Precedência: config global > GEMINI_MODEL env var > default
 	model := "gemini-2.5-flash"
-	if override := getConfiguredModel(); override != "" {
+	if override := getConfiguredModel("gemini"); override != "" {
 		model = override
 	} else if envModel := os.Getenv("GEMINI_MODEL"); envModel != "" {
 		model = envModel
@@ -285,7 +285,10 @@ func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		return nil, nil
 	}
 
-	embeddingModel := "text-embedding-004"
+	embeddingModel := "gemini-embedding-001"
+	if configured := GetEmbeddingModel("gemini"); configured != "" {
+		embeddingModel = configured
+	}
 	url := fmt.Sprintf("%s/v1beta/models/%s:batchEmbedContents?key=%s", p.BaseURL, embeddingModel, p.APIKey)
 
 	const batchSize = 100

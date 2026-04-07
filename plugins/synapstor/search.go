@@ -57,9 +57,9 @@ func runSearch(args []string) {
 	}
 
 	ctx := context.Background()
-	provider := ai.GetProvider(ctx, "auto")
+	provider := ai.GetEmbeddingProvider(ctx)
 	if provider == nil {
-		fmt.Println("❌ Nenhum provedor de IA configurado.")
+		fmt.Println("Nenhum provedor de IA com suporte a embeddings disponivel (ollama, gemini, openai).")
 		return
 	}
 
