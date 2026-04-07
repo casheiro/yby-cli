@@ -49,7 +49,6 @@ jobs:
           GOGC: "30" # Aggressive GC for K8s lint
         run: golangci-lint run --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
         timeout-minutes: 15
-        timeout-minutes: 15
 
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6.2.1
