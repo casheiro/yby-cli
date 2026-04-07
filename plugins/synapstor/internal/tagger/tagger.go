@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 )
 
 // TagResult representa o resultado do tagging de um UKI.
@@ -18,21 +19,13 @@ type TagResult struct {
 	Tags []string `json:"tags"`
 }
 
-const systemPrompt = `Você é um classificador de documentação técnica.
-Dado o conteúdo de um documento, extraia entre 3 e 7 tags relevantes que descrevam os tópicos principais.
-As tags devem ser palavras-chave em inglês, lowercase, sem espaços (use hífen se necessário).
-Exemplos de tags: "kubernetes", "deployment", "networking", "ci-cd", "monitoring", "security", "helm".
-
-Responda APENAS com um JSON array de strings. Exemplo:
-["kubernetes", "deployment", "helm"]`
-
 // TagUKI gera tags para um conteúdo de UKI usando IA.
 func TagUKI(ctx context.Context, provider ai.Provider, content string) ([]string, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provedor de IA não configurado")
 	}
 
-	resp, err := provider.Completion(ctx, systemPrompt, content)
+	resp, err := provider.Completion(ctx, prompts.Get("synapstor.tagger"), content)
 	if err != nil {
 		return nil, fmt.Errorf("erro na IA: %w", err)
 	}

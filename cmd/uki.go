@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -122,7 +123,7 @@ Exemplo:
 // para gerar um GovernanceBlueprint, substituindo o uso direto de GenerateGovernance.
 func generateGovernanceViaCompletion(ctx context.Context, provider ai.Provider, description string) (*ai.GovernanceBlueprint, error) {
 	userPrompt := fmt.Sprintf("Descrição do Projeto: %s", description)
-	result, err := provider.Completion(ctx, ai.SystemPrompt, userPrompt)
+	result, err := provider.Completion(ctx, prompts.Get("governance.system"), userPrompt)
 	if err != nil {
 		return nil, err
 	}

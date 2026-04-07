@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
 
@@ -141,22 +142,24 @@ func TestPluginResponseStructure(t *testing.T) {
 	}
 }
 
-// TestBardSystemPromptConstant verifica que a constante do prompt do sistema
-// está definida e contém o placeholder esperado.
+// TestBardSystemPromptConstant verifica que o prompt centralizado do sistema
+// está definido e contém o placeholder esperado.
 func TestBardSystemPromptConstant(t *testing.T) {
-	if BardSystemPrompt == "" {
-		t.Fatal("BardSystemPrompt não deveria estar vazio")
+	bardPrompt := prompts.Get("bard.system")
+	if bardPrompt == "" {
+		t.Fatal("prompt bard.system não deveria estar vazio")
 	}
 
 	// Verifica que contém o placeholder para injeção de contexto
-	expectedPlaceholder := "{{ blueprint_json_summary }}"
-	if !containsString(BardSystemPrompt, expectedPlaceholder) {
-		t.Errorf("BardSystemPrompt deveria conter o placeholder '%s'", expectedPlaceholder)
+	expectedPlaceholder := "{{blueprint_json_summary}}"
+	if !containsString(bardPrompt, expectedPlaceholder) {
+		t.Errorf("prompt bard.system deveria conter o placeholder '%s'", expectedPlaceholder)
 	}
 }
 
 // TestBardSystemPromptContent verifica conteúdo chave do prompt do sistema.
 func TestBardSystemPromptContent(t *testing.T) {
+	bardPrompt := prompts.Get("bard.system")
 	keywords := []string{
 		"Yby Bard",
 		"PT-BR",
@@ -164,8 +167,8 @@ func TestBardSystemPromptContent(t *testing.T) {
 	}
 
 	for _, kw := range keywords {
-		if !containsString(BardSystemPrompt, kw) {
-			t.Errorf("BardSystemPrompt deveria conter '%s'", kw)
+		if !containsString(bardPrompt, kw) {
+			t.Errorf("prompt bard.system deveria conter '%s'", kw)
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/charmbracelet/lipgloss"
@@ -389,7 +390,7 @@ func investigate(podName, namespace, outputFormat, outputFile string, noCache bo
 		return
 	}
 
-	analysisJSON, err := provider.Completion(ctx, SentinelSystemPrompt, realContext)
+	analysisJSON, err := provider.Completion(ctx, prompts.Get("sentinel.investigate"), realContext)
 	if err != nil {
 		fmt.Printf("Erro na chamada da IA: %v\n", err)
 		return

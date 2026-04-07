@@ -22,7 +22,7 @@ func init() {
 func executeSentinelScan(ctx context.Context, params map[string]string) (string, error) {
 	binaryPath, err := discoverPluginBinary("sentinel")
 	if err != nil {
-		return "", fmt.Errorf("sentinel não disponível: %w", err)
+		return "", fmt.Errorf("sentinel nao disponivel (paths tentados: %w)", err)
 	}
 
 	args := []string{"scan"}

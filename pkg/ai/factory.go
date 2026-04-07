@@ -154,18 +154,37 @@ var embeddingCapableProviders = map[string]bool{
 	"openai": true,
 }
 
-// GetEmbeddingProvider retorna o primeiro provider disponível que suporta embeddings.
-// Ignora providers CLI que só suportam Completion/StreamCompletion.
+// GetEmbeddingProvider retorna o provider de embeddings mais adequado.
+// Prioridade: Ollama (suporta modelos grandes, sem rate limit) > config explícito > local.
 func GetEmbeddingProvider(ctx context.Context) Provider {
-	for _, name := range getProviderPriority() {
-		if !embeddingCapableProviders[name] {
-			continue
+	// 1. Priorizar Ollama se disponível (suporta modelos grandes como nomic-embed-text, 8192 tokens)
+	ollama := NewOllamaProvider()
+	if ollama.IsAvailable(ctx) {
+		// Forçar modelo de embedding se configurado
+		if embModel := GetEmbeddingModel("ollama"); embModel != "" {
+			ollama.Model = embModel
+			ollama.modelConfigured = true
 		}
-		if p := createProvider(ctx, name); p != nil {
-			return p
+		return wrapProvider(ollama, ollama.Model)
+	}
+
+	// 2. Se usuário configurou embedding explícito pra outro provider (gemini, openai)
+	cfg, err := config.Load()
+	if err == nil && cfg.AI.Embedding != nil {
+		for _, name := range getProviderPriority() {
+			if !embeddingCapableProviders[name] || name == "ollama" {
+				continue
+			}
+			if _, hasConfig := cfg.AI.Embedding[name]; hasConfig {
+				if p := createProvider(ctx, name); p != nil {
+					return p
+				}
+			}
 		}
 	}
-	return nil
+
+	// 3. Fallback: embeddings locais (all-MiniLM-L6-v2, 512 tokens com truncagem)
+	return NewLocalEmbeddingProvider()
 }
 
 // wrapProvider encadeia os decorators na ordem:

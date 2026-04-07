@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 )
 
 type GeminiProvider struct {
@@ -85,7 +87,7 @@ type geminiResponse struct {
 func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
 	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", p.BaseURL, p.Model, p.APIKey)
 
-	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", SystemPrompt, description)
+	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", prompts.Get("governance.system"), description)
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{

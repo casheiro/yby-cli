@@ -15,6 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
@@ -371,15 +372,18 @@ func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, histo
 %s
 `, overview, backlog, blueprintSummary)
 
-	systemPrompt := strings.ReplaceAll(BardSystemPrompt, "{{ blueprint_json_summary }}", contextBlock)
-	systemPrompt = strings.ReplaceAll(systemPrompt, "{{ tools_prompt }}", buildToolsSection())
-
 	// Injetar contexto do cluster se disponível
 	clusterSection := ""
 	if len(clusterCtx) > 0 && clusterCtx[0] != nil {
 		clusterSection = FormatClusterContext(clusterCtx[0])
 	}
-	systemPrompt = strings.ReplaceAll(systemPrompt, "{{ cluster_context }}", clusterSection)
+
+	vars := map[string]string{
+		"blueprint_json_summary": contextBlock,
+		"tools_prompt":           tools.FormatToolsPrompt(),
+		"cluster_context":        clusterSection,
+	}
+	systemPrompt := prompts.GetWithVars("bard.system", vars)
 
 	historyCtx := formatHistoryContext(history)
 	if historyCtx != "" {

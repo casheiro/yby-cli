@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"strings"
 	"time"
 )
@@ -74,7 +76,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	reqBody := openAIRequest{
 		Model: p.Model,
 		Messages: []openAIMessage{
-			{Role: "system", Content: SystemPrompt},
+			{Role: "system", Content: prompts.Get("governance.system")},
 			{Role: "user", Content: fmt.Sprintf("Descrição do Projeto: %s", description)},
 		},
 	}

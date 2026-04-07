@@ -3,12 +3,15 @@
 package graph
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/casheiro/yby-cli/pkg/ai"
 )
 
 // GraphNode representa um UKI no knowledge graph.
@@ -56,7 +59,8 @@ var reType = regexp.MustCompile(`\*\*(?:Type|Tipo):\*\*\s*(\w+)`)
 var reUKIRef = regexp.MustCompile(`UKI-[\w-]+`)
 
 // BuildGraph escaneia o diretório de UKIs e constrói o knowledge graph.
-func BuildGraph(ukiDir string) (*KnowledgeGraph, error) {
+// Se vs não for nil, usa busca semântica para detectar relações entre UKIs similares.
+func BuildGraph(ukiDir string, vs *ai.VectorStore) (*KnowledgeGraph, error) {
 	graph := &KnowledgeGraph{}
 
 	entries, err := os.ReadDir(ukiDir)
@@ -149,6 +153,55 @@ func BuildGraph(ukiDir string) (*KnowledgeGraph, error) {
 				if !edgeExists(graph.Edges, fileName, targetFile) {
 					graph.Edges = append(graph.Edges, GraphEdge{
 						From:     fileName,
+						To:       targetFile,
+						Relation: RelRelatesTo,
+					})
+				}
+			}
+		}
+	}
+
+	// Terceira passada: relações semânticas via VectorStore
+	if vs != nil {
+		ctx := context.Background()
+		for _, node := range graph.Nodes {
+			content, ok := contentByFile[node.ID]
+			if !ok || content == "" {
+				continue
+			}
+
+			docs, err := vs.Search(ctx, content, 5)
+			if err != nil {
+				continue
+			}
+
+			for _, doc := range docs {
+				if doc.Score <= 0.5 {
+					continue
+				}
+
+				// Identificar o arquivo alvo pelo metadata ou ID
+				targetFile := ""
+				if fname, ok := doc.Metadata["filename"]; ok {
+					targetFile = fname
+				} else {
+					targetFile = doc.ID
+				}
+
+				// Pular auto-referência
+				if targetFile == node.ID {
+					continue
+				}
+
+				// Verificar se o alvo é um nó existente
+				if nodeByFile[targetFile] == nil {
+					continue
+				}
+
+				// Adicionar edge se não existir (em nenhuma direção)
+				if !edgeExists(graph.Edges, node.ID, targetFile) && !edgeExists(graph.Edges, targetFile, node.ID) {
+					graph.Edges = append(graph.Edges, GraphEdge{
+						From:     node.ID,
 						To:       targetFile,
 						Relation: RelRelatesTo,
 					})

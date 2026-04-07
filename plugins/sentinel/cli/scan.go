@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
@@ -130,7 +131,7 @@ func scanNamespace(namespace, outputFormat, outputFile, profile string, fix, fix
 	if provider != nil {
 		fmt.Println("Gerando recomendacoes com IA...")
 		findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
-		recommendations, err := provider.Completion(ctx, ScanSystemPrompt, string(findingsJSON))
+		recommendations, err := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))
 		if err == nil {
 			report.Recommendations = recommendations
 		} else {

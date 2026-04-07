@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/plugins/atlas/analysis"
 	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
@@ -257,25 +258,6 @@ func handleDiagram(args []string) error {
 	return nil
 }
 
-// refineSystemPrompt é o prompt do sistema para refinamento de diagramas.
-const refineSystemPrompt = `Voce e um especialista em infraestrutura Kubernetes e diagramas Mermaid.
-
-Voce vai receber um diagrama Mermaid rascunho e um inventario de recursos. Sua tarefa e produzir um diagrama MACRO — uma visao de alto nivel da topologia que caiba confortavelmente numa tela.
-
-OBJETIVO: alguem olha o diagrama e em 5 segundos entende a arquitetura da infraestrutura.
-
-REGRAS:
-1. SIMPLIFIQUE AGRESSIVAMENTE — mostre no maximo 15-25 nos no total
-2. Agrupe recursos similares em um unico no (ex: "8 ServiceAccounts" vira um no, nao 8)
-3. RBAC, ConfigMaps, Secrets, CRDs, Namespaces NAO devem aparecer como nos individuais — se relevantes, mencione dentro do label do grupo pai
-4. Foque em: Charts, Applications, Deployments/Workloads principais, Ingresses de acesso externo, e dependencias externas
-5. Use subgraphs por dominio funcional (ex: "Banco de Dados", "Observabilidade", "Aplicacao")
-6. Cada no: id["Nome Curto"]
-7. Edges: -->|verbo| (implanta, depende de, sincroniza, expoe)
-8. NAO invente nos ou relacoes que nao existem no inventario
-9. NAO inclua markdown code fences — retorne APENAS codigo Mermaid puro comecando com "flowchart TD"
-10. MENOS E MAIS — na duvida, omita`
-
 // buildResourceSummary cria um resumo compacto dos recursos para o prompt da IA.
 func buildResourceSummary(bp *discovery.InfraBlueprint) string {
 	var b strings.Builder
@@ -330,7 +312,7 @@ func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary stri
 
 	var lastErr error
 	for _, provider := range providers {
-		result, err := provider.Completion(ctx, refineSystemPrompt, userPrompt)
+		result, err := provider.Completion(ctx, prompts.Get("atlas.refine"), userPrompt)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "aviso: %s falhou, tentando proximo provider: %v\n", provider.Name(), err)
 			lastErr = err

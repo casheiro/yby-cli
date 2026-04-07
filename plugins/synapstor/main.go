@@ -13,13 +13,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/agent"
-	"github.com/casheiro/yby-cli/plugins/synapstor/internal/bridge"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/decay"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/exporter"
-	"github.com/casheiro/yby-cli/plugins/synapstor/internal/graph"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/indexer"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/quality"
-	"github.com/casheiro/yby-cli/plugins/synapstor/internal/tagger"
 )
 
 func main() {
@@ -85,6 +82,10 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		agt := agent.NewAgent(provider, cwd)
 
 		cmd := req.Args[0]
+		if cmd == "--help" || cmd == "-h" || cmd == "help" {
+			printHelp()
+			return nil
+		}
 		switch cmd {
 		case "capture":
 			if len(req.Args) < 2 {
@@ -112,18 +113,12 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 				}
 			}
 			return runIndex(fullReindex)
-		case "graph":
-			return runGraph()
 		case "quality":
 			return runQuality()
 		case "decay":
 			return runDecay()
-		case "tag":
-			return runTag(ctx, provider)
 		case "export":
 			return runExport(req.Args[1:])
-		case "sync-atlas":
-			return runSyncAtlas()
 		default:
 			printHelp()
 			return nil
@@ -213,25 +208,6 @@ func respond(data interface{}) {
 	_ = json.NewEncoder(os.Stdout).Encode(resp)
 }
 
-func runGraph() error {
-	cwd, _ := os.Getwd()
-	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
-	graphPath := filepath.Join(cwd, ".synapstor", ".knowledge_graph.json")
-
-	kg, err := graph.BuildGraph(ukiDir)
-	if err != nil {
-		return fmt.Errorf("erro ao construir knowledge graph: %w", err)
-	}
-
-	if err := graph.SaveGraph(kg, graphPath); err != nil {
-		return fmt.Errorf("erro ao salvar knowledge graph: %w", err)
-	}
-
-	fmt.Printf("Knowledge Graph construído: %d nós, %d arestas\n", len(kg.Nodes), len(kg.Edges))
-	fmt.Printf("Salvo em: %s\n", graphPath)
-	return nil
-}
-
 func runQuality() error {
 	cwd, _ := os.Getwd()
 	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
@@ -282,28 +258,6 @@ func runDecay() error {
 	return nil
 }
 
-func runTag(ctx context.Context, provider ai.Provider) error {
-	cwd, _ := os.Getwd()
-	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
-
-	results, err := tagger.TagAll(ctx, provider, ukiDir)
-	if err != nil {
-		return fmt.Errorf("erro ao tagear UKIs: %w", err)
-	}
-
-	if len(results) == 0 {
-		fmt.Println("Nenhum UKI encontrado para tagear.")
-		return nil
-	}
-
-	fmt.Printf("Auto-tagging concluído: %d UKIs processados\n", len(results))
-	fmt.Println()
-	for _, r := range results {
-		fmt.Printf("%s: %s\n", filepath.Base(r.Path), strings.Join(r.Tags, ", "))
-	}
-	return nil
-}
-
 func runExport(args []string) error {
 	format := "markdown"
 	outputDir := ""
@@ -348,45 +302,17 @@ func runExport(args []string) error {
 	return nil
 }
 
-func runSyncAtlas() error {
-	cwd, _ := os.Getwd()
-	snapshotPath := filepath.Join(cwd, ".yby", "atlas-snapshot.json")
-	ukiDir := filepath.Join(cwd, ".synapstor", ".uki")
-	graphPath := filepath.Join(cwd, ".synapstor", ".knowledge_graph.json")
-
-	// Carregar ou criar knowledge graph
-	kg, err := graph.LoadGraph(graphPath)
-	if err != nil {
-		kg = &graph.KnowledgeGraph{}
-	}
-
-	report, err := bridge.SyncFromAtlasWithGraph(snapshotPath, ukiDir, kg)
-	if err != nil {
-		return fmt.Errorf("erro na sincronização Atlas: %w", err)
-	}
-
-	// Salvar knowledge graph atualizado
-	if err := graph.SaveGraph(kg, graphPath); err != nil {
-		return fmt.Errorf("erro ao salvar knowledge graph: %w", err)
-	}
-
-	fmt.Printf("Sincronização Atlas → Synapstor concluída:\n")
-	fmt.Printf("  Novos UKIs:   %d\n", report.NewUKIs)
-	fmt.Printf("  Existentes:   %d\n", report.SkippedExisting)
-	fmt.Printf("  Erros:        %d\n", report.Errors)
-	return nil
-}
-
 func printHelp() {
-	fmt.Println("Synapstor Agent Commands:")
-	fmt.Println("  capture [text]                              - Captura e estrutura conhecimento")
-	fmt.Println("  study [topic]                               - Lê código e gera documentação")
-	fmt.Println("  search [query]                              - Busca semântica no índice [--top-k N]")
-	fmt.Println("  index [--full]                              - Atualiza índice de busca")
-	fmt.Println("  graph                                       - Constrói knowledge graph entre UKIs")
-	fmt.Println("  quality                                     - Avalia qualidade da documentação")
-	fmt.Println("  decay                                       - Detecta documentação obsoleta")
-	fmt.Println("  tag                                         - Auto-tagging via IA")
-	fmt.Println("  export --format <docusaurus|obsidian|md>    - Exporta UKIs")
-	fmt.Println("  sync-atlas                                  - Sincroniza componentes do Atlas")
+	fmt.Println("Synapstor - Gestao de conhecimento do projeto")
+	fmt.Println()
+	fmt.Println("Uso: yby synapstor <subcomando> [opcoes]")
+	fmt.Println()
+	fmt.Println("Subcomandos:")
+	fmt.Println("  capture \"texto\"        Captura e estrutura conhecimento via IA")
+	fmt.Println("  study \"topico\"         Analisa codigo e gera documentacao via IA")
+	fmt.Println("  search \"query\"         Busca semantica nos UKIs indexados [--top-k N]")
+	fmt.Println("  index [--full]         Indexa UKIs com embeddings (incremental)")
+	fmt.Println("  quality                Avalia qualidade dos UKIs (score 0-100)")
+	fmt.Println("  decay                  Detecta UKIs desatualizados (>90 dias)")
+	fmt.Println("  export                 Exporta UKIs (--format docusaurus|obsidian|markdown --output dir)")
 }

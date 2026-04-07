@@ -67,7 +67,7 @@ func TestBuildGraph_CriaNodesCorretamente(t *testing.T) {
 	ukiDir := filepath.Join(dir, "ukis")
 	criarUKIsExemplo(t, ukiDir)
 
-	graph, err := BuildGraph(ukiDir)
+	graph, err := BuildGraph(ukiDir, nil)
 	if err != nil {
 		t.Fatalf("erro ao construir grafo: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestBuildGraph_ExtraiRelacoesPorLink(t *testing.T) {
 	ukiDir := filepath.Join(dir, "ukis")
 	criarUKIsExemplo(t, ukiDir)
 
-	graph, err := BuildGraph(ukiDir)
+	graph, err := BuildGraph(ukiDir, nil)
 	if err != nil {
 		t.Fatalf("erro ao construir grafo: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestBuildGraph_ExtraiRelacoesPorID(t *testing.T) {
 	ukiDir := filepath.Join(dir, "ukis")
 	criarUKIsExemplo(t, ukiDir)
 
-	graph, err := BuildGraph(ukiDir)
+	graph, err := BuildGraph(ukiDir, nil)
 	if err != nil {
 		t.Fatalf("erro ao construir grafo: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestFindRelated_EncontraRelacionados(t *testing.T) {
 	ukiDir := filepath.Join(dir, "ukis")
 	criarUKIsExemplo(t, ukiDir)
 
-	graph, err := BuildGraph(ukiDir)
+	graph, err := BuildGraph(ukiDir, nil)
 	if err != nil {
 		t.Fatalf("erro ao construir grafo: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestFindRelated_SemRelacionados(t *testing.T) {
 	ukiDir := filepath.Join(dir, "ukis")
 	criarUKIsExemplo(t, ukiDir)
 
-	graph, err := BuildGraph(ukiDir)
+	graph, err := BuildGraph(ukiDir, nil)
 	if err != nil {
 		t.Fatalf("erro ao construir grafo: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSaveGraph_E_LoadGraph(t *testing.T) {
 func TestBuildGraph_DiretorioVazio(t *testing.T) {
 	dir := t.TempDir()
 
-	graph, err := BuildGraph(dir)
+	graph, err := BuildGraph(dir, nil)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestBuildGraph_DiretorioVazio(t *testing.T) {
 }
 
 func TestBuildGraph_DiretorioInexistente(t *testing.T) {
-	_, err := BuildGraph("/caminho/inexistente")
+	_, err := BuildGraph("/caminho/inexistente", nil)
 	if err == nil {
 		t.Error("esperado erro para diretório inexistente")
 	}
@@ -251,7 +251,7 @@ func TestBuildGraph_IgnoraArquivosNaoMd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	graph, err := BuildGraph(dir)
+	graph, err := BuildGraph(dir, nil)
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}

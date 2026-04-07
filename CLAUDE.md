@@ -184,12 +184,13 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Plugin Synapstor — Gestão de Conhecimento (v1.0.0)
 
-- **Knowledge Graph**: relações entre UKIs (depends_on, supersedes, relates_to) em `.synapstor/.knowledge_graph.json`
+- **Capture**: transforma texto livre em UKI estruturado via IA
+- **Study**: analisa codigo do projeto e gera documentacao tecnica via IA
+- **Search**: busca semantica nos UKIs via embeddings (Ollama local ou API)
+- **Index**: indexacao incremental com SHA-256 tracking e embeddings configuráveis por provider
 - **Quality Scoring**: score 0-100 por UKI (contexto, exemplos, headers, links, metadata)
-- **Knowledge Decay**: detecção de UKIs stale (>90 dias sem atividade git)
-- **Auto-tagging**: tags extraídas via IA do conteúdo do UKI
+- **Knowledge Decay**: deteccao de UKIs stale (>90 dias sem atividade git)
 - **Export multi-formato**: Docusaurus, Obsidian, Markdown puro
-- **Bridge Atlas**: `yby synapstor sync-atlas` sincroniza com snapshot do Atlas
 
 ### Plugin Viz — Observabilidade TUI (v1.0.0)
 
