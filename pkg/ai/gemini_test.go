@@ -50,7 +50,7 @@ func TestGeminiEmbeddingRequest_Serialization(t *testing.T) {
 	req := geminiBatchEmbeddingRequest{
 		Requests: []geminiEmbeddingRequest{
 			{
-				Model: "models/text-embedding-004",
+				Model: "models/gemini-embedding-001",
 				Content: geminiEmbeddingContent{
 					Parts: []geminiPart{{Text: "embed this text"}},
 				},

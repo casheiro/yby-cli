@@ -119,7 +119,7 @@ func TestScan_WithGoModule(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "myservice")
 	os.MkdirAll(subDir, 0755)
-	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myservice\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myservice\n\ngo 1.26\n"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
@@ -260,7 +260,7 @@ func TestScan_WithDockerfileVariant(t *testing.T) {
 	tmpDir := t.TempDir()
 	serviceDir := filepath.Join(tmpDir, "api")
 	os.MkdirAll(serviceDir, 0755)
-	os.WriteFile(filepath.Join(serviceDir, "Dockerfile.prod"), []byte("FROM golang:1.21\n"), 0644)
+	os.WriteFile(filepath.Join(serviceDir, "Dockerfile.prod"), []byte("FROM golang:1.26\n"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
@@ -283,7 +283,7 @@ func TestScan_GoModMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "meu-app")
 	os.MkdirAll(subDir, 0755)
-	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module github.com/exemplo/meu-app\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module github.com/exemplo/meu-app\n\ngo 1.26\n"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
@@ -318,9 +318,9 @@ func TestScan_DetectsRelations(t *testing.T) {
 	os.MkdirAll(appDir, 0755)
 	os.MkdirAll(libDir, 0755)
 
-	os.WriteFile(filepath.Join(libDir, "go.mod"), []byte("module github.com/exemplo/lib\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(libDir, "go.mod"), []byte("module github.com/exemplo/lib\n\ngo 1.26\n"), 0644)
 	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte(
-		"module github.com/exemplo/app\n\ngo 1.21\n\nrequire github.com/exemplo/lib v0.0.0\n\nreplace github.com/exemplo/lib => ../lib\n",
+		"module github.com/exemplo/app\n\ngo 1.26\n\nrequire github.com/exemplo/lib v0.0.0\n\nreplace github.com/exemplo/lib => ../lib\n",
 	), 0644)
 
 	bp, err := Scan(tmpDir, nil)
@@ -349,8 +349,8 @@ func TestScan_DetectsDockerfileRelations(t *testing.T) {
 	os.MkdirAll(appDir, 0755)
 	os.MkdirAll(infraDir, 0755)
 
-	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.21\n"), 0644)
-	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM golang:1.21\nCOPY app/ /src/\n"), 0644)
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.26\n"), 0644)
+	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM golang:1.26\nCOPY app/ /src/\n"), 0644)
 
 	bp, err := Scan(tmpDir, nil)
 	if err != nil {
@@ -376,7 +376,7 @@ func TestScan_DetectsLanguageAndFramework(t *testing.T) {
 	goDir := filepath.Join(tmpDir, "api-go")
 	os.MkdirAll(goDir, 0755)
 	os.WriteFile(filepath.Join(goDir, "go.mod"), []byte(
-		"module myapi\n\ngo 1.21\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+		"module myapi\n\ngo 1.26\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
 	), 0644)
 
 	// Node.js com Express
@@ -427,17 +427,17 @@ func TestScan_DetectsGoImportRelations(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Criar módulo raiz
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/exemplo/monorepo\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/exemplo/monorepo\n\ngo 1.26\n"), 0644)
 
 	// Criar lib com go.mod
 	libDir := filepath.Join(tmpDir, "lib")
 	os.MkdirAll(libDir, 0755)
-	os.WriteFile(filepath.Join(libDir, "go.mod"), []byte("module github.com/exemplo/monorepo/lib\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(libDir, "go.mod"), []byte("module github.com/exemplo/monorepo/lib\n\ngo 1.26\n"), 0644)
 
 	// Criar app que importa lib
 	appDir := filepath.Join(tmpDir, "app")
 	os.MkdirAll(appDir, 0755)
-	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/monorepo/app\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/monorepo/app\n\ngo 1.26\n"), 0644)
 	os.WriteFile(filepath.Join(appDir, "main.go"), []byte(`package main
 
 import (
@@ -473,12 +473,12 @@ func TestScan_DetectsDockerFromRelations(t *testing.T) {
 	// Criar componente app
 	appDir := filepath.Join(tmpDir, "app")
 	os.MkdirAll(appDir, 0755)
-	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.21\n"), 0644)
+	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.26\n"), 0644)
 
 	// Criar componente infra com COPY --from referenciando componente
 	infraDir := filepath.Join(tmpDir, "infra")
 	os.MkdirAll(infraDir, 0755)
-	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte(`FROM golang:1.21 AS builder
+	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte(`FROM golang:1.26 AS builder
 RUN go build -o /bin/app .
 FROM alpine AS runtime
 COPY --from=builder /bin/app /usr/local/bin/

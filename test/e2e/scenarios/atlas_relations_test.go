@@ -78,8 +78,8 @@ func TestAtlas_GoImportRelations(t *testing.T) {
 	workDir := t.TempDir()
 
 	// Criar monorepo com dois módulos Go
-	writeFile(t, workDir, "go.mod", "module github.com/test/monorepo\n\ngo 1.24\n")
-	writeFile(t, workDir, "app/go.mod", "module github.com/test/monorepo/app\n\ngo 1.24\n")
+	writeFile(t, workDir, "go.mod", "module github.com/test/monorepo\n\ngo 1.26\n")
+	writeFile(t, workDir, "app/go.mod", "module github.com/test/monorepo/app\n\ngo 1.26\n")
 	writeFile(t, workDir, "app/main.go", `package main
 
 import (
@@ -92,7 +92,7 @@ func main() {
 	fmt.Println(lib.Hello())
 }
 `)
-	writeFile(t, workDir, "lib/go.mod", "module github.com/test/monorepo/lib\n\ngo 1.24\n")
+	writeFile(t, workDir, "lib/go.mod", "module github.com/test/monorepo/lib\n\ngo 1.26\n")
 	writeFile(t, workDir, "lib/lib.go", "package lib\n\nfunc Hello() string { return \"hello\" }\n")
 
 	data := runAtlasContext(t, binary, workDir)
@@ -112,8 +112,8 @@ func TestAtlas_DockerFromRelations(t *testing.T) {
 	workDir := t.TempDir()
 
 	// Criar componente com Dockerfile multi-stage
-	writeFile(t, workDir, "app/go.mod", "module github.com/test/app\n\ngo 1.24\n")
-	writeFile(t, workDir, "app/Dockerfile", `FROM golang:1.24 AS builder
+	writeFile(t, workDir, "app/go.mod", "module github.com/test/app\n\ngo 1.26\n")
+	writeFile(t, workDir, "app/Dockerfile", `FROM golang:1.26 AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o main .
@@ -181,9 +181,9 @@ func TestAtlas_ShouldIgnore_NoFalsePositives(t *testing.T) {
 	workDir := t.TempDir()
 
 	// "my-vendor-lib" NÃO deve ser ignorado (contém "vendor" no nome mas não é um segmento exato)
-	writeFile(t, workDir, "my-vendor-lib/go.mod", "module github.com/test/my-vendor-lib\n\ngo 1.24\n")
+	writeFile(t, workDir, "my-vendor-lib/go.mod", "module github.com/test/my-vendor-lib\n\ngo 1.26\n")
 	// "vendor" DEVE ser ignorado (é um segmento exato do caminho)
-	writeFile(t, workDir, "vendor/lib/go.mod", "module github.com/test/vendor-lib\n\ngo 1.24\n")
+	writeFile(t, workDir, "vendor/lib/go.mod", "module github.com/test/vendor-lib\n\ngo 1.26\n")
 
 	data := runAtlasContext(t, binary, workDir)
 

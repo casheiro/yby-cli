@@ -46,7 +46,7 @@ func TestDetectGoFramework(t *testing.T) {
 		},
 		{
 			name:     "sem framework retorna apenas linguagem",
-			content:  "module myapp\n\ngo 1.21",
+			content:  "module myapp\n\ngo 1.26",
 			wantLang: "go",
 			wantFW:   "",
 		},
@@ -521,7 +521,7 @@ func TestDetectFramework_DockerfileGlob(t *testing.T) {
 	filenames := []string{"Dockerfile", "Dockerfile.prod", "Dockerfile.dev"}
 	for _, fn := range filenames {
 		filePath := filepath.Join(tmpDir, fn)
-		if err := os.WriteFile(filePath, []byte("FROM golang:1.21"), 0644); err != nil {
+		if err := os.WriteFile(filePath, []byte("FROM golang:1.26"), 0644); err != nil {
 			t.Fatalf("falha ao criar arquivo temporário: %v", err)
 		}
 

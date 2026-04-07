@@ -11,7 +11,7 @@ import (
 type ResourceTab int
 
 const (
-	TabPods         ResourceTab = iota
+	TabPods ResourceTab = iota
 	TabDeployments
 	TabServices
 	TabNodes

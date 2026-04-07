@@ -12,7 +12,15 @@ import (
 )
 
 const cacheTTL = 1 * time.Hour
-const cacheDir = ".yby/.sentinel/cache"
+
+// getCacheDir retorna o diretorio global de cache do Sentinel (~/.yby/sentinel/cache).
+func getCacheDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".yby/sentinel/cache" // fallback para cwd se nao encontrar home
+	}
+	return filepath.Join(home, ".yby", "sentinel", "cache")
+}
 
 // CacheEntry representa uma entrada no cache de análises.
 type CacheEntry struct {
@@ -35,7 +43,7 @@ func cacheKey(namespace, podName, logs string) string {
 // loadCache tenta carregar resultado do cache.
 func loadCache(namespace, podName, logs string) (*AnalysisResult, bool) {
 	key := cacheKey(namespace, podName, logs)
-	path := filepath.Join(cacheDir, key+".json")
+	path := filepath.Join(getCacheDir(), key+".json")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -59,7 +67,7 @@ func loadCache(namespace, podName, logs string) (*AnalysisResult, bool) {
 // saveCache salva resultado no cache.
 func saveCache(namespace, podName, logs string, result AnalysisResult) {
 	key := cacheKey(namespace, podName, logs)
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(getCacheDir(), 0755); err != nil {
 		return
 	}
 
@@ -74,5 +82,5 @@ func saveCache(namespace, podName, logs string, result AnalysisResult) {
 		return
 	}
 
-	_ = os.WriteFile(filepath.Join(cacheDir, key+".json"), data, 0600)
+	_ = os.WriteFile(filepath.Join(getCacheDir(), key+".json"), data, 0600)
 }

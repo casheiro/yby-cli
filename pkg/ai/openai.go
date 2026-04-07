@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"strings"
 	"time"
 )
@@ -25,7 +27,7 @@ func NewOpenAIProvider() *OpenAIProvider {
 	}
 
 	model := "gpt-4o-mini" // Default: rápido e econômico
-	if override := getConfiguredModel(); override != "" {
+	if override := getConfiguredModel("openai"); override != "" {
 		model = override
 	}
 
@@ -74,7 +76,7 @@ func (p *OpenAIProvider) GenerateGovernance(ctx context.Context, description str
 	reqBody := openAIRequest{
 		Model: p.Model,
 		Messages: []openAIMessage{
-			{Role: "system", Content: SystemPrompt},
+			{Role: "system", Content: prompts.Get("governance.system")},
 			{Role: "user", Content: fmt.Sprintf("Descrição do Projeto: %s", description)},
 		},
 	}
@@ -271,10 +273,17 @@ type openAIEmbeddingResponse struct {
 	} `json:"data"`
 }
 
+func getEmbeddingModelForOpenAI() string {
+	if configured := GetEmbeddingModel("openai"); configured != "" {
+		return configured
+	}
+	return "text-embedding-3-small"
+}
+
 func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	reqBody := openAIEmbeddingRequest{
 		Input:          texts,
-		Model:          "text-embedding-3-small", // Efficient and cheap
+		Model:          getEmbeddingModelForOpenAI(),
 		EncodingFormat: "float",
 	}
 

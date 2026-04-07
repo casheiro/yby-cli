@@ -38,7 +38,7 @@ golangci-lint run
 
 ## Arquitetura
 
-**Yby CLI** é um assistente de infraestrutura Kubernetes escrito em Go 1.24. Combina scaffolding interativo, automação de clusters (k3d local / VPS remoto), IA multi-provider e um sistema de plugins baseado em processos.
+**Yby CLI** é um assistente de infraestrutura Kubernetes escrito em Go 1.26. Combina scaffolding interativo, automação de clusters (k3d local / VPS remoto), IA multi-provider e um sistema de plugins baseado em processos.
 
 ### Camadas
 
@@ -102,7 +102,11 @@ Todos os serviços usam **injeção de dependência via construtor** com as inte
 
 ### IA
 
-Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem: Ollama (local) → Gemini → OpenAI. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`). Modelo selecionável via `YBY_AI_MODEL` (aplica-se a qualquer provider).
+Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem configurável via `ai.priority` em `~/.yby/config.yaml`. Ordem padrão: Ollama (local) → Claude Code CLI → Gemini CLI → Gemini API → OpenAI API. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`). Modelo selecionável via `YBY_AI_MODEL` (aplica-se a qualquer provider).
+
+**Providers CLI:** `ClaudeCLIProvider` (`pkg/ai/claude_cli.go`) e `GeminiCLIProvider` (`pkg/ai/gemini_cli.go`) usam os CLIs `claude -p` e `gemini -p` como providers de IA. Suportam `Completion` e `StreamCompletion`, não suportam embeddings. Valores aceitos em `ai.provider`: `ollama`, `gemini`, `openai`, `claude-cli`, `gemini-cli`.
+
+**Prioridade configurável:** `ai.priority` em config.yaml define a ordem de tentativa. `GetAllAvailableProviders()` retorna todos em cascata para retry automático.
 
 **Cadeia de decorators** (aplicados em `wrapProvider`):
 ```
@@ -151,22 +155,58 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 `yby init --update` faz merge inteligente entre templates novos e customizações do usuário, usando hash tracking (SHA-256) no manifest (`.yby/project.yaml`). Mutuamente exclusivo com `--force`. Resolve conflitos interativamente (survey) ou com marcadores estilo Git (`--non-interactive`). Implementado em `pkg/scaffold/merge.go`.
 
-### Plugin Bard — Sessões e Modo Batch
+### Plugin Bard — Assistente IA (v1.0.0)
 
-- **Sessões**: histórico com `SessionID` por invocação. Comandos `/sessions` (lista) e `/session <id>` (carrega). Backward-compatible com JSONL existente.
-- **Modo batch**: detecta non-TTY via `golang.org/x/term`. Processa uma pergunta por linha do stdin, output em stdout sem styling. Suporta `echo "pergunta" | yby bard`.
+- **Agent com intent classifier**: classifica intencao do usuario via IA e executa tools programaticamente (nao depende da IA gerar JSON)
+- **Tools integradas**: sentinel scan/investigate, kubectl get/logs/events/describe, atlas blueprint — executadas automaticamente pelo Bard
+- **Enriquecimento Synapstor**: busca semantica nos UKIs do projeto para contexto automatico (RAG)
+- **Capacidades do provider**: se o provider tem tools proprias (ex: Claude Code com MCP), o Bard aproveita sem restricoes
+- **Tools externas**: usuario pode registrar tools customizadas via YAML em `~/.yby/tools/` ou `.yby/tools/`
+- **3 modos de uso**: TUI interativo (`yby bard`), one-shot (`yby bard -p "pergunta"`), batch (`echo "pergunta" | yby bard`)
+- **TUI Bubbletea**: viewport com markdown rendering (Glamour), input multiline, status bar
+- **Sessoes**: historico por sessao, `/sessions` lista, `/session <id>` carrega
 
-### Plugin Atlas — Detecção Expandida
+### Plugin Atlas — Scanner de Topologia (v1.0.0)
 
-- **Ignores**: comparação por segmento de path (`ShouldIgnore`) em vez de `strings.Contains`
-- **Relações**: parsers para Go imports, Docker FROM multi-stage, Helm deps remotas, package.json file:/workspace: refs
-- **BM25**: scoring de relevância no scanner do Synapstor (`ScanWithScoring`) com fallback para Contains
+- **Analyzers de infraestrutura**: Helm (`Chart.yaml` + templates), K8s manifests (YAML com `apiVersion/kind`), Docker Compose, Kustomize, Terraform (regex)
+- **Diagrama Mermaid**: `yby atlas diagram` gera `.yby/atlas-diagram.mmd` com topologia real. Overview (padrão, max 25 nós) e full (`--detail full`)
+- **Refinamento IA**: diagrama programático enviado ao LLM para reorganização e nomes legíveis. Desativável com `--no-ai`
+- **Filtros inteligentes**: exclui templates Helm não renderizados (`{{ }}`), secrets SOPS encriptados, nós isolados no overview
+- **Detecção de relações**: Service→Pod (selects), Ingress→Service (routes), ArgoCD App→Chart (syncs), Helm deps (depends_on)
 
-### Plugin Viz — Filtros e Resiliência
+### Plugin Sentinel — Auditoria K8s (v1.0.0)
 
+- **Backends reais**: Polaris SDK (pod security, best practices) + OPA SDK (RBAC, network) em vez de checks artesanais
+- **Agrupamento inteligente**: findings deduplicados por check, mostra "Deployment/api (+5)" em vez de repetir por workload
+- **Allowlists**: RBAC ignora automaticamente `system:*`, controllers conhecidos (argocd, cert-manager, traefik, etc.)
+- **Investigacao IA inteligente**: verifica saude do pod antes de chamar IA — so aciona quando detecta problemas reais
+- **Remediacao**: `--fix-dry-run` e `--fix` com strategic-merge patches
+- **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/sentinel-scan-{namespace}-{data}.md`
+- **Cache**: investigacoes em `~/.yby/sentinel/cache/` (TTL 1h), nao polui diretorio do projeto
+- **Fallback**: checks artesanais internos quando backends nao estao disponiveis
+
+### Plugin Synapstor — Gestão de Conhecimento (v1.0.0)
+
+- **Capture**: transforma texto livre em UKI estruturado via IA
+- **Study**: analisa codigo do projeto e gera documentacao tecnica via IA
+- **Search**: busca semantica nos UKIs via embeddings (Ollama local ou API)
+- **Index**: indexacao incremental com SHA-256 tracking e embeddings configuráveis por provider
+- **Quality Scoring**: score 0-100 por UKI (contexto, exemplos, headers, links, metadata)
+- **Knowledge Decay**: deteccao de UKIs stale (>90 dias sem atividade git)
+- **Export multi-formato**: Docusaurus, Obsidian, Markdown puro
+
+### Plugin Viz — Observabilidade TUI (v1.0.0)
+
+- **Dashboard TUI**: visualizacao de Pods, Deployments, StatefulSets, Services em tempo real via Bubbletea
+- **Real K8s Client**: conexao direta ao cluster via client-go (nao usa kubectl)
+- **RetryClient**: reconexao com backoff exponencial, preserva ultimo estado durante reconexao
 - **Filtros**: namespace (`/`), label (`L`), status (`S`) com filtro server-side via `ListFilter`
-- **Reconexão**: `RetryClient` com backoff exponencial, preserva último estado durante reconexão
-- **Scroll**: PgUp/PgDn, Home/End, indicador de posição na status bar
+- **Scroll**: PgUp/PgDn, Home/End, indicador de posicao na status bar
+- **Tabs**: navegacao entre tipos de recurso (Pods, Deployments, StatefulSets, Services)
+- **Acoes**: delete, scale, restart direto da TUI com confirmacao
+- **Detail view**: YAML viewer para inspecao de recursos
+- **Logs**: visualizacao de logs de pods em tempo real
+- **Search**: busca por nome de recurso com highlight
 
 ### Enterprise Overrides
 

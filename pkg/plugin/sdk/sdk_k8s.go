@@ -9,28 +9,32 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// GetKubeClient retorna um clientset Kubernetes.
+// Usa o kubeconfig do contexto do plugin quando disponível,
+// ou o kubeconfig padrão (~/.kube/config / KUBECONFIG) como fallback.
 func GetKubeClient() (*kubernetes.Clientset, error) {
-	if currentContext == nil {
-		return nil, fmt.Errorf("SDK not initialized or no context received. Did you call sdk.Init()?")
+	var kubeConfigPath, kubeContext string
+
+	if currentContext != nil {
+		kubeConfigPath = currentContext.Infra.KubeConfig
+		kubeContext = currentContext.Infra.KubeContext
 	}
 
-	kubeConfigPath := currentContext.Infra.KubeConfig
-	config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
+	// Usar regras de carregamento padrão (respeita KUBECONFIG env var e ~/.kube/config)
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeConfigPath != "" {
+		loadingRules.ExplicitPath = kubeConfigPath
+	}
+
+	configOverrides := &clientcmd.ConfigOverrides{}
+	if kubeContext != "" {
+		configOverrides.CurrentContext = kubeContext
+	}
+
+	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+	config, err := clientConfig.ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build kube config: %w", err)
-	}
-
-	if currentContext.Infra.KubeContext != "" {
-		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-		if kubeConfigPath != "" {
-			loadingRules.ExplicitPath = kubeConfigPath
-		}
-		configOverrides := &clientcmd.ConfigOverrides{CurrentContext: currentContext.Infra.KubeContext}
-		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-		config, err = clientConfig.ClientConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create client config for context '%s': %w", currentContext.Infra.KubeContext, err)
-		}
+		return nil, fmt.Errorf("falha ao criar config kubernetes: %w", err)
 	}
 
 	return kubernetes.NewForConfig(config)

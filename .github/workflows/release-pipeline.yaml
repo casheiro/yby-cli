@@ -23,7 +23,7 @@ jobs:
       - name: 🔧 Setup Go
         uses: actions/setup-go@v5.3.0
         with:
-          go-version: "1.24"  # Resolve para última patch release (security fixes automáticos)
+          go-version: "1.26"  # Resolve para última patch release (security fixes automáticos)
 
       - name: 🏃 Run Tests
         run: go test -race ./... -v
@@ -38,23 +38,16 @@ jobs:
       - name: ⬇️ Download Dependencies
         run: go mod download
 
+      - name: 🔍 Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
       - name: 🔍 Lint Core (Fast)
-        uses: golangci/golangci-lint-action@v6.5.0
-        with:
-          version: latest
-          # Exclude heavy k8s paths
-          args: --timeout=5m --exclude-dirs plugins/sentinel/cli,pkg/plugin/sdk
-          skip-cache: false
+        run: golangci-lint run --timeout=5m --exclude-dirs plugins/sentinel/cli,pkg/plugin/sdk
 
       - name: 🔍 Lint K8s (Isolated)
-        uses: golangci/golangci-lint-action@v6.5.0
         env:
           GOGC: "30" # Aggressive GC for K8s lint
-        with:
-          version: latest
-          # Run ONLY on k8s paths with build tags
-          args: --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
-          skip-cache: false
+        run: golangci-lint run --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
         timeout-minutes: 15
 
       - name: 📜 Lint Commits
@@ -155,7 +148,7 @@ jobs:
       - name: 🔧 Setup Go
         uses: actions/setup-go@v5.3.0
         with:
-          go-version: "1.24"  # Resolve para última patch release (security fixes automáticos)
+          go-version: "1.26"  # Resolve para última patch release (security fixes automáticos)
 
       - name: 🔨 Build Native Plugins
         run: |
