@@ -9,6 +9,7 @@ import (
 // defaultPrompts mapeia nomes padronizados aos prompts default.
 var defaultPrompts = map[string]string{
 	"bard.system":          BardSystem,
+	"bard.classify":        BardClassify,
 	"sentinel.investigate": SentinelInvestigate,
 	"sentinel.scan":        SentinelScan,
 	"synapstor.capture":    SynapsotorCapture,

@@ -7,7 +7,10 @@ import (
 	"io"
 	"strings"
 
+	"encoding/json"
+
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -236,57 +239,28 @@ func (m Model) sendMessage(input string) tea.Cmd {
 			}
 		}
 
-		// Loop de tool calling
-		currentInput := runInput
-		for iteration := 0; iteration <= maxToolIterations; iteration++ {
-			var responseBuf bytes.Buffer
-			err := m.provider.StreamCompletion(ctx, m.config.SystemPrompt, currentInput, io.Writer(&responseBuf))
-			if err != nil {
-				return responseMsg{err: err}
-			}
+		// Classificar intenção via IA (chamada rápida)
+		intent := classifyIntent(ctx, m.provider, input)
 
-			response := responseBuf.String()
-			toolCalls, remainingText := tools.ParseToolCalls(response)
-
-			if len(toolCalls) == 0 {
-				return responseMsg{content: response}
-			}
-
-			// Executar tools
-			var sb strings.Builder
-			if remainingText != "" {
-				sb.WriteString(remainingText)
-				sb.WriteString("\n\n")
-			}
-
-			for _, call := range toolCalls {
-				if guardErr := tools.ValidateToolCall(call); guardErr != nil {
-					sb.WriteString(fmt.Sprintf("Resultado da ferramenta %s:\nErro: bloqueado por guardrail: %v\n\n", call.Name, guardErr))
-					continue
-				}
-
-				tool := tools.Get(call.Name)
-				if tool == nil {
-					sb.WriteString(fmt.Sprintf("Resultado da ferramenta %s:\nErro: ferramenta não encontrada\n\n", call.Name))
-					continue
-				}
-
-				output, execErr := tool.Execute(ctx, call.Params)
-				sb.WriteString(fmt.Sprintf("Resultado da ferramenta %s:\n", call.Name))
+		finalInput := runInput
+		if intent != nil && !intent.Direct && intent.Intent != "direct" {
+			tool := tools.FindByIntent(intent.Intent)
+			if tool != nil {
+				output, execErr := tool.Execute(ctx, intent.Params)
+				toolResult := output
 				if execErr != nil {
-					sb.WriteString(fmt.Sprintf("Erro: %v\n", execErr))
+					toolResult = fmt.Sprintf("Erro: %v", execErr)
 				}
-				if output != "" {
-					sb.WriteString(output)
-					sb.WriteString("\n")
-				}
-				sb.WriteString("\n")
+				finalInput = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", input, tool.Name, toolResult)
 			}
-			sb.WriteString("Continue respondendo ao usuário com base nos resultados das ferramentas.")
-			currentInput = sb.String()
 		}
 
-		return responseMsg{content: "Limite de iterações de ferramentas atingido."}
+		var responseBuf bytes.Buffer
+		err := m.provider.StreamCompletion(ctx, m.config.SystemPrompt, finalInput, io.Writer(&responseBuf))
+		if err != nil {
+			return responseMsg{err: err}
+		}
+		return responseMsg{content: responseBuf.String()}
 	}
 }
 
@@ -367,4 +341,43 @@ func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// classifyIntent classifica a intenção do usuário via IA.
+func classifyIntent(ctx context.Context, provider ai.Provider, input string) *tools.IntentResult {
+	allTools := tools.All()
+	var intentList strings.Builder
+	for _, t := range allTools {
+		if len(t.Intents) > 0 {
+			fmt.Fprintf(&intentList, "- %s: %s\n", t.Intents[0], t.Description)
+		}
+	}
+	intentList.WriteString("- direct: responder diretamente sem executar ferramenta\n")
+
+	classifyPrompt := prompts.Get("bard.classify")
+	if classifyPrompt == "" {
+		classifyPrompt = `Classifique a intencao. Responda APENAS JSON:
+{"intent":"nome","params":{"chave":"valor"},"direct":false}
+Se nao precisa de ferramenta: {"intent":"direct","params":{},"direct":true}`
+	}
+
+	userPrompt := fmt.Sprintf("Intencoes:\n%s\nUsuario: %s", intentList.String(), input)
+
+	result, err := provider.Completion(ctx, classifyPrompt, userPrompt)
+	if err != nil {
+		return &tools.IntentResult{Direct: true}
+	}
+
+	var intent tools.IntentResult
+	clean := strings.TrimSpace(result)
+	clean = strings.TrimPrefix(clean, "```json")
+	clean = strings.TrimPrefix(clean, "```")
+	clean = strings.TrimSuffix(clean, "```")
+	clean = strings.TrimSpace(clean)
+
+	if err := json.Unmarshal([]byte(clean), &intent); err != nil {
+		return &tools.IntentResult{Direct: true}
+	}
+
+	return &intent
 }

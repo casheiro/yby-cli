@@ -12,6 +12,7 @@ func init() {
 	Register(&Tool{
 		Name:        "kubectl_logs",
 		Description: "Exibe logs de um pod Kubernetes",
+		Intents:     []string{"pod_logs", "view_logs", "check_logs"},
 		Parameters: []ToolParam{
 			{Name: "pod", Description: "Nome do pod", Required: true},
 			{Name: "namespace", Description: "Namespace alvo", Required: false},

@@ -12,6 +12,7 @@ func init() {
 	Register(&Tool{
 		Name:        "kubectl_events",
 		Description: "Lista eventos Kubernetes ordenados por timestamp",
+		Intents:     []string{"pod_events", "cluster_events", "check_events"},
 		Parameters: []ToolParam{
 			{Name: "namespace", Description: "Namespace alvo. Se vazio, usa o namespace atual", Required: false},
 		},

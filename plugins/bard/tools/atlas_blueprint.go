@@ -13,6 +13,7 @@ func init() {
 	Register(&Tool{
 		Name:        "atlas_blueprint",
 		Description: "Obtém o blueprint do projeto via plugin Atlas (componentes, relações, linguagens)",
+		Intents:     []string{"infra_topology", "project_architecture", "blueprint"},
 		Parameters:  []ToolParam{},
 		Execute:     executeAtlasBlueprint,
 	})

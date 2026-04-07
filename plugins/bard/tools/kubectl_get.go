@@ -12,6 +12,7 @@ func init() {
 	Register(&Tool{
 		Name:        "kubectl_get",
 		Description: "Executa kubectl get para listar recursos Kubernetes",
+		Intents:     []string{"list_resources", "get_resources", "list_pods", "list_services"},
 		Parameters: []ToolParam{
 			{Name: "resource", Description: "Tipo de recurso (pods, services, deployments, etc.)", Required: true},
 			{Name: "namespace", Description: "Namespace alvo", Required: false},
@@ -24,7 +25,7 @@ func init() {
 func executeKubectlGet(ctx context.Context, params map[string]string) (string, error) {
 	resource := params["resource"]
 	if resource == "" {
-		return "", fmt.Errorf("parâmetro 'resource' é obrigatório")
+		resource = "pods" // default quando não especificado
 	}
 
 	args := []string{"get", resource}

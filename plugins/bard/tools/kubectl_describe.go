@@ -12,6 +12,7 @@ func init() {
 	Register(&Tool{
 		Name:        "kubectl_describe",
 		Description: "Exibe detalhes de um recurso Kubernetes específico",
+		Intents:     []string{"describe_resource", "resource_details"},
 		Parameters: []ToolParam{
 			{Name: "resource", Description: "Tipo de recurso (pod, service, deployment, etc.)", Required: true},
 			{Name: "name", Description: "Nome do recurso", Required: true},

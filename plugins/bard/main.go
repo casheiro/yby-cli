@@ -67,13 +67,132 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		})
 		return nil
 	case "command":
+		// Parsear flags
+		var promptMsg string
+		for i, arg := range req.Args {
+			if arg == "--help" || arg == "-h" || arg == "help" {
+				printBardHelp()
+				return nil
+			}
+			if (arg == "-p" || arg == "--prompt") && i+1 < len(req.Args) {
+				promptMsg = strings.Join(req.Args[i+1:], " ")
+				break
+			}
+		}
+
+		if promptMsg != "" {
+			return runOneShot(req.Context, promptMsg)
+		}
+
 		return startChat(req.Context)
 	default:
 		return nil
 	}
 }
 
+func runOneShot(ctxData map[string]interface{}, prompt string) error {
+	tools.LoadExternalTools()
+
+	ctx := context.Background()
+	provider := ai.GetProvider(ctx, "auto")
+	if provider == nil {
+		return fmt.Errorf("nenhum provedor de IA disponivel")
+	}
+
+	// Classificar intenção
+	intent := ClassifyIntent(ctx, provider, prompt)
+
+	var toolOutput string
+	var toolName string
+
+	if intent != nil && !intent.Direct && intent.Intent != "direct" {
+		tool := tools.FindByIntent(intent.Intent)
+		if tool != nil {
+			toolName = tool.Name
+			fmt.Fprintf(os.Stderr, "Executando %s...\n", toolName)
+
+			output, execErr := tool.Execute(ctx, intent.Params)
+			if execErr != nil {
+				toolOutput = fmt.Sprintf("Erro ao executar %s: %v", toolName, execErr)
+			} else {
+				toolOutput = output
+			}
+		}
+	}
+
+	// Busca semântica no Synapstor pra enriquecer contexto
+	var ukiContext string
+	cwd, _ := os.Getwd()
+	storePath := filepath.Join(cwd, ".synapstor", ".index")
+	embProvider := ai.GetEmbeddingProvider(ctx)
+	if embProvider != nil {
+		vs, vsErr := ai.NewVectorStore(ctx, storePath, embProvider)
+		if vsErr == nil {
+			results, searchErr := vs.Search(ctx, prompt, 3)
+			if searchErr == nil && len(results) > 0 {
+				var sb strings.Builder
+				for _, res := range results {
+					if res.Score > 0.4 {
+						sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", res.Metadata["title"], res.Content))
+					}
+				}
+				ukiContext = sb.String()
+			}
+		}
+	}
+
+	// Construir input
+	finalInput := prompt
+	if ukiContext != "" {
+		finalInput = fmt.Sprintf("Contexto do projeto (documentacao):\n%s\n\nPergunta: %s", ukiContext, prompt)
+	}
+	if toolOutput != "" {
+		finalInput = fmt.Sprintf("Pergunta: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise e responda de forma clara.", prompt, toolName, toolOutput)
+		if ukiContext != "" {
+			finalInput = fmt.Sprintf("Contexto do projeto:\n%s\n\nPergunta: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise e responda de forma clara.", ukiContext, prompt, toolName, toolOutput)
+		}
+	}
+
+	// Responder
+	systemPrompt := prompts.GetWithVars("bard.system", map[string]string{
+		"blueprint_json_summary": "",
+		"tools_prompt":           tools.FormatToolsPrompt(),
+		"cluster_context":        "",
+	})
+
+	return provider.StreamCompletion(ctx, systemPrompt, finalInput, os.Stdout)
+}
+
+func printBardHelp() {
+	fmt.Println("Bard - Assistente IA interativo para infraestrutura K8s")
+	fmt.Println()
+	fmt.Println("Uso: yby bard [flags]")
+	fmt.Println()
+	fmt.Println("O Bard detecta automaticamente a intencao e executa ferramentas do Yby")
+	fmt.Println("(sentinel, atlas, kubectl) quando necessario. A IA interpreta os resultados.")
+	fmt.Println()
+	fmt.Println("Flags:")
+	fmt.Println("  -p, --prompt \"msg\"    Pergunta one-shot (responde e sai)")
+	fmt.Println()
+	fmt.Println("Modos de uso:")
+	fmt.Println("  yby bard                          Chat interativo (TUI)")
+	fmt.Println("  yby bard -p \"lista os pods\"        One-shot (responde e sai)")
+	fmt.Println("  echo \"pergunta\" | yby bard         Batch via pipe")
+	fmt.Println()
+	fmt.Println("Ferramentas integradas:")
+	fmt.Println("  sentinel scan/investigate          Scan de seguranca e investigacao de pods")
+	fmt.Println("  kubectl get/logs/events/describe   Consultas read-only ao cluster")
+	fmt.Println("  atlas blueprint                    Topologia da infraestrutura")
+	fmt.Println()
+	fmt.Println("Tools externas (YAML):")
+	fmt.Println("  ~/.yby/tools/*.yaml                Tools globais do usuario")
+	fmt.Println("  .yby/tools/*.yaml                  Tools do projeto")
+}
+
 func startChat(ctxData map[string]interface{}) error {
+	// Carregar tools externas do usuário
+	tools.LoadExternalTools()
+
 	// Inicializar IA
 	ctx := context.Background()
 	provider := ai.GetProvider(ctx, "auto")
@@ -84,10 +203,11 @@ func startChat(ctxData map[string]interface{}) error {
 	// 1. Inicializar Vector Store (acesso somente leitura)
 	cwd, _ := os.Getwd()
 	storePath := filepath.Join(cwd, ".synapstor", ".index")
-	vectorStore, err := ai.NewVectorStore(ctx, storePath, provider)
+	embProvider := ai.GetEmbeddingProvider(ctx)
+	vectorStore, err := ai.NewVectorStore(ctx, storePath, embProvider)
 	if err != nil {
 		// Não fatal, apenas sem memória de longo prazo
-		fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("⚠️  Aviso: Memória semântica indisponível (%v)\n"), err)
+		slog.Debug("memoria semantica indisponivel", "erro", err)
 	}
 
 	// 2. Carregar configuração do Bard
@@ -234,118 +354,65 @@ func startChat(ctxData map[string]interface{}) error {
 			runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", truncatedRAG, input)
 		}
 
-		// Loop de tool calling (máximo 5 iterações)
-		const maxToolIterations = 5
-		currentInput := runInput
-		var finalResponse string
+		// Classificar intenção via IA (chamada rápida e focada)
+		intent := ClassifyIntent(ctx, provider, input)
 
-		for iteration := 0; iteration <= maxToolIterations; iteration++ {
-			var responseBuf bytes.Buffer
+		var toolOutput string
+		var toolName string
 
-			// Na primeira iteração, mostrar stream para o usuário
-			// Em iterações de tool calling, capturar silenciosamente
-			var writer io.Writer
-			if iteration == 0 {
-				writer = io.MultiWriter(os.Stdout, &responseBuf)
-			} else {
-				writer = &responseBuf
-			}
+		if intent != nil && !intent.Direct && intent.Intent != "direct" {
+			// Resolver e executar tool programaticamente
+			tool := tools.FindByIntent(intent.Intent)
+			if tool != nil {
+				toolName = tool.Name
+				fmt.Printf("Executando %s...\n", toolName)
 
-			retryOpts := retry.Options{
-				InitialInterval:     2 * time.Second,
-				MaxInterval:         10 * time.Second,
-				MaxElapsedTime:      30 * time.Second,
-				RandomizationFactor: 0.3,
-				Multiplier:          2.0,
-			}
-
-			attempt := 0
-			err := retry.Do(ctx, retryOpts, func() error {
-				attempt++
-				if attempt > 1 {
-					fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("\n🔄 Tentando novamente..."))
-					responseBuf.Reset()
-				}
-				return provider.StreamCompletion(ctx, systemPrompt, currentInput, writer)
-			})
-
-			if err != nil {
-				fmt.Printf("\nErro: %v\n", err)
-				break
-			}
-
-			response := responseBuf.String()
-
-			// Parsear tool calls da resposta
-			toolCalls, remainingText := tools.ParseToolCalls(response)
-			if len(toolCalls) == 0 {
-				// Sem tool calls — resposta final
-				finalResponse = response
-				break
-			}
-
-			// Executar tool calls
-			var toolResults []tools.ToolResult
-			for _, call := range toolCalls {
-				// Validar guardrails antes de executar
-				if guardErr := tools.ValidateToolCall(call); guardErr != nil {
-					toolResults = append(toolResults, tools.ToolResult{
-						ToolName: call.Name,
-						Error:    fmt.Sprintf("bloqueado por guardrail: %v", guardErr),
-					})
-					fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("\n⛔ %s bloqueado: %v"), call.Name, guardErr)
-					continue
-				}
-
-				tool := tools.Get(call.Name)
-				if tool == nil {
-					toolResults = append(toolResults, tools.ToolResult{
-						ToolName: call.Name,
-						Error:    fmt.Sprintf("ferramenta '%s' não encontrada", call.Name),
-					})
-					continue
-				}
-
-				fmt.Printf(lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Render("\n🔧 Executando %s..."), call.Name)
-
-				output, execErr := tool.Execute(ctx, call.Params)
-				result := tools.ToolResult{ToolName: call.Name, Output: output}
+				output, execErr := tool.Execute(ctx, intent.Params)
 				if execErr != nil {
-					result.Error = execErr.Error()
+					toolOutput = fmt.Sprintf("Erro ao executar %s: %v", toolName, execErr)
+				} else {
+					toolOutput = output
 				}
-				toolResults = append(toolResults, result)
-			}
-
-			// Construir input para próxima iteração com resultados
-			var sb strings.Builder
-			if remainingText != "" {
-				sb.WriteString(remainingText)
-				sb.WriteString("\n\n")
-			}
-			for _, result := range toolResults {
-				sb.WriteString(fmt.Sprintf("Resultado da ferramenta %s:\n", result.ToolName))
-				if result.Error != "" {
-					sb.WriteString(fmt.Sprintf("Erro: %s\n", result.Error))
-				}
-				if result.Output != "" {
-					sb.WriteString(result.Output)
-					sb.WriteString("\n")
-				}
-				sb.WriteString("\n")
-			}
-			sb.WriteString("Continue respondendo ao usuário com base nos resultados das ferramentas.")
-			currentInput = sb.String()
-
-			// Limpar output anterior se estava mostrando stream
-			if iteration == 0 {
-				fmt.Println()
 			}
 		}
 
-		if finalResponse != "" {
-			saveMessage("assistant", finalResponse, sessionID)
+		// Construir input pra IA — com ou sem resultado de tool
+		finalInput := runInput
+		if toolOutput != "" {
+			finalInput = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", input, toolName, toolOutput)
 		}
-		fmt.Println() // Nova linha após o stream
+
+		// Stream da resposta final
+		var responseBuf bytes.Buffer
+		writer := io.MultiWriter(os.Stdout, &responseBuf)
+
+		retryOpts := retry.Options{
+			InitialInterval:     2 * time.Second,
+			MaxInterval:         10 * time.Second,
+			MaxElapsedTime:      30 * time.Second,
+			RandomizationFactor: 0.3,
+			Multiplier:          2.0,
+		}
+
+		attempt := 0
+		err := retry.Do(ctx, retryOpts, func() error {
+			attempt++
+			if attempt > 1 {
+				fmt.Print("\nTentando novamente...")
+				responseBuf.Reset()
+			}
+			return provider.StreamCompletion(ctx, systemPrompt, finalInput, writer)
+		})
+
+		if err != nil {
+			fmt.Printf("\nErro: %v\n", err)
+		} else {
+			response := responseBuf.String()
+			if response != "" {
+				saveMessage("assistant", response, sessionID)
+			}
+		}
+		fmt.Println()
 	}
 	return nil
 }

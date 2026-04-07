@@ -12,6 +12,7 @@ func init() {
 	Register(&Tool{
 		Name:        "sentinel_scan",
 		Description: "Executa scan de segurança no cluster via plugin Sentinel",
+		Intents:     []string{"security_scan", "scan_vulnerabilities", "check_security"},
 		Parameters: []ToolParam{
 			{Name: "namespace", Description: "Namespace a escanear. Se vazio, usa o namespace atual", Required: false},
 		},

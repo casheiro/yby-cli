@@ -157,11 +157,14 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Plugin Bard — Assistente IA (v1.0.0)
 
-- **Tool Calling**: sistema de tools (kubectl get/logs/events/describe, sentinel scan, atlas blueprint) com loop de execução (max 5 iterações)
-- **TUI**: interface Bubbletea com viewport Glamour, input multiline, status bar. Modo legado via `YBY_BARD_LEGACY_UI=1`
-- **Context Awareness**: auto-injeta namespace, pods e eventos no system prompt via kubectl
-- **Guardrails**: validação de operações perigosas antes de executar tools
-- **Sessões e Batch**: histórico com SessionID, modo batch non-TTY
+- **Agent com intent classifier**: classifica intencao do usuario via IA e executa tools programaticamente (nao depende da IA gerar JSON)
+- **Tools integradas**: sentinel scan/investigate, kubectl get/logs/events/describe, atlas blueprint — executadas automaticamente pelo Bard
+- **Enriquecimento Synapstor**: busca semantica nos UKIs do projeto para contexto automatico (RAG)
+- **Capacidades do provider**: se o provider tem tools proprias (ex: Claude Code com MCP), o Bard aproveita sem restricoes
+- **Tools externas**: usuario pode registrar tools customizadas via YAML em `~/.yby/tools/` ou `.yby/tools/`
+- **3 modos de uso**: TUI interativo (`yby bard`), one-shot (`yby bard -p "pergunta"`), batch (`echo "pergunta" | yby bard`)
+- **TUI Bubbletea**: viewport com markdown rendering (Glamour), input multiline, status bar
+- **Sessoes**: historico por sessao, `/sessions` lista, `/session <id>` carrega
 
 ### Plugin Atlas — Scanner de Topologia (v1.0.0)
 

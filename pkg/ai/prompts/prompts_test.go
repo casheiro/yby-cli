@@ -52,12 +52,13 @@ func TestGetWithVars(t *testing.T) {
 func TestList(t *testing.T) {
 	names := List()
 
-	if len(names) != 8 {
-		t.Errorf("esperava 8 prompts, obteve %d: %v", len(names), names)
+	if len(names) != 9 {
+		t.Errorf("esperava 9 prompts, obteve %d: %v", len(names), names)
 	}
 
 	expected := []string{
 		"atlas.refine",
+		"bard.classify",
 		"bard.system",
 		"governance.system",
 		"sentinel.investigate",

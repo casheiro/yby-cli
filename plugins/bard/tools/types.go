@@ -6,8 +6,16 @@ import "context"
 type Tool struct {
 	Name        string
 	Description string
+	Intents     []string // palavras-chave/padrões que ativam esta ferramenta
 	Parameters  []ToolParam
 	Execute     func(ctx context.Context, params map[string]string) (string, error)
+}
+
+// IntentResult é o resultado da classificação de intenção pela IA.
+type IntentResult struct {
+	Intent string            `json:"intent"`
+	Params map[string]string `json:"params"`
+	Direct bool              `json:"direct"`
 }
 
 // ToolParam descreve um parâmetro de uma ferramenta.

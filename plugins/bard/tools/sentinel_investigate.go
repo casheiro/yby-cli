@@ -12,6 +12,7 @@ func init() {
 	Register(&Tool{
 		Name:        "sentinel_investigate",
 		Description: "Investiga a segurança de um pod específico via plugin Sentinel",
+		Intents:     []string{"investigate_pod", "diagnose_pod", "pod_health"},
 		Parameters: []ToolParam{
 			{Name: "pod", Description: "Nome do pod a investigar", Required: true},
 			{Name: "namespace", Description: "Namespace do pod", Required: false},

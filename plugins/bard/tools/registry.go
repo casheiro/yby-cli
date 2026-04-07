@@ -70,6 +70,20 @@ func FormatToolsPrompt() string {
 	return sb.String()
 }
 
+// FindByIntent retorna a primeira tool que corresponde ao intent.
+func FindByIntent(intent string) *Tool {
+	mu.RLock()
+	defer mu.RUnlock()
+	for _, tool := range registry {
+		for _, i := range tool.Intents {
+			if i == intent {
+				return tool
+			}
+		}
+	}
+	return nil
+}
+
 // Reset limpa o registry. Usado apenas em testes.
 func Reset() {
 	mu.Lock()
