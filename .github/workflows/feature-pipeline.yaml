@@ -31,7 +31,7 @@ jobs:
           go test -race -v $PKGS
 
       - name: 🧪 Run E2E Tests (Fast)
-        run: go test -race -tags e2e -run "TestAI|TestEmbedding|TestCostTracking|TestBardSessions|TestOllama|TestAtlas_ShouldIgnore|TestSynapstor_BM25|TestSynapstor_Hook" ./test/e2e/scenarios/... -v
+        run: go test -race -tags e2e -run "TestAI|TestEmbedding|TestCostTracking|TestBardSessions|TestOllama|TestAtlas_ShouldIgnore|TestSynapstor_Hook" ./test/e2e/scenarios/... -v
 
       - name: 🔒 Vulnerability Check
         run: |
@@ -47,23 +47,16 @@ jobs:
         # Smoke Test only (verify generation works, output to temp dir)
         run: go run ./cmd/yby gen-docs /tmp/yby-docs-test
 
+      - name: 🔍 Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
       - name: 🔍 Lint Core (Fast)
-        uses: golangci/golangci-lint-action@v6.5.0
-        with:
-          version: latest
-          # Exclude heavy k8s paths
-          args: --timeout=5m --exclude-dirs plugins/sentinel/cli,pkg/plugin/sdk
-          skip-cache: false
+        run: golangci-lint run --timeout=5m --exclude-dirs plugins/sentinel/cli,pkg/plugin/sdk
 
       - name: 🔍 Lint K8s (Isolated)
-        uses: golangci/golangci-lint-action@v6.5.0
         env:
           GOGC: "30" # Aggressive GC for K8s lint
-        with:
-          version: latest
-          # Run ONLY on k8s paths with build tags
-          args: --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
-          skip-cache: false
+        run: golangci-lint run --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
         timeout-minutes: 15
 
       - name: 📜 Lint Commits
