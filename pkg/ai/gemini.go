@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 )
 
 type GeminiProvider struct {
@@ -27,7 +29,7 @@ func NewGeminiProvider() *GeminiProvider {
 
 	// Precedência: config global > GEMINI_MODEL env var > default
 	model := "gemini-2.5-flash"
-	if override := getConfiguredModel(); override != "" {
+	if override := getConfiguredModel("gemini"); override != "" {
 		model = override
 	} else if envModel := os.Getenv("GEMINI_MODEL"); envModel != "" {
 		model = envModel
@@ -85,7 +87,7 @@ type geminiResponse struct {
 func (p *GeminiProvider) GenerateGovernance(ctx context.Context, description string) (*GovernanceBlueprint, error) {
 	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", p.BaseURL, p.Model, p.APIKey)
 
-	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", SystemPrompt, description)
+	fullPrompt := fmt.Sprintf("%s\n\nDESCRIÇÃO DO PROJETO: %s", prompts.Get("governance.system"), description)
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{
@@ -285,7 +287,10 @@ func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		return nil, nil
 	}
 
-	embeddingModel := "text-embedding-004"
+	embeddingModel := "gemini-embedding-001"
+	if configured := GetEmbeddingModel("gemini"); configured != "" {
+		embeddingModel = configured
+	}
 	url := fmt.Sprintf("%s/v1beta/models/%s:batchEmbedContents?key=%s", p.BaseURL, embeddingModel, p.APIKey)
 
 	const batchSize = 100

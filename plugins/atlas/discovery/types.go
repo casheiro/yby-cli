@@ -1,10 +1,20 @@
 package discovery
 
-// Blueprint representa a estrutura descoberta do projeto.
+import "github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
+
+// Blueprint representa a estrutura descoberta do projeto (legacy, usado pelo hook "context").
 type Blueprint struct {
 	Components []Component `json:"components"`
 	Relations  []Relation  `json:"relations,omitempty"`
 	Roots      []string    `json:"roots"`
+}
+
+// InfraBlueprint representa a topologia de infraestrutura descoberta no projeto.
+type InfraBlueprint struct {
+	Resources []analyzers.InfraResource `json:"resources"`
+	Relations []analyzers.InfraRelation `json:"relations,omitempty"`
+	Analyzers []string                  `json:"analyzers"` // quais analyzers contribuíram
+	RootPath  string                    `json:"root_path"`
 }
 
 // Component representa uma unidade de software descoberta.

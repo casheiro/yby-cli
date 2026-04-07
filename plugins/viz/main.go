@@ -63,7 +63,7 @@ func run() error {
 			manifest := PluginManifest{
 				Name:        "viz",
 				Description: "Observabilidade visual no terminal (Dashboards TUI)",
-				Version:     "0.1.0",
+				Version:     "1.0.0",
 				Hooks:       []string{"command"},
 			}
 			if err := json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
@@ -85,7 +85,7 @@ func run() error {
 				manifest := PluginManifest{
 					Name:        "viz",
 					Description: "Observabilidade visual no terminal (Dashboards TUI)",
-					Version:     "0.1.0",
+					Version:     "1.0.0",
 					Hooks:       []string{"command"},
 				}
 				if err := json.NewEncoder(os.Stdout).Encode(PluginResponse{Data: manifest}); err != nil {

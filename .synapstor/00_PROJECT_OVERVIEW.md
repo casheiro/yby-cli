@@ -10,7 +10,7 @@
 **Maturidade:** **Active (Governed)** - Processos ágeis, mas exigência de UKI para mudanças semânticas.
 
 ## 2. Visão Técnica
-- **Linguagem:** Go (Golang) 1.24+.
+- **Linguagem:** Go (Golang) 1.26+.
 - **Principal Artefato:** Binário CLI `yby`.
 - **Dependências Chave:** `k3d`, `kubectl`, `helm`.
 - **Padrão de Release:** Semantic Versioning via Conventional Commits + GoReleaser.

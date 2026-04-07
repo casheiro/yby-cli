@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
 )
 
 // ShouldIgnore verifica se um caminho deve ser ignorado com base na lista de ignores.
@@ -511,6 +513,180 @@ func detectHelmRemoteRelations(root string, comp Component) []Relation {
 	}
 
 	return relations
+}
+
+// infraFileNames contém os nomes de arquivos que indicam infraestrutura.
+var infraFileNames = map[string]string{
+	"Chart.yaml":          "helm",
+	"docker-compose.yml":  "compose",
+	"docker-compose.yaml": "compose",
+	"compose.yml":         "compose",
+	"compose.yaml":        "compose",
+	"kustomization.yaml":  "kustomize",
+	"kustomization.yml":   "kustomize",
+}
+
+// k8sExcludeNames são nomes de arquivo que não devem ser parseados como manifests K8s standalone.
+var k8sExcludeNames = map[string]bool{
+	"Chart.yaml":          true,
+	"values.yaml":         true,
+	"kustomization.yaml":  true,
+	"kustomization.yml":   true,
+	"docker-compose.yml":  true,
+	"docker-compose.yaml": true,
+	"compose.yml":         true,
+	"compose.yaml":        true,
+}
+
+// ScanInfra escaneia o projeto buscando topologia de infraestrutura.
+// Usa analyzers especializados para cada tipo de arquivo de infra.
+func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
+	// 1. Coletar todos os arquivos relevantes
+	var allFiles []string
+	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ShouldIgnore(path, ignores) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		allFiles = append(allFiles, path)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Classificar arquivos por analyzer
+	classified := classifyFiles(allFiles)
+
+	// 3. Rodar analyzers disponíveis
+	allAnalyzers := []analyzers.Analyzer{
+		analyzers.NewHelmAnalyzer(),
+		analyzers.NewK8sAnalyzer(),
+		analyzers.NewComposeAnalyzer(),
+		analyzers.NewKustomizeAnalyzer(),
+		analyzers.NewTerraformAnalyzer(),
+	}
+
+	bp := &InfraBlueprint{
+		RootPath: rootPath,
+	}
+
+	for _, a := range allAnalyzers {
+		files, ok := classified[a.Name()]
+		if !ok || len(files) == 0 {
+			continue
+		}
+
+		result, err := a.Analyze(rootPath, files)
+		if err != nil {
+			continue // analyzer falhou, seguir com os demais
+		}
+		if result == nil || (len(result.Resources) == 0 && len(result.Relations) == 0) {
+			continue
+		}
+
+		bp.Resources = append(bp.Resources, result.Resources...)
+		bp.Relations = append(bp.Relations, result.Relations...)
+		bp.Analyzers = append(bp.Analyzers, a.Name())
+	}
+
+	return bp, nil
+}
+
+// classifyFiles distribui os arquivos coletados por tipo de analyzer.
+func classifyFiles(files []string) map[string][]string {
+	result := make(map[string][]string)
+
+	// Primeiro passo: coletar Chart.yaml para saber quais diretórios são charts Helm
+	helmChartDirs := make(map[string]bool)
+	for _, f := range files {
+		if filepath.Base(f) == "Chart.yaml" {
+			helmChartDirs[filepath.Dir(f)] = true
+		}
+	}
+
+	for _, f := range files {
+		name := filepath.Base(f)
+		ext := filepath.Ext(f)
+
+		// Arquivos com nomes específicos
+		if analyzerType, ok := infraFileNames[name]; ok {
+			result[analyzerType] = append(result[analyzerType], f)
+			continue
+		}
+
+		// Terraform
+		if ext == ".tf" {
+			result["terraform"] = append(result["terraform"], f)
+			continue
+		}
+
+		// YAML que pode ser manifest K8s (excluindo os já classificados)
+		if (ext == ".yaml" || ext == ".yml") && !k8sExcludeNames[name] {
+			// Excluir templates Go (.tmpl), values, schemas
+			if strings.HasSuffix(name, ".tmpl") || strings.HasPrefix(name, "values") ||
+				strings.HasSuffix(name, ".schema.json") {
+				continue
+			}
+
+			// Excluir YAML dentro de templates/ de Helm charts
+			// (já são processados pelo Helm analyzer)
+			if isInsideHelmTemplates(f, helmChartDirs) {
+				continue
+			}
+
+			// Excluir arquivos encriptados por SOPS
+			if isSopsEncrypted(f) {
+				continue
+			}
+
+			result["k8s"] = append(result["k8s"], f)
+		}
+	}
+
+	return result
+}
+
+// isInsideHelmTemplates verifica se um arquivo está dentro de um diretório templates/ de um Helm chart.
+func isInsideHelmTemplates(filePath string, helmChartDirs map[string]bool) bool {
+	dir := filepath.Dir(filePath)
+	for {
+		base := filepath.Base(dir)
+		parent := filepath.Dir(dir)
+
+		if base == "templates" {
+			// Verificar se o pai é um diretório de chart Helm
+			if helmChartDirs[parent] {
+				return true
+			}
+		}
+
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return false
+}
+
+// isSopsEncrypted verifica se um arquivo YAML está encriptado por SOPS.
+// Detecta a presença de markers SOPS (ENC[AES256_GCM,...] ou campo sops:).
+func isSopsEncrypted(filePath string) bool {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return false
+	}
+	content := string(data)
+	// SOPS encripta valores com ENC[AES256_GCM,...] e adiciona metadata sops: no final
+	return strings.Contains(content, "ENC[AES256_GCM,") || strings.Contains(content, "sops:\n")
 }
 
 // detectPackageJsonRelations detecta relações a partir de dependências locais em package.json.
