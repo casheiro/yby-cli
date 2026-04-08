@@ -9,6 +9,18 @@ import (
 	"github.com/casheiro/yby-cli/pkg/retry"
 )
 
+// providerFactory é uma função que cria um provider dado um contexto.
+type providerFactory func(ctx context.Context) Provider
+
+// registeredProviders armazena factories de providers registrados via init() (ex: build tags).
+var registeredProviders = map[string]providerFactory{}
+
+// registerProvider registra uma factory de provider pelo nome.
+// Usado por arquivos com build tags para registrar providers condicionais.
+func registerProvider(name string, factory providerFactory) {
+	registeredProviders[name] = factory
+}
+
 // GetLanguage retorna o idioma configurado para IA.
 // Usa config global que já aplica precedência: env > arquivo > default (pt-BR).
 func GetLanguage() string {
@@ -65,6 +77,7 @@ var defaultPriority = []string{
 	"gemini-cli",
 	"gemini",
 	"openai",
+	"bedrock",
 }
 
 // getProviderPriority retorna a ordem de prioridade configurada pelo usuário,
@@ -104,6 +117,11 @@ func createProvider(ctx context.Context, name string) Provider {
 		p := NewGeminiCLIProvider()
 		if p.IsAvailable(ctx) {
 			return p
+		}
+	default:
+		// Verificar providers registrados via build tags (ex: bedrock com tag aws)
+		if factory, ok := registeredProviders[name]; ok {
+			return factory(ctx)
 		}
 	}
 	return nil
@@ -149,9 +167,10 @@ func GetAllAvailableProviders(ctx context.Context) []Provider {
 // embeddingCapableProviders lista os providers que suportam EmbedDocuments.
 // CLIs (claude-cli, gemini-cli) não suportam embeddings.
 var embeddingCapableProviders = map[string]bool{
-	"ollama": true,
-	"gemini": true,
-	"openai": true,
+	"ollama":  true,
+	"gemini":  true,
+	"openai":  true,
+	"bedrock": true,
 }
 
 // GetEmbeddingProvider retorna o provider de embeddings mais adequado.

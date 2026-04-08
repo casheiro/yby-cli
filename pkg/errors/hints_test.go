@@ -41,6 +41,7 @@ func TestGetDefaultHint_AllCodes(t *testing.T) {
 		ErrCodeValidation, ErrCodeConfig,
 		ErrCodePlugin, ErrCodePluginRPC, ErrCodePluginNotFound,
 		ErrCodeScaffold, ErrCodeTokenLimit,
+		ErrCodeCloudTokenExpired, ErrCodeCloudCLIMissing, ErrCodeCloudModelDisabled,
 	}
 
 	for _, code := range codes {
