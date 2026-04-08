@@ -11,6 +11,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./cmd/yby
     binary: yby
     ldflags:
@@ -25,6 +28,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./cmd/yby
     binary: yby-cloud
     flags:
