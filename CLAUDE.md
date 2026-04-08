@@ -12,6 +12,9 @@ Todo conteúdo deve ser produzido em português do Brasil (PT-BR): respostas, co
 # Build (CLI + todos os plugins)
 task build
 
+# Build variante cloud (inclui SDKs AWS/Azure/GCP)
+task build:cloud
+
 # Testes unitários
 task test
 
@@ -20,6 +23,10 @@ go test -v ./pkg/services/bootstrap/...
 
 # Teste unitário de uma função específica
 go test -v -run TestNomeDaFuncao ./pkg/services/bootstrap/...
+
+# Testes com build tags cloud
+go test -tags aws ./pkg/ai/... -race
+go test -tags aws ./pkg/cloud/... -race
 
 # Testes E2E (requer Docker)
 task test:e2e
@@ -33,6 +40,9 @@ golangci-lint run
 
 **Build tags importantes:**
 - `k8s` — necessária para compilar `plugins/sentinel/cli` e `plugins/sentinel/agent`
+- `aws` — habilita Amazon Bedrock AI provider e token generator EKS via SDK
+- `azure` — habilita token generator AKS via azidentity SDK
+- `gcp` — habilita token generator GKE via oauth2/google SDK
 - `e2e` — isola testes E2E em `test/e2e/` (não rodam no `task test`)
 - `integration` — isola testes que fazem chamadas reais a APIs externas (ex: Gemini). Rodar localmente com: `go test -tags=integration ./pkg/ai/...`. **NÃO rodar no CI.**
 
@@ -49,14 +59,15 @@ cmd/              → Camada CLI (Cobra). Cada arquivo = um comando/subcomando.
 pkg/              → Lógica de negócio e utilitários:
   services/       → Serviços com injeção de dependência via interfaces (shared.Runner, shared.Filesystem)
     bootstrap/    → Bootstrap K8s (Argo CD, secrets, configs) — usa K8sClient interface
-    environment/  → Orquestração do "up" (k3d local vs. remote) — usa ClusterManager, MirrorService
+    environment/  → Orquestração do "up" (k3d local vs. remote vs. eks/aks/gke) — usa ClusterManager, MirrorService
     network/      → Port-forward e credenciais — usa ClusterNetworkManager, LocalContainerManager
     secrets/      → Gestão de secrets
     logs/         → Serviço de logs de pods (wrapper kubectl logs com detecção de namespace)
-    doctor/       → Diagnósticos
+    doctor/       → Diagnósticos (inclui seção Cloud Providers)
     shared/       → Interfaces Runner/Filesystem + adaptadores reais (RealRunner, RealFilesystem)
   config/         → Configuração global (~/.yby/config.yaml), carregamento com precedência flags > env > config > defaults
-  ai/             → Providers de IA (Ollama > Gemini > OpenAI), factory com auto-detect, vector store
+  ai/             → Providers de IA (Ollama > Gemini > OpenAI > Bedrock), factory com auto-detect, vector store
+  cloud/          → Suporte multi-cloud (AWS EKS, Azure AKS, GCP GKE): detecção, token generators, auto-refresh
   plugin/         → Sistema de plugins: Manager (discover/install), Executor, Types (manifesto/request/response)
   context/        → Contexto de projeto (CoreContext via Synapstor/README) e ambientes (.yby/environments.yaml)
   scaffold/       → Engine de templates (Go text/template), filtros por topology/workflow/features
@@ -94,7 +105,7 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 - `.WithContext(key, value)` — adiciona contexto diagnóstico
 - `.WithHint(hint)` — adiciona sugestão de correção exibida ao usuário (ex: "Rode 'yby doctor' para verificar dependências")
 - Registry de hints automáticos em `pkg/errors/hints.go` — mapeia códigos de erro para sugestões padrão
-- Códigos: `ERR_IO`, `ERR_NETWORK_TIMEOUT`, `ERR_CLUSTER_OFFLINE`, `ERR_PLUGIN`, `ERR_VALIDATION`, `ERR_CONFIG`, `ERR_SCAFFOLD_FAILED`, etc.
+- Códigos: `ERR_IO`, `ERR_NETWORK_TIMEOUT`, `ERR_CLUSTER_OFFLINE`, `ERR_PLUGIN`, `ERR_VALIDATION`, `ERR_CONFIG`, `ERR_SCAFFOLD_FAILED`, `ERR_CLOUD_TOKEN_EXPIRED`, `ERR_CLOUD_CLI_MISSING`, `ERR_CLOUD_MODEL_DISABLED`, etc.
 
 ### Padrão de Serviços
 
@@ -102,9 +113,11 @@ Todos os serviços usam **injeção de dependência via construtor** com as inte
 
 ### IA
 
-Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem configurável via `ai.priority` em `~/.yby/config.yaml`. Ordem padrão: Ollama (local) → Claude Code CLI → Gemini CLI → Gemini API → OpenAI API. Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`). Modelo selecionável via `YBY_AI_MODEL` (aplica-se a qualquer provider).
+Factory (`pkg/ai/factory.go`) auto-detecta providers na ordem configurável via `ai.priority` em `~/.yby/config.yaml`. Ordem padrão: Ollama (local) → Claude Code CLI → Gemini CLI → Gemini API → OpenAI API → Bedrock (cloud). Idioma padrão via `YBY_AI_LANGUAGE` (default: `pt-BR`). Modelo selecionável via `YBY_AI_MODEL` (aplica-se a qualquer provider).
 
-**Providers CLI:** `ClaudeCLIProvider` (`pkg/ai/claude_cli.go`) e `GeminiCLIProvider` (`pkg/ai/gemini_cli.go`) usam os CLIs `claude -p` e `gemini -p` como providers de IA. Suportam `Completion` e `StreamCompletion`, não suportam embeddings. Valores aceitos em `ai.provider`: `ollama`, `gemini`, `openai`, `claude-cli`, `gemini-cli`.
+**Providers CLI:** `ClaudeCLIProvider` (`pkg/ai/claude_cli.go`) e `GeminiCLIProvider` (`pkg/ai/gemini_cli.go`) usam os CLIs `claude -p` e `gemini -p` como providers de IA. Suportam `Completion` e `StreamCompletion`, não suportam embeddings. Valores aceitos em `ai.provider`: `ollama`, `gemini`, `openai`, `claude-cli`, `gemini-cli`, `bedrock`.
+
+**Amazon Bedrock** (`pkg/ai/bedrock.go`, `//go:build aws`): provider de IA usando AWS Bedrock Converse API. Requer build tag `aws` e credenciais AWS configuradas. `Completion` e `StreamCompletion` via Converse/ConverseStream API. `EmbedDocuments` via InvokeModel sequencial (Titan `amazon.titan-embed-text-v2:0`). Modelo padrão: `anthropic.claude-3-5-sonnet-20241022-v2:0`. Registrado via `init()` em `bedrock_factory.go` usando sistema de `registeredProviders` para providers com build tags condicionais.
 
 **Prioridade configurável:** `ai.priority` em config.yaml define a ordem de tentativa. `GetAllAvailableProviders()` retorna todos em cascata para retry automático.
 
@@ -123,15 +136,61 @@ Raw Provider → CachedEmbeddingProvider → TokenAwareProvider → CostTracking
 
 **Ollama batch embeddings**: usa `/api/embed` (batch nativo, Ollama v0.5+) com fallback automático para `/api/embeddings` (sequencial) em versões antigas.
 
+### Suporte Multi-Cloud (EKS/AKS/GKE)
+
+Pacote `pkg/cloud/` fornece abstração para clusters K8s gerenciados em clouds públicas:
+
+- **Interface `CloudProvider`** (`provider.go`): `Name`, `IsAvailable`, `CLIVersion`, `ListClusters`, `ConfigureKubeconfig`, `ValidateCredentials`, `RefreshToken`. Registry com auto-registro via `init()`.
+- **Detecção automática** (`detect.go`): parseia `exec.command` do kubeconfig ativo (padrões: `aws`→AWS, `kubelogin`/`az`→Azure, `gke-gcloud-auth-plugin`/`gcloud`→GCP). Sem I/O de rede, < 100ms.
+- **Providers CLI** (`aws.go`, `azure.go`, `gcp.go`): implementações via CLIs `aws`, `az`, `gcloud` usando `shared.Runner`. Zero dependências externas.
+- **Token generators SDK** (`aws_token.go`, `azure_token.go`, `gcp_token.go`): build tags `aws`/`azure`/`gcp`. Stubs (`*_stub.go`) com fallback CLI quando sem tags.
+- **Token cache** (`token_cache.go`): thread-safe (`sync.RWMutex`), TTL com margem 60s.
+- **AutoRefreshTransport** (`token_refresh.go`): `http.RoundTripper` que intercepta 401, faz refresh serializado via mutex, propaga 403 sem retry.
+- **Integração K8s** (`pkg/plugin/sdk/sdk_k8s_cloud.go`): quando `Cloud != nil` e build tag presente, `GetKubeClient()` injeta bearer token e `WrapTransport = AutoRefreshTransport`.
+
+### Comandos `yby cloud`
+
+- `yby cloud connect [--provider P] [--region R] [--cluster C] [--env-name N]` — guided setup interativo ou não-interativo para conexão a cluster cloud
+- `yby cloud list [--provider P] [--region R]` — lista clusters disponíveis em tabela
+- `yby cloud status` — exibe credenciais, identidade, expiração do token
+- `yby cloud refresh [--provider P]` — força refresh do token de autenticação
+
+Implementados em `cmd/cloud.go`, `cmd/cloud_connect.go`, `cmd/cloud_list.go`, `cmd/cloud_status.go`, `cmd/cloud_refresh.go`.
+
+- `yby cloud audit [--since DURATION] [--export json|csv] [--provider P]` — consulta audit log de operações cloud
+- `yby cloud dashboard` — TUI interativo multi-cluster com auto-refresh via Bubbletea
+
+Implementados em `cmd/cloud_audit.go`, `cmd/cloud_dashboard.go`.
+
+### Auth Avançada (Nível 3)
+
+Suporte enterprise-grade a múltiplos métodos de autenticação cloud:
+
+- **AWS:** SSO (Identity Center), assume-role em cadeia (cross-account), IRSA (web identity para pods EKS), MFA no assume-role. Implementado em `pkg/cloud/aws_auth.go` (build tag `aws`).
+- **Azure:** device code flow, interactive browser login, service principal com certificado X.509, Managed Identity (MSI). Implementado em `pkg/cloud/azure_auth.go` (build tag `azure`).
+- **GCP:** Workload Identity Federation (identidades externas), SA impersonation (sem arquivo de chave), GKE Connect Gateway (clusters Fleet). Implementado em `pkg/cloud/gcp_auth.go` (build tag `gcp`).
+
+**AuthConfig** em `CloudConfig` (`pkg/context/context.go`): campos `method`, `sso_start_url`, `sso_region`, `sso_account`, `sso_role_name`, `mfa_serial`. CloudConfig também inclui `service_account`, `credentials_file`, `fleet_membership` para GCP.
+
+### Credential Store
+
+Pacote `pkg/cloud/credential_store.go`: armazenamento seguro de tokens cloud de longa duração (SSO sessions). Usa OS keychain via `go-keyring` (macOS Keychain, Linux secret-service/kwallet, Windows Credential Manager) com fallback para arquivo encriptado AES-256-GCM em `~/.yby/credentials.enc`.
+
+### Audit Log
+
+Pacote `pkg/cloud/audit.go`: log JSONL de todas as operações de autenticação cloud em `~/.yby/audit.log`. Registra quem autenticou, quando, com qual role/method, em qual cluster/provider. Rotação automática em 10MB. Comando `yby cloud audit` para consulta com filtros (`--since`, `--provider`) e export (`--export json|csv`).
+
 ### Configuração de Ambientes
 
-Arquivo `.yby/environments.yaml` define ambientes (local/remote) com tipo, valores, kubeconfig e namespace. Contexto ativo via flag `--context` ou env var `YBY_ENV`.
+Arquivo `.yby/environments.yaml` define ambientes (local/remote/eks/aks/gke) com tipo, valores, kubeconfig e namespace. Contexto ativo via flag `--context` ou env var `YBY_ENV`. Ambientes cloud possuem campo `Cloud *CloudConfig` opcional com metadados do provider (region, cluster, profile, role_arn, etc.).
+
+O comando `yby env create` aceita flags `--cloud-provider`, `--cloud-region`, `--cloud-cluster` para criar ambientes cloud. O `yby env show` exibe metadata cloud quando presente.
 
 ### Configuração Global
 
 Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
-- `ai.provider` — provider de IA preferido (ollama, gemini, openai)
-- `ai.model` — modelo específico (ex: gpt-4-turbo, gemini-pro)
+- `ai.provider` — provider de IA preferido (ollama, gemini, openai, bedrock, claude-cli, gemini-cli)
+- `ai.model` — modelo específico (ex: gpt-4-turbo, gemini-pro, anthropic.claude-3-5-sonnet-20241022-v2:0)
 - `ai.language` — idioma das respostas de IA (padrão: pt-BR)
 - `log.level` — nível de log (debug, info, warn, error)
 - `log.format` — formato de log (text, json)
@@ -226,3 +285,5 @@ Sistema de customização enterprise via arquivo YAML (`pkg/scaffold/overrides.g
 - **Logs:** `log/slog` estruturado — nunca usar `fmt.Println` para output de diagnóstico
 - **Erros em comandos:** retornar `error` (nunca chamar `os.Exit` diretamente nos RunE)
 - **Testes:** mocks via `testutil/`, testes extras em `*_extra_test.go`, E2E separados por build tag
+- **Build tags cloud:** código que depende de SDKs cloud usa `//go:build aws`/`azure`/`gcp`. Cada arquivo com build tag DEVE ter um stub correspondente (`*_stub.go` com `//go:build !tag`) para fallback CLI. `task build` (sem tags) nunca referencia SDKs cloud. `task build:cloud` compila com todas as tags.
+- **GoReleaser:** binário padrão `yby` (sem SDKs cloud) + binário `yby-cloud` (com tags `aws,azure,gcp`)

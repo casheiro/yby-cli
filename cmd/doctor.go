@@ -61,6 +61,13 @@ e se há conexão com o cluster Kubernetes configurado.`,
 			printResult(crd)
 		}
 
+		if len(report.Cloud) > 0 {
+			fmt.Println(headerStyle.Render("☁️  Cloud Providers"))
+			for _, c := range report.Cloud {
+				printResult(c)
+			}
+		}
+
 		return nil
 	},
 }

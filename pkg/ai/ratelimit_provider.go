@@ -12,9 +12,10 @@ import (
 
 // Taxas padrão de requisições por segundo por provider.
 const (
-	defaultOpenAIRate = 50.0
-	defaultGeminiRate = 60.0
-	defaultOllamaRate = 0.0 // sem limite
+	defaultOpenAIRate  = 50.0
+	defaultGeminiRate  = 60.0
+	defaultOllamaRate  = 0.0 // sem limite
+	defaultBedrockRate = 10.0
 )
 
 // ─── Circuit Breaker ──────────────────────────────────────────────────────
@@ -216,6 +217,8 @@ func getDefaultRateForProvider(providerName string) float64 {
 		return defaultGeminiRate
 	case contains(providerName, "Ollama"):
 		return defaultOllamaRate
+	case contains(providerName, "Bedrock"):
+		return defaultBedrockRate
 	default:
 		return 0
 	}

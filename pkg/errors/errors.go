@@ -102,4 +102,9 @@ const (
 
 	// AI / Token Limits
 	ErrCodeTokenLimit = "ERR_TOKEN_LIMIT"
+
+	// Cloud Providers
+	ErrCodeCloudTokenExpired  = "ERR_CLOUD_TOKEN_EXPIRED"
+	ErrCodeCloudCLIMissing    = "ERR_CLOUD_CLI_MISSING"
+	ErrCodeCloudModelDisabled = "ERR_CLOUD_MODEL_DISABLED"
 )

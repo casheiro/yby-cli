@@ -119,11 +119,11 @@ func Load() (*Config, error) {
 func (c *Config) Validate() error {
 	validProviders := map[string]bool{
 		"": true, "auto": true, "ollama": true, "gemini": true, "openai": true,
-		"claude-cli": true, "gemini-cli": true,
+		"claude-cli": true, "gemini-cli": true, "bedrock": true,
 	}
 	if !validProviders[c.AI.Provider] {
 		return ybyerrors.New(ybyerrors.ErrCodeConfig,
-			fmt.Sprintf("ai.provider inválido: %q (valores aceitos: ollama, gemini, openai, claude-cli, gemini-cli)", c.AI.Provider))
+			fmt.Sprintf("ai.provider inválido: %q (valores aceitos: ollama, gemini, openai, claude-cli, gemini-cli, bedrock)", c.AI.Provider))
 	}
 
 	// Validar cada item da lista de prioridade
@@ -133,7 +133,7 @@ func (c *Config) Validate() error {
 		}
 		if !validProviders[p] {
 			return ybyerrors.New(ybyerrors.ErrCodeConfig,
-				fmt.Sprintf("ai.priority contém provider inválido: %q (valores aceitos: ollama, gemini, openai, claude-cli, gemini-cli)", p))
+				fmt.Sprintf("ai.priority contém provider inválido: %q (valores aceitos: ollama, gemini, openai, claude-cli, gemini-cli, bedrock)", p))
 		}
 	}
 

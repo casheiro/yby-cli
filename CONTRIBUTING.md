@@ -76,6 +76,12 @@ cd yby-cli
 # Instale dependências
 go mod tidy
 
+# Build padrão (CLI + plugins, sem SDKs cloud)
+task build
+
+# Build com SDKs cloud (AWS/Azure/GCP)
+task build:cloud
+
 # Rodar testes unitários
 task test
 
@@ -87,4 +93,32 @@ golangci-lint run
 
 # Validar modo Server (Self-Provisioning)
 go run main.go setup --profile=server
+```
+
+### Build Tags Cloud
+
+O projeto usa **build tags** para isolar código que depende de SDKs cloud. Os dois binários produzidos pelo GoReleaser são:
+- **`yby`** — binário padrão, sem SDKs. Usa CLIs instalados (`aws`, `az`, `gcloud`) como fallback.
+- **`yby-cloud`** — binário com SDKs nativos AWS, Azure e GCP embutidos.
+
+| Build Tag | Escopo |
+| :--- | :--- |
+| `aws` | Provider Bedrock (IA) e token generator AWS/EKS |
+| `azure` | Token generator Azure/AKS |
+| `gcp` | Token generator GCP/GKE |
+| `k8s` | Plugin Sentinel (CLI e agent) |
+| `e2e` | Testes E2E em `test/e2e/` |
+| `integration` | Testes com chamadas reais a APIs externas |
+
+**Convenção:** código que importa SDKs cloud **DEVE** ter a build tag correspondente e um stub (arquivo `_stub.go`) sem a tag para compilação padrão.
+
+```bash
+# Testes do provider Bedrock
+go test -tags aws ./pkg/ai/... -run TestBedrock -v
+
+# Testes dos providers cloud
+go test -tags aws ./pkg/cloud/... -race -v
+
+# Testes com todas as tags cloud
+go test -tags "aws azure gcp" ./pkg/cloud/... -race -v
 ```
