@@ -110,9 +110,9 @@ func TestLoadCache_TTLExpirado(t *testing.T) {
 	logs := "logs do pod expirado"
 
 	key := cacheKey(namespace, podName, logs)
-	cacheFilePath := filepath.Join(cacheDir, key+".json")
+	cacheFilePath := filepath.Join(getCacheDir(), key+".json")
 
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(getCacheDir(), 0755); err != nil {
 		t.Fatalf("falha ao criar diretório de cache: %v", err)
 	}
 

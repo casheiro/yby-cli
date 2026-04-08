@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/scanner"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -21,65 +22,6 @@ type SynapstorResponse struct {
 	Content  string `json:"content"`
 	Summary  string `json:"summary"`
 }
-
-const CaptureSystemPrompt = `
-Goal: You are the Synapstor Agent, a Governance Architect.
-Input: Raw unstructured text (idea, log, meeting note, decision).
-Output: A structured Markdown document following theO UKI (Unit of Knowledge Interlinked) é o padrão de conhecimento do projeto.ure:
-# [Title]
-**ID:** UKI-[DOMAIN]-[CONCEPT]
-**Type:** [Concept|Decision|Guide|Reference]
-**Status:** Draft
-
-## Context
-[Context description]
-
-## Content
-[Structured content]
-
-JSON Response Format (Strict):
-{
-	"title": "Title",
-	"filename": "UKI-[TIMESTAMP]-[SHORT_SLUG].md",
-	"content": "Full markdown content...",
-	"summary": "Brief summary for indexing"
-}
-`
-
-const StudySystemPrompt = `
-Goal: You are the Synapstor Agent, a Tech Writer & Archaeologist.
-Input: Source code files related to a specific topic.
-Output: A comprehensive technical documentation (UKI) explaining how this feature/component works.
-
-Guidelines:
-1. Analyze the code to understand the logic, data structures, and flow.
-2. Abstract the implementation details into high-level concepts.
-3. Use Mermaid diagrams if complex flows are detected.
-4. Be precise and concise.
-
-Structure:
-# [Title]
-**ID:** UKI-[TIMESTAMP]-[SHORT_SLUG]
-**Type:** Reference
-**Status:** Active
-
-## Overview
-[What is this component and why does it exist?]
-
-## Architecture
-[How it works internally]
-
-## Code References
-[List key files and functions]
-
-JSON Response Format (Strict):
-{
-	"title": "Title",
-	"filename": "UKI-[TIMESTAMP]-[SHORT_SLUG].md",
-	"content": "Full markdown content...",
-	"summary": "Brief summary for indexing"
-}
-`
 
 // Agent encapsulates the Synapstor logic
 type Agent struct {
@@ -104,7 +46,7 @@ func (a *Agent) Capture(input string) error {
 	}
 
 	// Inject Timestamp to help ID generation
-	promptWithContext := fmt.Sprintf("%s\nCurrent Timestamp: %d", CaptureSystemPrompt, time.Now().Unix())
+	promptWithContext := fmt.Sprintf("%s\nCurrent Timestamp: %d", prompts.Get("synapstor.capture"), time.Now().Unix())
 
 	respJson, err := a.Provider.Completion(context.Background(), promptWithContext, input)
 	if err != nil {
@@ -149,7 +91,7 @@ func (a *Agent) Study(query string) error {
 		totalChars += len(content)
 	}
 
-	promptWithContext := fmt.Sprintf("%s\nCurrent Timestamp: %d", StudySystemPrompt, time.Now().Unix())
+	promptWithContext := fmt.Sprintf("%s\nCurrent Timestamp: %d", prompts.Get("synapstor.study"), time.Now().Unix())
 
 	if a.Provider == nil {
 		return fmt.Errorf("nenhum provedor de IA configurado")
@@ -213,7 +155,7 @@ func (a *Agent) saveResponse(respJson, successTitle string) error {
 				"Corrija e reenvie no formato JSON correto com os campos: title, filename (formato UKI-TIMESTAMP-SLUG.md), content, summary.\n"+
 				"Resposta original:\n%s", err, cleanJson)
 
-		retryJson, retryErr := a.Provider.Completion(context.Background(), CaptureSystemPrompt, correctionPrompt)
+		retryJson, retryErr := a.Provider.Completion(context.Background(), prompts.Get("synapstor.capture"), correctionPrompt)
 		if retryErr != nil {
 			return fmt.Errorf("falha na correção da IA: %w (erro original: %v)", retryErr, err)
 		}

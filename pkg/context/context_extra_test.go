@@ -136,3 +136,83 @@ func TestManager_LoadManifest_ReadFileFalha(t *testing.T) {
 	_, err := m.LoadManifest()
 	assert.Error(t, err)
 }
+
+// TestEnvironment_SemCampoCloud verifica que um environments.yaml sem o campo
+// "cloud" carrega sem erro e com Cloud == nil (retro-compatibilidade).
+func TestEnvironment_SemCampoCloud(t *testing.T) {
+	dir := t.TempDir()
+	ybyDir := filepath.Join(dir, ".yby")
+	require.NoError(t, os.MkdirAll(ybyDir, 0755))
+
+	yamlLegado := `current: local
+environments:
+  local:
+    type: local
+    description: Local dev
+    values: config/values-local.yaml
+    kube_context: kind-local
+    namespace: default
+`
+	require.NoError(t, os.WriteFile(filepath.Join(ybyDir, "environments.yaml"), []byte(yamlLegado), 0644))
+
+	m := NewManager(dir)
+	manifest, err := m.LoadManifest()
+	if err != nil {
+		t.Fatalf("environments.yaml sem campo cloud não deveria falhar: %v", err)
+	}
+	env, ok := manifest.Environments["local"]
+	if !ok {
+		t.Fatal("ambiente 'local' deveria existir")
+	}
+	if env.Cloud != nil {
+		t.Errorf("Cloud deveria ser nil quando campo ausente, got %+v", env.Cloud)
+	}
+}
+
+// TestEnvironment_ComCampoCloud verifica que os campos de CloudConfig são
+// carregados corretamente quando presentes no environments.yaml.
+func TestEnvironment_ComCampoCloud(t *testing.T) {
+	dir := t.TempDir()
+	ybyDir := filepath.Join(dir, ".yby")
+	require.NoError(t, os.MkdirAll(ybyDir, 0755))
+
+	yamlCloud := `current: prod
+environments:
+  prod:
+    type: eks
+    description: Producao AWS
+    values: config/values-prod.yaml
+    cloud:
+      provider: aws
+      region: us-east-1
+      cluster: prod-cluster
+      profile: default
+      role_arn: arn:aws:iam::123456789012:role/eks-role
+`
+	require.NoError(t, os.WriteFile(filepath.Join(ybyDir, "environments.yaml"), []byte(yamlCloud), 0644))
+
+	m := NewManager(dir)
+	manifest, err := m.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest falhou: %v", err)
+	}
+	env, ok := manifest.Environments["prod"]
+	if !ok {
+		t.Fatal("ambiente 'prod' deveria existir")
+	}
+	if env.Cloud == nil {
+		t.Fatal("Cloud deveria estar preenchido")
+	}
+	if env.Cloud.Provider != "aws" {
+		t.Errorf("Cloud.Provider esperado 'aws', got '%s'", env.Cloud.Provider)
+	}
+	if env.Cloud.Region != "us-east-1" {
+		t.Errorf("Cloud.Region esperado 'us-east-1', got '%s'", env.Cloud.Region)
+	}
+	if env.Cloud.Cluster != "prod-cluster" {
+		t.Errorf("Cloud.Cluster esperado 'prod-cluster', got '%s'", env.Cloud.Cluster)
+	}
+	if env.Cloud.RoleARN != "arn:aws:iam::123456789012:role/eks-role" {
+		t.Errorf("Cloud.RoleARN inesperado: %s", env.Cloud.RoleARN)
+	}
+}

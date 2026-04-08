@@ -112,9 +112,10 @@ func TestOllamaBatchEmbeddings(t *testing.T) {
 					return
 				}
 
-				// Verificar que recebeu batch (múltiplos textos)
-				if len(req.Input) < 2 {
-					t.Errorf("Esperava batch com múltiplos textos, recebeu %d", len(req.Input))
+				// ollamaEmbedBatchSize=1: cada chamada envia 1 texto por vez
+				// (documentos inteiros podem exceder context window)
+				if len(req.Input) != 1 {
+					t.Errorf("Esperava 1 texto por chamada (batch size=1), recebeu %d", len(req.Input))
 				}
 
 				// Gerar embeddings fake
@@ -151,9 +152,10 @@ func TestOllamaBatchEmbeddings(t *testing.T) {
 			t.Fatalf("Esperava %d embeddings, obteve %d", len(texts), len(results))
 		}
 
+		// Com batch size=1, espera-se 1 chamada por texto
 		calls := int(embedCalls.Load())
-		if calls != 1 {
-			t.Errorf("Esperava 1 chamada batch a /api/embed, obteve %d", calls)
+		if calls != len(texts) {
+			t.Errorf("Esperava %d chamadas a /api/embed (batch size=1), obteve %d", len(texts), calls)
 		}
 	})
 

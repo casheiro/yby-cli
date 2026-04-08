@@ -6,7 +6,9 @@ package cmd
 import (
 	gocontext "context"
 	"fmt"
+	"time"
 
+	"github.com/casheiro/yby-cli/pkg/cloud"
 	ybycontext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
@@ -112,6 +114,43 @@ var envShowCmd = &cobra.Command{
 		if env.URL != "" {
 			fmt.Printf("URL: %s\n", env.URL)
 		}
+
+		// Exibe metadata cloud se presente
+		if env.Cloud != nil {
+			fmt.Println("\nCloud:")
+			fmt.Printf("  Provider: %s\n", env.Cloud.Provider)
+			if env.Cloud.Region != "" {
+				fmt.Printf("  Region: %s\n", env.Cloud.Region)
+			}
+			if env.Cloud.Cluster != "" {
+				fmt.Printf("  Cluster: %s\n", env.Cloud.Cluster)
+			}
+			if env.Cloud.Profile != "" {
+				fmt.Printf("  Profile: %s\n", env.Cloud.Profile)
+			}
+			if env.Cloud.RoleARN != "" {
+				fmt.Printf("  Role ARN: %s\n", env.Cloud.RoleARN)
+			}
+
+			// Tenta validar credenciais com timeout curto
+			runner := &shared.RealRunner{}
+			provider := cloud.GetProvider(runner, env.Cloud.Provider)
+			if provider != nil {
+				ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
+				defer cancel()
+				if status, err := provider.ValidateCredentials(ctx); err == nil {
+					if status.Authenticated {
+						fmt.Printf("  Credenciais: ✅ válidas (%s)\n", status.Identity)
+						if status.ExpiresAt != nil {
+							fmt.Printf("  Expira em: %s\n", status.ExpiresAt.Format(time.RFC3339))
+						}
+					} else {
+						fmt.Printf("  Credenciais: ❌ inválidas\n")
+					}
+				}
+			}
+		}
+
 		return nil
 	},
 }
@@ -155,6 +194,49 @@ var envCreateCmd = &cobra.Command{
 		kubeContext, _ := cmd.Flags().GetString("kube-context")
 		namespace, _ := cmd.Flags().GetString("namespace")
 
+		// Flags cloud
+		cloudProvider, _ := cmd.Flags().GetString("cloud-provider")
+		cloudRegion, _ := cmd.Flags().GetString("cloud-region")
+		cloudCluster, _ := cmd.Flags().GetString("cloud-cluster")
+
+		// Validação do cloud provider
+		var cloudCfg *ybycontext.CloudConfig
+		if cloudProvider != "" {
+			validProviders := map[string]bool{"aws": true, "azure": true, "gcp": true}
+			if !validProviders[cloudProvider] {
+				return errors.New(errors.ErrCodeValidation,
+					fmt.Sprintf("Cloud provider inválido: '%s'. Valores aceitos: aws, azure, gcp", cloudProvider))
+			}
+
+			runner := &shared.RealRunner{}
+			provider := cloud.GetProvider(runner, cloudProvider)
+			if provider == nil {
+				return errors.New(errors.ErrCodeValidation,
+					fmt.Sprintf("Provider '%s' não está registrado", cloudProvider))
+			}
+
+			// Configurar kubeconfig se cluster especificado
+			if cloudCluster != "" {
+				clusterInfo := cloud.ClusterInfo{
+					Name:     cloudCluster,
+					Region:   cloudRegion,
+					Provider: cloudProvider,
+				}
+				ctx := gocontext.Background()
+				if err := provider.ConfigureKubeconfig(ctx, clusterInfo); err != nil {
+					fmt.Printf("⚠️  Falha ao configurar kubeconfig para cluster '%s': %v\n", cloudCluster, err)
+				} else {
+					fmt.Printf("   Kubeconfig configurado para cluster '%s'\n", cloudCluster)
+				}
+			}
+
+			cloudCfg = &ybycontext.CloudConfig{
+				Provider: cloudProvider,
+				Region:   cloudRegion,
+				Cluster:  cloudCluster,
+			}
+		}
+
 		// Gera values estruturados a partir do project manifest, se disponível
 		var valuesContent string
 		if manifest, err := scaffold.LoadProjectManifest(infraRoot); err == nil {
@@ -167,6 +249,7 @@ var envCreateCmd = &cobra.Command{
 			Description: description,
 			KubeContext: kubeContext,
 			Namespace:   namespace,
+			Cloud:       cloudCfg,
 		}
 
 		mgr := ybycontext.NewManager(infraRoot)
@@ -176,6 +259,15 @@ var envCreateCmd = &cobra.Command{
 
 		fmt.Printf("✅ Ambiente '%s' criado com sucesso!\n", name)
 		fmt.Printf("   Arquivo de configuração: config/values-%s.yaml\n", name)
+		if cloudCfg != nil {
+			fmt.Printf("   Cloud provider: %s\n", cloudCfg.Provider)
+			if cloudCfg.Region != "" {
+				fmt.Printf("   Região: %s\n", cloudCfg.Region)
+			}
+			if cloudCfg.Cluster != "" {
+				fmt.Printf("   Cluster: %s\n", cloudCfg.Cluster)
+			}
+		}
 
 		// Validação de integridade após criação
 		warnings, err := mgr.ValidateIntegrity()
@@ -230,4 +322,7 @@ func init() {
 	envCreateCmd.Flags().String("description", "", "Descrição do ambiente")
 	envCreateCmd.Flags().String("kube-context", "", "Contexto kubectl associado ao ambiente")
 	envCreateCmd.Flags().String("namespace", "", "Namespace padrão do ambiente")
+	envCreateCmd.Flags().String("cloud-provider", "", "Cloud provider (aws, azure, gcp)")
+	envCreateCmd.Flags().String("cloud-region", "", "Região do cloud provider")
+	envCreateCmd.Flags().String("cloud-cluster", "", "Nome do cluster cloud")
 }

@@ -57,9 +57,9 @@ func runSearch(args []string) {
 	}
 
 	ctx := context.Background()
-	provider := ai.GetProvider(ctx, "auto")
+	provider := ai.GetEmbeddingProvider(ctx)
 	if provider == nil {
-		fmt.Println("❌ Nenhum provedor de IA configurado.")
+		fmt.Println("Nenhum provedor de IA com suporte a embeddings disponivel (ollama, gemini, openai).")
 		return
 	}
 
@@ -78,8 +78,15 @@ func runSearch(args []string) {
 		return
 	}
 
-	results := make([]searchResult, len(docs))
-	for i, doc := range docs {
+	// Filtrar resultados com score mínimo de relevância
+	const minScore = 0.35
+	var results []searchResult
+	idx := 1
+	for _, doc := range docs {
+		if doc.Score < minScore {
+			continue
+		}
+
 		title := doc.Metadata["title"]
 		if title == "" {
 			title = doc.Metadata["filename"]
@@ -90,12 +97,13 @@ func runSearch(args []string) {
 
 		preview := truncatePreview(doc.Content, 200)
 
-		results[i] = searchResult{
-			Index:   i + 1,
+		results = append(results, searchResult{
+			Index:   idx,
 			Score:   doc.Score,
 			Title:   title,
 			Preview: preview,
-		}
+		})
+		idx++
 	}
 
 	fmt.Print(formatSearchResults(query, results))
@@ -121,6 +129,13 @@ func formatSearchResults(query string, results []searchResult) string {
 
 // truncatePreview corta o conteúdo no limite de caracteres, adicionando "..." se truncado.
 func truncatePreview(content string, maxLen int) string {
+	// Remover frontmatter YAML (--- ... ---)
+	if strings.HasPrefix(content, "---\n") {
+		if end := strings.Index(content[4:], "\n---"); end >= 0 {
+			content = strings.TrimSpace(content[end+8:])
+		}
+	}
+
 	// Remover quebras de linha para preview compacto
 	content = strings.ReplaceAll(content, "\n", " ")
 	content = strings.TrimSpace(content)

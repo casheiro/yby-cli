@@ -40,6 +40,11 @@ var knownModels = map[string]ModelMetadata{
 	"gemini-1.5-flash": {Name: "gemini-1.5-flash", ContextWindow: 1_000_000},
 	"gemini-1.5-pro":   {Name: "gemini-1.5-pro", ContextWindow: 2_000_000},
 
+	// AWS Bedrock
+	"anthropic.claude-3-5-sonnet-20241022-v2:0": {Name: "claude-3.5-sonnet-bedrock", ContextWindow: 200_000},
+	"anthropic.claude-3-haiku-20240307-v1:0":    {Name: "claude-3-haiku-bedrock", ContextWindow: 200_000},
+	"amazon.titan-embed-text-v2:0":              {Name: "titan-embed-v2", ContextWindow: 8_192},
+
 	// Ollama (modelos comuns — limites variam por quantização)
 	"llama3":    {Name: "llama3", ContextWindow: 8_192},
 	"llama3.1":  {Name: "llama3.1", ContextWindow: 128_000},

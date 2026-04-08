@@ -15,6 +15,7 @@ type DoctorReport struct {
 	Tools   []CheckResult
 	Cluster []CheckResult
 	CRDs    []CheckResult
+	Cloud   []CheckResult
 }
 
 // Service define o contrato do serviço de diagnóstico.

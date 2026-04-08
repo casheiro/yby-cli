@@ -435,5 +435,5 @@ func TestOllamaProvider_EmbedDocuments_LargeBatch(t *testing.T) {
 	results, err := provider.EmbedDocuments(context.Background(), texts)
 	require.NoError(t, err)
 	assert.Len(t, results, 75)
-	assert.Equal(t, 2, batchCount, "deveria ter feito 2 requests de batch")
+	assert.Equal(t, 75, batchCount, "deveria ter feito 75 requests (batch de 1)")
 }
