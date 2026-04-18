@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 )
 
 type OllamaProvider struct {
@@ -43,7 +45,7 @@ func NewOllamaProvider() *OllamaProvider {
 
 	model := "llama3"
 	modelConfigured := false
-	if override := getConfiguredModel(); override != "" {
+	if override := getConfiguredModel("ollama"); override != "" {
 		model = override
 		modelConfigured = true
 	}
@@ -163,7 +165,7 @@ func (p *OllamaProvider) GenerateGovernance(ctx context.Context, description str
 	reqBody := ollamaRequest{
 		Model:  p.Model,
 		Prompt: fmt.Sprintf("Descrição do Projeto: %s", description),
-		System: SystemPrompt,
+		System: prompts.Get("governance.system"),
 		Stream: false,
 		Format: "json",
 	}
@@ -285,7 +287,8 @@ func (p *OllamaProvider) StreamCompletion(ctx context.Context, systemPrompt, use
 }
 
 // ollamaEmbedBatchSize define o tamanho máximo de batch para /api/embed (Ollama v0.5+).
-const ollamaEmbedBatchSize = 50
+// Batch de 1 pois documentos inteiros (UKIs) podem exceder o context window do modelo.
+const ollamaEmbedBatchSize = 1
 
 type ollamaEmbedRequest struct {
 	Model string   `json:"model"`
@@ -317,6 +320,13 @@ func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		}
 	}
 
+	// Usar modelo de embedding específico se configurado
+	origModel := p.Model
+	if embModel := GetEmbeddingModel("ollama"); embModel != "" {
+		p.Model = embModel
+	}
+	defer func() { p.Model = origModel }()
+
 	results, err := p.embedBatch(ctx, texts)
 	if err != nil {
 		return nil, err
@@ -326,7 +336,7 @@ func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 
 // embedBatch usa /api/embed (batch, Ollama v0.5+) com fallback para /api/embeddings (sequencial).
 func (p *OllamaProvider) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
-	client := http.Client{Timeout: 300 * time.Second}
+	client := http.Client{Timeout: 300 * time.Second} // 5min — documentos grandes
 	var allResults [][]float32
 
 	for i := 0; i < len(texts); i += ollamaEmbedBatchSize {

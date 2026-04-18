@@ -247,3 +247,21 @@ func TestEnvironmentService_Up_Remote_NamespacePadrao(t *testing.T) {
 		t.Errorf("esperado sem erro, obtido: %v", err)
 	}
 }
+
+func TestIsValidEnvironmentType_TiposValidos(t *testing.T) {
+	validos := []string{"local", "remote", "eks", "aks", "gke"}
+	for _, tipo := range validos {
+		if !IsValidEnvironmentType(tipo) {
+			t.Errorf("tipo '%s' deveria ser válido", tipo)
+		}
+	}
+}
+
+func TestIsValidEnvironmentType_TiposInvalidos(t *testing.T) {
+	invalidos := []string{"", "aws", "azure", "gcp", "k3d", "unknown"}
+	for _, tipo := range invalidos {
+		if IsValidEnvironmentType(tipo) {
+			t.Errorf("tipo '%s' não deveria ser válido", tipo)
+		}
+	}
+}

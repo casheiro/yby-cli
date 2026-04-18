@@ -2,8 +2,11 @@ package doctor
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
+	"github.com/casheiro/yby-cli/pkg/cloud"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
@@ -40,6 +43,9 @@ func (s *doctorService) Run(ctx context.Context) *DoctorReport {
 	report.CRDs = append(report.CRDs, s.checkCRD(ctx, "servicemonitors.monitoring.coreos.com", "Prometheus Operator"))
 	report.CRDs = append(report.CRDs, s.checkCRD(ctx, "clusterissuers.cert-manager.io", "Cert-Manager"))
 	report.CRDs = append(report.CRDs, s.checkCRD(ctx, "scaledobjects.keda.sh", "KEDA"))
+
+	// Cloud Providers
+	report.Cloud = s.checkCloudProviders(ctx)
 
 	return report
 }
@@ -84,6 +90,94 @@ func (s *doctorService) checkOptionalTool(ctx context.Context, name, label strin
 		return CheckResult{Name: label, Status: false, Message: "Não encontrado (opcional)"}
 	}
 	return CheckResult{Name: label, Status: true, Message: path}
+}
+
+func (s *doctorService) checkCloudProviders(ctx context.Context) []CheckResult {
+	providers := cloud.Detect(ctx, s.runner)
+	if len(providers) == 0 {
+		return []CheckResult{
+			{Name: "Cloud Providers", Status: true, Message: "Nenhum provider cloud detectado"},
+		}
+	}
+
+	var results []CheckResult
+	for _, p := range providers {
+		version, err := p.CLIVersion(ctx)
+		if err != nil {
+			results = append(results, CheckResult{
+				Name:    p.Name(),
+				Status:  false,
+				Message: "CLI detectado mas não foi possível obter versão",
+			})
+		} else {
+			results = append(results, CheckResult{
+				Name:    p.Name(),
+				Status:  true,
+				Message: fmt.Sprintf("CLI %s instalado", version),
+			})
+		}
+
+		// Verificar kubelogin para Azure
+		if p.Name() == "azure" {
+			type kubeloginChecker interface {
+				IsKubeloginAvailable(ctx context.Context) bool
+			}
+			if checker, ok := p.(kubeloginChecker); ok {
+				if checker.IsKubeloginAvailable(ctx) {
+					results = append(results, CheckResult{
+						Name:    "azure kubelogin",
+						Status:  true,
+						Message: "kubelogin instalado (necessário para autenticação AAD/Entra ID)",
+					})
+				} else {
+					results = append(results, CheckResult{
+						Name:    "azure kubelogin",
+						Status:  false,
+						Message: "kubelogin não encontrado. Instale para autenticação AAD/Entra ID em clusters AKS",
+					})
+				}
+			}
+		}
+
+		// Validar credenciais com timeout de 10s
+		credCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		credStatus, err := p.ValidateCredentials(credCtx)
+		cancel()
+
+		if err != nil {
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("%s credenciais", p.Name()),
+				Status:  false,
+				Message: "Não foi possível validar credenciais",
+			})
+			continue
+		}
+
+		if credStatus.Authenticated {
+			msg := fmt.Sprintf("Autenticado como %s", credStatus.Identity)
+			if credStatus.ExpiresAt != nil && credStatus.ExpiresAt.Before(time.Now()) {
+				results = append(results, CheckResult{
+					Name:    fmt.Sprintf("%s credenciais", p.Name()),
+					Status:  false,
+					Message: "Token expirado. Execute 'yby cloud refresh'",
+				})
+			} else {
+				results = append(results, CheckResult{
+					Name:    fmt.Sprintf("%s credenciais", p.Name()),
+					Status:  true,
+					Message: msg,
+				})
+			}
+		} else {
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("%s credenciais", p.Name()),
+				Status:  false,
+				Message: "Não autenticado. Execute 'yby cloud auth'",
+			})
+		}
+	}
+
+	return results
 }
 
 func (s *doctorService) checkCRD(ctx context.Context, crdName, readableName string) CheckResult {

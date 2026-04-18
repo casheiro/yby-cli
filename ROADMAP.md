@@ -29,12 +29,25 @@ Nesta fase, o foco é solidificar a base do CLI, garantindo que ele seja confiá
 
 Com a base sólida, expandiremos as capacidades do Yby para torná-lo um verdadeiro "co-piloto" de infraestrutura.
 
+-   **Multi-Cloud (EKS / AKS / GKE):** ✅ Entregue
+    -   [x] Comandos `yby cloud connect|list|status|refresh` para gerenciar clusters em clouds públicas
+    -   [x] Tipos de ambiente `eks`, `aks`, `gke` com token generators SDK e fallback CLI
+    -   [x] AutoRefreshTransport para refresh automático de tokens K8s expirados
+    -   [x] Build variants: `yby` (padrão) e `yby-cloud` (com SDKs nativos)
+    -   [x] `yby doctor` com seção "Cloud Providers" (detecção de CLIs e validação de credenciais)
+-   **Amazon Bedrock (IA):** ✅ Entregue
+    -   [x] 6º provider de IA via Converse API + Titan Embeddings (build tag `aws`)
 -   **Inteligência Artificial:**
     -   [ ] Integração de modelos de IA para diagnósticos avançados de falhas em clusters e sugestões de correção proativa.
 -   **Ecossistema de Plugins:**
     -   [ ] Expansão da arquitetura de plugins para permitir maior modularidade e facilidade de extensão por outras squads.
 -   **Interface Opcional:**
     -   [ ] Desenvolvimento de uma interface Web local (dashboard) opcional para visualização de estado e métricas rápidas.
+-   **Cloud — Auth Avançada & Auditoria:** ✅ Entregue
+    -   [x] Credential store seguro via OS keychain (go-keyring) com fallback encriptado AES-256-GCM
+    -   [x] Auth avançada: SSO/MFA (AWS), device code/interactive/cert/MSI (Azure), WIF/SA impersonation/Connect Gateway (GCP)
+    -   [x] Audit log JSONL de operações cloud com rotação 10MB e export json/csv
+    -   [x] Dashboard TUI multi-cluster interativo (`yby cloud dashboard`)
 
 ### Longo Prazo (2027+) - Foco: Ecossistema & Autonomia
 

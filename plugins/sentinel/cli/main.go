@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/charmbracelet/lipgloss"
@@ -56,6 +57,35 @@ func main() {
 	handlePluginRequest()
 }
 
+// printSentinelHelp exibe a ajuda do Sentinel.
+func printSentinelHelp() {
+	fmt.Println("Sentinel - Auditoria de seguranca e conformidade K8s")
+	fmt.Println()
+	fmt.Println("Uso: yby sentinel <subcomando> [flags]")
+	fmt.Println()
+	fmt.Println("Subcomandos:")
+	fmt.Println("  scan                  Escaneia vulnerabilidades de seguranca")
+	fmt.Println("  investigate <pod>     Investiga um pod com IA")
+	fmt.Println()
+	fmt.Println("Flags (scan):")
+	fmt.Println("  -n, --namespace       Namespace a escanear (padrao: default)")
+	fmt.Println("  -o, --output          Formato de saida: terminal, json, markdown")
+	fmt.Println("  -f, --file            Salvar resultado em arquivo")
+	fmt.Println("  -p, --profile         Perfil de compliance: cis-l1, cis-l2, pci-dss, soc2")
+	fmt.Println("  --fix-dry-run         Mostrar patches de remediacao sem aplicar")
+	fmt.Println("  --fix                 Aplicar patches de remediacao")
+	fmt.Println()
+	fmt.Println("Flags (investigate):")
+	fmt.Println("  -n, --namespace       Namespace do pod (padrao: default)")
+	fmt.Println("  --no-cache            Ignorar cache de analises anteriores")
+	fmt.Println()
+	fmt.Println("Exemplos:")
+	fmt.Println("  yby sentinel scan -n default")
+	fmt.Println("  yby sentinel scan -n production --profile cis-l1")
+	fmt.Println("  yby sentinel scan -n default --fix-dry-run")
+	fmt.Println("  yby sentinel investigate meu-pod -n default")
+}
+
 // AnalysisResult define a estrutura esperada da resposta da IA
 type AnalysisResult struct {
 	RootCause       string  `json:"root_cause"`
@@ -72,15 +102,20 @@ func handlePluginRequest() {
 	case "manifest":
 		respond(plugin.PluginManifest{
 			Name:        "sentinel",
-			Version:     "0.2.0",
-			Description: "Auditoria de segurança e conformidade (CIS/NSA)",
+			Version:     "1.0.0",
+			Description: "Auditoria de seguranca K8s com scan de vulnerabilidades e investigacao IA",
 			Hooks:       []string{"command"},
 		})
 	case "command":
 		args := sdk.GetArgs() // Use SDK args
 
 		if len(args) == 0 {
-			fmt.Println("❌ Subcomando obrigatório. Uso: yby sentinel <investigate|scan> [flags]")
+			printSentinelHelp()
+			return
+		}
+
+		if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+			printSentinelHelp()
 			return
 		}
 
@@ -159,8 +194,9 @@ func handlePluginRequest() {
 			investigate(podName, namespace, outputFormat, outputFile, noCache)
 
 		case "scan":
-			// Expect "yby sentinel scan [-n namespace] [-o format] [-f file]"
-			var namespace, outputFormat, outputFile string
+			// Expect "yby sentinel scan [-n namespace] [-o format] [-f file] [--profile name] [--fix] [--fix-dry-run]"
+			var namespace, outputFormat, outputFile, profile string
+			var fix, fixDryRun bool
 			remainingArgs := args[1:]
 
 			for i := 0; i < len(remainingArgs); i++ {
@@ -186,16 +222,32 @@ func handlePluginRequest() {
 					}
 					continue
 				}
+				if arg == "--profile" || arg == "-p" {
+					if i+1 < len(remainingArgs) {
+						profile = remainingArgs[i+1]
+						i++
+					}
+					continue
+				}
+				if arg == "--fix" {
+					fix = true
+					continue
+				}
+				if arg == "--fix-dry-run" {
+					fixDryRun = true
+					continue
+				}
 			}
 
 			if namespace == "" {
 				namespace = "default"
 			}
 
-			scanNamespace(namespace, outputFormat, outputFile)
+			scanNamespace(namespace, outputFormat, outputFile, profile, fix, fixDryRun)
 
 		default:
-			fmt.Printf("❌ Subcomando desconhecido: %s. Uso: yby sentinel <investigate|scan> [flags]\n", args[0])
+			fmt.Printf("Subcomando desconhecido: %s\n\n", args[0])
+			printSentinelHelp()
 		}
 	default:
 		// Se rodar sem hook mas com args via main, talvez seja uso direto?
@@ -308,15 +360,29 @@ func investigate(podName, namespace, outputFormat, outputFile string, noCache bo
 		fmt.Println("\r⚠️  Métricas indisponíveis (sem contexto)")
 	}
 
+	// Verificar se o pod tem sinais de problema antes de enviar pra IA
+	pod, podErr := k8sClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if podErr == nil {
+		healthy := isPodHealthy(pod, events)
+		if healthy {
+			fmt.Println("\nPod saudavel — nenhum problema identificado.")
+			fmt.Printf("  Status: %s\n", pod.Status.Phase)
+			for _, cs := range pod.Status.ContainerStatuses {
+				fmt.Printf("  Container %s: Ready=%v, Restarts=%d\n", cs.Name, cs.Ready, cs.RestartCount)
+			}
+			return
+		}
+	}
+
 	// Construct Context for AI
 	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", logsStr, eventsStr, metricsStr)
 
 	if len(strings.TrimSpace(realContext)) < 20 {
-		fmt.Println("❌ Dados insuficientes (logs/eventos) coletados para análise.")
+		fmt.Println("Dados insuficientes (logs/eventos) coletados para analise.")
 		return
 	}
 
-	fmt.Println("\n🤖 Analisando com IA...")
+	fmt.Println("\nAnalisando com IA...")
 
 	provider := ai.GetProvider(ctx, "auto")
 	if provider == nil {
@@ -324,7 +390,7 @@ func investigate(podName, namespace, outputFormat, outputFile string, noCache bo
 		return
 	}
 
-	analysisJSON, err := provider.Completion(ctx, SentinelSystemPrompt, realContext)
+	analysisJSON, err := provider.Completion(ctx, prompts.Get("sentinel.investigate"), realContext)
 	if err != nil {
 		fmt.Printf("Erro na chamada da IA: %v\n", err)
 		return
@@ -349,6 +415,44 @@ func investigate(podName, namespace, outputFormat, outputFile string, noCache bo
 }
 
 // renderResult lida com a renderização visual ou exportação do resultado da análise.
+// isPodHealthy verifica se o pod está saudável baseado no status e eventos.
+// Retorna true se não há sinais de problema.
+func isPodHealthy(pod *corev1.Pod, events *corev1.EventList) bool {
+	// Pod não está Running
+	if pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+
+	// Algum container não está Ready ou tem restarts recentes
+	for _, cs := range pod.Status.ContainerStatuses {
+		if !cs.Ready {
+			return false
+		}
+		if cs.RestartCount > 0 {
+			// Verificar se o restart foi recente (últimas 2 horas)
+			if cs.LastTerminationState.Terminated != nil {
+				// Tem terminação recente → não saudável
+				return false
+			}
+		}
+		// Container em estado de waiting (CrashLoopBackOff, ImagePullBackOff, etc.)
+		if cs.State.Waiting != nil {
+			return false
+		}
+	}
+
+	// Verificar eventos de Warning
+	if events != nil {
+		for _, e := range events.Items {
+			if e.Type == "Warning" {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 func renderResult(result AnalysisResult, podName, namespace, outputFormat, outputFile string, width int, titleStyle, boxStyle, labelStyle lipgloss.Style) {
 	// Exportar relatório se formato especificado
 	if outputFormat != "" {

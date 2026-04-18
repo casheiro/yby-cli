@@ -1,6 +1,10 @@
 #!/bin/sh
 # Native Pre-commit Hook (No Husky/Node required)
 
+# Evita warnings de locale no WSL que corrompem a saída do goenv/go env
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
 echo "🔍 Running Local Linting (Core)..."
 
 # Run fast lint (excluding heavy k8s parts to match CI Core Lint)

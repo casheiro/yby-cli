@@ -18,15 +18,30 @@ var (
 // Init initializes the plugin SDK by reading the PluginRequest from stdin or environment.
 // It also handles context overrides via command-line flags (-c/--context).
 func Init() error {
-	// Check if context is passed via stdin (standard for Yby Plugins)
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		var req plugin.PluginRequest
-		decoder := json.NewDecoder(os.Stdin)
-		if err := decoder.Decode(&req); err != nil {
-			return fmt.Errorf("failed to decode plugin request from stdin: %w", err)
-		}
+	var req plugin.PluginRequest
+	var parsed bool
 
+	// 1. Tentar ler da variável de ambiente YBY_PLUGIN_REQUEST (modo interativo/RunInteractive)
+	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
+		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+			return fmt.Errorf("failed to decode plugin request from env: %w", err)
+		}
+		parsed = true
+	}
+
+	// 2. Fallback: ler do stdin (modo não-interativo, quando stdin não é TTY)
+	if !parsed {
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			decoder := json.NewDecoder(os.Stdin)
+			if err := decoder.Decode(&req); err != nil {
+				return fmt.Errorf("failed to decode plugin request from stdin: %w", err)
+			}
+			parsed = true
+		}
+	}
+
+	if parsed {
 		currentHook = req.Hook
 		currentArgs = req.Args
 

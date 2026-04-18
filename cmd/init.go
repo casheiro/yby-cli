@@ -106,7 +106,7 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Domain, "domain", "yby.local", "Domínio base do cluster")
 	initCmd.Flags().StringVar(&opts.Email, "email", "admin@yby.local", "Email do admin")
 	initCmd.Flags().StringVar(&opts.Environment, "env", "dev", "Nome do ambiente inicial")
-	initCmd.Flags().StringVar(&opts.Environments, "environments", "", "Lista de ambientes separados por v��rgula (ex: local,dev,hom,prod). Sobrescreve os ambientes padrão da topologia")
+	initCmd.Flags().StringVar(&opts.Environments, "environments", "", "Lista de ambientes separados por vírgula (ex: local,dev,hom,prod). Sobrescreve os ambientes padrão da topologia")
 	initCmd.Flags().StringVar(&opts.ConfigFile, "config", "", "Arquivo de configuração enterprise (.yby/overrides.yaml)")
 
 	initCmd.Flags().StringVar(&opts.SecretsStrategy, "secrets-strategy", "external-secrets", "Estratégia de secrets: sealed-secrets, external-secrets, sops")

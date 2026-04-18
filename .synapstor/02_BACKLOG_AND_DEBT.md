@@ -12,6 +12,12 @@
 - [ ] Criar UKIs iniciais para padrões de CLI (Inputs, Outputs, Colors).
 - [ ] Automatizar verificação de Conventional Commits no pré-commit.
 
+### 3. Multi-Cloud & Bedrock (Roadmap Futuro — P3)
+- [ ] Auth avançada AWS: SSO, IRSA, MFA.
+- [ ] Auth avançada Azure: Service Principal, Managed Identity.
+- [ ] Credential store integrado (keychain nativo do OS).
+- [ ] Auditoria de operações cloud (log de ações por provider/cluster).
+
 ---
 
 ## 💸 Dívida Técnica (Debt)
@@ -22,6 +28,7 @@
 ### Médio
 - Falta de testes unitários em `pkg/cmd`.
 - Documentação na Wiki pode estar defasada em relação ao código atual.
+- Testes de integração real com EKS/AKS/GKE (requer infraestrutura cloud provisionada).
 
 ---
 

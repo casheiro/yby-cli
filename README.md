@@ -17,9 +17,10 @@
 O **Yby CLI** não é apenas um wrapper de comandos. Ele é um **Assistente Estratégico** que orbita o ciclo de vida da sua infraestrutura, fornecendo:
 
 1.  🚀 **Bootstrap Platform**: Entrega um cluster de produção "batteries-included" em minutos (VPS -> K3s -> ArgoCD -> Monitoring).
-2.  🛡️ **Guardian (Governança)**: Garante padrões de arquitetura e segurança desde o Day 0.
-3.  🤖 **Intelligence Layer**: Usa IA para diagnosticar problemas (`sentinel`), documentar arquitetura (`atlas`) e gerir conhecimento (`synapstor`).
-4.  💻 **Developer Experience**: Abstrai a complexidade do ambiente local sem esconder a realidade do Kubernetes.
+2.  ☁️ **Multi-Cloud**: Conecta e gerencia clusters em AWS EKS, Azure AKS e GCP GKE com refresh automático de credenciais.
+3.  🛡️ **Guardian (Governança)**: Garante padrões de arquitetura e segurança desde o Day 0.
+4.  🤖 **Intelligence Layer**: Usa IA (Ollama, Claude, Gemini, OpenAI, Bedrock) para diagnosticar problemas (`sentinel`), documentar arquitetura (`atlas`) e gerir conhecimento (`synapstor`).
+5.  💻 **Developer Experience**: Abstrai a complexidade do ambiente local sem esconder a realidade do Kubernetes.
 
 ---
 
@@ -48,7 +49,7 @@ curl -sfL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | s
 go install github.com/casheiro/yby-cli@latest
 ```
 
-> **Verificação:** Rode `yby doctor` para checar se você tem as ferramentas necessárias (Docker, Helm, Kubectl).
+> **Verificação:** Rode `yby doctor` para checar se você tem as ferramentas necessárias (Docker, Helm, Kubectl) e validar credenciais cloud.
 
 ---
 
@@ -68,7 +69,36 @@ yby sentinel investigate pod-xyz -n production
 # 🤖 Sentinel: "Detectei OOMKilled. Seu limite de memória é 128Mi, mas o pico foi 256Mi."
 ```
 
-### 3. Evolução (Day N)
+### 3. Multi-Cloud (EKS / AKS / GKE)
+Conecte clusters de qualquer cloud pública com auth avançada:
+```bash
+# Conectar a cluster cloud (interativo)
+yby cloud connect
+
+# Conectar a cluster EKS (não-interativo)
+yby cloud connect --provider aws --region us-east-1 --cluster meu-cluster --env-name prod
+
+# Listar clusters disponíveis
+yby cloud list
+
+# Verificar status de credenciais
+yby cloud status
+
+# Refresh de token
+yby cloud refresh
+
+# Dashboard multi-cluster interativo
+yby cloud dashboard
+
+# Auditoria de operações cloud
+yby cloud audit --since 24h --export json
+```
+
+**Auth avançada:** SSO/MFA (AWS), device code/interactive/certificado/MSI (Azure), Workload Identity Federation/SA impersonation/Connect Gateway (GCP). Credential store seguro via OS keychain com fallback encriptado. Audit log JSONL para compliance.
+
+> **Build cloud:** Para binário com SDKs nativos (AWS/Azure/GCP), use `task build:cloud`. O binário padrão (`task build`) usa fallback via CLIs instalados.
+
+### 4. Evolução (Day N)
 Precisa de um novo serviço?
 ```bash
 yby chart create meu-novo-app  # Cria chart seguindo Golden Path da empresa
