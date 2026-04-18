@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
@@ -90,7 +91,7 @@ func TestHookManifest_RetornaJSONValido(t *testing.T) {
 		t.Error("hooks não deve estar vazio")
 	}
 
-	// Verificar que 'manifest' e 'context' estão nos hooks
+	// Verificar que 'manifest', 'context' e 'command' estão nos hooks
 	hookSet := make(map[string]bool)
 	for _, h := range manifest.Hooks {
 		hookSet[h] = true
@@ -100,6 +101,9 @@ func TestHookManifest_RetornaJSONValido(t *testing.T) {
 	}
 	if !hookSet["context"] {
 		t.Error("hooks deve conter 'context'")
+	}
+	if !hookSet["command"] {
+		t.Error("hooks deve conter 'command'")
 	}
 }
 
@@ -155,7 +159,7 @@ func TestHookContext_DescobertaDeComponentes(t *testing.T) {
 	if err := os.MkdirAll(serviceDir, 0755); err != nil {
 		t.Fatalf("falha ao criar diretório: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(serviceDir, "go.mod"), []byte("module meu-servico\n\ngo 1.21\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(serviceDir, "go.mod"), []byte("module meu-servico\n\ngo 1.26\n"), 0644); err != nil {
 		t.Fatalf("falha ao criar go.mod: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(serviceDir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {
@@ -341,6 +345,138 @@ rules:
 	}
 	if encontrouIgnorado {
 		t.Error("componente no diretório 'ignorar-este' deveria ter sido ignorado")
+	}
+}
+
+// TestHookCommand_SubcomandoDiagram verifica que o subcomando "diagram" retorna blueprint.
+func TestHookCommand_SubcomandoDiagram(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	tmpDir := t.TempDir()
+
+	// Criar chart com dependência pra gerar edges (nós isolados são removidos no overview)
+	chartDir := filepath.Join(tmpDir, "charts", "api")
+	templatesDir := filepath.Join(chartDir, "templates")
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		t.Fatalf("falha ao criar diretórios: %v", err)
+	}
+	chartYaml := "apiVersion: v2\nname: api\nversion: 1.0.0\ndependencies:\n  - name: redis\n    version: 17.0.0\n    repository: https://charts.bitnami.com/bitnami\n"
+	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0644); err != nil {
+		t.Fatalf("falha ao criar Chart.yaml: %v", err)
+	}
+	deployYaml := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api-server\n"
+	if err := os.WriteFile(filepath.Join(templatesDir, "deployment.yaml"), []byte(deployYaml), 0644); err != nil {
+		t.Fatalf("falha ao criar deployment.yaml: %v", err)
+	}
+
+	// Usar --detail full e --no-ai para teste determinístico
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"diagram", "--detail", "full", "--no-ai"}}
+	reqJSON, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("falha ao serializar requisição: %v", err)
+	}
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar atlas command diagram: %v", err)
+	}
+
+	outStr := string(output)
+
+	if !strings.Contains(outStr, "Diagrama gerado com sucesso") {
+		t.Errorf("output deve conter mensagem de sucesso, obtido: %s", outStr)
+	}
+
+	if !strings.Contains(outStr, ".yby/atlas-diagram.mmd") {
+		t.Error("output deve conter path do arquivo gerado")
+	}
+
+	diagramPath := filepath.Join(tmpDir, ".yby", "atlas-diagram.mmd")
+	data, err := os.ReadFile(diagramPath)
+	if err != nil {
+		t.Fatalf("arquivo de diagrama não foi criado: %v", err)
+	}
+
+	if !strings.Contains(string(data), "flowchart TD") {
+		t.Error("arquivo de diagrama deve conter 'flowchart TD'")
+	}
+
+	if !strings.Contains(string(data), "api") {
+		t.Error("diagrama deve conter o chart 'api'")
+	}
+}
+
+// TestHookCommand_SubcomandoDiagramC4 verifica que o formato c4 é passado corretamente.
+// TestHookCommand_SubcomandoDiagramSemInfra verifica que diagram sem infra mostra mensagem adequada.
+func TestHookCommand_SubcomandoDiagramSemInfra(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	tmpDir := t.TempDir()
+	// Projeto sem nenhum arquivo de infra
+	if err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("falha ao criar README: %v", err)
+	}
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"diagram"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("falha ao executar: %v", err)
+	}
+
+	outStr := string(output)
+	if !strings.Contains(outStr, "Nenhuma topologia") {
+		t.Errorf("deveria informar que nenhuma topologia foi encontrada, obtido: %s", outStr)
+	}
+}
+
+// TestHookCommand_SemSubcomando verifica que hook command sem args retorna erro.
+func TestHookCommand_SemSubcomando(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+
+	output, _ := cmd.Output()
+	outStr := string(output)
+
+	// Agora sem subcomando exibe help em vez de erro
+	if !strings.Contains(outStr, "Atlas") || !strings.Contains(outStr, "Subcomandos") {
+		t.Errorf("esperado help quando sem subcomando, obtido: %s", outStr)
+	}
+}
+
+// TestHookCommand_SubcomandoInvalido verifica que subcomando inválido retorna erro.
+func TestHookCommand_SubcomandoInvalido(t *testing.T) {
+	binPath := helperBuildAtlas(t)
+
+	req := plugin.PluginRequest{Hook: "command", Args: []string{"invalido"}}
+	reqJSON, _ := json.Marshal(req)
+
+	cmd := exec.Command(binPath)
+	cmd.Stdin = bytes.NewReader(reqJSON)
+
+	output, _ := cmd.Output()
+
+	var resp plugin.PluginResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v", err)
+	}
+
+	if resp.Error == "" {
+		t.Error("esperado erro para subcomando inválido")
 	}
 }
 

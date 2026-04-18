@@ -76,6 +76,11 @@ func TestDoctorService_Run(t *testing.T) {
 	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return(nil)
 	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return(nil)
 
+	// Cloud CLIs não instalados (cloud.Detect usa LookPath)
+	mockRunner.On("LookPath", "aws").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "az").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "gcloud").Return("", errors.New("not found"))
+
 	report := svc.Run(ctx)
 
 	assert.NotNil(t, report)
@@ -92,6 +97,60 @@ func TestDoctorService_Run(t *testing.T) {
 
 	assert.Len(t, report.CRDs, 3)
 	assert.True(t, report.CRDs[0].Status)
+
+	// Cloud: nenhum provider detectado
+	assert.Len(t, report.Cloud, 1)
+	assert.Equal(t, "Nenhum provider cloud detectado", report.Cloud[0].Message)
+}
+
+func TestDoctorReport_CloudFieldExists(t *testing.T) {
+	report := &DoctorReport{}
+	assert.NotNil(t, report)
+	assert.Nil(t, report.Cloud)
+
+	report.Cloud = []CheckResult{
+		{Name: "aws", Status: true, Message: "CLI v2.15.0 instalado"},
+	}
+	assert.Len(t, report.Cloud, 1)
+	assert.Equal(t, "aws", report.Cloud[0].Name)
+}
+
+func TestDoctor_NoCloudProviders(t *testing.T) {
+	// Quando nenhum provider cloud é detectado (cloud.Detect retorna slice vazio),
+	// o report deve conter uma mensagem informativa.
+	mockRunner := new(MockRunner)
+	svc := NewService(mockRunner)
+	ctx := context.Background()
+
+	// Setup mocks mínimos para Run() completar
+	mockRunner.On("RunCombinedOutput", ctx, "grep", []string{"MemTotal", "/proc/meminfo"}).Return([]byte("MemTotal: 16000000 kB\n"), nil)
+	tools := []string{"kubectl", "helm", "argocd", "git", "direnv"}
+	for _, tool := range tools {
+		mockRunner.On("LookPath", tool).Return("/usr/bin/"+tool, nil)
+	}
+	mockRunner.On("Run", ctx, "docker", []string{"info"}).Return(nil)
+	mockRunner.On("LookPath", "kubeseal").Return("/usr/bin/kubeseal", nil)
+	mockRunner.On("LookPath", "sops").Return("/usr/bin/sops", nil)
+	mockRunner.On("LookPath", "age").Return("/usr/bin/age", nil)
+	mockRunner.On("Run", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return(nil)
+	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return(nil)
+	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return(nil)
+	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return(nil)
+
+	// Cloud CLIs não instalados
+	mockRunner.On("LookPath", "aws").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "az").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "gcloud").Return("", errors.New("not found"))
+
+	report := svc.Run(ctx)
+
+	// cloud.Detect sem kubeconfig e sem CLIs cloud instalados retorna vazio,
+	// então checkCloudProviders retorna mensagem informativa
+	assert.NotNil(t, report.Cloud)
+	assert.Len(t, report.Cloud, 1)
+	assert.Equal(t, "Cloud Providers", report.Cloud[0].Name)
+	assert.True(t, report.Cloud[0].Status)
+	assert.Equal(t, "Nenhum provider cloud detectado", report.Cloud[0].Message)
 }
 
 func TestDoctorService_Failures(t *testing.T) {
@@ -119,6 +178,11 @@ func TestDoctorService_Failures(t *testing.T) {
 	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return(errors.New("not found"))
 	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return(errors.New("not found"))
 	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return(errors.New("not found"))
+
+	// Cloud CLIs não instalados
+	mockRunner.On("LookPath", "aws").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "az").Return("", errors.New("not found"))
+	mockRunner.On("LookPath", "gcloud").Return("", errors.New("not found"))
 
 	report := svc.Run(ctx)
 

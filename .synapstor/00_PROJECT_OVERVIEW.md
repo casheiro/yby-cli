@@ -10,9 +10,11 @@
 **Maturidade:** **Active (Governed)** - Processos ágeis, mas exigência de UKI para mudanças semânticas.
 
 ## 2. Visão Técnica
-- **Linguagem:** Go (Golang) 1.24+.
+- **Linguagem:** Go (Golang) 1.26+.
 - **Principal Artefato:** Binário CLI `yby`.
 - **Dependências Chave:** `k3d`, `kubectl`, `helm`.
+- **Multi-Cloud:** Suporte a clusters gerenciados (AWS EKS, Azure AKS, GCP GKE) com token refresh automático. Build variants: `yby` (padrão) e `yby-cloud` (com SDKs).
+- **Amazon Bedrock:** Provider de IA via Converse API, ConverseStream e Titan Embeddings (`ai.provider: bedrock`).
 - **Padrão de Release:** Semantic Versioning via Conventional Commits + GoReleaser.
 
 ## 3. Governança

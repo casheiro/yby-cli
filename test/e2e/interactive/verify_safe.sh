@@ -5,7 +5,7 @@ set -e
 CONTAINER_NAME="yby-safe-verify-$(date +%s)"
 
 echo "🛡️  Starting ISOLATED container environment..."
-# Using golang:alpine (latest) to support Go 1.24+ deps
+# Using golang:alpine (latest) to support Go 1.26+ deps
 docker run -d --name $CONTAINER_NAME -w /app golang:alpine tail -f /dev/null > /dev/null
 
 echo "📦 Copying source code to container..."

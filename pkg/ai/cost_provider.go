@@ -28,6 +28,11 @@ var knownPricing = map[string]modelPricing{
 	"gemini-1.5-flash": {InputPer1M: 0.075, OutputPer1M: 0.30},
 	"gemini-1.5-pro":   {InputPer1M: 1.25, OutputPer1M: 5.00},
 
+	// AWS Bedrock
+	"anthropic.claude-3-5-sonnet-20241022-v2:0": {InputPer1M: 3.00, OutputPer1M: 15.00},
+	"anthropic.claude-3-haiku-20240307-v1:0":    {InputPer1M: 0.25, OutputPer1M: 1.25},
+	"amazon.titan-embed-text-v2:0":              {InputPer1M: 0.02, OutputPer1M: 0.0},
+
 	// Ollama (local, sem custo monetário)
 	"llama3":    {InputPer1M: 0, OutputPer1M: 0},
 	"llama3.1":  {InputPer1M: 0, OutputPer1M: 0},

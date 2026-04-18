@@ -12,12 +12,13 @@ import (
 
 // Taxas padrão de requisições por segundo por provider.
 const (
-	defaultOpenAIRate = 50.0
-	defaultGeminiRate = 60.0
-	defaultOllamaRate = 0.0 // sem limite
+	defaultOpenAIRate  = 50.0
+	defaultGeminiRate  = 60.0
+	defaultOllamaRate  = 0.0 // sem limite
+	defaultBedrockRate = 10.0
 )
 
-// ─── Circuit Breaker ───────────��────────────────────────────────────────────
+// ─── Circuit Breaker ──────────────────────────────────────────────────────
 
 type circuitState int
 
@@ -104,7 +105,7 @@ func (cb *CircuitBreaker) recordFailure(statusCode int) bool {
 	return false
 }
 
-// ─── Rate Limit Provider ─────────��──────────────────────────────────────────
+// ─── Rate Limit Provider ──────────────────────────────────────────────────────
 
 // RateLimitProvider é um decorator que implementa Provider com rate limiting
 // via token bucket e circuit breaker embutido.
@@ -216,6 +217,8 @@ func getDefaultRateForProvider(providerName string) float64 {
 		return defaultGeminiRate
 	case contains(providerName, "Ollama"):
 		return defaultOllamaRate
+	case contains(providerName, "Bedrock"):
+		return defaultBedrockRate
 	default:
 		return 0
 	}

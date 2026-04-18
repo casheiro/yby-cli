@@ -11,8 +11,30 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./cmd/yby
     binary: yby
+    ldflags:
+      - -s -w
+      - -X github.com/casheiro/yby-cli/cmd.Version={{.Version}}
+      - -X github.com/casheiro/yby-cli/cmd.commit={{.Commit}}
+      - -X github.com/casheiro/yby-cli/cmd.date={{.Date}}
+  - id: cloud
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/yby
+    binary: yby-cloud
+    flags:
+      - -tags=aws,azure,gcp
     ldflags:
       - -s -w
       - -X github.com/casheiro/yby-cli/cmd.Version={{.Version}}
@@ -25,6 +47,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./plugins/atlas
     binary: yby-plugin-atlas
     ldflags:
@@ -36,6 +61,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./plugins/bard
     binary: yby-plugin-bard
     ldflags:
@@ -47,6 +75,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./plugins/sentinel/cli
     binary: yby-plugin-sentinel
     flags:
@@ -61,6 +92,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     dir: ./plugins/viz
     main: .
     binary: yby-plugin-viz
@@ -73,6 +107,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     dir: ./plugins/synapstor
     main: .
     binary: yby-plugin-synapstor
@@ -89,6 +126,15 @@ archives:
       - goos: windows
         formats: ["zip"]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: cloud
+    ids:
+      - cloud
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: "{{ .ProjectName }}-cloud_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: atlas
     ids:
