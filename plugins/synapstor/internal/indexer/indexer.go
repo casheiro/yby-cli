@@ -137,29 +137,26 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 			continue
 		}
 
-		chunks := splitMarkdown(string(content))
+		// UKI é a menor unidade de conhecimento — indexar inteiro, sem chunking
 		baseName := filepath.Base(path)
+		docContent := string(content)
 
-		for idx, chunk := range chunks {
-			chunkID := fmt.Sprintf("%s#%d", relPath, idx)
-
-			meta := map[string]string{
-				"source":   relPath,
-				"filename": baseName,
-			}
-
-			lines := strings.Split(chunk, "\n")
-			for _, line := range lines {
-				if strings.HasPrefix(line, "# ") {
-					meta["title"] = strings.TrimPrefix(line, "# ")
-					break
-				}
-			}
-
-			allChunks = append(allChunks, chunk)
-			allMetadatas = append(allMetadatas, meta)
-			allIDs = append(allIDs, chunkID)
+		meta := map[string]string{
+			"source":   relPath,
+			"filename": baseName,
 		}
+
+		// Extrair título do H1
+		for _, line := range strings.Split(docContent, "\n") {
+			if strings.HasPrefix(line, "# ") {
+				meta["title"] = strings.TrimPrefix(line, "# ")
+				break
+			}
+		}
+
+		allChunks = append(allChunks, docContent)
+		allMetadatas = append(allMetadatas, meta)
+		allIDs = append(allIDs, relPath)
 
 		newManifest.Files[relPath] = IndexedFile{
 			SHA256:    hash,
@@ -235,7 +232,8 @@ func (i *Indexer) scanFiles() ([]string, error) {
 			if err != nil {
 				return nil
 			}
-			if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+			name := strings.ToLower(info.Name())
+			if !info.IsDir() && strings.HasSuffix(name, ".md") && name != "index.md" {
 				candidates = append(candidates, path)
 			}
 			return nil

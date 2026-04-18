@@ -9,6 +9,8 @@ import (
 func TestLoad_DefaultValues(t *testing.T) {
 	// Sem arquivo e sem env vars — deve retornar defaults
 	ResetGlobal()
+	// Usar HOME temporário para não ler ~/.yby/config.yaml do usuário
+	t.Setenv("HOME", t.TempDir())
 	// Limpa env vars que podem interferir
 	for _, key := range []string{"YBY_AI_PROVIDER", "YBY_AI_MODEL", "YBY_AI_LANGUAGE", "YBY_LOG_LEVEL", "YBY_LOG_FORMAT", "YBY_TELEMETRY_ENABLED"} {
 		t.Setenv(key, "")

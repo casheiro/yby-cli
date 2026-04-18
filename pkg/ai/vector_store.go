@@ -53,13 +53,30 @@ func (vs *VectorStore) AddDocuments(ctx context.Context, documents []string, met
 		return nil
 	}
 
-	fmt.Printf("🧠 Gerando embeddings para %d documentos usando %s...\n", len(documents), vs.provider.Name())
+	total := len(documents)
+	fmt.Printf("Gerando embeddings para %d documentos usando %s...\n", total, vs.provider.Name())
 
-	// Generate Embeddings via Provider
-	vectors, err := vs.provider.EmbedDocuments(ctx, documents)
-	if err != nil {
-		return fmt.Errorf("falha ao gerar embeddings: %w", err)
+	// Gerar embeddings um por um com progresso
+	const embBatchSize = 1
+	var vectors [][]float32
+
+	for i := 0; i < total; i += embBatchSize {
+		end := i + embBatchSize
+		if end > total {
+			end = total
+		}
+		batch := documents[i:end]
+
+		fmt.Printf("\r  [%d/%d] documentos processados...", min(end, total), total)
+
+		batchVectors, err := vs.provider.EmbedDocuments(ctx, batch)
+		if err != nil {
+			fmt.Println()
+			return fmt.Errorf("falha ao gerar embeddings (doc %d-%d): %w", i+1, end, err)
+		}
+		vectors = append(vectors, batchVectors...)
 	}
+	fmt.Printf("\r  [%d/%d] documentos processados.   \n", total, total)
 
 	if len(vectors) != len(documents) {
 		return fmt.Errorf("mismatch: %d documentos mas %d vetores gerados", len(documents), len(vectors))

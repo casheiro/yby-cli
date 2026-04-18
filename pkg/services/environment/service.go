@@ -11,6 +11,19 @@ import (
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
+// validEnvironmentTypes lista todos os tipos de ambiente reconhecidos.
+var validEnvironmentTypes = []string{"local", "remote", "eks", "aks", "gke"}
+
+// IsValidEnvironmentType informa se t é um tipo de ambiente reconhecido.
+func IsValidEnvironmentType(t string) bool {
+	for _, v := range validEnvironmentTypes {
+		if v == t {
+			return true
+		}
+	}
+	return false
+}
+
 // EnvironmentService orchestrates the 'up' command logic
 type EnvironmentService struct {
 	Runner    shared.Runner
