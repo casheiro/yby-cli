@@ -47,6 +47,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./plugins/atlas
     binary: yby-plugin-atlas
     ldflags:
@@ -58,6 +61,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./plugins/bard
     binary: yby-plugin-bard
     ldflags:
@@ -69,6 +75,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     main: ./plugins/sentinel/cli
     binary: yby-plugin-sentinel
     flags:
@@ -83,6 +92,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     dir: ./plugins/viz
     main: .
     binary: yby-plugin-viz
@@ -95,6 +107,9 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
     dir: ./plugins/synapstor
     main: .
     binary: yby-plugin-synapstor
