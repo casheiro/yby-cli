@@ -2,7 +2,10 @@
 
 <div align="center">
 
-<img src="https://i.imgur.com/2ZOMsy3.jpeg" alt="Yby Logo" width="160">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/yby-logo-white.svg">
+  <img src="docs/assets/brand/yby-logo.svg" alt="Yby" width="320">
+</picture>
 
 ### [🌐 Website Oficial](https://yby.dev.br)
 
@@ -46,7 +49,7 @@ O Yby **não substitui** o `kubectl`. Eles trabalham juntos:
 curl -sfL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | sh -
 
 # Via Go
-go install github.com/casheiro/yby-cli@latest
+go install github.com/casheiro/yby-cli/cmd/yby@latest
 ```
 
 > **Verificação:** Rode `yby doctor` para checar se você tem as ferramentas necessárias (Docker, Helm, Kubectl) e validar credenciais cloud.
