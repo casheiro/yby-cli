@@ -5,6 +5,27 @@
 
 ---
 
+## 23/10/2026 (2ª sessão) · `feat/tui-carta`
+
+**Feito**
+- Workflow de agentes Sonnet em ondas para a fase 0 (tabela no `tasks.md`); especificação local da prancha em `docs/design/tui/especificacao-pkg-ui.md` (`936c7cb`).
+- Fase 0 completa, T001–T010: `pkg/ui` com tokens, glifos, tema, teclas, moldura, abas, filtro, tabela, quadro, etapas, cota, rota, spinner, toast, confirmar, estados, tema huh e saídas de comando (`260b880` … `0094a88`); catálogo `tools/ui-catalogo`; 99,1% de cobertura.
+- Conferência do catálogo pelo usuário no Windows Terminal (escuro, claro, `NO_COLOR`, `YBY_ASCII`) achou dois desvios, corrigidos: texto e seleção sem Tinta (`c8f6b91`) e teclas Unicode no ASCII (`396c6b3`).
+- Checkpoint da fase 0 aprovado: lint 2.15 sem achados nos pacotes novos (`076d546`).
+
+**Decisões**
+- Sem push/PR até o usuário testar o CLI real localmente; catálogo não conta como teste (memória salva).
+- Proposta pendente: não abrir PR só com a lib; começar pela fase 1 (T023 + T026) por ser testável sem cluster nem IA.
+
+**Pendente**
+- Aval do usuário para a proposta acima.
+- Falhas de teste antigas no Windows em 10 pacotes (mesma lista antes da fase).
+
+**Próximo passo**
+- T023 + T026 e guiar o teste real: `task build` → `yby doctor` e um erro qualquer.
+
+---
+
 ## 23/10/2026 · `feat/multicloud-support` → `feat/tui-carta`
 
 **Feito**

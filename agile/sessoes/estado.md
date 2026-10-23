@@ -8,15 +8,18 @@
 - **Projeto ativo:** `Carta do terminal (redesign das TUIs e saídas)`
 - **Plano:** `agile/planning/tui-redesign/tasks.md`
 - **Branch:** `feat/tui-carta`
-- **Próxima ação:** checkpoint da fase 0 (golangci-lint) e PR "feat(ui): pacote pkg/ui da carta do terminal"; depois atualizar a branch com a `main` antes da fase 2 (Bard).
-- **Aguardando o usuário:** instalar o golangci-lint.
-- **Atenção:** a branch partiu de `origin/main` e não tem as correções para Windows que estão em `feat/multicloud-support`. A fase 0 não depende delas; antes da fase 2 (Bard), atualizar esta branch com a `main`.
+- **Próxima ação:** com o aval do usuário, fazer a T023 (`cmd/root.go`, `handleExecutionError` → `ui.RenderError`) e a T026 (saídas de `cmd/doctor.go`, `status.go`, `setup.go`, `validate.go`), as primeiras migrações testáveis no binário real (`task build` → `yby doctor`).
+- **Aguardando o usuário:** aprovar a mudança no plano: não abrir PR só com a lib; `pkg/ui` sobe junto com a primeira migração real; começar pela fase 1 (T023 + T026) antes do Bard. Sem push até ele testar o CLI real localmente.
+- **Atenção:** fase 0 completa (T001–T010) e só local: 25 commits à frente de `origin/main`, nenhum push. Nenhum comando usa `pkg/ui` ainda. Push em `feat/**` faz o CI abrir sozinho um PR para `develop`. Antes da fase 2 (Bard), atualizar esta branch com a `main` (correções para Windows).
 
 ## Ambiente
 
 - Windows 11 com Git Bash. Go 1.27 em `C:\Program Files\Go\bin`; sessões abertas antes da instalação precisam de `export PATH="$PATH:/c/Program Files/Go/bin"` em cada comando.
 - Binários em `bin/*.exe` (`task build`). Plugins instalados em `~/.yby/plugins`; depois de cada build, reinstalar com `./bin/yby.exe plugin install bin/yby-plugin-<nome>.exe --force` (o checksum muda).
 - `OLLAMA_HOST=0.0.0.0:11434` está definido na máquina; o Ollama normalmente não está rodando, então o Bard usa o próximo provider.
+- golangci-lint 2.15 instalado via winget; o `.golangci.yml` do repo é v1 (CI usa 1.64.8). Para rodar local: `golangci-lint migrate` numa cópia temporária da config e `golangci-lint run -c <cópia>`.
+- No PowerShell do usuário o Go também não está no PATH: `$env:Path += ";C:\Program Files\Go\bin"`.
+- Especificação local de `pkg/ui`: `docs/design/tui/especificacao-pkg-ui.md`; catálogo: `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
 - Prancha aprovada: https://claude.ai/artifact/MuC7dcxzr8xxMAxqubQJQk
 
 ## Outras frentes abertas
