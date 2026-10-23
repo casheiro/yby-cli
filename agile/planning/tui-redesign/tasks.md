@@ -78,7 +78,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Saída sem TUI: `Title`, `Section`, `Check(ok|aviso|erro|neutro)`, `Summary`, `Steps`.
   - `RenderError(*errors.YbyError)` com título, causa, "faça" (hint) e código.
   - Verificar: golden files do doctor, do up e do erro da folha "Saídas de comando".
-- [~] T010 Criar o catálogo visual `tools/ui-catalogo/main.go` e documentar.
+- [x] T010 Criar o catálogo visual `tools/ui-catalogo/main.go` e documentar.
   - `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N]` mostra todos os componentes, para conferir no terminal real.
   - Seção "Interface" no `CLAUDE.md`: toda saída para pessoas usa `pkg/ui`.
   - Verificar: catálogo conferido no Windows Terminal (escuro e claro), com `NO_COLOR=1` e com `YBY_ASCII=1`.
@@ -249,3 +249,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 23/10/2026 | T010 | `tools/ui-catalogo` (`--tema`, `--largura`, `--ascii`, `--sem-cor`) e seção "Interface (pkg/ui)" no `CLAUDE.md`. Falta a conferência manual no Windows Terminal | `0094a88` |
 | 23/10/2026 | — | Verificação: `pkg/ui` 99,1%, `tools/ui-catalogo` 96,8%, vet/gofmt/build/`task build` ok. Falhas em `pkg/ai`, `ai/prompts`, `cloud`, `config`, `context`, `plugin`, `scaffold`, `services/secrets`, `services/setup` e `cmd` já existiam antes da fase (mesma lista em `a9b6498`, ambiente Windows). Sem `-race` (sem gcc) e sem golangci-lint | — |
 | 23/10/2026 | T010 | Conferência no Windows Terminal (escuro e claro): texto de dados e seleção saíam na cor padrão do terminal; corrigido para Tinta, com teste `tinta_test.go` | `c8f6b91` |
+| 23/10/2026 | T010 | Catálogo conferido pelo usuário no Windows Terminal: escuro, claro (One Half Light), `NO_COLOR=1` e `YBY_ASCII=1`; teclas com nome em texto no ASCII (`396c6b3`) | `0094a88` · `c8f6b91` · `396c6b3` |
