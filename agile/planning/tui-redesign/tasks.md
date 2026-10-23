@@ -73,12 +73,12 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Confirmação destrutiva por nome (↵ só com o nome certo) e reversível por ↵/esc.
   - Estados vazio, carregando e erro com textos diferentes.
   - Verificar: testes com `teatest` para digitar o nome errado, o certo, e esc.
-- [~] T009 Criar `pkg/ui/huh.go` e `pkg/ui/msg.go`.
+- [x] T009 Criar `pkg/ui/huh.go` e `pkg/ui/msg.go`.
   - `HuhTheme()`.
   - Saída sem TUI: `Title`, `Section`, `Check(ok|aviso|erro|neutro)`, `Summary`, `Steps`.
   - `RenderError(*errors.YbyError)` com título, causa, "faça" (hint) e código.
   - Verificar: golden files do doctor, do up e do erro da folha "Saídas de comando".
-- [ ] T010 Criar o catálogo visual `tools/ui-catalogo/main.go` e documentar.
+- [~] T010 Criar o catálogo visual `tools/ui-catalogo/main.go` e documentar.
   - `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N]` mostra todos os componentes, para conferir no terminal real.
   - Seção "Interface" no `CLAUDE.md`: toda saída para pessoas usa `pkg/ui`.
   - Verificar: catálogo conferido no Windows Terminal (escuro e claro), com `NO_COLOR=1` e com `YBY_ASCII=1`.
@@ -245,3 +245,6 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 23/10/2026 | T006 | `table.go`: colunas por prioridade, truncamento em células, `Status`; testes com acentos, CJK e emoji de 1 a 200 colunas | `5aab19b` |
 | 23/10/2026 | T007 | `etapas.go`, `cota.go`, `rota.go`, `spinner.go`; `FormatarDuracao` em pt-BR; spinner parado sem TTY ou sem cor | `e0b089c` |
 | 23/10/2026 | T008 | `quadro.go`, `toast.go`, `confirmar.go`, `estados.go`; teatest em `pkg/ui/uiteatest` (a flag `-update` do teatest colide com a do pacote) | `37e7698` |
+| 23/10/2026 | T009 | Ajustes: fio fino `─` na régua e prompt `›` nos campos (`015cd66`); `Steps` com etapas e cota, golden do `yby up` (`cd94087`) | `cd94087` |
+| 23/10/2026 | T010 | `tools/ui-catalogo` (`--tema`, `--largura`, `--ascii`, `--sem-cor`) e seção "Interface (pkg/ui)" no `CLAUDE.md`. Falta a conferência manual no Windows Terminal | `0094a88` |
+| 23/10/2026 | — | Verificação: `pkg/ui` 99,1%, `tools/ui-catalogo` 96,8%, vet/gofmt/build/`task build` ok. Falhas em `pkg/ai`, `ai/prompts`, `cloud`, `config`, `context`, `plugin`, `scaffold`, `services/secrets`, `services/setup` e `cmd` já existiam antes da fase (mesma lista em `a9b6498`, ambiente Windows). Sem `-race` (sem gcc) e sem golangci-lint | — |
