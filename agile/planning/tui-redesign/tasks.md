@@ -27,8 +27,8 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar. Elas seguem os passos 
 | Onda | Tarefas | Agente | Modo |
 |---|---|---|---|
 | 0 | T001 + T002 + helpers de teste | 1 Sonnet | na branch, em sequência; define a API usada pelas outras |
-| 1 | A: T003 + T004 · B: T005 + T006 · C: T007 + T008 · D: T009 | 4 Sonnet | em paralelo, cada um num worktree, um commit por tarefa, sem tocar neste arquivo |
-| 2 | T010 | 1 Sonnet | na branch, depois da integração da onda 1 |
+| 1 | A: T003 + T004 · B: T005 (abas, filtro) + T006 · C: T007 + `quadro.go` + T008 · D: T009 sem `Steps` | 4 Sonnet | em paralelo, cada um num worktree, um commit por tarefa, sem tocar neste arquivo |
+| 2 | `Steps` do T009 + T010 | 1 Sonnet | na branch, depois da integração da onda 1 (`Steps` usa etapas e cota do C) |
 | — | integração, verificação, registro no plano | sessão principal | cherry-pick por tarefa, testes da fase |
 
 Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0; as outras não o editam.
