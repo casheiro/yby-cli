@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Todo conteúdo deve ser produzido em português do Brasil (PT-BR): respostas, comentários, docstrings, mensagens de erro, documentação. Exceções: identificadores de código (variáveis, funções, classes) e palavras-chave da linguagem.
 
+## Controle de sessão
+
+O trabalho em andamento é registrado no repositório, não na conversa:
+
+- `agile/sessoes/estado.md`: projeto ativo, plano, branch, próxima ação, alertas e ambiente.
+- `agile/sessoes/diario.md`: uma entrada por sessão, a mais recente no topo.
+- `scripts/sessao.sh`: resumo do estado (branch, commits sem push, progresso do plano, próxima tarefa).
+
+Comece a sessão com `/retomar` e termine com `/encerrar`. No plano ativo, cada tarefa concluída vira um commit que marca a caixa `[x]` e registra uma linha no Histórico.
+
 ## Comandos de Desenvolvimento
 
 ```bash

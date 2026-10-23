@@ -7,6 +7,8 @@
 
 ## Como retomar
 
+Use `/retomar` ao abrir a sessão e `/encerrar` ao parar. Elas seguem os passos abaixo e mantêm `agile/sessoes/estado.md` e `agile/sessoes/diario.md` atualizados.
+
 1. A próxima tarefa é a primeira marcada `[~]` (em andamento). Se não houver nenhuma, é a primeira `[ ]` na ordem deste arquivo.
 2. Antes de mexer no código, leia o "Verificar" da tarefa e a folha correspondente da prancha.
 3. Ao terminar uma tarefa, faça **um commit** com o código, a caixa marcada `[x]` e uma linha no Histórico (fim do arquivo).
