@@ -22,6 +22,17 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar. Elas seguem os passos 
 
 ### Fase 0 · Fundação `pkg/ui`
 
+**Execução com agentes** (especificação: [docs/design/tui/especificacao-pkg-ui.md](../../../docs/design/tui/especificacao-pkg-ui.md)):
+
+| Onda | Tarefas | Agente | Modo |
+|---|---|---|---|
+| 0 | T001 + T002 + helpers de teste | 1 Sonnet | na branch, em sequência; define a API usada pelas outras |
+| 1 | A: T003 + T004 · B: T005 + T006 · C: T007 + T008 · D: T009 | 4 Sonnet | em paralelo, cada um num worktree, um commit por tarefa, sem tocar neste arquivo |
+| 2 | T010 | 1 Sonnet | na branch, depois da integração da onda 1 |
+| — | integração, verificação, registro no plano | sessão principal | cherry-pick por tarefa, testes da fase |
+
+Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0; as outras não o editam.
+
 - [ ] T001 Criar `pkg/ui/tokens.go` e `pkg/ui/glyphs.go`.
   - Paleta como `lipgloss.CompleteAdaptiveColor` nas variantes mapa noturno e kraft (truecolor + ANSI 256 + ANSI 16), com os papéis `Tinta`, `TintaSuave`, `Fio`, `Ok`, `Aviso` e `Erro` e os valores da folha 01 da prancha.
   - Glifos `◆ ◇ ◈ ✓ ✕ ▲ ● ○ ━ ┄ ▸` com fallback ASCII.
