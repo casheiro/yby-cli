@@ -117,3 +117,23 @@ func TestNovoAjuda_Renderiza(t *testing.T) {
 		t.Errorf("ajuda completa inesperada: %q", completo)
 	}
 }
+
+func TestRotuloTecla_ASCII(t *testing.T) {
+	usarTema(t, true, termenv.TrueColor, true)
+	casos := map[string]string{"↵": "enter", "⇧⇥": "shift+tab", "⇧↵": "shift+enter", "↑/k": "up/k", "␣": "space", "esc": "esc"}
+	for entrada, esperado := range casos {
+		if obtido := RotuloTecla(entrada); obtido != esperado {
+			t.Errorf("RotuloTecla(%q) = %q, esperado %q", entrada, obtido, esperado)
+		}
+	}
+	if h := DefaultKeys().Lista.Abrir.Help().Key; h != "enter" {
+		t.Errorf("Abrir em ASCII = %q, esperado enter", h)
+	}
+}
+
+func TestRotuloTecla_Unicode(t *testing.T) {
+	usarTema(t, true, termenv.TrueColor, false)
+	if obtido := RotuloTecla("⇧⇥"); obtido != "⇧⇥" {
+		t.Errorf("RotuloTecla em Unicode alterou o rótulo: %q", obtido)
+	}
+}

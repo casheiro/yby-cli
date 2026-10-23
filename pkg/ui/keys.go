@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"strings"
 )
 
 // TeclasGlobais são as teclas válidas em toda TUI.
@@ -54,7 +55,19 @@ type Teclas struct {
 }
 
 func tecla(teclas []string, rotulo, descricao string) key.Binding {
-	return key.NewBinding(key.WithKeys(teclas...), key.WithHelp(rotulo, descricao))
+	return key.NewBinding(key.WithKeys(teclas...), key.WithHelp(RotuloTecla(rotulo), descricao))
+}
+
+// teclasASCII troca os símbolos de tecla pelos nomes em texto.
+var teclasASCII = strings.NewReplacer("⇧", "shift+", "↵", "enter", "⇥", "tab", "␣", "space", "↑", "up", "↓", "down")
+
+// RotuloTecla devolve o rótulo de tecla para exibição: com símbolos (↵ ⇥ ⇧ ␣ ↑ ↓)
+// no modo Unicode e com nomes (enter, tab, shift+, space, up, down) no modo ASCII.
+func RotuloTecla(rotulo string) string {
+	if Atual().ASCII {
+		return teclasASCII.Replace(rotulo)
+	}
+	return rotulo
 }
 
 // DefaultKeys devolve o keymap padrão.

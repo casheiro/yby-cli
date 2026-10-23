@@ -79,7 +79,7 @@ func (m Confirmar) View() string {
 	s, g := S(), G()
 	if !m.destrutivo {
 		corpo := m.pergunta + "\n" +
-			s.TintaSuave.Render("↵ confirma · esc cancela")
+			s.TintaSuave.Render(RotuloTecla("↵")+" confirma · esc cancela")
 		if Atual().ASCII {
 			corpo = m.pergunta + "\n" + s.TintaSuave.Render("enter confirma - esc cancela")
 		}
@@ -89,7 +89,7 @@ func (m Confirmar) View() string {
 	campo := s.Tinta.Render(g.Prompt+" ") + string(m.entrada) + cursor
 	dica := "esc cancelar"
 	if m.Liberado() {
-		dica = "↵ confirmar · esc cancelar"
+		dica = RotuloTecla("↵") + " confirmar · esc cancelar"
 		if Atual().ASCII {
 			dica = "enter confirmar - esc cancelar"
 		}

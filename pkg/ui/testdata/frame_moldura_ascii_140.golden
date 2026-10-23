@@ -27,4 +27,4 @@ payments-api-23  Running  1/1  69m                                              
 payments-api-24  Running  1/1  72m                                                 |                                                        
 --------------------------------------------------------------------------------------------------------------------------------------------
 v 30 pods carregados                                                                                                     atualizado 14:07:09
-? ajuda  ↑/k subir  ↵ abrir  / buscar  l logs  y yaml  r recarregar                                                                   q sair
+? ajuda  up/k subir  enter abrir  / buscar  l logs  y yaml  r recarregar                                                              q sair
