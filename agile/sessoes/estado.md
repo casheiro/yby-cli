@@ -8,8 +8,8 @@
 - **Projeto ativo:** `Carta do terminal (redesign das TUIs e saídas)`
 - **Plano:** `agile/planning/tui-redesign/tasks.md`
 - **Branch:** `feat/tui-carta`
-- **Próxima ação:** começar a T001 (`pkg/ui/tokens.go` e `pkg/ui/glyphs.go`), depois seguir a fase 0 na ordem.
-- **Aguardando o usuário:** nada.
+- **Próxima ação:** fechar a T010 depois da conferência do catálogo; depois rodar o checkpoint da fase 0 (instalar golangci-lint) e abrir o PR "feat(ui): pacote pkg/ui da carta do terminal".
+- **Aguardando o usuário:** conferir `go run ./tools/ui-catalogo` no Windows Terminal (escuro, claro, `NO_COLOR=1`, `YBY_ASCII=1`).
 - **Atenção:** a branch partiu de `origin/main` e não tem as correções para Windows que estão em `feat/multicloud-support`. A fase 0 não depende delas; antes da fase 2 (Bard), atualizar esta branch com a `main`.
 
 ## Ambiente
