@@ -44,36 +44,36 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Padrão: mapa noturno.
   - Verificar: tabela de testes cobrindo cada combinação de variáveis.
   - Arquivos: `pkg/ui/theme.go`, `pkg/config/`.
-- [ ] T003 Criar `pkg/ui/keys.go` com o keymap padrão.
+- [x] T003 Criar `pkg/ui/keys.go` com o keymap padrão.
   - `bubbles/key` com as teclas da folha "Navegação e atalhos" (global, listas, texto) e integração com `bubbles/help` para a tela `?`.
   - Verificar: nenhuma tecla aparece em dois grupos com ações diferentes (teste).
   - Arquivos: `pkg/ui/keys.go`.
-- [ ] T004 Criar `pkg/ui/frame.go` com a moldura comum.
+- [x] T004 Criar `pkg/ui/frame.go` com a moldura comum.
   - `Masthead` (marca, instrumento, rótulo, contexto à direita), `Rule`, `StatusLine` (mensagem + hora), `KeyHints` (`q sair` sempre à direita) e o layout responsivo (≥120 lado a lado; 80–119 por cima; <80 compacto; <60×16 tela "aumente a janela").
   - Verificar: golden files em 3 larguras e 2 temas.
   - Arquivos: `pkg/ui/frame.go`, `pkg/ui/testdata/`.
-- [ ] T005 Criar `pkg/ui/tabs.go`, `pkg/ui/filtro.go` e `pkg/ui/quadro.go`.
+- [x] T005 Criar `pkg/ui/tabs.go`, `pkg/ui/filtro.go` e `pkg/ui/quadro.go`.
   - Abas com ◆/◇ e contagem, com "⇥ mais" quando não cabem.
   - Chips de filtro com ✕ e "N de M".
   - Painel com rótulo no fio de cima; o foco troca o fio para tinta.
   - Verificar: golden files.
-- [ ] T006 Criar `pkg/ui/table.go`.
+- [x] T006 Criar `pkg/ui/table.go`.
   - Larguras em células (`lipgloss.Width`), nunca em bytes; truncamento com `…` respeitando UTF-8.
   - Colunas com prioridade, que somem em terminal estreito.
   - Linha selecionada em tinta invertida; itens concluídos em tinta suave.
   - Verificar: testes com nomes acentuados e glifos largos; nenhuma linha passa da largura.
-- [ ] T007 Criar `pkg/ui/etapas.go`, `pkg/ui/cota.go`, `pkg/ui/rota.go` e `pkg/ui/spinner.go`.
+- [x] T007 Criar `pkg/ui/etapas.go`, `pkg/ui/cota.go`, `pkg/ui/rota.go` e `pkg/ui/spinner.go`.
   - Etapas (✓ ◈ ◇ ✕) com tempo.
   - Cota `━━┄┄` com percentual ou tempo restante.
   - Rota `◆━━◆┄┄◇` com rótulos.
   - Spinner `◇ ◈ ◆ ◈`.
   - Verificar: golden files; spinner sem animação com `NO_COLOR` ou fora de TTY.
-- [ ] T008 Criar `pkg/ui/toast.go`, `pkg/ui/confirmar.go` e `pkg/ui/estados.go` (modelos Bubbletea).
+- [x] T008 Criar `pkg/ui/toast.go`, `pkg/ui/confirmar.go` e `pkg/ui/estados.go` (modelos Bubbletea).
   - Toast que some em 6 s.
   - Confirmação destrutiva por nome (↵ só com o nome certo) e reversível por ↵/esc.
   - Estados vazio, carregando e erro com textos diferentes.
   - Verificar: testes com `teatest` para digitar o nome errado, o certo, e esc.
-- [ ] T009 Criar `pkg/ui/huh.go` e `pkg/ui/msg.go`.
+- [~] T009 Criar `pkg/ui/huh.go` e `pkg/ui/msg.go`.
   - `HuhTheme()`.
   - Saída sem TUI: `Title`, `Section`, `Check(ok|aviso|erro|neutro)`, `Summary`, `Steps`.
   - `RenderError(*errors.YbyError)` com título, causa, "faça" (hint) e código.
@@ -238,3 +238,10 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 23/10/2026 | — | Plano criado a partir do briefing e do plano de migração aprovados | — |
 | 23/10/2026 | T001 | `tokens.go` e `glyphs.go`: paleta adaptativa (truecolor/256/16), `Contraste` WCAG, glifos Unicode/ASCII com mesma largura; 100% de cobertura | `260b880` |
 | 23/10/2026 | T002 | `theme.go`: `ResolverOpcoes` (flags > env > config), `Configurar`, `S()`, `Colorir`; `NO_COLOR` mantém negrito e reverse; `ui.theme`/`ui.ascii` em `pkg/config`. Entregue junto da T001 (arquivos interdependentes) | `260b880` |
+| 23/10/2026 | T009 | `huh.go` (`HuhTheme`) e `msg.go` (`Title`, `Section`, `Check`, `Summary`, `RenderError`); golden do doctor e do erro. `Steps` fica para a onda 2 | `1b9e493` |
+| 23/10/2026 | T003 | `keys.go`: grupos Global, Lista e Texto com `bubbles/key`, `ShortHelp`/`FullHelp`, `NovoAjuda` | `fc7d96b` |
+| 23/10/2026 | T004 | `frame.go`: `Masthead`, `Rule`, `StatusLine`, `KeyHints`, `Moldura` responsiva (lado a lado, coluna, compacto, janela pequena); golden 60/100/140 × 2 temas | `4110330` |
+| 23/10/2026 | T005 | `tabs.go` e `filtro.go` (`29f499f`); `quadro.go` entrou no commit da T008 | `29f499f` · `37e7698` |
+| 23/10/2026 | T006 | `table.go`: colunas por prioridade, truncamento em células, `Status`; testes com acentos, CJK e emoji de 1 a 200 colunas | `5aab19b` |
+| 23/10/2026 | T007 | `etapas.go`, `cota.go`, `rota.go`, `spinner.go`; `FormatarDuracao` em pt-BR; spinner parado sem TTY ou sem cor | `e0b089c` |
+| 23/10/2026 | T008 | `quadro.go`, `toast.go`, `confirmar.go`, `estados.go`; teatest em `pkg/ui/uiteatest` (a flag `-update` do teatest colide com a do pacote) | `37e7698` |

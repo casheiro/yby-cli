@@ -67,4 +67,4 @@ reports/
 
 plans/cloud-multicloud-support.md
 
-.claude/pipeline/
+.claude/pipeline/.claude/worktrees/
