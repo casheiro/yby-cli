@@ -33,12 +33,12 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar. Elas seguem os passos 
 
 Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0; as outras não o editam.
 
-- [ ] T001 Criar `pkg/ui/tokens.go` e `pkg/ui/glyphs.go`.
+- [x] T001 Criar `pkg/ui/tokens.go` e `pkg/ui/glyphs.go`.
   - Paleta como `lipgloss.CompleteAdaptiveColor` nas variantes mapa noturno e kraft (truecolor + ANSI 256 + ANSI 16), com os papéis `Tinta`, `TintaSuave`, `Fio`, `Ok`, `Aviso` e `Erro` e os valores da folha 01 da prancha.
   - Glifos `◆ ◇ ◈ ✓ ✕ ▲ ● ○ ━ ┄ ▸` com fallback ASCII.
   - Verificar: testes com perfil de cor forçado retornam os códigos esperados; contraste ≥ 4,5:1 nos dois temas (teste com a fórmula WCAG).
   - Arquivos: `pkg/ui/tokens.go`, `pkg/ui/glyphs.go`.
-- [ ] T002 Criar `pkg/ui/theme.go` com a detecção de tema e modo.
+- [x] T002 Criar `pkg/ui/theme.go` com a detecção de tema e modo.
   - Respeitar `NO_COLOR`, `YBY_THEME=auto|dark|light`, `YBY_ASCII=1`, e os campos `ui.theme`/`ui.ascii` em `pkg/config` (precedência flags > env > config > padrão).
   - Fallback ASCII quando o terminal não declara UTF-8.
   - Padrão: mapa noturno.
@@ -236,3 +236,5 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 23/10/2026 | — | Plano criado a partir do briefing e do plano de migração aprovados | — |
+| 23/10/2026 | T001 | `tokens.go` e `glyphs.go`: paleta adaptativa (truecolor/256/16), `Contraste` WCAG, glifos Unicode/ASCII com mesma largura; 100% de cobertura | a preencher |
+| 23/10/2026 | T002 | `theme.go`: `ResolverOpcoes` (flags > env > config), `Configurar`, `S()`, `Colorir`; `NO_COLOR` mantém negrito e reverse; `ui.theme`/`ui.ascii` em `pkg/config`. Entregue junto da T001 (arquivos interdependentes) | a preencher |

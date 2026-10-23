@@ -40,11 +40,18 @@ type TelemetryConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 }
 
+// UIConfig armazena preferências visuais das TUIs.
+type UIConfig struct {
+	Theme string `mapstructure:"theme" yaml:"theme"` // auto, dark ou light
+	ASCII bool   `mapstructure:"ascii" yaml:"ascii"` // força glifos ASCII
+}
+
 // Config é a estrutura raiz de configuração global do Yby CLI.
 type Config struct {
 	AI        AIConfig        `mapstructure:"ai"`
 	Log       LogConfig       `mapstructure:"log"`
 	Telemetry TelemetryConfig `mapstructure:"telemetry"`
+	UI        UIConfig        `mapstructure:"ui"`
 }
 
 var (
@@ -60,6 +67,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
 	v.SetDefault("telemetry.enabled", false)
+	v.SetDefault("ui.theme", "auto")
+	v.SetDefault("ui.ascii", false)
 }
 
 // bindEnvVars associa variáveis de ambiente ao viper com prefixo YBY.
@@ -75,6 +84,8 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("log.level", "YBY_LOG_LEVEL")
 	_ = v.BindEnv("log.format", "YBY_LOG_FORMAT")
 	_ = v.BindEnv("telemetry.enabled", "YBY_TELEMETRY_ENABLED")
+	_ = v.BindEnv("ui.theme", "YBY_THEME")
+	_ = v.BindEnv("ui.ascii", "YBY_ASCII")
 }
 
 // Load carrega a configuração global a partir de ~/.yby/config.yaml, env vars e defaults.
@@ -185,6 +196,9 @@ func DefaultConfig() *Config {
 		},
 		Telemetry: TelemetryConfig{
 			Enabled: false,
+		},
+		UI: UIConfig{
+			Theme: "auto",
 		},
 	}
 }
