@@ -236,5 +236,5 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 23/10/2026 | — | Plano criado a partir do briefing e do plano de migração aprovados | — |
-| 23/10/2026 | T001 | `tokens.go` e `glyphs.go`: paleta adaptativa (truecolor/256/16), `Contraste` WCAG, glifos Unicode/ASCII com mesma largura; 100% de cobertura | a preencher |
-| 23/10/2026 | T002 | `theme.go`: `ResolverOpcoes` (flags > env > config), `Configurar`, `S()`, `Colorir`; `NO_COLOR` mantém negrito e reverse; `ui.theme`/`ui.ascii` em `pkg/config`. Entregue junto da T001 (arquivos interdependentes) | a preencher |
+| 23/10/2026 | T001 | `tokens.go` e `glyphs.go`: paleta adaptativa (truecolor/256/16), `Contraste` WCAG, glifos Unicode/ASCII com mesma largura; 100% de cobertura | `260b880` |
+| 23/10/2026 | T002 | `theme.go`: `ResolverOpcoes` (flags > env > config), `Configurar`, `S()`, `Colorir`; `NO_COLOR` mantém negrito e reverse; `ui.theme`/`ui.ascii` em `pkg/config`. Entregue junto da T001 (arquivos interdependentes) | `260b880` |
