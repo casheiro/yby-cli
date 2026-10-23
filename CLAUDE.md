@@ -117,6 +117,12 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 - Registry de hints automáticos em `pkg/errors/hints.go` — mapeia códigos de erro para sugestões padrão
 - Códigos: `ERR_IO`, `ERR_NETWORK_TIMEOUT`, `ERR_CLUSTER_OFFLINE`, `ERR_PLUGIN`, `ERR_VALIDATION`, `ERR_CONFIG`, `ERR_SCAFFOLD_FAILED`, `ERR_CLOUD_TOKEN_EXPIRED`, `ERR_CLOUD_CLI_MISSING`, `ERR_CLOUD_MODEL_DISABLED`, etc.
 
+### Interface (pkg/ui)
+
+Toda saída para pessoas (TUIs e comandos) usa `pkg/ui`: paleta, glifos, componentes e saídas de comando (`Title`, `Check`, `Steps`, `RenderError`). Não monte cores ou glifos à mão. Especificação em `docs/design/tui/especificacao-pkg-ui.md`; catálogo visual com `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
+
+Modo visual: env `YBY_THEME` (auto|dark|light), `YBY_ASCII=1` e `NO_COLOR`; config `ui.theme` e `ui.ascii` em `~/.yby/config.yaml`. Precedência: flags > env > config > padrão.
+
 ### Padrão de Serviços
 
 Todos os serviços usam **injeção de dependência via construtor** com as interfaces `shared.Runner` e `shared.Filesystem`. Para testes, usar `testutil.MockRunner` e `testutil.MockFilesystem`.
