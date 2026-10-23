@@ -1,0 +1,6 @@
+[38;2;161;147;121mNOME                         STATUS              PRONTOS  IDADE  NÓ                   [0m
+api-gateway-7d9f8b6c5-x2k4m  [38;2;167;188;113m● Running[0m               1/1     3d  ip-10-0-1-23.internal
+[1;7mpagamentos-configuração-ção[0m[7m  ✕ CrashLoopBackOff[0m[7m      0/1[0m[7m    12m[0m[7m  ip-10-0-2-77.internal[0m[7m                                                      [0m
+fila-mensageria              [38;2;217;174;95m▲ Pending[0m               0/1     4s  -                    
+[38;2;161;147;121mmigração-banco               ✓ Completed             0/1     2d  ip-10-0-1-23.internal[0m
+worker-parado                [38;2;161;147;121m○ Parado[0m                0/0     9d  -                    

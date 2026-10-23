@@ -1,0 +1,6 @@
+[38;2;92;73;54mNOME      STATUS          PRONTOS  IDADE[0m
+api-gat…  [38;2;78;95;46m● Running[0m           1/1     3d
+[1;7mpagamen…[0m[7m  ✕ CrashLoopBa…[0m[7m      0/1[0m[7m    12m[0m[7m[0m
+fila-me…  [38;2;125;89;16m▲ Pending[0m           0/1     4s
+[38;2;92;73;54mmigraçã…  ✓ Completed         0/1     2d[0m
+worker-…  [38;2;92;73;54m○ Parado[0m            0/0     9d
