@@ -28,6 +28,8 @@ type Etapa struct {
 	Rotulo  string
 	Estado  EstadoEtapa
 	Duracao time.Duration // exibida à direita quando maior que zero
+	Nota    string        // complemento em TintaSuave após o rótulo (ex.: "criado"); opcional
+	Fracao  float64       // progresso (0 a 1) da etapa atual; maior que zero troca o rótulo por uma cota
 }
 
 // FormatarDuracao formata um tempo em pt-BR: "0,3 s", "38 s", "1 min 12 s".
@@ -78,8 +80,12 @@ func Etapas(etapas []Etapa, largura int) string {
 		maxTempo = max(maxTempo, lipgloss.Width(tempos[i]))
 		maxRotulo = max(maxRotulo, lipgloss.Width(e.Rotulo))
 	}
+	comLargura := largura > 0
 	if largura <= 0 {
 		largura = 2 + maxRotulo + 3 + maxTempo
+		for _, e := range etapas {
+			largura = max(largura, 2+lipgloss.Width(e.Rotulo)+3+lipgloss.Width(e.Nota)+2+maxTempo)
+		}
 	}
 	// Reserva 2 células do glifo, 2 de respiro e a coluna de tempo.
 	reserva := 2
@@ -99,12 +105,26 @@ func Etapas(etapas []Etapa, largura int) string {
 		default:
 			glifo = s.TintaSuave.Render(g.Pendente)
 		}
-		rotulo := truncarCelulas(e.Rotulo, max(largura-reserva, 1))
-		switch e.Estado {
-		case EtapaAtual:
-			rotulo = s.Negrito.Render(rotulo)
-		case EtapaPendente:
-			rotulo = s.TintaSuave.Render(rotulo)
+		var rotulo string
+		if e.Estado == EtapaAtual && e.Fracao > 0 {
+			wCota := 0 // tamanho padrão quando a largura é natural
+			if largura > 0 && comLargura {
+				wCota = max(largura-reserva, 1)
+			}
+			rotulo = Cota(e.Rotulo, e.Fracao, wCota)
+		} else {
+			rotulo = truncarCelulas(e.Rotulo, max(largura-reserva, 1))
+			switch e.Estado {
+			case EtapaAtual:
+				rotulo = s.Negrito.Render(rotulo)
+			case EtapaPendente:
+				rotulo = s.TintaSuave.Render(rotulo)
+			}
+			if e.Nota != "" {
+				if sobra := largura - reserva - lipgloss.Width(e.Rotulo) - 3; sobra > 0 {
+					rotulo += "   " + s.TintaSuave.Render(truncarCelulas(e.Nota, sobra))
+				}
+			}
 		}
 		esquerda := glifo + " " + rotulo
 		if tempos[i] != "" {

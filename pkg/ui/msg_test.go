@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -31,6 +32,17 @@ func msgErro() string {
 	return RenderError(e)
 }
 
+func msgUp() string {
+	var b bytes.Buffer
+	Title(&b, "up", "23/10 12:10")
+	Steps(&b, []Etapa{
+		{Rotulo: "cluster yby-local", Nota: "criado", Estado: EtapaFeita, Duracao: 38 * time.Second},
+		{Rotulo: "argo cd", Estado: EtapaAtual, Fracao: 0.64, Duracao: 25 * time.Second},
+		{Rotulo: "root-app", Estado: EtapaPendente},
+	}, 64)
+	return b.String()
+}
+
 var msgCenarios = []struct {
 	nome   string
 	escuro bool
@@ -52,6 +64,7 @@ func TestMsgGolden(t *testing.T) {
 			}
 			conferirGolden(t, "msg_doctor_"+c.nome, msgDoctor())
 			conferirGolden(t, "msg_erro_"+c.nome, msgErro())
+			conferirGolden(t, "msg_up_"+c.nome, msgUp())
 		})
 	}
 }
@@ -116,5 +129,33 @@ func TestRenderErrorVariacoes(t *testing.T) {
 	out = RenderError(yerrors.New("ERR_INEXISTENTE", "falhou"))
 	if strings.Count(out, "--log-level=debug") > 1 {
 		t.Errorf("dica genérica repetida:\n%s", out)
+	}
+}
+
+func TestSteps(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, true)
+	for _, larg := range []int{0, 30, 64} {
+		var b bytes.Buffer
+		Steps(&b, []Etapa{
+			{Rotulo: "cluster yby-local", Nota: "criado", Estado: EtapaFeita, Duracao: 38 * time.Second},
+			{Rotulo: "argo cd", Estado: EtapaAtual, Fracao: 0.64, Duracao: 25 * time.Second},
+			{Rotulo: "root-app", Estado: EtapaPendente},
+		}, larg)
+		linhas := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+		if len(linhas) != 3 {
+			t.Fatalf("larg %d: %d linhas", larg, len(linhas))
+		}
+		esperado := larg
+		if esperado <= 0 {
+			esperado = msgLargura
+		}
+		for _, l := range linhas {
+			if !strings.HasPrefix(l, "  ") || lipgloss.Width(l) > esperado {
+				t.Errorf("larg %d: linha inválida %q", larg, l)
+			}
+		}
+		if !strings.Contains(linhas[1], "64%") {
+			t.Errorf("sem cota: %q", linhas[1])
+		}
 	}
 }

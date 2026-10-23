@@ -68,10 +68,10 @@ func TestFormatarDuracao(t *testing.T) {
 
 func etapasExemplo() []Etapa {
 	return []Etapa{
-		{"contexto do projeto", EtapaFeita, 300 * time.Millisecond},
-		{"kubectl get pvc -A", EtapaAtual, 2100 * time.Millisecond},
-		{"resposta", EtapaPendente, 0},
-		{"gravar relatório", EtapaFalha, 72 * time.Second},
+		{Rotulo: "contexto do projeto", Estado: EtapaFeita, Duracao: 300 * time.Millisecond},
+		{Rotulo: "kubectl get pvc -A", Estado: EtapaAtual, Duracao: 2100 * time.Millisecond},
+		{Rotulo: "resposta", Estado: EtapaPendente, Duracao: 0},
+		{Rotulo: "gravar relatório", Estado: EtapaFalha, Duracao: 72 * time.Second},
 	}
 }
 
@@ -85,13 +85,13 @@ func TestEtapasLarguras(t *testing.T) {
 		etapasLarguraMax(t, Etapas(etapasExemplo(), w), w)
 	}
 	// Largura natural e sem tempos.
-	if got := Etapas([]Etapa{{"a", EtapaPendente, 0}}, 0); !strings.Contains(got, "o a") {
+	if got := Etapas([]Etapa{{Rotulo: "a", Estado: EtapaPendente, Duracao: 0}}, 0); !strings.Contains(got, "o a") {
 		t.Errorf("saída inesperada: %q", got)
 	}
 	if Etapas(nil, 10) != "" {
 		t.Error("lista vazia deve render vazio")
 	}
-	etapasLarguraMax(t, Etapas([]Etapa{{"árvore de decisão ✓ longa", EtapaFeita, time.Second}}, 14), 14)
+	etapasLarguraMax(t, Etapas([]Etapa{{Rotulo: "árvore de decisão ✓ longa", Estado: EtapaFeita, Duracao: time.Second}}, 14), 14)
 }
 
 func TestCotaGolden(t *testing.T) {

@@ -158,3 +158,22 @@ func RenderError(e *yerrors.YbyError) string {
 	}
 	return b.String()
 }
+
+// Steps escreve em w as etapas de um comando (ex.: yby up), uma por linha e recuadas em
+// 2 células, no formato da seção 7 da especificação:
+//
+//	✓ cluster yby-local   criado   38 s
+//	◈ argo cd  ━━━━┄┄ 64%   25 s
+//	◇ root-app
+//
+// A etapa atual pode trazer Fracao (progresso) e vira uma cota. largura é o total em
+// células, com o recuo incluído; com largura <= 0 usa a largura padrão das saídas.
+func Steps(w io.Writer, etapas []Etapa, largura int) {
+	if largura <= 0 {
+		largura = msgLargura
+	}
+	corpo := Etapas(etapas, max(largura-2, 1))
+	for _, l := range strings.Split(corpo, "\n") {
+		fmt.Fprintln(w, "  "+l)
+	}
+}
