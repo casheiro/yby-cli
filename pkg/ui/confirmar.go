@@ -86,7 +86,7 @@ func (m Confirmar) View() string {
 		return Quadro(m.acao, corpo, m.largura, QuadroFoco)
 	}
 	cursor := s.Selecionado.Render(" ")
-	campo := s.Tinta.Render(g.Caminho+" ") + string(m.entrada) + cursor
+	campo := s.Tinta.Render(g.Prompt+" ") + string(m.entrada) + cursor
 	dica := "esc cancelar"
 	if m.Liberado() {
 		dica = "↵ confirmar · esc cancelar"

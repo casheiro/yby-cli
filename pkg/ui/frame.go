@@ -118,7 +118,7 @@ func Rule(largura int) string {
 	if largura <= 0 {
 		return ""
 	}
-	return S().Fio.Render(strings.Repeat(G().Cheio, largura))
+	return S().Fio.Render(strings.Repeat(G().Linha, largura))
 }
 
 // StatusLine devolve a linha de status: a mensagem (já formatada, com glifo de status) à

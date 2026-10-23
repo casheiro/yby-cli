@@ -1,5 +1,5 @@
 * YBY  VIZ  INSTR. 05 · OBSERVAÇÃO                                                                      staging > payments   * ao vivo · 2 s
-============================================================================================================================================
+--------------------------------------------------------------------------------------------------------------------------------------------
  Pods   Deployments  StatefulSets  Services                                                                                                 
 payments-api-01  Running  1/1  3m                                                  | Pod payments-api-03                                    
 payments-api-02  Running  1/1  6m                                                  | Namespace: payments                                    
@@ -25,6 +25,6 @@ payments-api-21  Running  1/1  63m                                              
 payments-api-22  Running  1/1  66m                                                 |                                                        
 payments-api-23  Running  1/1  69m                                                 |                                                        
 payments-api-24  Running  1/1  72m                                                 |                                                        
-============================================================================================================================================
+--------------------------------------------------------------------------------------------------------------------------------------------
 v 30 pods carregados                                                                                                     atualizado 14:07:09
 ? ajuda  ↑/k subir  ↵ abrir  / buscar  l logs  y yaml  r recarregar                                                                   q sair

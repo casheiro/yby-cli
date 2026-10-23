@@ -36,6 +36,8 @@ Seis papéis, cada um um `lipgloss.CompleteAdaptiveColor` (`Dark` = mapa noturno
 | `Cheio` | `━` | `=` | trecho concluído (cota, rota) |
 | `Tracejado` | `┄` | `-` | trecho restante |
 | `Caminho` | `▸` | `>` | separador de caminho (`staging ▸ payments`) |
+| `Linha` | `─` | `-` | fio fino da régua |
+| `Prompt` | `›` | `>` | prompt de campo de texto |
 | `Reticencias` | `…` | `~` **(1 célula, como o original)** | truncamento |
 
 Teclas exibidas: `↵ ⇥ ⇧ esc ␣ ↑↓`; em ASCII: `enter tab shift esc space up/down`.

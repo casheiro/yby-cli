@@ -42,7 +42,7 @@ func HuhTheme() *huh.Theme {
 		f.Directory = s.Tinta
 		f.File = s.Tinta
 
-		f.TextInput.Prompt = s.Ok.SetString("› ")
+		f.TextInput.Prompt = s.Ok.SetString(g.Prompt + " ")
 		f.TextInput.Text = s.Tinta
 		f.TextInput.Placeholder = s.TintaSuave
 		f.TextInput.Cursor = s.Tinta
@@ -58,7 +58,7 @@ func HuhTheme() *huh.Theme {
 			f.NoteTitle = f.Title
 			f.SelectSelector = s.TintaSuave.SetString("  ")
 			f.MultiSelectSelector = s.TintaSuave.SetString("  ")
-			f.TextInput.Prompt = s.TintaSuave.SetString("› ")
+			f.TextInput.Prompt = s.TintaSuave.SetString(g.Prompt + " ")
 			f.SelectedOption = s.Tinta
 		}
 	}

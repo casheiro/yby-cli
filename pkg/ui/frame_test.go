@@ -235,7 +235,7 @@ func TestCaminhoContexto_Cores(t *testing.T) {
 
 func TestRule(t *testing.T) {
 	usarTema(t, true, termenv.Ascii, false)
-	if got := Rule(10); got != strings.Repeat("━", 10) {
+	if got := Rule(10); got != strings.Repeat("─", 10) {
 		t.Errorf("Rule = %q", got)
 	}
 }
