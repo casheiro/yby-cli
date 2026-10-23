@@ -152,9 +152,9 @@ func S() Estilos {
 		Ok:          fg(Ok),
 		Aviso:       fg(Aviso),
 		Erro:        fg(Erro),
-		Negrito:     lipgloss.NewStyle().Bold(true),
+		Negrito:     Colorir(lipgloss.NewStyle().Bold(true), Tinta),
 		Rotulo:      fg(TintaSuave),
-		Selecionado: lipgloss.NewStyle().Reverse(true).Bold(true),
+		Selecionado: Colorir(lipgloss.NewStyle().Reverse(true).Bold(true), Tinta),
 	}
 }
 

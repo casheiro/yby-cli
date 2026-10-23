@@ -125,7 +125,7 @@ func TestEstilos_RespeitamTema(t *testing.T) {
 	if got := s.Selecionado.Render("x"); !strings.Contains(got, "\x1b[1;7m") && !strings.Contains(got, "7") {
 		t.Errorf("Selecionado sem reverse: %q", got)
 	}
-	if got := s.Negrito.Render("x"); !strings.Contains(got, "\x1b[1m") {
+	if got := s.Negrito.Render("x"); !strings.Contains(got, "[1;38;2;221;208;181m") {
 		t.Errorf("Negrito: %q", got)
 	}
 	Configurar(Opcoes{Tema: TemaClaro})

@@ -76,7 +76,7 @@ func (m Estado) View() string {
 	case EstadoCarregando:
 		return m.spinner.View()
 	case EstadoErro:
-		return s.Erro.Render(g.Falha) + " " + m.texto + sufixo
+		return s.Erro.Render(g.Falha) + " " + s.Tinta.Render(m.texto) + sufixo
 	}
 	return s.TintaSuave.Render(g.Parado+" "+m.texto) + sufixo
 }

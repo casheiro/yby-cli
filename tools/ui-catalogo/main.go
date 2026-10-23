@@ -167,7 +167,7 @@ func glifos(w io.Writer, _ int) {
 
 func moldura(w io.Writer, largura int) {
 	detalhe := strings.Join([]string{
-		"api-7f9c-x2k", "namespace  payments", "no         ip-10-0-3-12", "imagem     api:1.42.0",
+		"api-7f9c-x2k", "namespace  payments", "nó         ip-10-0-3-12", "imagem     api:1.42.0",
 	}, "\n")
 	t := ui.DefaultKeys()
 	partes := ui.Partes{

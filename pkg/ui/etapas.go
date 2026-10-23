@@ -119,6 +119,8 @@ func Etapas(etapas []Etapa, largura int) string {
 				rotulo = s.Negrito.Render(rotulo)
 			case EtapaPendente:
 				rotulo = s.TintaSuave.Render(rotulo)
+			default:
+				rotulo = s.Tinta.Render(rotulo)
 			}
 			if e.Nota != "" {
 				if sobra := largura - reserva - lipgloss.Width(e.Rotulo) - 3; sobra > 0 {

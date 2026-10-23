@@ -62,7 +62,7 @@ func Quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
 	for _, l := range strings.Split(corpo, "\n") {
 		l = truncarCelulas(l, interno)
 		pad := strings.Repeat(" ", interno-lipgloss.Width(l))
-		linhas = append(linhas, estilo.Render(vert)+" "+l+pad+" "+estilo.Render(vert))
+		linhas = append(linhas, estilo.Render(vert)+" "+s.Tinta.Render(l)+pad+" "+estilo.Render(vert))
 	}
 	linhas = append(linhas, estilo.Render(cantoIE+strings.Repeat(horiz, largura-2)+cantoID))
 	return strings.Join(linhas, "\n")

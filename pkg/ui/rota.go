@@ -21,7 +21,7 @@ func Rota(rotulos []string, atual, largura int) string {
 	}
 	atual = min(max(atual, 0), n-1)
 	s, g := S(), G()
-	destaque := s.Negrito.Inherit(s.Tinta)
+	destaque := s.Negrito
 
 	contador := fmt.Sprintf("%02d/%02d", atual+1, n)
 	trecho := 3

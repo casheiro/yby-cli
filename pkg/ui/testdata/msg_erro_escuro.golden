@@ -1,4 +1,4 @@
-[38;2;217;131;97m✕[0m [1mNão deu para falar com o cluster staging[0m   [38;2;161;147;121mERR_CLUSTER_OFFLINE[0m
+[38;2;217;131;97m✕[0m [1;38;2;221;208;181mNão deu para falar com o cluster staging[0m   [38;2;161;147;121mERR_CLUSTER_OFFLINE[0m
   [38;2;161;147;121mcausa     [0m[38;2;221;208;181mo token do EKS expirou há 12 min[0m
-  [38;2;161;147;121mfaça      [0m[1myby cloud refresh --provider aws[0m
+  [38;2;161;147;121mfaça      [0m[1;38;2;221;208;181myby cloud refresh --provider aws[0m
   [38;2;161;147;121mdetalhes  [0m[38;2;161;147;121mrode de novo com --log-level=debug[0m

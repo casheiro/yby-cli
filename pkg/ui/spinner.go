@@ -78,7 +78,7 @@ func (m Spinner) View() string {
 	}
 	out := s.Tinta.Render(quadro)
 	if m.rotulo != "" {
-		out += " " + m.rotulo
+		out += " " + s.Tinta.Render(m.rotulo)
 	}
 	return out
 }

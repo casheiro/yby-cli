@@ -55,7 +55,7 @@ func montarCota(rotulo string, fracao float64, largura int, direita string, wDir
 		}
 	}
 	cheio := int(limitarFracao(fracao)*float64(barra) + 0.5)
-	return rotulo + "  " +
+	return s.Tinta.Render(rotulo) + "  " +
 		s.Tinta.Render(strings.Repeat(g.Cheio, cheio)) +
 		s.Fio.Render(strings.Repeat(g.Tracejado, barra-cheio)) +
 		"  " + direita

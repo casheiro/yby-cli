@@ -139,7 +139,7 @@ func NovoAjuda(largura int) help.Model {
 	m.ShortSeparator = "  "
 	m.FullSeparator = "    "
 	m.Ellipsis = G().Reticencias
-	chave := s.Negrito.Inherit(s.Tinta)
+	chave := s.Negrito
 	m.Styles = help.Styles{
 		Ellipsis:       s.TintaSuave,
 		ShortKey:       chave,

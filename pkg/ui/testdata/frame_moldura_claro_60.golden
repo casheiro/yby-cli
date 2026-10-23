@@ -1,11 +1,11 @@
 [1;38;2;51;38;26m◆ YBY  VIZ[0m              [38;2;92;73;54mstaging[0m[38;2;92;73;54m ▸ [0m[38;2;51;38;26mpayments[0m   [38;2;78;95;46m● ao vivo · 2 s[0m
 [38;2;168;142;105m────────────────────────────────────────────────────────────[0m
 1 Pods · 2 Deploy… · 3 Stateful… · 4 Svc                    
-Pod payments-api-03                                         
-Namespace: payments                                         
-Node: ip-10-0-1-23                                          
-Status: Running                                             
-Reinícios: 0                                                
+[38;2;51;38;26mPod payments-api-03[0m                                         
+[38;2;51;38;26mNamespace: payments[0m                                         
+[38;2;51;38;26mNode: ip-10-0-1-23[0m                                          
+[38;2;51;38;26mStatus: Running[0m                                             
+[38;2;51;38;26mReinícios: 0[0m                                                
 [38;2;168;142;105m────────────────────────────────────────────────────────────[0m
 payments-api-01  Running  1/1  3m                           
 payments-api-02  Running  1/1  6m                           

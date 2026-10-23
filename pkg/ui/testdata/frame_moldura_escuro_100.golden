@@ -1,11 +1,11 @@
 [1;38;2;221;208;181m◆ YBY  VIZ[0m  [38;2;161;147;121mINSTR. 05 · OBSERVAÇÃO[0m                              [38;2;161;147;121mstaging[0m[38;2;161;147;121m ▸ [0m[38;2;221;208;181mpayments[0m   [38;2;167;188;113m● ao vivo · 2 s[0m
 [38;2;73;65;50m────────────────────────────────────────────────────────────────────────────────────────────────────[0m
-[1;7m Pods [0m  Deployments  StatefulSets  Services                                                         
-Pod payments-api-03                                                                                 
-Namespace: payments                                                                                 
-Node: ip-10-0-1-23                                                                                  
-Status: Running                                                                                     
-Reinícios: 0                                                                                        
+[1;7;38;2;221;208;181m Pods [0m  Deployments  StatefulSets  Services                                                         
+[38;2;221;208;181mPod payments-api-03[0m                                                                                 
+[38;2;221;208;181mNamespace: payments[0m                                                                                 
+[38;2;221;208;181mNode: ip-10-0-1-23[0m                                                                                  
+[38;2;221;208;181mStatus: Running[0m                                                                                     
+[38;2;221;208;181mReinícios: 0[0m                                                                                        
 [38;2;73;65;50m────────────────────────────────────────────────────────────────────────────────────────────────────[0m
 payments-api-01  Running  1/1  3m                                                                   
 payments-api-02  Running  1/1  6m                                                                   

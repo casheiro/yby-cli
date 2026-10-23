@@ -83,9 +83,9 @@ func (m Toast) View() string {
 	s, g := S(), G()
 	switch m.tipo {
 	case ToastErro:
-		return s.Erro.Render(g.Falha) + " " + m.texto
+		return s.Erro.Render(g.Falha) + " " + s.Tinta.Render(m.texto)
 	case ToastAviso:
-		return s.Aviso.Render(g.Alerta) + " " + m.texto
+		return s.Aviso.Render(g.Alerta) + " " + s.Tinta.Render(m.texto)
 	}
-	return s.Ok.Render(g.Feito) + " " + m.texto
+	return s.Ok.Render(g.Feito) + " " + s.Tinta.Render(m.texto)
 }

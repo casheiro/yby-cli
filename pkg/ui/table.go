@@ -108,6 +108,9 @@ func Tabela(colunas []Coluna, linhas []Linha, selecionada, largura int) string {
 		case l.Concluida:
 			saida = append(saida, s.TintaSuave.Render(strings.Join(partes, sep)))
 		default:
+			for i := range partes {
+				partes[i] = s.Tinta.Render(partes[i])
+			}
 			saida = append(saida, strings.Join(partes, sep))
 		}
 	}

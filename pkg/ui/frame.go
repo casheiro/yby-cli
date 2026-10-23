@@ -81,7 +81,7 @@ func linhaEsqDir(esq, dir string, w int) string {
 // (omitido abaixo de 80 colunas) e o contexto à direita. Sempre ocupa exatamente largura células.
 func Masthead(largura int, instrumento, rotulo, contexto string) string {
 	s := S()
-	marca := s.Negrito.Inherit(s.Tinta).Render(G().Ativo + " YBY  " + strings.ToUpper(instrumento))
+	marca := s.Negrito.Render(G().Ativo + " YBY  " + strings.ToUpper(instrumento))
 	esq := marca
 	if rotulo != "" && largura >= LarguraColuna {
 		candidato := esq + "  " + s.Rotulo.Render(strings.ToUpper(rotulo))
@@ -141,7 +141,7 @@ func StatusLine(largura int, mensagem string, hora time.Time) string {
 // itemTecla renderiza "tecla ação": tecla em negrito, ação em TintaSuave.
 func itemTecla(tecla, acao string) string {
 	s := S()
-	return s.Negrito.Inherit(s.Tinta).Render(tecla) + " " + s.TintaSuave.Render(acao)
+	return s.Negrito.Render(tecla) + " " + s.TintaSuave.Render(acao)
 }
 
 // KeyHints devolve a legenda de teclas. Considera só os bindings habilitados e com ajuda;
@@ -244,7 +244,7 @@ func telaPequena(largura, altura int) string {
 		meio = (altura - 2) / 2
 		linhas[meio+1] = centro("mínimo 60x16", s.TintaSuave)
 	}
-	linhas[meio] = centro("Aumente a janela", s.Negrito.Inherit(s.Tinta))
+	linhas[meio] = centro("Aumente a janela", s.Negrito)
 	return strings.Join(linhas, "\n")
 }
 
@@ -256,6 +256,13 @@ func Moldura(largura, altura int, p Partes) string {
 	if modo == ModoJanelaPequena {
 		return telaPequena(largura, altura)
 	}
+
+	// O detalhe é dado: sai em Tinta (linha a linha, para o estilo não atravessar quebras).
+	detalhe := linhasDe(p.Detalhe)
+	for i, l := range detalhe {
+		detalhe[i] = S().Tinta.Render(l)
+	}
+	p.Detalhe = strings.Join(detalhe, "\n")
 
 	abas := p.Abas
 	if modo == ModoCompacto && p.AbasCompactas != "" {

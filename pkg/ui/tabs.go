@@ -75,7 +75,7 @@ func abasNormais(abas []Aba, ativa, largura int) string {
 		if i == ativa {
 			itens[i] = itemAba{
 				plano:      g.Ativo + " " + txt,
-				estilizado: s.Ok.Render(g.Ativo) + " " + s.Negrito.Render(s.Tinta.Render(txt)),
+				estilizado: s.Ok.Render(g.Ativo) + " " + s.Negrito.Render(txt),
 			}
 		} else {
 			itens[i] = itemAba{
@@ -98,7 +98,7 @@ func abasCompactas(abas []Aba, ativa, largura int) string {
 			}
 			txt := strconv.Itoa(i+1) + " " + titulo
 			if i == ativa {
-				itens[i] = itemAba{plano: txt, estilizado: s.Negrito.Render(s.Tinta.Render(txt))}
+				itens[i] = itemAba{plano: txt, estilizado: s.Negrito.Render(txt)}
 			} else {
 				itens[i] = itemAba{plano: txt, estilizado: s.TintaSuave.Render(txt)}
 			}
