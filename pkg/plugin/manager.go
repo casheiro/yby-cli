@@ -104,8 +104,7 @@ func (m *Manager) scanDirectory(dir string) error {
 			continue
 		}
 
-		// Check executable bit (approximate on Linux)
-		if info.Mode()&0111 == 0 {
+		if !isPluginExecutable(entry.Name(), info.Mode()) {
 			continue
 		}
 
@@ -135,6 +134,16 @@ func (m *Manager) scanDirectory(dir string) error {
 		})
 	}
 	return nil
+}
+
+// isPluginExecutable indica se o arquivo pode ser executado como plugin.
+// No Windows o Go não expõe bit de execução (o modo é sempre 0666/0444),
+// então vale a extensão .exe.
+func isPluginExecutable(name string, mode os.FileMode) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Ext(name), ".exe")
+	}
+	return mode&0111 != 0
 }
 
 func (m *Manager) loadManifest(path string) (*PluginManifest, error) {

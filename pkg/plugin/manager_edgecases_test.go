@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -343,4 +344,30 @@ func TestInstall_LocalFile_CopiaSucesso(t *testing.T) {
 	data, err := os.ReadFile(installedPath)
 	require.NoError(t, err)
 	assert.Equal(t, "local binary", string(data))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// isPluginExecutable — detecção de executável por SO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func TestIsPluginExecutable(t *testing.T) {
+	windows := runtime.GOOS == "windows"
+
+	tests := []struct {
+		nome     string
+		arquivo  string
+		modo     os.FileMode
+		esperado bool
+	}{
+		{"exe sem bit de execução", "yby-plugin-atlas.exe", 0666, windows},
+		{"exe maiúsculo", "yby-plugin-atlas.EXE", 0666, windows},
+		{"sem extensão com bit de execução", "yby-plugin-atlas", 0755, !windows},
+		{"sem extensão e sem bit", "yby-plugin-atlas", 0644, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.nome, func(t *testing.T) {
+			assert.Equal(t, tt.esperado, isPluginExecutable(tt.arquivo, tt.modo))
+		})
+	}
 }
