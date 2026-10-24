@@ -220,6 +220,12 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 
 ---
 
+## Fora do plano
+
+Achados durante o redesign que não fazem parte dele. Viram tarefa própria, fora desta branch.
+
+- `yby setup` no Windows: instalar as ferramentas com winget, scoop ou choco (hoje só brew, apt e snap; no Windows o setup mostra os links de instalação). Confirmar o nome de cada ferramenta (kubectl, helm, k3d, direnv) em cada gerenciador e testar no Windows. Registrado em 24/10/2026, a pedido do usuário.
+
 ## Dependências
 
 ```
@@ -258,3 +264,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T023 · T026 | Segundo teste do usuário (janela estreita): nota de `Check` que não cabe desce inteira sob o nome (não parte `C:\Program Files\…`); `Title` na largura do terminal, direita desce se não couber; frase do `Summary` desce sob a contagem. Saída redirecionada conferida sem quebra nem cor | este commit |
 | 24/10/2026 | T024 | `HuhPrompter` com `ui.HuhTheme()` (Sim/Não) e sem terminal na entrada devolve erro em vez de abrir o prompt (`Confirm` nunca devolve o padrão por engano); `ConfirmarNome` roda o `ui.Confirmar` destrutivo e o `destroy` de ambiente não-local usa ele (cancelar não destrói); `env create` e `uninstall` (novo `--yes`) usam o `Prompter`; opt-in de telemetria sem terminal não grava nada e fica desligado. Conferido com pipe no binário: setup, env create, uninstall, destroy e primeiro uso não travam. Os dois testes de setup que travavam no Windows passam | este commit |
 | 24/10/2026 | T024 · T026 | Teste do usuário: `setup` só oferece instalar quando há gerenciador suportado (`SetupResult.Gerenciador`; no Windows não há) e mostra o link de instalação de cada ferramenta ausente; pergunta com margem própria (some com o formulário); `env create` avisa que não há projeto antes de pedir o nome. Destroy por nome e prompts no tema conferidos pelo usuário | este commit |
+| 24/10/2026 | — | Instalação do `setup` no Windows (winget/scoop/choco) registrada em "Fora do plano", por decisão do usuário | este commit |
