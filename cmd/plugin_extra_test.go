@@ -17,10 +17,12 @@ import (
 // Retorna uma função de teardown para restaurar a factory original e HOME.
 func mockPluginManagerFactory(tmpDir string) func() {
 	orig := newPluginManager
-	origHome := os.Getenv("HOME")
+	origHome, origPerfil := os.Getenv("HOME"), os.Getenv("USERPROFILE")
 
-	// Define HOME para diretório temp para isolar de plugins reais
+	// Define HOME (e USERPROFILE, que o Windows usa) para diretório temp para isolar de
+	// plugins reais
 	os.Setenv("HOME", tmpDir)
+	os.Setenv("USERPROFILE", tmpDir)
 
 	newPluginManager = func() gerenciadorPlugins {
 		return plugin.NewManager()
@@ -28,6 +30,7 @@ func mockPluginManagerFactory(tmpDir string) func() {
 	return func() {
 		newPluginManager = orig
 		os.Setenv("HOME", origHome)
+		os.Setenv("USERPROFILE", origPerfil)
 	}
 }
 

@@ -26,6 +26,7 @@ func TestRemove_PluginNotFound_ComDiscoverAutomatico(t *testing.T) {
 	// Mesmo após Discover (que não encontra nada), o plugin não existe.
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".yby", "plugins"), 0755))
 
 	m := NewManager()
@@ -46,6 +47,7 @@ func TestUpdate_PluginNativo_Sucesso_ComServerHTTP(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-bard"
 	tarData := makeTarGzWithBinary(t, binaryName, "#!/bin/sh\necho atualizado")
@@ -75,6 +77,7 @@ func TestUpdate_PluginNaoInstalado_ComDiscoverVazio(t *testing.T) {
 	// m.plugins vazio → chama Discover → não encontra nada → erro
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".yby", "plugins"), 0755))
 
 	m := NewManager()
@@ -88,6 +91,7 @@ func TestUpdate_PluginNativo_Sentinel(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-sentinel"
 	tarData := makeTarGzWithBinary(t, binaryName, "binary")
@@ -117,6 +121,7 @@ func TestInstall_ForceTrue_PluginNativoExistente(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-synapstor"
 	tarData := makeTarGzWithBinary(t, binaryName, "novo binário")
@@ -147,6 +152,7 @@ func TestInstall_PluginNativo_VersaoLatest_SemForce_JaExiste(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-viz"
 	tarData := makeTarGzWithBinary(t, binaryName, "binary")
@@ -174,6 +180,7 @@ func TestInstall_PluginNativo_VersaoDiferente_SemForce_JaExiste(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-atlas"
 	tarData := makeTarGzWithBinary(t, binaryName, "binary v2")
@@ -288,6 +295,7 @@ func TestDiscover_ComPluginValido(t *testing.T) {
 	// Plugin com manifesto válido deve ser carregado
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	pluginDir := filepath.Join(tmp, ".yby", "plugins")
 	require.NoError(t, os.MkdirAll(pluginDir, 0755))
@@ -314,6 +322,7 @@ func TestDiscover_ComPluginValido(t *testing.T) {
 func TestInstall_FileProtocol_CopiaSucesso(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srcPath := filepath.Join(tmp, "yby-plugin-mybin")
 	require.NoError(t, os.WriteFile(srcPath, []byte("#!/bin/sh\necho installed"), 0755))
@@ -332,6 +341,7 @@ func TestInstall_LocalFile_CopiaSucesso(t *testing.T) {
 	// Arquivo local sem file:// que existe no disco
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srcPath := filepath.Join(tmp, "yby-plugin-localbin")
 	require.NoError(t, os.WriteFile(srcPath, []byte("local binary"), 0755))
