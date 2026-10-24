@@ -40,6 +40,10 @@ func (m *mockSetupSvc) ConfigureDirenv(workDir string) error {
 func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
 	original := newSetupService
 	defer func() { newSetupService = original }()
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	// sem terminal, o Confirm devolve false com erro: nada é instalado
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return false, erroSemTerminal() }}
 
 	mockSvc := &mockSetupSvc{
 		checkToolsResult: &setup.SetupResult{
@@ -59,7 +63,6 @@ func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
 
 	setupCmd.Flags().Set("profile", "dev")
 
-	// O survey.AskOne vai falhar silenciosamente sem stdin interativo
 	capturarStdout(t, func() {
 		err := setupCmd.RunE(setupCmd, []string{})
 		assert.NoError(t, err)
@@ -69,6 +72,10 @@ func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
 func TestSetupCmd_ServerProfile_FerramentasFaltando(t *testing.T) {
 	original := newSetupService
 	defer func() { newSetupService = original }()
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	// sem terminal, o Confirm devolve false com erro: nada é instalado
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return false, erroSemTerminal() }}
 
 	mockSvc := &mockSetupSvc{
 		checkToolsResult: &setup.SetupResult{
@@ -167,7 +174,7 @@ func TestSetupCmd_CheckToolsFalha(t *testing.T) {
 	capturarStdout(t, func() {
 		err := setupCmd.RunE(setupCmd, []string{})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "falha ao verificar ferramentas")
+		assert.Contains(t, err.Error(), "falha ao verificar as ferramentas")
 	})
 }
 
@@ -293,4 +300,64 @@ func TestSystemPackageManager_AptNaoDetectaForaLinux(t *testing.T) {
 	pkg := &setup.SystemPackageManager{Runner: runner, GOOS: "darwin"}
 
 	assert.Equal(t, "", pkg.Detect())
+}
+
+func TestSetupCmd_Saida_Golden(t *testing.T) {
+	casos := []struct {
+		nome     string
+		instalar bool
+		svc      *mockSetupSvc
+	}{
+		{"setup_tudo_instalado", true, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+				{Name: "helm", Installed: true, Path: "/usr/bin/helm"},
+			},
+		}}},
+		{"setup_instalacao", true, &mockSetupSvc{
+			checkToolsResult: &setup.SetupResult{
+				Tools: []setup.ToolStatus{
+					{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+					{Name: "helm", Installed: false, InstallHelp: "https://helm.sh/docs/intro/install/"},
+					{Name: "k3d", Installed: false, InstallHelp: "https://k3d.io/v5.4.6/#installation"},
+				},
+				Missing:     []string{"helm", "k3d"},
+				Gerenciador: "apt",
+			},
+			installResults: []setup.InstallResult{
+				{Tool: "helm", Success: true},
+				{Tool: "k3d", Success: false, Output: "E: Unable to locate package k3d\n"},
+			},
+		}},
+		{"setup_sem_instalar", false, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
+			Tools:       []setup.ToolStatus{{Name: "helm", Installed: false, InstallHelp: "https://helm.sh/docs/intro/install/"}},
+			Missing:     []string{"helm"},
+			Gerenciador: "brew",
+		}}},
+		// sem gerenciador suportado (Windows): não pergunta, aponta os links
+		{"setup_sem_gerenciador", true, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
+			Tools:   []setup.ToolStatus{{Name: "helm", Installed: false, InstallHelp: "https://helm.sh/docs/intro/install/"}},
+			Missing: []string{"helm"},
+		}}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			usarSaidaTexto(t, false)
+			original, oldPrompter := newSetupService, prompter
+			defer func() { newSetupService, prompter = original, oldPrompter }()
+			newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service { return c.svc }
+			instalar, perguntou := c.instalar, false
+			prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { perguntou = true; return instalar, nil }}
+			setupCmd.Flags().Set("profile", "server")
+
+			b := saidaDoComando(t, setupCmd)
+			assert.NoError(t, setupCmd.RunE(setupCmd, []string{}))
+			saida := b.String()
+			conferirGolden(t, c.nome, saida)
+			conferirSemRestos(t, saida)
+			if c.svc.checkToolsResult.Gerenciador == "" {
+				assert.False(t, perguntou, "sem gerenciador não deveria oferecer a instalação")
+			}
+		})
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -707,12 +708,12 @@ global:
   domainBase: ""
 `)
 	warnings := ValidateRenderedYAML(dir)
-	assert.Len(t, warnings, 3, "deve detectar 3 campos críticos vazios")
+	assert.Len(t, warnings, 2, "deve detectar os 2 campos críticos vazios")
 
 	joined := strings.Join(warnings, "\n")
 	assert.Contains(t, joined, "repoURL")
 	assert.Contains(t, joined, "repoName")
-	assert.Contains(t, joined, "domainBase")
+	assert.NotContains(t, joined, "domainBase", "domainBase vazio é válido (sem Ingress)")
 }
 
 func TestValidateRenderedYAML_CamposNulos(t *testing.T) {
@@ -776,7 +777,7 @@ func TestFindEmptyCriticalFields_MapaAninhado(t *testing.T) {
 		"level1": map[string]interface{}{
 			"repoURL": "",
 			"level2": map[string]interface{}{
-				"domainBase": nil,
+				"repoName": nil,
 			},
 		},
 	}
@@ -864,4 +865,31 @@ func TestYamlEscapeInTemplate(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(tmpDir, "config.yaml"))
 	require.NoError(t, err)
 	assert.Equal(t, `domain: "app:8080"`, string(data))
+}
+
+func TestValorPadrao(t *testing.T) {
+	assert.Equal(t, "padrão", valorPadrao("padrão", ""))
+	assert.Equal(t, "padrão", valorPadrao("padrão", nil))
+	assert.Equal(t, "https://k8s", valorPadrao("padrão", "https://k8s"))
+	assert.Equal(t, 3, valorPadrao(1, 3))
+	assert.Equal(t, 1, valorPadrao(1, 0))
+}
+
+func TestFuncMap_DefaultNoTemplate(t *testing.T) {
+	tmpl := template.Must(template.New("t").Funcs(funcMap()).
+		Parse(`{{ .DestinationServer | default "https://kubernetes.default.svc" }}`))
+	var b strings.Builder
+	require.NoError(t, tmpl.Execute(&b, &BlueprintContext{}))
+	assert.Equal(t, "https://kubernetes.default.svc", b.String())
+
+	b.Reset()
+	require.NoError(t, tmpl.Execute(&b, &BlueprintContext{DestinationServer: "https://outro"}))
+	assert.Equal(t, "https://outro", b.String())
+}
+
+func TestCamposCriticosVazios_ContaPorCampo(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteFile(t, dir, "a.yaml", "git:\n  repoURL: \"\"\nglobal:\n  domainBase: \"\"\n")
+	helperWriteFile(t, dir, "b.yaml", "spec:\n  source:\n    repoURL: \"\"\n  destination:\n    server: \"\"\n")
+	assert.Equal(t, map[string]int{"repoURL": 2, "server": 1}, CamposCriticosVazios(dir))
 }

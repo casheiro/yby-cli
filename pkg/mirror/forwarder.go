@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +17,17 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
+
+// erroNoLog recebe os erros do port-forward do client-go e os manda para o log, que no
+// yby up passa pelas etapas em vez de cair no meio do redesenho delas.
+type erroNoLog struct{}
+
+func (erroNoLog) Write(b []byte) (int, error) {
+	if msg := strings.TrimSpace(string(b)); msg != "" {
+		slog.Warn("erro no port-forward do git-server", "erro", msg)
+	}
+	return len(b), nil
+}
 
 // PodLister abstrai a listagem de pods para permitir injeção em testes
 type PodLister interface {
@@ -153,7 +165,7 @@ func (pf *PortForwarder) Start(ctx context.Context) (int, error) {
 	// 2. Configure and create tunnel
 	ports := []string{fmt.Sprintf("%d:%d", pf.LocalPort, pf.TargetPort)}
 
-	fw, err := pf.tunnelDialer.CreateTunnel(targetPod.Name, pf.Namespace, ports, pf.stopCh, pf.readyCh, pf.out, os.Stderr)
+	fw, err := pf.tunnelDialer.CreateTunnel(targetPod.Name, pf.Namespace, ports, pf.stopCh, pf.readyCh, pf.out, erroNoLog{})
 	if err != nil {
 		return 0, err
 	}

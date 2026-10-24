@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Todo conteúdo deve ser produzido em português do Brasil (PT-BR): respostas, comentários, docstrings, mensagens de erro, documentação. Exceções: identificadores de código (variáveis, funções, classes) e palavras-chave da linguagem.
 
+## Controle de sessão
+
+O trabalho em andamento é registrado no repositório, não na conversa:
+
+- `agile/sessoes/estado.md`: projeto ativo, plano, branch, próxima ação, alertas e ambiente.
+- `agile/sessoes/diario.md`: uma entrada por sessão, a mais recente no topo.
+- `scripts/sessao.sh`: resumo do estado (branch, commits sem push, progresso do plano, próxima tarefa).
+
+Comece a sessão com `/retomar` e termine com `/encerrar`. No plano ativo, cada tarefa concluída vira um commit que marca a caixa `[x]` e registra uma linha no Histórico.
+
 ## Comandos de Desenvolvimento
 
 ```bash
@@ -106,6 +116,12 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 - `.WithHint(hint)` — adiciona sugestão de correção exibida ao usuário (ex: "Rode 'yby doctor' para verificar dependências")
 - Registry de hints automáticos em `pkg/errors/hints.go` — mapeia códigos de erro para sugestões padrão
 - Códigos: `ERR_IO`, `ERR_NETWORK_TIMEOUT`, `ERR_CLUSTER_OFFLINE`, `ERR_PLUGIN`, `ERR_VALIDATION`, `ERR_CONFIG`, `ERR_SCAFFOLD_FAILED`, `ERR_CLOUD_TOKEN_EXPIRED`, `ERR_CLOUD_CLI_MISSING`, `ERR_CLOUD_MODEL_DISABLED`, etc.
+
+### Interface (pkg/ui)
+
+Toda saída para pessoas (TUIs e comandos) usa `pkg/ui`: paleta, glifos, componentes e saídas de comando (`Title`, `Check`, `Steps`, `Listagem`, `Campos`, `Passos`, `RenderError`). Não monte cores ou glifos à mão. Comandos longos usam `ui.Progresso`; os serviços recebem `shared.Etapas` (ou `EtapasMudas`) e não escrevem na tela, e os comandos externos rodam por `runnerQuieto`/`runnerAoVivo` (`cmd/progresso.go`), que mandam a saída para o log em debug. Prompts usam o `Prompter` de `cmd/prompt.go`: sem terminal na entrada, nenhum prompt abre e o comando devolve erro em vez de travar. Especificação em `docs/design/tui/especificacao-pkg-ui.md`; catálogo visual com `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
+
+Modo visual: env `YBY_THEME` (auto|dark|light), `YBY_ASCII=1` e `NO_COLOR`; config `ui.theme` e `ui.ascii` em `~/.yby/config.yaml`. Precedência: flags > env > config > padrão.
 
 ### Padrão de Serviços
 
@@ -212,7 +228,7 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Scaffold Merge (`yby init --update`)
 
-`yby init --update` faz merge inteligente entre templates novos e customizações do usuário, usando hash tracking (SHA-256) no manifest (`.yby/project.yaml`). Mutuamente exclusivo com `--force`. Resolve conflitos interativamente (survey) ou com marcadores estilo Git (`--non-interactive`). Implementado em `pkg/scaffold/merge.go`.
+`yby init` sem flags abre o assistente (`ui.Assistente`: rota, ⇧⇥ volta, nada é gravado antes da revisão); sem terminal, exige `--non-interactive`. `yby init --update` faz merge inteligente entre templates novos e customizações do usuário, usando hash tracking (SHA-256) no manifest (`.yby/project.yaml`). Mutuamente exclusivo com `--force`. Pede confirmação do plano (seção PLANO DE MERGE) e resolve conflitos com marcadores estilo Git. Implementado em `pkg/scaffold/merge.go`.
 
 ### Plugin Bard — Assistente IA (v1.0.0)
 

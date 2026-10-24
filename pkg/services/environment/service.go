@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
@@ -31,7 +32,44 @@ type EnvironmentService struct {
 	Cluster   ClusterManager
 	Mirror    MirrorService
 	Bootstrap BootstrapService
+	// Etapas recebe o andamento do up local (ui.Progresso no comando); nil descarta.
+	Etapas shared.Etapas
 }
+
+// Rótulos das etapas do up local; o bootstrap acrescenta as suas (bootstrap.Rotulos).
+const (
+	RotuloGitServer   = "git server"
+	RotuloTunel       = "túnel"
+	RotuloSync        = "sync inicial"
+	RotuloConvergente = "convergência"
+)
+
+// limiteConvergencia é quanto o up espera a root-app ficar Healthy.
+const limiteConvergencia = 180 * time.Second
+
+// intervaloCota é de quanto em quanto tempo a cota das esperas longas avança.
+var intervaloCota = time.Second
+
+// PlanoLocal devolve, na ordem, os rótulos das etapas do up local do cluster.
+func PlanoLocal(cluster string) []string {
+	plano := []string{RotuloCluster(cluster), RotuloGitServer, RotuloTunel, RotuloSync}
+	plano = append(plano, bootstrap.Rotulos...)
+	return append(plano, RotuloConvergente)
+}
+
+// RotuloCluster é o rótulo da etapa que cria ou inicia o cluster.
+func RotuloCluster(nome string) string { return "cluster " + nome }
+
+// avisoComCausa monta "o que houve · motivo curto de err · o que acontece agora".
+func avisoComCausa(oque string, err error, depois string) string {
+	if causa := shared.CausaCurta(err); causa != "" {
+		oque += " · " + causa
+	}
+	return oque + " · " + depois
+}
+
+// porta é implementada por espelhos que expõem a porta local do túnel.
+type porta interface{ Porta() int }
 
 func NewEnvironmentService(
 	runner shared.Runner,
@@ -57,67 +95,96 @@ func (s *EnvironmentService) Up(ctx context.Context, opts UpOptions) error {
 }
 
 func (s *EnvironmentService) runLocalUp(ctx context.Context, opts UpOptions) error {
+	etapas := shared.OuMudas(s.Etapas)
+
 	// 1. Check dependencies
 	if _, err := s.Runner.LookPath("k3d"); err != nil {
-		return fmt.Errorf("k3d não encontrado. Rode 'yby setup' primeiro")
+		return errors.New(errors.ErrCodeCmdNotFound, "k3d não encontrado").
+			WithHint("rode yby setup para instalar as dependências")
 	}
 
 	// 2. Cluster Lifecycle
+	etapas.Iniciar(RotuloCluster(opts.ClusterName))
 	exists, err := s.Cluster.Exists(ctx, opts.ClusterName)
 	if err != nil || !exists {
-		slog.Info("Cluster não encontrado, criando", "cluster", opts.ClusterName)
+		slog.Debug("Cluster não encontrado, criando", "cluster", opts.ClusterName)
 		// Try to find config file
 		configFile := "" // Logic for config path could be injected or resolved
 		if err := s.Cluster.Create(ctx, opts.ClusterName, configFile); err != nil {
+			etapas.Falhar("")
 			return fmt.Errorf("falha ao criar cluster: %w", err)
 		}
+		etapas.Concluir("criado")
 	} else {
-		slog.Info("Cluster já existe, garantindo start", "cluster", opts.ClusterName)
+		slog.Debug("Cluster já existe, garantindo start", "cluster", opts.ClusterName)
 		if err := s.Cluster.Start(ctx, opts.ClusterName); err != nil {
+			etapas.Falhar("")
 			return fmt.Errorf("falha ao iniciar cluster: %w", err)
 		}
+		etapas.Concluir("iniciado")
 	}
 
 	// 3. Mirror & Sync
-	slog.Info("Inicializando Git Mirror")
+	etapas.Iniciar(RotuloGitServer)
 	if err := s.Mirror.EnsureGitServer(); err != nil {
+		etapas.Falhar("")
 		return err
 	}
+	etapas.Concluir("")
 
-	slog.Info("Estabelecendo túnel")
+	etapas.Iniciar(RotuloTunel)
 	if err := s.Mirror.SetupTunnel(ctx); err != nil {
+		etapas.Falhar("")
 		return err
 	}
+	nota := ""
+	if p, ok := s.Mirror.(porta); ok && p.Porta() > 0 {
+		nota = fmt.Sprintf("localhost:%d", p.Porta())
+	}
+	etapas.Concluir(nota)
 
-	slog.Info("Sincronizando código")
+	etapas.Iniciar(RotuloSync)
 	if err := s.Mirror.Sync(); err != nil {
-		slog.Warn("Falha no sync inicial", "error", err)
+		// o auto-sync tenta de novo: não interrompe o up, então é alerta, com o motivo
+		slog.Debug("Falha no sync inicial", "error", err)
+		etapas.Concluir("adiado")
+		etapas.Avisar(avisoComCausa("o sync inicial falhou", err, "o auto-sync tenta de novo"))
+	} else {
+		etapas.Concluir("")
 	}
 
-	// 4. Bootstrap
-	slog.Info("Executando Bootstrap")
+	// 4. Bootstrap (marca as próprias etapas: argo cd, secrets, root-app)
 	bsOpts := bootstrap.BootstrapOptions{
 		Root:         opts.Root,
 		Context:      "local",
 		Environment:  "local",
 		PlainSecrets: opts.PlainSecrets,
+		Etapas:       s.Etapas,
 	}
 	if err := s.Bootstrap.Run(ctx, bsOpts); err != nil {
 		return fmt.Errorf("falha no bootstrap: %w", err)
 	}
 
-	// 4.5 Aguardar convergência do ArgoCD
-	slog.Info("Aguardando ArgoCD convergir")
-	if err := s.Bootstrap.WaitHealthy(ctx, "root-app", "argocd", 180); err != nil {
-		slog.Warn("Timeout aguardando convergência do ArgoCD", "error", err,
-			"dica", "O cluster pode levar mais tempo para convergir. Verifique com 'yby status'.")
-		// NÃO retorna erro — o cluster pode convergir depois
+	// 4.5 Aguardar convergência do ArgoCD, com a cota do tempo limite
+	etapas.Iniciar(RotuloConvergente)
+	parar := shared.AcompanharLimite(etapas, limiteConvergencia, intervaloCota)
+	err = s.Bootstrap.WaitHealthy(ctx, "root-app", "argocd", int(limiteConvergencia/time.Second))
+	parar()
+	if err != nil {
+		// NÃO retorna erro — o cluster pode convergir depois; por isso é alerta, não falha
+		slog.Debug("Timeout aguardando convergência do ArgoCD", "error", err)
+		etapas.Concluir("tempo esgotado")
+		etapas.Avisar("a root-app ainda não convergiu · confira com yby status")
+	} else {
+		etapas.Concluir("root-app healthy")
 	}
 
-	// 5. Start Sync Loop (Async)
-	go s.Mirror.StartSyncLoop(ctx)
+	// 5. Start Sync Loop (Async), salvo quando o chamador o inicia
+	if !opts.SyncPeloChamador {
+		go s.Mirror.StartSyncLoop(ctx)
+	}
 
-	slog.Info("Ambiente pronto e sincronizado")
+	slog.Debug("Ambiente pronto e sincronizado")
 	return nil
 }
 

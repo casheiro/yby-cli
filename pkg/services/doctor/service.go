@@ -69,7 +69,7 @@ func (s *doctorService) checkTool(ctx context.Context, name string) CheckResult 
 }
 
 func (s *doctorService) checkDockerPermissions(ctx context.Context) CheckResult {
-	err := s.runner.Run(ctx, "docker", "info")
+	_, err := s.runner.RunCombinedOutput(ctx, "docker", "info")
 	if err != nil {
 		return CheckResult{Name: "docker", Status: false, Message: "Erro de permissão ou não rodando (tente 'sudo' ou adicione user ao grupo docker)"}
 	}
@@ -77,9 +77,9 @@ func (s *doctorService) checkDockerPermissions(ctx context.Context) CheckResult 
 }
 
 func (s *doctorService) checkClusterConnection(ctx context.Context) CheckResult {
-	err := s.runner.Run(ctx, "kubectl", "--insecure-skip-tls-verify", "get", "nodes")
+	_, err := s.runner.RunCombinedOutput(ctx, "kubectl", "--insecure-skip-tls-verify", "get", "nodes")
 	if err != nil {
-		return CheckResult{Name: "Conexão", Status: false, Message: "Falha ao conectar. Dica: Verifique seu KUBECONFIG ou se o cluster está rodando."}
+		return CheckResult{Name: "Conexão", Status: false, Message: "confira o KUBECONFIG ou se o cluster está no ar"}
 	}
 	return CheckResult{Name: "Conexão", Status: true, Message: "OK"}
 }
@@ -87,9 +87,9 @@ func (s *doctorService) checkClusterConnection(ctx context.Context) CheckResult 
 func (s *doctorService) checkOptionalTool(ctx context.Context, name, label string) CheckResult {
 	path, err := s.runner.LookPath(name)
 	if err != nil {
-		return CheckResult{Name: label, Status: false, Message: "Não encontrado (opcional)"}
+		return CheckResult{Name: label, Status: false, Message: "Não encontrado (opcional)", Opcional: true}
 	}
-	return CheckResult{Name: label, Status: true, Message: path}
+	return CheckResult{Name: label, Status: true, Message: path, Opcional: true}
 }
 
 func (s *doctorService) checkCloudProviders(ctx context.Context) []CheckResult {
@@ -181,7 +181,7 @@ func (s *doctorService) checkCloudProviders(ctx context.Context) []CheckResult {
 }
 
 func (s *doctorService) checkCRD(ctx context.Context, crdName, readableName string) CheckResult {
-	err := s.runner.Run(ctx, "kubectl", "get", "crd", crdName)
+	_, err := s.runner.RunCombinedOutput(ctx, "kubectl", "get", "crd", crdName)
 	if err != nil {
 		return CheckResult{Name: readableName, Status: false, Message: "Ausente (CRD não instalado)"}
 	}

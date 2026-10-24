@@ -79,19 +79,6 @@ func TestGenDocsCmd_Structure(t *testing.T) {
 	assert.NotEmpty(t, genDocsCmd.Short)
 }
 
-// --- style.go ---
-
-func TestStyles_Defined(t *testing.T) {
-	// Verifica que os styles foram inicializados (não são zero value)
-	assert.NotEmpty(t, titleStyle.Render("test"), "titleStyle deve renderizar conteúdo")
-	assert.NotEmpty(t, headerStyle.Render("test"), "headerStyle deve renderizar conteúdo")
-	assert.NotEmpty(t, stepStyle.Render("test"), "stepStyle deve renderizar conteúdo")
-	assert.NotEmpty(t, checkStyle.String(), "checkStyle deve ter conteúdo definido")
-	assert.NotEmpty(t, crossStyle.String(), "crossStyle deve ter conteúdo definido")
-	assert.NotEmpty(t, warningStyle.String(), "warningStyle deve ter conteúdo definido")
-	assert.NotEmpty(t, grayStyle.Render("test"), "grayStyle deve renderizar conteúdo")
-}
-
 // --- env.go ---
 
 func TestEnvCmd_Structure(t *testing.T) {

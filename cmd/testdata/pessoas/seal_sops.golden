@@ -1,0 +1,9 @@
+◆ YBY  SECRET                                        seal · sops
+
+  ◈ gerando o Secret payments/db
+  ◈ encriptando com o SOPS
+  ✓ Secret SOPS  salvo     charts/cluster-config/templates/secrets/sops-secret-db.yaml
+
+PRÓXIMOS PASSOS
+  1. faça commit e push para o GitOps aplicar
+  2. para aplicar à mão: sops --decrypt charts/cluster-config/templates/secrets/sops-secret-db.yaml | kubectl apply -f -

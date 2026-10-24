@@ -1,0 +1,19 @@
+[38;2;78;95;46m◆[0m [1;38;2;51;38;26mYBY  ENV[0m                                           [38;2;92;73;54mativo local[0m
+
+  [38;2;92;73;54m   AMBIENTE  TIPO    DESCRIÇÃO[0m
+  [38;2;78;95;46m◆[0m  [38;2;51;38;26mlocal[0m     [38;2;51;38;26mlocal[0m   [38;2;51;38;26mcluster k3d na máquina[0m
+     [38;2;51;38;26mprod[0m      [38;2;51;38;26mremote[0m  [38;2;51;38;26mprodução[0m
+     [38;2;92;73;54mqa[0m        [38;2;92;73;54mremote[0m
+
+[38;2;92;73;54mAUDITORIA[0m
+  [38;2;92;73;54mAÇÃO     STATUS[0m
+  [38;2;51;38;26mrefresh[0m  [38;2;78;95;46m● ok[0m
+  [38;2;51;38;26mconnect[0m  [38;2;134;51;26m✕ token expirado[0m
+
+[38;2;92;73;54mAMBIENTE[0m
+  [38;2;92;73;54mnome    [0m[38;2;51;38;26mlocal[0m
+  [38;2;92;73;54mvalues  [0m[38;2;51;38;26mconfig/values-local.yaml[0m
+
+[38;2;92;73;54mPRÓXIMOS PASSOS[0m
+  [38;2;92;73;54m1. [0m[38;2;51;38;26medite o arquivo gerado[0m
+  [38;2;92;73;54m2. [0m[38;2;51;38;26maplique com kubectl apply -f bootstrap/secret-store-vault.yaml[0m

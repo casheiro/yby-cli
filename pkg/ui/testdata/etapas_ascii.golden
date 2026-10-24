@@ -1,0 +1,4 @@
+v contexto do projeto              0,3 s
++ kubectl get pvc -A               2,1 s
+o resposta
+x gravar relatório            1 min 12 s

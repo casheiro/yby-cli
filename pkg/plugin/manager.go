@@ -473,7 +473,7 @@ func (m *Manager) Update(name string) error {
 	// Future improvement: save metadata file alongside binary.
 	return ybyerrors.New(ybyerrors.ErrCodePlugin,
 		fmt.Sprintf("update automático não suportado para plugins de terceiros '%s' (origem desconhecida)", name)).
-		WithHint("Por favor, reinstale manualmente")
+		WithHint("reinstale com yby plugin install <origem> --force")
 }
 
 // Install downloads and installs a native plugin.
@@ -500,7 +500,7 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 				if existing.Manifest.Version == version && version != "latest" {
 					return ybyerrors.New(ybyerrors.ErrCodePlugin,
 						fmt.Sprintf("plugin '%s' versão %s já está instalado", pluginSource, version)).
-						WithHint("Use --force para reinstalar")
+						WithHint("use --force para reinstalar")
 				}
 				if version == "latest" {
 					slog.Warn("Plugin já existe, reinstalando latest", "nome", pluginSource, "versão_atual", existing.Manifest.Version)
@@ -561,7 +561,7 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 		if existing, found := m.GetPlugin(pluginName); found {
 			return ybyerrors.New(ybyerrors.ErrCodePlugin,
 				fmt.Sprintf("plugin '%s' já está instalado em %s", pluginName, existing.Path)).
-				WithHint("Use --force para sobrescrever")
+				WithHint("use --force para sobrescrever")
 		}
 	}
 
@@ -584,7 +584,7 @@ func (m *Manager) installNative(name, version string) error {
 		// In a real scenario, we might want to fail or look for local builds.
 		// For now, let's warn and fail because we don't know the URL for sure without a tag.
 		return ybyerrors.New(ybyerrors.ErrCodePlugin, "não é possível instalar plugins nativos em modo dev (version=dev)").
-			WithHint("Construa localmente ou especifique uma versão")
+			WithHint("construa o plugin localmente ou informe a versão com --version")
 	}
 
 	osName := runtime.GOOS

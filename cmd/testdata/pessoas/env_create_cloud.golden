@@ -1,0 +1,14 @@
+◆ YBY  ENV                                                create
+
+  ✓ ambiente    criado       qa · remote
+  ✓ values      criado       config/values-qa.yaml
+  ✓ kubeconfig  configurado  cluster qa-eks
+
+CLOUD
+  provider  aws
+  região    us-east-1
+  cluster   qa-eks
+
+INTEGRIDADE
+  ▲ ambiente 'prod': arquivo de values 'config/values-prod.yaml' não encontrado
+  ▲ ambiente 'staging': arquivo de values 'config/values-staging.yaml' não encontrado

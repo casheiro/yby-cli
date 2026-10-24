@@ -143,7 +143,7 @@ func (s *secretsService) BackupKeys(ctx context.Context, opts Options) (string, 
 
 	if err != nil || keyName == "" {
 		return "", ybyerrors.New(ybyerrors.ErrCodeExec, "chave não encontrada").
-			WithHint("Verifique se o controller sealed-secrets está instalado e com chaves ativas")
+			WithHint("confira se o Sealed Secrets está no cluster e tem chave ativa: kubectl get pods -n sealed-secrets")
 	}
 
 	keyName = strings.ReplaceAll(keyName, "secret/", "")

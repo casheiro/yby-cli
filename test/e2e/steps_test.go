@@ -279,15 +279,16 @@ func (s *scenarioContext) oComandoDeveValidarParametros() error {
 	// Accept failure if it's an SSH connection error
 	if s.lastError != nil {
 		output := s.lastOutput
-		if strings.Contains(output, "Erro na conexão SSH") ||
+		if strings.Contains(output, "falha na conexão SSH") ||
 			strings.Contains(output, "falha ao conectar ao SSH") ||
 			strings.Contains(output, "ssh: connect to host") ||
 			strings.Contains(output, "exit status 255") ||
 			strings.Contains(output, "Connection refused") ||
 			strings.Contains(output, "k3d não encontrado") ||
 			strings.Contains(output, "failed to create port forwarder") ||
+			strings.Contains(output, "falha ao preparar o túnel até o git server") ||
 			strings.Contains(output, "exec: \"k3d\": executable file not found") ||
-			strings.Contains(output, "Falha ao iniciar ambiente local") ||
+			strings.Contains(output, "falha ao iniciar o ambiente local") ||
 			strings.Contains(output, "ERR_EXEC_FAILED") {
 			return nil // Validated parameters, failed on network or missing tools
 		}

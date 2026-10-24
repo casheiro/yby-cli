@@ -1,0 +1,7 @@
+◆ YBY  CLOUD                                       connect · aws
+
+  ◈ verificando as credenciais
+  ✓ credenciais  válidas      arn:aws:iam::123456789012:user/ana
+
+✕ cluster 'qa-eks' não encontrado                 ERR_VALIDATION
+  faça      clusters disponíveis: prod-eks, dev-eks

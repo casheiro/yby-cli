@@ -1,0 +1,5 @@
+* YBY  UNINSTALL                                   versão v5.6.1
+  o remove o executável  /usr/local/bin/yby
+
+  v Yby CLI desinstalado
+  o ~/.yby fica no lugar, com a configuração e os dados

@@ -1,0 +1,3 @@
+
+x provider 'oracle' não encontrado                ERR_VALIDATION
+  faça      use --provider aws, azure ou gcp

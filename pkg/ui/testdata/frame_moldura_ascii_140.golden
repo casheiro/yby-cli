@@ -1,0 +1,30 @@
+* YBY  VIZ  INSTR. 05 · OBSERVAÇÃO                                                                      staging > payments   * ao vivo · 2 s
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Pods   Deployments  StatefulSets  Services                                                                                                 
+payments-api-01  Running  1/1  3m                                                  | Pod payments-api-03                                    
+payments-api-02  Running  1/1  6m                                                  | Namespace: payments                                    
+payments-api-03  Running  1/1  9m                                                  | Node: ip-10-0-1-23                                     
+payments-api-04  Running  1/1  12m                                                 | Status: Running                                        
+payments-api-05  Running  1/1  15m                                                 | Reinícios: 0                                           
+payments-api-06  Running  1/1  18m                                                 |                                                        
+payments-api-07  Running  1/1  21m                                                 |                                                        
+payments-api-08  Running  1/1  24m                                                 |                                                        
+payments-api-09  Running  1/1  27m                                                 |                                                        
+payments-api-10  Running  1/1  30m                                                 |                                                        
+payments-api-11  Running  1/1  33m                                                 |                                                        
+payments-api-12  Running  1/1  36m                                                 |                                                        
+payments-api-13  Running  1/1  39m                                                 |                                                        
+payments-api-14  Running  1/1  42m                                                 |                                                        
+payments-api-15  Running  1/1  45m                                                 |                                                        
+payments-api-16  Running  1/1  48m                                                 |                                                        
+payments-api-17  Running  1/1  51m                                                 |                                                        
+payments-api-18  Running  1/1  54m                                                 |                                                        
+payments-api-19  Running  1/1  57m                                                 |                                                        
+payments-api-20  Running  1/1  60m                                                 |                                                        
+payments-api-21  Running  1/1  63m                                                 |                                                        
+payments-api-22  Running  1/1  66m                                                 |                                                        
+payments-api-23  Running  1/1  69m                                                 |                                                        
+payments-api-24  Running  1/1  72m                                                 |                                                        
+--------------------------------------------------------------------------------------------------------------------------------------------
+v 30 pods carregados                                                                                                     atualizado 14:07:09
+? ajuda  up/k subir  enter abrir  / buscar  l logs  y yaml  r recarregar                                                              q sair

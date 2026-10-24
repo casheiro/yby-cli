@@ -1,0 +1,10 @@
+◆ YBY  ENV                                        dump · staging
+
+VARIÁVEIS YBY_*
+  YBY_ENV          staging
+  YBY_GIT_REPOURL  https://github.com/casheiro/infra
+
+LEGENDA
+  YBY_ENV          define o modo (local, staging, prod); sem ele, local se configurado
+  YBY_GIT_REPOURL  injetado em git.repoURL
+  YBY_K3D_AGENTS   configura o cluster local

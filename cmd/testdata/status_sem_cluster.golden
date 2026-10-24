@@ -1,0 +1,17 @@
+◆ YBY  STATUS                                        24/10 09:30
+
+NODES
+  ✕ sem acesso ao cluster
+    The connection to the server localhost:6443 was refused
+
+ARGO CD
+  ○ sem cluster
+
+INGRESSES
+  ○ sem cluster
+
+AUTOSCALING · KEDA
+  ○ sem cluster
+
+EFICIÊNCIA ENERGÉTICA · KEPLER
+  ○ sem cluster

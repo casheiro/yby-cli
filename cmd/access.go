@@ -12,17 +12,23 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/network"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
-// newNetworkAdapter cria o adaptador de rede do cluster (mockável em testes)
+// newNetworkAdapter cria o adaptador de rede do cluster (mockável em testes). A saída do
+// kubectl (as tabelas do get svc, o "Forwarding from…" e o "Handling connection for…" do
+// port-forward) vai para o log em debug, linha a linha, em vez de cair no meio das linhas
+// do access; nada fica acumulado durante a sessão.
 var newNetworkAdapter = func() network.ClusterNetworkManager {
-	return network.NewClusterNetworkAdapter()
+	return &network.RealClusterNetworkManager{Runner: runnerAoVivo{Runner: &shared.RealRunner{}}}
 }
 
-// newContainerAdapter cria o adaptador de containers locais (mockável em testes)
+// newContainerAdapter cria o adaptador de containers locais (mockável em testes), com a
+// saída do docker no log em debug, como a do kubectl.
 var newContainerAdapter = func() network.LocalContainerManager {
-	return network.NewContainerAdapter()
+	return &network.DockerContainerManager{Runner: runnerAoVivo{Runner: &shared.RealRunner{}}}
 }
 
 // accessCmd represents the access command
@@ -42,20 +48,23 @@ var accessCmd = &cobra.Command{
 
 Você pode especificar um contexto (local/prod) com --context.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("🚀 Iniciando Acesso Unificado ao Cluster...")
+		w := cmd.OutOrStdout()
+		ui.Title(w, "access", agora().Format("02/01 15:04"))
 
 		// Setup context with cancellation
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		// Setup signal handling for graceful shutdown
+		// Setup signal handling for graceful shutdown: ctrl+c encerra os túneis
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
+		defer signal.Stop(sigChan)
 		go func() {
-			<-sigChan
-			fmt.Println("\n🛑 Encerrando túneis...")
-			cancel()
+			select {
+			case <-sigChan:
+				cancel()
+			case <-ctx.Done():
+			}
 		}()
 
 		targetContext, _ := cmd.Flags().GetString("context")
@@ -64,16 +73,19 @@ Você pode especificar um contexto (local/prod) com --context.`,
 		netAdapter := newNetworkAdapter()
 		containerAdapter := newContainerAdapter()
 		accessSvc := network.NewAccessService(netAdapter, containerAdapter)
+		accessSvc.Saida = w
 
 		opts := network.AccessOptions{
 			TargetContext: targetContext,
 		}
 
 		if err := accessSvc.Run(ctx, opts); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "Erro na execução de acesso")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao abrir os túneis").
+				WithHint("confira o contexto do kubeconfig com yby doctor ou escolha um com --context")
 		}
 
-		fmt.Println("✅ Túneis encerrados.")
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckNeutro, "túneis encerrados", "", "")
 		return nil
 	},
 }

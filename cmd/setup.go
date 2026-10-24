@@ -11,6 +11,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/setup"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -32,15 +33,15 @@ Exemplo:
   yby setup
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🚀 Yby Setup - Configuração de Ambiente"))
-		fmt.Println("---------------------------------------")
+		w := cmd.OutOrStdout()
 
 		// 0. Validar perfil
 		profile, _ := cmd.Flags().GetString("profile")
 		if profile != "dev" && profile != "server" {
-			return errors.New(errors.ErrCodeValidation, "Perfil inválido. Use 'dev' ou 'server'")
+			return errors.New(errors.ErrCodeValidation, "perfil inválido: "+profile).
+				WithHint("use --profile dev ou --profile server")
 		}
-		fmt.Printf("🔧 Perfil selecionado: %s\n", profile)
+		ui.Title(w, "setup", "perfil "+profile)
 
 		// 1. Criar serviço
 		runner := &shared.RealRunner{}
@@ -50,20 +51,21 @@ Exemplo:
 		// 2. Verificar ferramentas
 		result, err := svc.CheckTools(profile)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeValidation, "falha ao verificar ferramentas")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao verificar as ferramentas").
+				WithHint("rode yby doctor para ver o que falta")
 		}
 
+		ferramentas := secaoCheck{nome: "ferramentas"}
 		for _, ts := range result.Tools {
-			fmt.Printf("%s Verificando %s... ", stepStyle.Render("🔍"), ts.Name)
 			if ts.Installed {
-				fmt.Printf("%s\n", checkStyle.String())
+				ferramentas.linhas = append(ferramentas.linhas, linhaCheck{ui.CheckOk, ts.Name, "instalado", ts.Path})
 			} else {
-				fmt.Printf("%s\n", crossStyle.String())
+				ferramentas.linhas = append(ferramentas.linhas, linhaCheck{ui.CheckErro, ts.Name, "ausente", ts.InstallHelp})
 			}
 		}
+		renderChecks(w, []secaoCheck{ferramentas}, "faltam ferramentas")
 
 		if len(result.Missing) == 0 {
-			fmt.Println("\n" + checkStyle.Render("✨ Todas as dependências estão instaladas!"))
 			if profile == "dev" {
 				if direnvErr := svc.ConfigureDirenv("."); direnvErr != nil {
 					slog.Warn("falha ao configurar direnv", "erro", direnvErr)
@@ -72,30 +74,31 @@ Exemplo:
 			return nil
 		}
 
-		// 3. Exibir ferramentas faltantes
-		fmt.Println("\n" + warningStyle.Render("Algumas ferramentas estão faltando:"))
-		for _, m := range result.Missing {
-			fmt.Println(itemStyle.Render("- " + m))
+		// 3. Prompt interativo para instalação das ferramentas faltantes, só quando há um
+		// gerenciador de pacotes suportado (brew, apt, snap; no Windows, nenhum)
+		install := false
+		if result.Gerenciador != "" {
+			install, _ = prompter.Confirm("Instalar as ferramentas que faltam com o "+result.Gerenciador+"?", true)
 		}
 
-		// 4. Prompt interativo para instalação
-		install, _ := prompter.Confirm("Deseja tentar instalar as dependências automaticamente (via brew/apt)?", true)
-
 		if install {
-			fmt.Println(headerStyle.Render("📦 Instalando Dependências..."))
+			ui.Section(w, "instalação")
 			ctx := context.Background()
 			installResults := svc.InstallMissing(ctx, result.Missing)
 			for _, ir := range installResults {
-				fmt.Printf("Instalando %s... ", ir.Tool)
 				if ir.Success {
-					fmt.Printf("%s\n", checkStyle.String())
+					ui.Check(w, ui.CheckOk, ir.Tool, "instalado", "")
 				} else {
-					fmt.Printf("%s\n", crossStyle.String())
-					fmt.Println(grayStyle.Render(ir.Output))
+					ui.Check(w, ui.CheckErro, ir.Tool, "falhou", "")
+					saidaRecuada(w, ir.Output, true)
 				}
 			}
 		} else {
-			fmt.Println("\nPor favor, instale as ferramentas manualmente e rode 'yby setup' novamente.")
+			fmt.Fprintln(w)
+			if result.Gerenciador == "" {
+				ui.Check(w, ui.CheckNeutro, "nenhum gerenciador de pacotes suportado (brew, apt, snap)", "", "")
+			}
+			ui.Check(w, ui.CheckNeutro, "instale pelos links acima e rode yby setup de novo", "", "")
 		}
 
 		// 5. Configurar direnv se perfil dev e direnv disponível

@@ -92,7 +92,7 @@ func (s *BootstrapService) saveCheckpoint(phase BootstrapPhase, opts BootstrapOp
 		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "não foi possível salvar checkpoint")
 	}
 
-	slog.Info("checkpoint salvo", "fase", phase)
+	slog.Debug("checkpoint salvo", "fase", phase)
 	return nil
 }
 
@@ -143,9 +143,31 @@ type BootstrapOptions struct {
 	Environment  string
 	PlainSecrets bool
 	Overrides    *scaffold.EnterpriseOverrides
+	// Etapas recebe o andamento de cada fase (ui.Progresso no comando); nil descarta.
+	Etapas shared.Etapas
 }
 
+// Rótulos das etapas do bootstrap, uma por fase.
+const (
+	RotuloArgoCD  = "argo cd"
+	RotuloSecrets = "secrets"
+	RotuloRootApp = "root-app"
+)
+
+// Rotulos lista, na ordem, as etapas do bootstrap.
+var Rotulos = []string{RotuloArgoCD, RotuloSecrets, RotuloRootApp}
+
+// limiteHelm é o --timeout do helm install do Argo CD; a etapa mostra a cota dele.
+const limiteHelm = 300 * time.Second
+
+// intervaloCota é de quanto em quanto tempo a cota das esperas longas avança.
+var intervaloCota = time.Second
+
+// notaJaFeita marca a fase pulada porque o checkpoint diz que já terminou.
+const notaJaFeita = "já feito · retomado do checkpoint"
+
 func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error {
+	etapas := shared.OuMudas(opts.Etapas)
 	// 0. Resolve Blueprint for versions (com suporte a enterprise overrides)
 	ov := opts.Overrides
 	argoVersion := "5.51.6"
@@ -176,45 +198,63 @@ func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error
 		slog.Warn("não foi possível carregar checkpoint", "erro", err)
 	}
 	if cp != nil && cp.Root == opts.Root && cp.Environment == opts.Environment {
-		slog.Info("checkpoint detectado, retomando bootstrap", "fase_completa", cp.Phase)
+		slog.Debug("checkpoint detectado, retomando bootstrap", "fase_completa", cp.Phase)
 	} else {
 		cp = nil // checkpoint de outro contexto, ignorar
 	}
 
-	// 3. Fase 1: Bootstrap do Sistema
-	if !phaseCompleted(cp, PhaseSystem) {
-		if err := s.phaseSystemBootstrap(ctx, opts.Root, argoChart, argoVersion, ov); err != nil {
+	// fase roda uma fase como uma etapa: pulada quando o checkpoint diz que já terminou,
+	// ✕ quando falha e ✓ com a nota devolvida quando passa.
+	fase := func(phase BootstrapPhase, rotulo string, rodar func() (string, error)) error {
+		etapas.Iniciar(rotulo)
+		if phaseCompleted(cp, phase) {
+			slog.Debug("pulando fase já completada", "fase", phase)
+			etapas.Concluir(notaJaFeita)
+			return nil
+		}
+		nota, err := rodar()
+		if err != nil {
+			etapas.Falhar("")
 			return err
 		}
-		if err := s.saveCheckpoint(PhaseSystem, opts); err != nil {
-			slog.Warn("não foi possível salvar checkpoint", "fase", PhaseSystem, "erro", err)
+		if err := s.saveCheckpoint(phase, opts); err != nil {
+			slog.Warn("não foi possível salvar checkpoint", "fase", phase, "erro", err)
 		}
-	} else {
-		slog.Info("pulando fase já completada", "fase", PhaseSystem)
+		etapas.Concluir(nota)
+		return nil
 	}
 
-	// 4. Fase 2: Configuração de Segredos
-	if !phaseCompleted(cp, PhaseSecrets) {
-		if err := s.phaseSecrets(ctx, opts.Root, finalRepo, opts.PlainSecrets); err != nil {
-			return err
-		}
-		if err := s.saveCheckpoint(PhaseSecrets, opts); err != nil {
-			slog.Warn("não foi possível salvar checkpoint", "fase", PhaseSecrets, "erro", err)
-		}
-	} else {
-		slog.Info("pulando fase já completada", "fase", PhaseSecrets)
+	// 3. Fase 1: Bootstrap do Sistema (helm install do Argo CD, com a cota do --timeout)
+	err = fase(PhaseSystem, RotuloArgoCD, func() (string, error) {
+		parar := shared.AcompanharLimite(etapas, limiteHelm, intervaloCota)
+		defer parar()
+		return "argo-cd " + argoVersion, s.phaseSystemBootstrap(ctx, opts.Root, argoChart, argoVersion, ov)
+	})
+	if err != nil {
+		return err
+	}
+
+	// 4. Fase 2: Configuração de Segredos; o que falta (controller, CRD, encriptação) não
+	// interrompe o bootstrap e sai como alerta logo abaixo da etapa
+	var avisoSecrets string
+	err = fase(PhaseSecrets, RotuloSecrets, func() (string, error) {
+		nota, aviso, err := s.phaseSecretsNota(ctx, opts.Root, opts.PlainSecrets)
+		avisoSecrets = aviso
+		return nota, err
+	})
+	if err != nil {
+		return err
+	}
+	if avisoSecrets != "" {
+		etapas.Avisar(avisoSecrets)
 	}
 
 	// 5. Fase 3: Bootstrap de Configuração
-	if !phaseCompleted(cp, PhaseConfig) {
-		if err := s.phaseConfigBootstrap(ctx, opts.Root, finalRepo, opts.Context, opts.Environment, ov); err != nil {
-			return err
-		}
-		if err := s.saveCheckpoint(PhaseConfig, opts); err != nil {
-			slog.Warn("não foi possível salvar checkpoint", "fase", PhaseConfig, "erro", err)
-		}
-	} else {
-		slog.Info("pulando fase já completada", "fase", PhaseConfig)
+	err = fase(PhaseConfig, RotuloRootApp, func() (string, error) {
+		return "aplicada", s.phaseConfigBootstrap(ctx, opts.Root, finalRepo, opts.Context, opts.Environment, ov)
+	})
+	if err != nil {
+		return err
 	}
 
 	// Bootstrap completo — limpar checkpoint
@@ -226,7 +266,8 @@ func (s *BootstrapService) Run(ctx context.Context, opts BootstrapOptions) error
 func (s *BootstrapService) ensureToolsInstalled() error {
 	for _, tool := range []string{"kubectl", "helm"} {
 		if _, err := s.Runner.LookPath(tool); err != nil {
-			return ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, fmt.Sprintf("%s não encontrado", tool))
+			return ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, fmt.Sprintf("%s não encontrado", tool)).
+				WithHint("rode yby setup para instalar as dependências")
 		}
 	}
 	return nil
@@ -238,7 +279,8 @@ func (s *BootstrapService) checkEnvVars(contextFlag, envEnv, blueprintRepo strin
 	if repo == "" && blueprintRepo == "" {
 		isLocal := (contextFlag == "local" || envEnv == "local")
 		if !isLocal {
-			return ybyerrors.New(ybyerrors.ErrCodeValidation, "Variável GITHUB_REPO faltando")
+			return ybyerrors.New(ybyerrors.ErrCodeValidation, "Variável GITHUB_REPO faltando").
+				WithHint("defina GITHUB_REPO ou git.repoURL em .yby/blueprint.yaml")
 		}
 	}
 	return nil
@@ -288,9 +330,16 @@ func (s *BootstrapService) phaseSystemBootstrap(ctx context.Context, root, chart
 }
 
 func (s *BootstrapService) phaseSecrets(ctx context.Context, root, repoURL string, plainSecrets bool) error {
+	_, _, err := s.phaseSecretsNota(ctx, root, plainSecrets)
+	return err
+}
+
+// phaseSecretsNota faz a fase de secrets e devolve a nota da etapa (a estratégia) e, se
+// for o caso, o aviso para as pessoas (sem encriptação, controller ou CRD ausente).
+func (s *BootstrapService) phaseSecretsNota(ctx context.Context, root string, plainSecrets bool) (nota, aviso string, err error) {
 	if plainSecrets {
-		slog.Warn("Modo plain-secrets ativo — secrets NÃO serão encriptados (apenas para dev local)")
-		return nil
+		slog.Debug("Modo plain-secrets ativo — secrets NÃO serão encriptados (apenas para dev local)")
+		return "plain-secrets", "secrets sem encriptação · só para dev local", nil
 	}
 
 	strategy := s.detectSecretsStrategy(root)
@@ -299,26 +348,28 @@ func (s *BootstrapService) phaseSecrets(ctx context.Context, root, repoURL strin
 	case "sops":
 		// Verificar se sops e age estão disponíveis
 		if _, err := s.Runner.LookPath("sops"); err != nil {
-			return ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, "estratégia SOPS configurada, mas 'sops' não encontrado no PATH").
-				WithHint("Instale em: https://github.com/getsops/sops")
+			return "", "", ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, "estratégia SOPS configurada, mas 'sops' não encontrado no PATH").
+				WithHint("instale o sops (github.com/getsops/sops) e rode o bootstrap de novo")
 		}
 		if _, err := s.Runner.LookPath("age"); err != nil {
-			return ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, "estratégia SOPS configurada, mas 'age' não encontrado no PATH").
-				WithHint("Instale em: https://github.com/FiloSottile/age")
+			return "", "", ybyerrors.New(ybyerrors.ErrCodeCmdNotFound, "estratégia SOPS configurada, mas 'age' não encontrado no PATH").
+				WithHint("instale o age (github.com/FiloSottile/age) e rode o bootstrap de novo")
 		}
 	case "external-secrets":
 		// Verificar se há CRD do ESO instalado
 		if err := s.Runner.Run(ctx, "kubectl", "get", "crd", "externalsecrets.external-secrets.io"); err != nil {
-			slog.Warn("CRD do External Secrets Operator não encontrado", "erro", err)
+			slog.Debug("CRD do External Secrets Operator não encontrado", "erro", err)
+			return strategy, "CRD do External Secrets Operator ainda ausente no cluster", nil
 		}
 	default:
 		// sealed-secrets: verificar controller
 		if err := s.Runner.Run(ctx, "kubectl", "get", "deployment", "-n", "sealed-secrets", "sealed-secrets"); err != nil {
-			slog.Warn("controller sealed-secrets não encontrado", "erro", err)
+			slog.Debug("controller sealed-secrets não encontrado", "erro", err)
+			return strategy, "controller do sealed-secrets ainda não instalado no cluster", nil
 		}
 	}
 
-	return nil
+	return strategy, "", nil
 }
 
 // detectSecretsStrategy lê a estratégia de secrets do blueprint do projeto.

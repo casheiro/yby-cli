@@ -17,9 +17,10 @@ type ToolInfo struct {
 
 // ToolStatus representa o estado de instalação de uma ferramenta.
 type ToolStatus struct {
-	Name      string
-	Installed bool
-	Path      string
+	Name        string
+	Installed   bool
+	Path        string
+	InstallHelp string // página com as instruções de instalação
 }
 
 // InstallResult representa o resultado da tentativa de instalação de uma ferramenta.
@@ -34,6 +35,9 @@ type InstallResult struct {
 type SetupResult struct {
 	Tools   []ToolStatus
 	Missing []string
+	// Gerenciador é o gerenciador de pacotes que InstallMissing usaria ("brew", "apt",
+	// "snap"), ou "" quando nenhum é suportado (ex.: Windows): instalar só à mão.
+	Gerenciador string
 }
 
 // Service define o contrato do serviço de setup.
@@ -91,14 +95,18 @@ func (s *setupService) CheckTools(profile string) (*SetupResult, error) {
 		info := allTools[name]
 		path, err := s.checker.IsInstalled(info.Cmd)
 		status := ToolStatus{
-			Name:      info.Name,
-			Installed: err == nil,
-			Path:      path,
+			Name:        info.Name,
+			Installed:   err == nil,
+			Path:        path,
+			InstallHelp: info.InstallHelp,
 		}
 		result.Tools = append(result.Tools, status)
 		if err != nil {
 			result.Missing = append(result.Missing, info.Name)
 		}
+	}
+	if len(result.Missing) > 0 {
+		result.Gerenciador = s.pkg.Detect()
 	}
 	return result, nil
 }
@@ -132,7 +140,7 @@ func (s *setupService) InstallMissing(ctx context.Context, tools []string) []Ins
 }
 
 // envrcContent é o conteúdo padrão do arquivo .envrc.
-const envrcContent = "export KUBECONFIG=$(pwd)/.kube/config\necho \"☸️  Ambiente configurado: KUBECONFIG=./.kube/config\""
+const envrcContent = "export KUBECONFIG=$(pwd)/.kube/config\necho \"yby: ambiente configurado, KUBECONFIG=./.kube/config\""
 
 // ConfigureDirenv configura o direnv no diretório de trabalho informado.
 func (s *setupService) ConfigureDirenv(workDir string) error {

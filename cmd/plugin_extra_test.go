@@ -22,7 +22,7 @@ func mockPluginManagerFactory(tmpDir string) func() {
 	// Define HOME para diretório temp para isolar de plugins reais
 	os.Setenv("HOME", tmpDir)
 
-	newPluginManager = func() *plugin.Manager {
+	newPluginManager = func() gerenciadorPlugins {
 		return plugin.NewManager()
 	}
 	return func() {

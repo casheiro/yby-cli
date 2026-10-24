@@ -261,3 +261,19 @@ func TestConfigureDirenv_FalhaAoEscrever(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "permissão negada")
 }
+
+func TestCheckTools_GerenciadorEInstrucoes(t *testing.T) {
+	checker := &mockToolChecker{installed: map[string]string{"kubectl": "/usr/bin/kubectl"}}
+
+	svc := NewService(checker, &mockPackageManager{detected: "brew"}, &testutil.MockRunner{}, &testutil.MockFilesystem{})
+	result, err := svc.CheckTools("server")
+	assert.NoError(t, err)
+	assert.Equal(t, "brew", result.Gerenciador)
+	assert.Equal(t, "https://helm.sh/docs/intro/install/", result.Tools[1].InstallHelp)
+
+	// sem gerenciador suportado (ex.: Windows), fica vazio: a instalação é à mão
+	svc = NewService(checker, &mockPackageManager{}, &testutil.MockRunner{}, &testutil.MockFilesystem{})
+	result, err = svc.CheckTools("server")
+	assert.NoError(t, err)
+	assert.Empty(t, result.Gerenciador)
+}

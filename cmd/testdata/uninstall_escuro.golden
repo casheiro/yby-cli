@@ -1,0 +1,5 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  UNINSTALL[0m                                   [38;2;161;147;121mversão v5.6.1[0m
+  [38;2;161;147;121m○ remove o executável  /usr/local/bin/yby[0m
+
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mYby CLI desinstalado[0m
+  [38;2;161;147;121m○ ~/.yby fica no lugar, com a configuração e os dados[0m

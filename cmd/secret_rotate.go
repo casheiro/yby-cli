@@ -4,11 +4,11 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
-	"fmt"
 	"log/slog"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -31,27 +31,36 @@ A flag --schedule é apenas informativa para documentar a política de rotação
 recomendada (ex: --schedule "0 0 1 */3 *" para rotação trimestral).
 O agendamento real deve ser configurado via CronJob no cluster ou pipeline CI.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🔐 Rotação de Chave - Sealed Secrets"))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "rotate")
+
+		// as linhas antes e depois da rotação ficam nas mesmas colunas
+		var politica []linhaCheck
+		if rotateSchedule != "" {
+			politica = append(politica, linhaCheck{ui.CheckNeutro, "política", rotateSchedule, "agende por CronJob no cluster ou pipeline de CI"})
+		}
+		resultado := []linhaCheck{
+			{ui.CheckOk, "chave", "rotacionada", "novos SealedSecrets usam a chave nova"},
+			{ui.CheckNeutro, "existentes", "valem", "o controller guarda as chaves antigas para decriptar"},
+		}
+		col := colunasDe(append(politica, resultado...)...)
 
 		if rotateSchedule != "" {
 			slog.Info("política de rotação documentada", "schedule", rotateSchedule)
-			fmt.Printf("Política de rotação: %s\n", rotateSchedule)
-			fmt.Println("Nota: o agendamento deve ser configurado via CronJob ou pipeline CI.")
+			checksCom(w, col, politica...)
 		}
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
 		svc := newSecretsService(runner, fsys)
 
-		fmt.Println("Removendo chave ativa e reiniciando controller...")
+		linhaEmAndamento(w, "removendo a chave ativa e reiniciando o controller")
 		if err := svc.RotateKeys(cmd.Context()); err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha na rotação de chaves Sealed Secrets").
-				WithHint("Verifique se o Sealed Secrets está instalado: kubectl get pods -n sealed-secrets")
+				WithHint(hintSealedSecrets)
 		}
 
-		fmt.Println(checkStyle.Render("✅ Chave rotacionada com sucesso."))
-		fmt.Println("Novos SealedSecrets serão selados com a nova chave.")
-		fmt.Println("Secrets existentes continuam funcionando (chaves antigas são mantidas para decriptação).")
+		checksCom(w, col, resultado...)
 		return nil
 	},
 }

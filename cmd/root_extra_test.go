@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
@@ -270,65 +269,4 @@ func TestDiscoverPlugins_DiscoverError(t *testing.T) {
 
 	assert.Equal(t, initialCount, len(cmd.Commands()),
 		"nenhum comando deveria ser registrado quando Discover não encontra plugins")
-}
-
-// ========================================================
-// handleExecutionError — testes do handler de erros
-// ========================================================
-
-func TestHandleExecutionError_YbyError(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "info"
-
-	yerr := errors.New(errors.ErrCodeValidation, "campo obrigatório ausente")
-
-	// Não deve entrar em pânico
-	assert.NotPanics(t, func() {
-		handleExecutionError(yerr)
-	})
-}
-
-func TestHandleExecutionError_YbyError_Debug(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "debug"
-
-	yerr := errors.New(errors.ErrCodeIO, "falha ao ler arquivo").
-		WithContext("path", "/tmp/test.yaml")
-
-	// Não deve entrar em pânico e deve usar formato verboso %+v
-	assert.NotPanics(t, func() {
-		handleExecutionError(yerr)
-	})
-}
-
-func TestHandleExecutionError_RegularError(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "info"
-
-	regularErr := fmt.Errorf("erro genérico inesperado")
-
-	// Não deve entrar em pânico
-	assert.NotPanics(t, func() {
-		handleExecutionError(regularErr)
-	})
-}
-
-func TestHandleExecutionError_WrappedYbyError(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "info"
-
-	baseErr := fmt.Errorf("conexão recusada")
-	yerr := errors.Wrap(baseErr, errors.ErrCodeNetworkTimeout, "timeout na conexão SSH")
-
-	assert.NotPanics(t, func() {
-		handleExecutionError(yerr)
-	})
 }

@@ -1,0 +1,3 @@
+
+x kubectl não encontrado                       ERR_CMD_NOT_FOUND
+  faça      rode yby setup para instalar as dependências

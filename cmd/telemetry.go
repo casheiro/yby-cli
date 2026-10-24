@@ -1,10 +1,9 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/telemetry"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -19,20 +18,23 @@ var telemetryExportCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, err := telemetry.TelemetryFilePath()
 		if err != nil {
-			return fmt.Errorf("erro ao resolver caminho de telemetria: %w", err)
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao localizar o arquivo de telemetria").
+				WithHint("confira se a pasta ~/.yby existe e pode ser lida")
 		}
 
 		data, err := telemetry.ExportEvents(path)
 		if err != nil {
-			return fmt.Errorf("erro ao exportar telemetria: %w", err)
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao exportar a telemetria").
+				WithHint("confira se ~/.yby/telemetry.jsonl pode ser lido")
 		}
 
 		if len(data) == 0 {
-			fmt.Println("Nenhum dado de telemetria encontrado.")
+			// o aviso vai para stderr: a saída do export fica só com os dados
+			ui.Check(cmd.ErrOrStderr(), ui.CheckNeutro, "nenhum dado de telemetria encontrado", "", "")
 			return nil
 		}
 
-		_, err = os.Stdout.Write(data)
+		_, err = cmd.OutOrStdout().Write(data)
 		return err
 	},
 }

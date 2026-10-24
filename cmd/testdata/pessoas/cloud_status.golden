@@ -1,0 +1,10 @@
+◆ YBY  CLOUD                                              status
+
+AWS
+  ○ cli          aws-cli/2.15.0
+  ✓ credenciais  válidas    arn:aws:iam::123456789012:user/ana
+  ○ método       sso
+  ✓ token        válido     até 24/10/2026 11:00 · faltam 1h30m
+
+GCP
+  ✕ credenciais  sem login  gcloud auth login necessário

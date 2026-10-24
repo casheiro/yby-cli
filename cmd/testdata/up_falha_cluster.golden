@@ -1,0 +1,7 @@
+◆ YBY  UP                                         ambiente local
+  ✕ cluster yby-local                                       38 s
+
+✕ falha ao iniciar o ambiente local              ERR_EXEC_FAILED
+  causa     falha ao criar cluster: porta 6443 já está em uso
+  faça      rode yby doctor para conferir docker, k3d e kubectl
+  detalhes  rode de novo com --log-level=debug

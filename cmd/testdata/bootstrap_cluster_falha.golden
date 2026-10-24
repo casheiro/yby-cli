@@ -1,0 +1,9 @@
+◆ YBY  BOOTSTRAP CLUSTER                             24/10 09:30
+  ▲ raiz .yby/ não encontrada · usando o diretório atual
+  ✓ argo cd   argo-cd 5.51.6                          1 min 24 s
+  ✕ secrets
+
+✕ falha no bootstrap do cluster                  ERR_EXEC_FAILED
+  causa     estratégia SOPS configurada, mas 'sops' não encontrado no PATH
+  faça      instale o sops (github.com/getsops/sops) e rode o bootstrap de novo
+  detalhes  rode de novo com --log-level=debug

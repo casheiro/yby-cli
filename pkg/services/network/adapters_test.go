@@ -1,9 +1,12 @@
 package network
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/testutil"
@@ -110,6 +113,41 @@ func TestRealClusterNetworkManager_PortForward_ContextCanceled(t *testing.T) {
 	err := mgr.PortForward(ctx, "k3d-yby", "argocd", "svc/argocd-server", "8080:443")
 
 	assert.ErrorIs(t, err, context.Canceled, "deve retornar erro de contexto cancelado")
+}
+
+func TestRealClusterNetworkManager_PortForward_AvisaCadaCausaNova(t *testing.T) {
+	anterior := pausaPortForward
+	pausaPortForward = 0
+	t.Cleanup(func() { pausaPortForward = anterior })
+
+	var log bytes.Buffer
+	logAnterior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	t.Cleanup(func() { slog.SetDefault(logAnterior) })
+
+	causas := []string{
+		"exit status 1: error: unable to listen on any of the requested ports",
+		"exit status 1: error: unable to listen on any of the requested ports",
+		"exit status 1: error: pod is not running",
+	}
+	tentativa := 0
+	mock := &testutil.MockRunner{
+		RunFunc: func(ctx context.Context, name string, args ...string) error {
+			if tentativa == len(causas) {
+				return nil
+			}
+			tentativa++
+			return fmt.Errorf("%s", causas[tentativa-1])
+		},
+	}
+	mgr := &RealClusterNetworkManager{Runner: mock}
+
+	assert.NoError(t, mgr.PortForward(context.Background(), "k3d-yby", "argocd", "svc/argocd-server", "8085:80"))
+
+	saida := log.String()
+	assert.Equal(t, 2, strings.Count(saida, "level=WARN"), "a mesma causa seguida sai uma vez só")
+	assert.Contains(t, saida, "unable to listen on any of the requested ports")
+	assert.Contains(t, saida, "pod is not running")
 }
 
 func TestRealClusterNetworkManager_CreateToken(t *testing.T) {

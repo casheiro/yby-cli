@@ -2,6 +2,7 @@ package environment
 
 import (
 	"context"
+	"io"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/mirror"
@@ -47,6 +48,17 @@ func NewGitMirrorAdapter(localPath string, runner shared.Runner) *GitMirrorAdapt
 	return &GitMirrorAdapter{
 		manager: mirror.NewManager(localPath, runner),
 	}
+}
+
+// ComSaida direciona as linhas do auto-sync para w e devolve o próprio adaptador.
+func (a *GitMirrorAdapter) ComSaida(w io.Writer) *GitMirrorAdapter {
+	a.manager.Saida = w
+	return a
+}
+
+// Porta devolve a porta local do túnel até o git-server, ou 0 sem túnel.
+func (a *GitMirrorAdapter) Porta() int {
+	return a.manager.Porta()
 }
 
 func (a *GitMirrorAdapter) EnsureGitServer() error {

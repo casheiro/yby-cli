@@ -1,0 +1,15 @@
+◆ YBY  ACCESS                                        24/10 09:30
+
+TÚNEIS
+  ○ contexto       k3d-yby-local
+  ✓ argo cd        http://localhost:8085   admin / Xk2p9sQ
+  ○ minio          não encontrado
+  ✓ prometheus     http://localhost:9090
+  ○ grafana        sem docker              o grafana local precisa do Docker no PATH
+
+TOKEN DO HEADLAMP
+  eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3RlIn0.e30.assinatura
+
+  ○ ctrl+c encerra os túneis
+
+  ○ túneis encerrados

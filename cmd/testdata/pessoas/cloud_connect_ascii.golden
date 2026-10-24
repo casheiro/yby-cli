@@ -1,0 +1,7 @@
+* YBY  CLOUD                                       connect · aws
+
+  + verificando as credenciais
+  v credenciais  válidas      arn:aws:iam::123456789012:user/ana
+  + configurando o kubeconfig do cluster prod-eks
+  v kubeconfig   configurado  prod-eks
+  v ambiente     criado       prod

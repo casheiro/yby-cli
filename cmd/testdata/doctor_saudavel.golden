@@ -1,0 +1,23 @@
+◆ YBY  DOCTOR                                        24/10 09:30
+
+SISTEMA
+  ✓ memória              15,3 GB
+
+FERRAMENTAS
+  ✓ kubectl              instalado   /usr/bin/kubectl
+  ✓ helm                 instalado   /usr/bin/helm
+  ✓ docker               ativo
+  ✓ SOPS                 instalado   /usr/bin/sops
+
+CLUSTER
+  ✓ conexão              ok
+
+PLATAFORMA
+  ✓ Prometheus Operator  instalado
+  ✓ Cert-Manager         instalado
+
+CLOUD
+  ✓ aws                  CLI 2.17.0 instalado
+  ✓ aws credenciais      Autenticado como arn:aws:iam::123:user/ana
+
+RESUMO  10 ok · 0 avisos · 0 erros  · ambiente pronto

@@ -7,14 +7,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/environment"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 
 	"github.com/spf13/cobra"
 )
-
-// newDestroyClusterManager cria o ClusterManager para o comando destroy (mockável em testes)
-var newDestroyClusterManager = func() environment.ClusterManager {
-	return &environment.K3dClusterManager{Runner: &shared.RealRunner{}}
-}
 
 // destroyCmd represents the destroy command
 var destroyCmd = &cobra.Command{
@@ -22,16 +18,31 @@ var destroyCmd = &cobra.Command{
 	Short: "Destroi o ambiente (cluster k3d)",
 	Long: `Remove o cluster Yby e limpa recursos associados.
 ATENÇÃO: Este comando é destrutivo e removerá o cluster criado pelo 'yby up'.
-Para ambientes não-locais (dev/staging/prod), exige a flag --yes-destroy-production
-e confirmação interativa digitando o nome do cluster.`,
+Para ambientes não-locais (dev/staging/prod), o cluster k3d vem de YBY_CLUSTER_NAME
+(sem ela, o comando recusa em vez de apagar o cluster local) e exige a flag
+--yes-destroy-production e confirmação interativa digitando o nome do cluster.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		w := cmd.OutOrStdout()
 		env := os.Getenv("YBY_ENV")
 		if env == "" {
 			env = contextFlag
 		}
 
+		ambiente := env
+		if ambiente == "" {
+			ambiente = "local"
+		}
+		ui.Title(w, "destroy", "ambiente "+ambiente)
+
+		// o cluster padrão (yby-local) é o do ambiente local: outro ambiente precisa dizer
+		// qual cluster k3d é o dele, senão o destroy apagaria o cluster local
 		clusterName := os.Getenv("YBY_CLUSTER_NAME")
 		if clusterName == "" {
+			if ambiente != "local" {
+				return errors.New(errors.ErrCodeValidation,
+					fmt.Sprintf("o ambiente %s não tem cluster k3d definido", env)).
+					WithHint("o yby destroy remove clusters k3d: defina o do ambiente em YBY_CLUSTER_NAME; um cluster remoto se remove pelo provedor")
+			}
 			clusterName = "yby-local"
 		}
 
@@ -40,34 +51,42 @@ e confirmação interativa digitando o nome do cluster.`,
 			yesDestroy, _ := cmd.Flags().GetBool("yes-destroy-production")
 			if !yesDestroy {
 				return errors.New(errors.ErrCodeValidation,
-					fmt.Sprintf("destruir ambiente '%s' requer a flag --yes-destroy-production", env)).
-					WithHint("Use: yby destroy --yes-destroy-production")
+					fmt.Sprintf("destruir o ambiente %s pede --yes-destroy-production", env)).
+					WithHint(fmt.Sprintf("confirme com yby destroy --context %s --yes-destroy-production", env))
 			}
 
-			// Confirmação interativa: digitar o nome do cluster
-			typed, err := prompter.Input(
-				fmt.Sprintf("Digite o nome do cluster '%s' para confirmar a destruição:", clusterName),
-				"",
-			)
+			// Confirmação interativa: ↵ só libera depois de digitado o nome do cluster
+			confirmado, err := prompter.ConfirmarNome("destruir cluster", clusterName)
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler confirmação")
+				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler confirmação").
+					WithHint("rode yby destroy num terminal interativo para digitar o nome do cluster")
 			}
-			if typed != clusterName {
-				return errors.New(errors.ErrCodeValidation,
-					fmt.Sprintf("nome digitado '%s' não confere com o cluster '%s'. Destruição cancelada", typed, clusterName))
+			if !confirmado {
+				ui.Check(w, ui.CheckNeutro, "destruição cancelada", "", "")
+				return nil
 			}
 		}
 
-		fmt.Printf("💣 Destruindo cluster '%s'...\n", clusterName)
-
+		rotulo := "cluster " + clusterName
+		prog := novoProgresso(w, rotulo)
+		parar := animar(prog)
+		defer parar()
+		prog.Iniciar(rotulo)
 		cluster := newDestroyClusterManager()
 		if err := cluster.Delete(cmd.Context(), clusterName); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "Erro ao destruir cluster")
+			prog.Falhar("")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao destruir o cluster").
+				WithHint("confira o nome com k3d cluster list e se o Docker está rodando")
 		}
-
-		fmt.Println("✅ Cluster removido com sucesso.")
+		prog.Concluir("removido")
 		return nil
 	},
+}
+
+// newDestroyClusterManager cria o ClusterManager para o comando destroy (mockável em
+// testes); os comandos externos rodam quietos para não atropelar a etapa na tela.
+var newDestroyClusterManager = func() environment.ClusterManager {
+	return &environment.K3dClusterManager{Runner: runnerQuieto{&shared.RealRunner{}}}
 }
 
 func init() {

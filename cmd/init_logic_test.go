@@ -383,7 +383,7 @@ func TestValidateNonInteractiveFlags(t *testing.T) {
 				ProjectName:     "yby-project",
 			},
 			flags:           &InitOptions{ProjectName: "", Offline: false},
-			expectedMissing: []string{"--project-name OR --git-repo"},
+			expectedMissing: []string{"--project-name ou --git-repo"},
 		},
 		{
 			name: "Sem GitRepo mas com ProjectName explícito",
@@ -416,7 +416,7 @@ func TestValidateNonInteractiveFlags(t *testing.T) {
 				ProjectName:     "yby-project",
 			},
 			flags:           &InitOptions{ProjectName: "", Offline: false},
-			expectedMissing: []string{"--topology", "--workflow", "--project-name OR --git-repo"},
+			expectedMissing: []string{"--topology", "--workflow", "--project-name ou --git-repo"},
 		},
 	}
 

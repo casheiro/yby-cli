@@ -1,0 +1,5 @@
+
+✕ falha ao definir ambiente ativo             ERR_CONFIG_INVALID
+  causa     ambiente 'qa' não existe
+  faça      veja os ambientes com yby env list
+  detalhes  rode de novo com --log-level=debug

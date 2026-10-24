@@ -92,7 +92,7 @@ func TestCaptureCmd_FileFlag_ArquivoInexistente(t *testing.T) {
 
 	err := captureCmd.RunE(captureCmd, []string{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "falha ao ler arquivo")
+	assert.Contains(t, err.Error(), "falha ao ler o arquivo")
 }
 
 func TestCaptureCmd_NoProvider(t *testing.T) {
@@ -105,7 +105,7 @@ func TestCaptureCmd_NoProvider(t *testing.T) {
 
 	err := captureCmd.RunE(captureCmd, []string{"teste descrição"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Nenhum provedor de IA")
+	assert.Contains(t, err.Error(), "nenhum provedor de IA")
 }
 
 func TestCaptureCmd_Success(t *testing.T) {
