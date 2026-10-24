@@ -1,0 +1,19 @@
+* [1mYBY  ENV[0m                                           ativo local
+
+     AMBIENTE  TIPO    DESCRIÇÃO
+  *  local     local   cluster k3d na máquina
+     prod      remote  produção
+     qa        remote
+
+AUDITORIA
+  AÇÃO     STATUS
+  refresh  * ok
+  connect  x token expirado
+
+AMBIENTE
+  nome    local
+  values  config/values-local.yaml
+
+PRÓXIMOS PASSOS
+  1. edite o arquivo gerado
+  2. aplique com kubectl apply -f bootstrap/secret-store-vault.yaml

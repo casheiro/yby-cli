@@ -182,7 +182,8 @@ Pré-requisitos (verificados automaticamente):
 		if k3sToken == "" {
 			tokenBytes := make([]byte, 32)
 			if _, err := rand.Read(tokenBytes); err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar token K3s seguro")
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar o token do k3s").
+					WithHint("defina o token em K3S_TOKEN e rode de novo")
 			}
 			k3sToken = hex.EncodeToString(tokenBytes)
 		}

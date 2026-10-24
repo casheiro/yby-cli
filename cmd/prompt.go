@@ -29,7 +29,8 @@ var stdinTerminal = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 // erroSemTerminal é devolvido pelos prompts quando a entrada não é um terminal (pipe,
 // CI): perguntar travaria o comando esperando uma resposta que não vem.
 func erroSemTerminal() error {
-	return errors.New(errors.ErrCodeValidation, "a pergunta precisa de um terminal interativo")
+	return errors.New(errors.ErrCodeValidation, "a pergunta precisa de um terminal interativo").
+		WithHint("rode num terminal ou passe a resposta por flag")
 }
 
 // HuhPrompter implementa Prompter com charmbracelet/huh no tema da carta do terminal.

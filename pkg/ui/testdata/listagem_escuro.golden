@@ -1,0 +1,19 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  ENV[0m                                           [38;2;161;147;121mativo local[0m
+
+  [38;2;161;147;121m   AMBIENTE  TIPO    DESCRIÇÃO[0m
+  [38;2;167;188;113m◆[0m  [38;2;221;208;181mlocal[0m     [38;2;221;208;181mlocal[0m   [38;2;221;208;181mcluster k3d na máquina[0m
+     [38;2;221;208;181mprod[0m      [38;2;221;208;181mremote[0m  [38;2;221;208;181mprodução[0m
+     [38;2;161;147;121mqa[0m        [38;2;161;147;121mremote[0m
+
+[38;2;161;147;121mAUDITORIA[0m
+  [38;2;161;147;121mAÇÃO     STATUS[0m
+  [38;2;221;208;181mrefresh[0m  [38;2;167;188;113m● ok[0m
+  [38;2;221;208;181mconnect[0m  [38;2;217;131;97m✕ token expirado[0m
+
+[38;2;161;147;121mAMBIENTE[0m
+  [38;2;161;147;121mnome    [0m[38;2;221;208;181mlocal[0m
+  [38;2;161;147;121mvalues  [0m[38;2;221;208;181mconfig/values-local.yaml[0m
+
+[38;2;161;147;121mPRÓXIMOS PASSOS[0m
+  [38;2;161;147;121m1. [0m[38;2;221;208;181medite o arquivo gerado[0m
+  [38;2;161;147;121m2. [0m[38;2;221;208;181maplique com kubectl apply -f bootstrap/secret-store-vault.yaml[0m

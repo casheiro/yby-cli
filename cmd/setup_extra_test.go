@@ -174,7 +174,7 @@ func TestSetupCmd_CheckToolsFalha(t *testing.T) {
 	capturarStdout(t, func() {
 		err := setupCmd.RunE(setupCmd, []string{})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "falha ao verificar ferramentas")
+		assert.Contains(t, err.Error(), "falha ao verificar as ferramentas")
 	})
 }
 

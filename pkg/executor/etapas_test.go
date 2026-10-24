@@ -152,7 +152,9 @@ func TestLocalExecutor_FetchFile_SudoPausaORedesenho(t *testing.T) {
 	t.Cleanup(func() { ui.Configurar(opcoes) })
 	ui.Configurar(ui.Opcoes{ASCII: true})
 	var b bytes.Buffer
-	p := ui.NovoProgressoCom(&b, ui.OpcoesProgresso{Terminal: func(io.Writer) bool { return true }, Largura: 64}, "kubeconfig")
+	parado := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	p := ui.NovoProgressoCom(&b, ui.OpcoesProgresso{Terminal: func(io.Writer) bool { return true }, Largura: 64,
+		Relogio: func() time.Time { return parado }}, "kubeconfig")
 	p.Iniciar("kubeconfig")
 	var duranteOSudo string
 	e := &LocalExecutor{

@@ -144,8 +144,8 @@ func TestWriteErrorNoTerminal(t *testing.T) {
 		`  B:\projetos\yby-cli\charts\system` + "\n" +
 		`  causa     exec: "helm": executable file not found in` + "\n" +
 		`            %PATH%` + "\n" +
-		`  faça      A execução do comando falhou. Rode com` + "\n" +
-		`            --log-level=debug para detalhes.` + "\n" +
+		`  faça      rode de novo com --log-level=debug para ver a` + "\n" +
+		`            saída do comando` + "\n" +
 		`  código    ERR_EXEC_FAILED` + "\n"
 	if b.String() != esperado {
 		t.Errorf("saída inesperada:\n%s\nesperado:\n%s", b.String(), esperado)

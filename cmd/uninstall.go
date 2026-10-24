@@ -25,7 +25,8 @@ Arquivos de configuração e dados em ~/.yby não serão removidos automaticamen
 		w := cmd.OutOrStdout()
 		exePath, err := osExecutable()
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao localizar o binário")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao localizar o binário").
+				WithHint("apague o yby à mão; where yby (ou which yby) mostra onde ele está")
 		}
 
 		ui.Title(w, "uninstall", "versão "+Version)

@@ -10,6 +10,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/logs"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +51,7 @@ Exemplos:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := lookPath("kubectl"); err != nil {
 			return errors.New(errors.ErrCodeCmdNotFound, "kubectl não encontrado").
-				WithHint("Instale kubectl: https://kubernetes.io/docs/tasks/tools/")
+				WithHint(hintKubectl)
 		}
 
 		runner := &shared.RealRunner{}
@@ -67,7 +68,7 @@ Exemplos:
 			// Modo interativo: seleção de pod
 			if !isTTY() {
 				return errors.New(errors.ErrCodeValidation, "nome do pod é obrigatório em modo não-interativo").
-					WithHint("Use: yby logs <nome-do-pod>")
+					WithHint("informe o pod: yby logs <nome-do-pod>")
 			}
 
 			// Usar namespace padrão para listar pods
@@ -77,13 +78,16 @@ Exemplos:
 				return err
 			}
 			if len(pods) == 0 {
-				fmt.Println("Nenhum pod encontrado no namespace 'default'.")
+				w := cmd.OutOrStdout()
+				tituloComando(w, "logs", ns)
+				ui.Check(w, ui.CheckNeutro, "nenhum pod no namespace "+ns, "", "")
 				return nil
 			}
 
 			selected, err := surveySelect("Selecione um pod:", pods)
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "seleção de pod cancelada")
+				return errors.Wrap(err, errors.ErrCodeExec, "seleção de pod cancelada").
+					WithHint("informe o pod: yby logs <pod>")
 			}
 
 			podName = selected
@@ -118,7 +122,8 @@ Exemplos:
 				if isTTY() {
 					selected, err := surveySelect("Pod com múltiplos containers. Selecione:", containers)
 					if err != nil {
-						return errors.Wrap(err, errors.ErrCodeExec, "seleção de container cancelada")
+						return errors.Wrap(err, errors.ErrCodeExec, "seleção de container cancelada").
+							WithHint("informe o container com -c <container>")
 					}
 					container = selected
 				} else {
@@ -136,13 +141,14 @@ Exemplos:
 			Tail:      tail,
 		}
 
-		fmt.Printf("📋 Logs de %s/%s", namespace, podName)
+		w := cmd.OutOrStdout()
+		alvo := namespace + "/" + podName
 		if container != "" {
-			fmt.Printf(" [%s]", container)
+			alvo += " · " + container
 		}
-		fmt.Println()
 
 		if follow {
+			tituloComando(w, "logs", alvo)
 			return svc.StreamLogs(ctx, opts)
 		}
 
@@ -151,7 +157,9 @@ Exemplos:
 			return err
 		}
 
-		fmt.Print(output)
+		tituloComando(w, "logs", alvo)
+		// as linhas do kubectl logs saem como vieram
+		fmt.Fprint(w, output)
 		return nil
 	},
 }

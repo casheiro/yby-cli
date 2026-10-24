@@ -1,0 +1,8 @@
+* YBY  ENV                                                create
+
+  v ambiente    criado    qa · remote
+  v values      criado    config/values-qa.yaml
+
+INTEGRIDADE
+  ! ambiente 'prod': arquivo de values 'config/values-prod.yaml' não encontrado
+  ! ambiente 'staging': arquivo de values 'config/values-staging.yaml' não encontrado

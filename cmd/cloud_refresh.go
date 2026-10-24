@@ -5,11 +5,11 @@ package cmd
 
 import (
 	gocontext "context"
-	"fmt"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/cloud"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -30,37 +30,42 @@ func init() {
 func runCloudRefresh(cmd *cobra.Command, args []string) error {
 	ctx := gocontext.Background()
 	runner := &shared.RealRunner{}
+	w := cmd.OutOrStdout()
 
 	providerFlag, _ := cmd.Flags().GetString("provider")
 
 	var providers []cloud.CloudProvider
 
 	if providerFlag != "" {
-		p := cloud.GetProvider(runner, strings.ToLower(providerFlag))
+		p := obterProviderCloud(runner, strings.ToLower(providerFlag))
 		if p == nil {
-			return fmt.Errorf("provider '%s' não encontrado. Valores aceitos: aws, azure, gcp", providerFlag)
+			return erroProviderDesconhecido(providerFlag)
 		}
 		if !p.IsAvailable(ctx) {
-			return fmt.Errorf("CLI do provider '%s' não está instalado", providerFlag)
+			return erroCLICloudAusente(providerFlag)
 		}
 		providers = []cloud.CloudProvider{p}
 	} else {
-		providers = cloud.Detect(ctx, runner)
-		if len(providers) == 0 {
-			fmt.Println(grayStyle.Render("Nenhum CLI de cloud provider detectado."))
-			return nil
-		}
+		providers = detectarProvidersCloud(ctx, runner)
 	}
 
-	for _, p := range providers {
-		fmt.Printf("Renovando token para %s...\n", p.Name())
+	tituloComando(w, "cloud", "refresh")
+	if len(providers) == 0 {
+		ui.Check(w, ui.CheckNeutro, "nenhum CLI de cloud detectado · instale aws, az ou gcloud", "", "")
+		return nil
+	}
 
+	nomes := make([]string, len(providers))
+	for i, p := range providers {
+		nomes[i] = p.Name()
+	}
+	col := ui.ColunasPara(nomes...)
+	for _, p := range providers {
 		if err := p.RefreshToken(ctx, cloud.ClusterInfo{}); err != nil {
-			fmt.Printf("  %sFalha: %v\n", crossStyle.Render(""), err)
+			ui.CheckCom(w, col, ui.CheckErro, p.Name(), "falhou", err.Error())
 			continue
 		}
-
-		fmt.Printf("  %sToken renovado com sucesso\n", checkStyle.Render(""))
+		ui.CheckCom(w, col, ui.CheckOk, p.Name(), "renovado", "")
 	}
 
 	return nil

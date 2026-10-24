@@ -28,6 +28,7 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -80,28 +81,32 @@ var sealCmd = &cobra.Command{
 Coleta nome, namespace e dados, gera um Secret Kubernetes e encripta
 usando a estratégia configurada (sealed-secrets ou sops).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Yby Secret Seal - Criador de Segredos")
-		fmt.Println("---------------------------------------")
-
 		// Verificar kubectl sempre
 		if _, err := lookPath("kubectl"); err != nil {
-			return errors.New(errors.ErrCodeCmdNotFound, "'kubectl' não encontrado")
+			return errors.New(errors.ErrCodeCmdNotFound, "kubectl não encontrado").
+				WithHint(hintKubectl)
 		}
 
 		// Verificar dependência da estratégia
 		if sealStrategy == "sops" {
 			if _, err := lookPath("sops"); err != nil {
-				return errors.New(errors.ErrCodeCmdNotFound, "'sops' não encontrado. Instale em: https://github.com/getsops/sops")
+				return errors.New(errors.ErrCodeCmdNotFound, "sops não encontrado").
+					WithHint("instale o sops: https://github.com/getsops/sops")
 			}
 		} else {
 			if _, err := lookPath("kubeseal"); err != nil {
-				return errors.New(errors.ErrCodeCmdNotFound, "'kubeseal' não encontrado")
+				return errors.New(errors.ErrCodeCmdNotFound, "kubeseal não encontrado").
+					WithHint(hintKubectl)
 			}
 		}
 
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "seal · "+sealStrategy)
+
 		name, namespace, key, value, err := sealPrompt()
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados do secret")
+			return falhaComHint(err, errors.ErrCodeExec, "falha ao coletar dados do secret",
+				"rode yby secret seal num terminal interativo e preencha todos os campos")
 		}
 
 		// 1. Criar serviço e gerar Secret (Dry Run)
@@ -109,10 +114,10 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 		fsys := &shared.RealFilesystem{}
 		svc := newSecretsService(runner, fsys)
 
-		fmt.Println("Gerando Secret...")
+		linhaEmAndamento(w, "gerando o Secret "+namespace+"/"+name)
 		secretYaml, err := svc.GenerateSecretYAML(cmd.Context(), name, namespace, key, value)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret")
+			return falhaComHint(err, errors.ErrCodeExec, "falha ao gerar secret", "confira o kubectl e o acesso ao cluster com yby doctor")
 		}
 
 		root, errRoot := FindInfraRoot()
@@ -122,33 +127,38 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 
 		if sealStrategy == "sops" {
 			// 2a. Encriptar com SOPS + age
-			fmt.Println("Encriptando com SOPS...")
 			filename := fmt.Sprintf("sops-secret-%s.yaml", name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/secrets")
 
 			finalPath, _ := sealPathPrompt(filepath.Join(targetDir, filename))
 
+			linhaEmAndamento(w, "encriptando com o SOPS")
 			if err := svc.EncryptWithSOPS(cmd.Context(), "", secretYaml, finalPath); err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao encriptar secret com SOPS")
+				return falhaComHint(err, errors.ErrCodeExec, "falha ao encriptar secret com SOPS",
+					"confira o .sops.yaml do projeto e a chave age; para criar a chave rode yby secret init-sops")
 			}
 
-			fmt.Printf("\nSecret SOPS salvo em: %s\n", finalPath)
-			fmt.Println("Proximo passo: Commit e Push para o GitOps aplicar.")
-			fmt.Println("Para decriptar no cluster: sops --decrypt " + finalPath + " | kubectl apply -f -")
+			checksAlinhados(w, linhaCheck{ui.CheckOk, "Secret SOPS", "salvo", finalPath})
+			ui.Section(w, "próximos passos")
+			ui.Passos(w,
+				"faça commit e push para o GitOps aplicar",
+				"para aplicar à mão: sops --decrypt "+finalPath+" | kubectl apply -f -",
+			)
 		} else {
 			// 2b. Selar com Kubeseal
-			fmt.Println("Selando com Kubeseal...")
 			filename := fmt.Sprintf("sealed-secret-%s.yaml", name)
 			targetDir := JoinInfra(root, "charts/cluster-config/templates/events")
 
 			finalPath, _ := sealPathPrompt(filepath.Join(targetDir, filename))
 
+			linhaEmAndamento(w, "selando com o kubeseal")
 			if err := svc.SealWithKubeseal(cmd.Context(), secretYaml, finalPath); err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao selar secret")
+				return falhaComHint(err, errors.ErrCodeExec, "falha ao selar secret", hintSealedSecrets)
 			}
 
-			fmt.Printf("\nSealedSecret salvo em: %s\n", finalPath)
-			fmt.Println("Proximo passo: Commit e Push para o GitOps aplicar.")
+			checksAlinhados(w, linhaCheck{ui.CheckOk, "SealedSecret", "salvo", finalPath})
+			ui.Section(w, "próximo passo")
+			ui.Passos(w, "faça commit e push para o GitOps aplicar")
 		}
 
 		return nil

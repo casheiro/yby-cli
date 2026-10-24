@@ -38,7 +38,8 @@ Exemplo:
 		// 0. Validar perfil
 		profile, _ := cmd.Flags().GetString("profile")
 		if profile != "dev" && profile != "server" {
-			return errors.New(errors.ErrCodeValidation, "Perfil inválido. Use 'dev' ou 'server'")
+			return errors.New(errors.ErrCodeValidation, "perfil inválido: "+profile).
+				WithHint("use --profile dev ou --profile server")
 		}
 		ui.Title(w, "setup", "perfil "+profile)
 
@@ -50,7 +51,8 @@ Exemplo:
 		// 2. Verificar ferramentas
 		result, err := svc.CheckTools(profile)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeValidation, "falha ao verificar ferramentas")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao verificar as ferramentas").
+				WithHint("rode yby doctor para ver o que falta")
 		}
 
 		ferramentas := secaoCheck{nome: "ferramentas"}

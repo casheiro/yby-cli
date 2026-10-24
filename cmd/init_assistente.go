@@ -137,9 +137,9 @@ func (a *assistenteInit) passos() []ui.PassoAssistente {
 		Validate(func(string) error {
 			nome := a.nomeEfetivo()
 			if err := scaffold.ValidateNoYAMLInjection(nome, "nome do projeto"); err != nil {
-				return mensagemDoErro(err)
+				return erroDoCampo(err)
 			}
-			return mensagemDoErro(scaffold.ValidateProjectName(nome))
+			return erroDoCampo(scaffold.ValidateProjectName(nome))
 		}).
 		Value(&r.Nome))
 
@@ -458,7 +458,7 @@ func perguntarInit(flags *InitOptions, ctx *scaffold.BlueprintContext) error {
 
 // validarCampo adapta um validador de pkg/scaffold para o huh, que mostra só a mensagem.
 func validarCampo(validar func(string) error) func(string) error {
-	return func(v string) error { return mensagemDoErro(validar(strings.TrimSpace(v))) }
+	return func(v string) error { return erroDoCampo(validar(strings.TrimSpace(v))) }
 }
 
 // validarOpcional valida o valor só quando ele não está vazio, como o ValidateContext.
@@ -469,17 +469,16 @@ func validarOpcional(campo string, validar func(string) error) func(string) erro
 			return nil
 		}
 		if err := scaffold.ValidateNoYAMLInjection(v, campo); err != nil {
-			return mensagemDoErro(err)
+			return erroDoCampo(err)
 		}
-		return mensagemDoErro(validar(v))
+		return erroDoCampo(validar(v))
 	}
 }
 
-// mensagemDoErro tira o prefixo "[CÓDIGO]" de um YbyError para exibir no campo.
-func mensagemDoErro(err error) error {
-	var ye *errors.YbyError
-	if stderrors.As(err, &ye) {
-		return stderrors.New(ye.Message)
+// erroDoCampo tira o prefixo "[CÓDIGO]" de um YbyError para exibir no campo.
+func erroDoCampo(err error) error {
+	if err == nil {
+		return nil
 	}
-	return err
+	return stderrors.New(mensagemDoErro(err))
 }

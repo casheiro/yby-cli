@@ -82,7 +82,7 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 					DisableFlagParsing: true, // Passa flags diretamente ao plugin
 					RunE: func(c *cobra.Command, args []string) error {
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {
-							return errors.Wrap(err, errors.ErrCodePlugin, fmt.Sprintf("Erro ao executar plugin %s", pluginName))
+							return errors.Wrap(err, errors.ErrCodePlugin, fmt.Sprintf("o plugin %s falhou", pluginName))
 						}
 						return nil
 					},
@@ -119,7 +119,7 @@ func handleExecutionError(err error) {
 
 var (
 	reComandoDesconhecido = regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`)
-	reArgumentos          = regexp.MustCompile(`^(accepts|requires at least|requires at most|accepts between) .*arg\(s\), received \d+`)
+	reArgumentos          = regexp.MustCompile(`^((accepts|requires at least|requires at most|accepts between) .*arg\(s\), received \d+|invalid argument "[^"]*" for ")`)
 )
 
 // traduzirErroDeUso troca os erros de uso do cobra (comando desconhecido, número de

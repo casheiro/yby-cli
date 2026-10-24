@@ -11,6 +11,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/secrets"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +36,7 @@ Se o valor não for fornecido, gera um aleatório.
 Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🔐 Webhook Secret"))
-
+		w := cmd.OutOrStdout()
 		root, err := FindInfraRoot()
 		if err != nil {
 			root = "."
@@ -70,14 +70,19 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 
 		finalSecret, err := svc.GenerateWebhook(cmd.Context(), opts)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar webhook secret")
+			return falhaComHint(err, errors.ErrCodeExec, "falha ao gerar webhook secret", hintSealedSecrets)
 		}
 
+		tituloComando(w, "secret", "webhook · "+provider)
+		linhas := []linhaCheck{{ui.CheckOk, "SealedSecret", "salvo", outputFile}}
 		if opts.SecretVal == "" {
-			fmt.Println(warningStyle.Render("WEBHOOK_SECRET não definido. Gerado aleatório."))
-			fmt.Printf("Segredo gerado: %s\n", finalSecret)
+			linhas = append([]linhaCheck{{ui.CheckAviso, "WEBHOOK_SECRET", "ausente", "gerado um segredo aleatório"}}, linhas...)
 		}
-		fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
+		checksAlinhados(w, linhas...)
+		if opts.SecretVal == "" {
+			ui.Section(w, "segredo gerado")
+			saidaRecuada(w, finalSecret, false)
+		}
 		return nil
 	},
 }
@@ -88,7 +93,8 @@ var minioSecretCmd = &cobra.Command{
 	Long: `Gera credenciais aleatórias para o MinIO, cria o Secret e sela.
 Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🔐 MinIO Secret"))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "minio")
 
 		root, err := FindInfraRoot()
 		if err != nil {
@@ -105,13 +111,13 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 			OutputPath: outputFile,
 		}
 
-		fmt.Println("Gerando credenciais MinIO (User: admin)...")
+		linhaEmAndamento(w, "gerando as credenciais do MinIO (usuário admin)")
 		_, err = svc.GenerateMinIO(cmd.Context(), opts)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar secret MinIO")
+			return falhaComHint(err, errors.ErrCodeExec, "falha ao gerar secret MinIO", hintSealedSecrets)
 		}
 
-		fmt.Printf("%s Salvo em: %s\n", checkStyle.String(), outputFile)
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "SealedSecret", "salvo", outputFile})
 		return nil
 	},
 }
@@ -124,8 +130,6 @@ Necessário para o ApplicationSet descobrir repositórios.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token := args[0]
-		fmt.Println(titleStyle.Render("🔐 GitHub Token Secret"))
-
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
 		svc := newSecretsService(runner, fsys)
@@ -133,10 +137,13 @@ Necessário para o ApplicationSet descobrir repositórios.`,
 		opts := secrets.Options{Token: token}
 
 		if err := svc.CreateGitHubToken(cmd.Context(), opts); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar secret github-token")
+			return falhaComHint(err, errors.ErrCodeExec, "falha ao criar secret github-token",
+				"confira o token e o acesso ao cluster: kubectl get namespace argocd")
 		}
 
-		fmt.Println(checkStyle.Render("✅ Secret github-token criado no namespace argocd."))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "github-token")
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "github-token", "criado", "Secret no namespace argocd"})
 		return nil
 	},
 }
@@ -147,8 +154,6 @@ var backupKeysCmd = &cobra.Command{
 	Long: `Faz backup da chave privada do Sealed Secrets (cuidado!).
 Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especificado.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🔐 Backup Sealed Secrets Keys"))
-
 		root, err := FindInfraRoot()
 		if err != nil {
 			root = "."
@@ -167,14 +172,19 @@ Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especific
 
 		keyName, err := svc.BackupKeys(cmd.Context(), opts)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha no backup de chaves Sealed Secrets")
+			return falhaComHint(err, errors.ErrCodeExec, "falha no backup de chaves Sealed Secrets", hintSealedSecrets)
 		}
 
-		fmt.Printf("Chave encontrada: %s\n", keyName)
-		fmt.Printf("%s Backup salvo em %s\n", checkStyle.String(), outputFile)
-		if len(args) == 0 {
-			fmt.Println(warningStyle.Render("⚠️  NÃO COLOQUE ESTE ARQUIVO NO GIT se for um repositório público!"))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "backup")
+		linhas := []linhaCheck{
+			{ui.CheckOk, "chave", "encontrada", keyName},
+			{ui.CheckOk, "backup", "salvo", outputFile},
 		}
+		if len(args) == 0 {
+			linhas = append(linhas, linhaCheck{ui.CheckAviso, "git", "não versione", "nunca num repositório público"})
+		}
+		checksAlinhados(w, linhas...)
 		return nil
 	},
 }
@@ -185,7 +195,8 @@ var restoreKeysCmd = &cobra.Command{
 	Long: `Aplica um backup de chave mestre e reinicia o controller.
 Default file: bootstrap/sealed-secrets-backup.yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🔐 Restore Sealed Secrets Keys"))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "restore")
 
 		root, err := FindInfraRoot()
 		if err != nil {
@@ -197,7 +208,7 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 			inputFile = args[0]
 		}
 
-		fmt.Printf("Restaurando de: %s\n", inputFile)
+		linhaEmAndamento(w, "restaurando de "+inputFile)
 
 		runner := &shared.RealRunner{}
 		fsys := &shared.RealFilesystem{}
@@ -206,10 +217,11 @@ Default file: bootstrap/sealed-secrets-backup.yaml`,
 		opts := secrets.Options{OutputPath: inputFile}
 
 		if err := svc.RestoreKeys(cmd.Context(), opts); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha na restauração de chaves Sealed Secrets")
+			return falhaComHint(err, errors.ErrCodeExec, "falha na restauração de chaves Sealed Secrets",
+				"confira o arquivo de backup e se o Sealed Secrets está no cluster: kubectl get pods -n sealed-secrets")
 		}
 
-		fmt.Println(checkStyle.Render("✅ Chave restaurada e controller reiniciado."))
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "chave", "restaurada", "controller reiniciado"})
 		return nil
 	},
 }
@@ -220,8 +232,6 @@ var initSOPSCmd = &cobra.Command{
 	Long: `Gera um par de chaves age e exibe a chave pública para configurar .sops.yaml.
 A chave privada é salva localmente e NUNCA deve ir para o Git.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("Inicializar SOPS + age"))
-
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			homeDir = "."
@@ -234,14 +244,21 @@ A chave privada é salva localmente e NUNCA deve ir para o Git.`,
 
 		publicKey, err := svc.GenerateAgeKey(cmd.Context(), keyPath)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar chave age")
+			return falhaComHint(err, errors.ErrCodeExec, "falha ao gerar chave age",
+				"instale o age (age-keygen): https://github.com/FiloSottile/age")
 		}
 
-		fmt.Printf("Chave privada salva em: %s\n", keyPath)
-		fmt.Printf("\nChave pública age:\n  %s\n", publicKey)
-		fmt.Println("\nAdicione ao .sops.yaml do projeto:")
-		fmt.Printf("creation_rules:\n  - path_regex: \\.yaml$\n    age: %s\n", publicKey)
-		fmt.Println(warningStyle.Render("\nATENCAO: A chave privada NUNCA deve ir para o Git!"))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "init-sops")
+		checksAlinhados(w,
+			linhaCheck{ui.CheckOk, "chave privada", "salva", keyPath},
+			linhaCheck{ui.CheckAviso, "git", "não versione", "a chave privada nunca vai para o Git"},
+		)
+		ui.Section(w, "chave pública age")
+		saidaRecuada(w, publicKey, false)
+		ui.Section(w, "configuração do sops")
+		fmt.Fprintln(w, "  "+ui.S().TintaSuave.Render("adicione ao .sops.yaml do projeto:"))
+		saidaRecuada(w, fmt.Sprintf("creation_rules:\n  - path_regex: \\.yaml$\n    age: %s\n", publicKey), false)
 		return nil
 	},
 }
@@ -254,15 +271,9 @@ var initESOCmd = &cobra.Command{
 	Long: `Gera o YAML de ClusterSecretStore para o backend especificado.
 Use com --backend: vault, aws, gcp, azure`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("Inicializar ESO - External Secrets Operator"))
-
 		if initESOBackend == "" {
-			return errors.New(errors.ErrCodeValidation, "backend obrigatório. Use: --backend vault|aws|gcp|azure")
-		}
-
-		root, err := FindInfraRoot()
-		if err != nil {
-			root = "."
+			return errors.New(errors.ErrCodeValidation, "backend obrigatório").
+				WithHint("informe o backend: yby secret init-eso --backend vault|aws|gcp|azure")
 		}
 
 		backendOpts := secrets.BackendOpts{
@@ -272,22 +283,34 @@ Use com --backend: vault, aws, gcp, azure`,
 
 		yamlContent, err := secrets.GenerateSecretStore(initESOBackend, backendOpts)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeValidation, "falha ao gerar SecretStore")
+			return errors.Wrap(err, errors.ErrCodeValidation, "falha ao gerar SecretStore").
+				WithHint("use --backend vault, aws, gcp ou azure")
+		}
+
+		root, err := FindInfraRoot()
+		if err != nil {
+			root = "."
 		}
 
 		outputFile := JoinInfra(root, fmt.Sprintf("bootstrap/secret-store-%s.yaml", initESOBackend))
+		hintEscrita := "confira a permissão de escrita em " + filepath.Dir(outputFile)
 		if err := os.MkdirAll(filepath.Dir(outputFile), 0755); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar diretório")
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar diretório").WithHint(hintEscrita)
 		}
 		if err := os.WriteFile(outputFile, []byte(yamlContent), 0644); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar arquivo")
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao salvar arquivo").WithHint(hintEscrita)
 		}
 
-		fmt.Printf("%s SecretStore salvo em: %s\n", checkStyle.String(), outputFile)
-		fmt.Println("\nProximos passos:")
-		fmt.Println("  1. Edite o arquivo gerado com os valores do seu ambiente")
-		fmt.Println("  2. Instale o External Secrets Operator no cluster")
-		fmt.Printf("  3. Aplique: kubectl apply -f %s\n", outputFile)
+		// o título sai só depois de gravar: uma falha antes disso aparece só com o erro
+		w := cmd.OutOrStdout()
+		tituloComando(w, "secret", "init-eso · "+initESOBackend)
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "SecretStore", "salvo", outputFile})
+		ui.Section(w, "próximos passos")
+		ui.Passos(w,
+			"edite o arquivo gerado com os valores do seu ambiente",
+			"instale o External Secrets Operator no cluster",
+			"aplique com kubectl apply -f "+outputFile,
+		)
 		return nil
 	},
 }

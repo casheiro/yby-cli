@@ -181,6 +181,11 @@ func TestTraduzirErroDeUso_Argumentos(t *testing.T) {
 	assert.Equal(t, "argumentos inválidos para yby status", yerr.Message)
 	assert.Equal(t, "rode yby status --help para ver o uso", yerr.Hint)
 	assert.EqualError(t, yerr.Cause, "accepts 1 arg(s), received 0")
+
+	// argumento fora de ValidArgs (cobra.OnlyValidArgs)
+	err = traduzirErroDeUso(fmt.Errorf(`invalid argument "tcsh" for "yby completion"`), completionCmd)
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "argumentos inválidos para yby completion", yerr.Message)
 }
 
 func TestTraduzirErroDeUso_MantemOsDemais(t *testing.T) {

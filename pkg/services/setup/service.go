@@ -140,7 +140,7 @@ func (s *setupService) InstallMissing(ctx context.Context, tools []string) []Ins
 }
 
 // envrcContent é o conteúdo padrão do arquivo .envrc.
-const envrcContent = "export KUBECONFIG=$(pwd)/.kube/config\necho \"☸️  Ambiente configurado: KUBECONFIG=./.kube/config\""
+const envrcContent = "export KUBECONFIG=$(pwd)/.kube/config\necho \"yby: ambiente configurado, KUBECONFIG=./.kube/config\""
 
 // ConfigureDirenv configura o direnv no diretório de trabalho informado.
 func (s *setupService) ConfigureDirenv(workDir string) error {

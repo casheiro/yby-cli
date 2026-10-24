@@ -62,24 +62,28 @@ var kedaCmd = &cobra.Command{
 		if kedaOpts.Name == "" {
 			val, err := prompter.Input("Nome do ScaledObject:", "scale-to-zero")
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao ler as respostas do KEDA").
+					WithHint("rode yby generate keda num terminal interativo")
 			}
 			kedaOpts.Name = val
 		}
 		if kedaOpts.Namespace == "" {
 			val, err := prompter.Input("Namespace da aplicação:", "apps")
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao ler as respostas do KEDA").
+					WithHint("rode yby generate keda num terminal interativo")
 			}
 			kedaOpts.Namespace = val
 		}
 		if kedaOpts.Deployment == "" {
 			val, err := prompter.Input("Nome do Deployment alvo:", "")
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeExec, "falha ao coletar dados KEDA")
+				return errors.Wrap(err, errors.ErrCodeExec, "falha ao ler as respostas do KEDA").
+					WithHint("rode yby generate keda num terminal interativo")
 			}
 			if val == "" {
-				return errors.New(errors.ErrCodeValidation, "nome do deployment é obrigatório")
+				return errors.New(errors.ErrCodeValidation, "nome do deployment é obrigatório").
+					WithHint("informe o nome do deployment")
 			}
 			kedaOpts.Deployment = val
 		}
@@ -108,7 +112,8 @@ var kedaCmd = &cobra.Command{
 
 		t := template.Must(template.New("keda").Parse(kedaCronTemplate))
 		if err := t.Execute(os.Stdout, data); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao renderizar template KEDA")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar o manifesto do KEDA").
+				WithHint("confira os valores informados; a causa diz qual campo falhou")
 		}
 		return nil
 	},

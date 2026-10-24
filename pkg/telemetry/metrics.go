@@ -95,13 +95,13 @@ func Flush() {
 	}
 
 	slog.Debug("=============================")
-	slog.Debug("🚀 CLI Telemetry Summary")
+	slog.Debug("CLI Telemetry Summary")
 	slog.Debug("=============================")
 	for _, e := range events {
-		status := "✅ SUCCESS"
+		status := "SUCCESS"
 		errStr := ""
 		if !e.Success {
-			status = "❌ FAILED"
+			status = "FAILED"
 			if e.Error != nil {
 				errStr = e.Error.Error()
 			}

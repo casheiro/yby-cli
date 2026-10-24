@@ -199,7 +199,8 @@ e substitui o binário atual.`,
 		binaryData, err := extractBinaryFromTarGz(assetData)
 		if err != nil {
 			prog.Falhar("")
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao extrair binário do arquivo")
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao extrair o binário do pacote").
+				WithHint("rode yby upgrade de novo; o pacote pode ter vindo incompleto")
 		}
 		execPath, err := instalarBinario(binaryData)
 		if err != nil {
@@ -221,11 +222,13 @@ var instalarBinario = func(binario []byte) (string, error) {
 	// Self-replace com rollback
 	execPath, err := os.Executable()
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao obter caminho do executável")
+		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao localizar o binário atual").
+			WithHint("baixe a versão nova da página de releases e troque o binário à mão")
 	}
 	execPath, err = filepath.EvalSymlinks(execPath)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao resolver symlinks")
+		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao seguir o link do binário atual").
+			WithHint("baixe a versão nova da página de releases e troque o binário à mão")
 	}
 
 	backupPath := execPath + ".bak"

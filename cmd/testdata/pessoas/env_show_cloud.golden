@@ -1,0 +1,18 @@
+◆ YBY  ENV                                            ativo prod
+
+AMBIENTE
+  nome          prod
+  tipo          eks
+  values        config/values-prod.yaml
+  url           https://prod.example.com
+  kube context  prod-eks
+  namespace     payments
+
+CLOUD
+  provider  aws
+  região    us-east-1
+  cluster   prod-eks
+  profile   producao
+
+  ✓ credenciais  válidas   arn:aws:iam::123456789012:user/ana
+  ✓ token        válido    até 24/10/2026 11:00

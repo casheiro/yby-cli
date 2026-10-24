@@ -6,8 +6,10 @@ package cmd
 import (
 	gocontext "context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,8 +18,12 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
+
+// newEnvRunner permite substituir o runner do kubectl nos testes de env use.
+var newEnvRunner = func() shared.Runner { return &shared.RealRunner{} }
 
 var envCmd = &cobra.Command{
 	Use:     "env",
@@ -30,9 +36,7 @@ var envListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Lista os ambientes disponíveis",
 	Example: `  yby env list
-  # Saída:
-  # * local (local)
-  #   prod (remote)`,
+  # Lista ambiente, tipo e descrição; o ambiente ativo vem marcado`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		infraRoot, err := FindInfraRoot()
 		if err != nil {
@@ -41,19 +45,47 @@ var envListCmd = &cobra.Command{
 		mgr := ybycontext.NewManager(infraRoot)
 		manifest, err := mgr.LoadManifest()
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao carregar manifesto de ambientes")
+			return errors.Wrap(err, errors.ErrCodeConfig, "falha ao carregar manifesto de ambientes").
+				WithHint("entre na pasta do projeto ou crie um com yby init")
 		}
 
-		fmt.Println("Ambientes disponíveis:")
-		for name, env := range manifest.Environments {
-			prefix := "  "
-			if name == manifest.Current {
-				prefix = "* "
-			}
-			fmt.Printf("%s%s (%s): %s\n", prefix, name, env.Type, env.Description)
-		}
+		renderEnvList(cmd.OutOrStdout(), manifest)
 		return nil
 	},
+}
+
+// renderEnvList escreve os ambientes em ordem alfabética, com ◆ no ativo.
+func renderEnvList(w io.Writer, manifest *ybycontext.EnvironmentsManifest) {
+	direita := "nenhum ativo"
+	if manifest.Current != "" {
+		direita = "ativo " + manifest.Current
+	}
+	tituloComando(w, "env", direita)
+	if len(manifest.Environments) == 0 {
+		ui.Check(w, ui.CheckNeutro, "nenhum ambiente · crie um com yby env create", "", "")
+		return
+	}
+
+	nomes := make([]string, 0, len(manifest.Environments))
+	for nome := range manifest.Environments {
+		nomes = append(nomes, nome)
+	}
+	sort.Strings(nomes)
+	linhas := make([]ui.Linha, len(nomes))
+	for i, nome := range nomes {
+		env := manifest.Environments[nome]
+		marca := ""
+		if nome == manifest.Current {
+			marca = ui.S().Ok.Render(ui.G().Ativo)
+		}
+		linhas[i] = ui.Linha{Celulas: []string{marca, nome, env.Type, env.Description}}
+	}
+	ui.Listagem(w, []ui.Coluna{
+		{Titulo: ""},
+		{Titulo: "ambiente"},
+		{Titulo: "tipo", Prioridade: 2},
+		{Titulo: "descrição", Prioridade: 1},
+	}, linhas)
 }
 
 // env use <name>
@@ -72,25 +104,29 @@ var envUseCmd = &cobra.Command{
 		mgr := ybycontext.NewManager(infraRoot)
 
 		if err := mgr.SetCurrent(name); err != nil {
-			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao definir ambiente ativo")
+			return errors.Wrap(err, errors.ErrCodeConfig, "falha ao definir ambiente ativo").
+				WithHint("veja os ambientes com yby env list")
 		}
 
-		fmt.Printf("✅ Contexto alterado para '%s'\n", name)
+		w := cmd.OutOrStdout()
+		tituloComando(w, "env", "use")
+		linhas := []linhaCheck{{ui.CheckOk, "ambiente", "ativo", name}}
 
 		// Integração com kubectl context
 		manifest, err := mgr.LoadManifest()
 		if err == nil {
 			if env, ok := manifest.Environments[name]; ok {
 				if env.KubeContext != "" {
-					runner := &shared.RealRunner{}
+					runner := newEnvRunner()
 					if err := runner.Run(gocontext.Background(), "kubectl", "config", "use-context", env.KubeContext); err != nil {
-						fmt.Printf("⚠️  Falha ao trocar kubectl context: %v\n", err)
+						linhas = append(linhas, linhaCheck{ui.CheckAviso, "kubectl", "sem trocar", fmt.Sprintf("contexto %s: %v", env.KubeContext, err)})
 					} else {
-						fmt.Printf("   kubectl context: %s\n", env.KubeContext)
+						linhas = append(linhas, linhaCheck{ui.CheckOk, "kubectl", "contexto", env.KubeContext})
 					}
 				}
 			}
 		}
+		checksAlinhados(w, linhas...)
 
 		return nil
 	},
@@ -108,54 +144,71 @@ var envShowCmd = &cobra.Command{
 		mgr := ybycontext.NewManager(infraRoot)
 		name, env, err := mgr.GetCurrent()
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao obter detalhes do ambiente ativo")
+			return errors.Wrap(err, errors.ErrCodeConfig, "falha ao obter detalhes do ambiente ativo").
+				WithHint("entre na pasta do projeto ou escolha um ambiente com yby env use <nome>")
 		}
 
-		fmt.Printf("Ambiente Ativo: %s\n", name)
-		fmt.Printf("Tipo: %s\n", env.Type)
-		fmt.Printf("Values: %s\n", env.Values)
-		if env.URL != "" {
-			fmt.Printf("URL: %s\n", env.URL)
-		}
-
-		// Exibe metadata cloud se presente
+		// Tenta validar credenciais cloud com timeout curto
+		var credenciais *cloud.CredentialStatus
 		if env.Cloud != nil {
-			fmt.Println("\nCloud:")
-			fmt.Printf("  Provider: %s\n", env.Cloud.Provider)
-			if env.Cloud.Region != "" {
-				fmt.Printf("  Region: %s\n", env.Cloud.Region)
-			}
-			if env.Cloud.Cluster != "" {
-				fmt.Printf("  Cluster: %s\n", env.Cloud.Cluster)
-			}
-			if env.Cloud.Profile != "" {
-				fmt.Printf("  Profile: %s\n", env.Cloud.Profile)
-			}
-			if env.Cloud.RoleARN != "" {
-				fmt.Printf("  Role ARN: %s\n", env.Cloud.RoleARN)
-			}
-
-			// Tenta validar credenciais com timeout curto
-			runner := &shared.RealRunner{}
-			provider := cloud.GetProvider(runner, env.Cloud.Provider)
+			provider := obterProviderCloud(&shared.RealRunner{}, env.Cloud.Provider)
 			if provider != nil {
 				ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
 				defer cancel()
 				if status, err := provider.ValidateCredentials(ctx); err == nil {
-					if status.Authenticated {
-						fmt.Printf("  Credenciais: ✅ válidas (%s)\n", status.Identity)
-						if status.ExpiresAt != nil {
-							fmt.Printf("  Expira em: %s\n", status.ExpiresAt.Format(time.RFC3339))
-						}
-					} else {
-						fmt.Printf("  Credenciais: ❌ inválidas\n")
-					}
+					credenciais = status
 				}
 			}
 		}
 
+		renderEnvShow(cmd.OutOrStdout(), name, env, credenciais, agora())
 		return nil
 	},
+}
+
+// renderEnvShow escreve os dados do ambiente ativo e, quando ele é de cloud, os do
+// provider e as credenciais (nil quando não deu para validar).
+func renderEnvShow(w io.Writer, name string, env *ybycontext.Environment, credenciais *cloud.CredentialStatus, quando time.Time) {
+	ui.Title(w, "env", "ativo "+name)
+	ui.Section(w, "ambiente")
+	ui.Campos(w,
+		ui.Campo{Rotulo: "nome", Valor: name},
+		ui.Campo{Rotulo: "tipo", Valor: env.Type},
+		ui.Campo{Rotulo: "values", Valor: env.Values},
+		ui.Campo{Rotulo: "url", Valor: env.URL},
+		ui.Campo{Rotulo: "kube context", Valor: env.KubeContext},
+		ui.Campo{Rotulo: "namespace", Valor: env.Namespace},
+	)
+	if env.Cloud == nil {
+		return
+	}
+
+	ui.Section(w, "cloud")
+	ui.Campos(w,
+		ui.Campo{Rotulo: "provider", Valor: env.Cloud.Provider},
+		ui.Campo{Rotulo: "região", Valor: env.Cloud.Region},
+		ui.Campo{Rotulo: "cluster", Valor: env.Cloud.Cluster},
+		ui.Campo{Rotulo: "profile", Valor: env.Cloud.Profile},
+		ui.Campo{Rotulo: "role arn", Valor: env.Cloud.RoleARN},
+	)
+	if credenciais == nil {
+		return
+	}
+	fmt.Fprintln(w)
+	if !credenciais.Authenticated {
+		checksAlinhados(w, linhaCheck{ui.CheckErro, "credenciais", "inválidas", "faça o login no CLI do provider"})
+		return
+	}
+	linhas := []linhaCheck{{ui.CheckOk, "credenciais", "válidas", credenciais.Identity}}
+	if exp := credenciais.ExpiresAt; exp != nil {
+		validade := exp.In(quando.Location()).Format("02/01/2006 15:04")
+		if exp.After(quando) {
+			linhas = append(linhas, linhaCheck{ui.CheckOk, "token", "válido", "até " + validade})
+		} else {
+			linhas = append(linhas, linhaCheck{ui.CheckAviso, "token", "expirado", "desde " + validade + " · yby cloud refresh renova"})
+		}
+	}
+	checksAlinhados(w, linhas...)
 }
 
 // env create
@@ -213,20 +266,25 @@ var envCreateCmd = &cobra.Command{
 		cloudRegion, _ := cmd.Flags().GetString("cloud-region")
 		cloudCluster, _ := cmd.Flags().GetString("cloud-cluster")
 
+		w := cmd.OutOrStdout()
+		var linhas []linhaCheck
+
 		// Validação do cloud provider
 		var cloudCfg *ybycontext.CloudConfig
 		if cloudProvider != "" {
 			validProviders := map[string]bool{"aws": true, "azure": true, "gcp": true}
 			if !validProviders[cloudProvider] {
 				return errors.New(errors.ErrCodeValidation,
-					fmt.Sprintf("Cloud provider inválido: '%s'. Valores aceitos: aws, azure, gcp", cloudProvider))
+					fmt.Sprintf("Cloud provider inválido: '%s'", cloudProvider)).
+					WithHint("use --cloud-provider aws, azure ou gcp")
 			}
 
 			runner := &shared.RealRunner{}
-			provider := cloud.GetProvider(runner, cloudProvider)
+			provider := obterProviderCloud(runner, cloudProvider)
 			if provider == nil {
 				return errors.New(errors.ErrCodeValidation,
-					fmt.Sprintf("Provider '%s' não está registrado", cloudProvider))
+					fmt.Sprintf("provider %s não está registrado", cloudProvider)).
+					WithHint("use --cloud-provider aws, azure ou gcp")
 			}
 
 			// Configurar kubeconfig se cluster especificado
@@ -238,9 +296,9 @@ var envCreateCmd = &cobra.Command{
 				}
 				ctx := gocontext.Background()
 				if err := provider.ConfigureKubeconfig(ctx, clusterInfo); err != nil {
-					fmt.Printf("⚠️  Falha ao configurar kubeconfig para cluster '%s': %v\n", cloudCluster, err)
+					linhas = append(linhas, linhaCheck{ui.CheckAviso, "kubeconfig", "falhou", fmt.Sprintf("cluster %s: %v", cloudCluster, err)})
 				} else {
-					fmt.Printf("   Kubeconfig configurado para cluster '%s'\n", cloudCluster)
+					linhas = append(linhas, linhaCheck{ui.CheckOk, "kubeconfig", "configurado", "cluster " + cloudCluster})
 				}
 			}
 
@@ -268,32 +326,43 @@ var envCreateCmd = &cobra.Command{
 
 		mgr := ybycontext.NewManager(infraRoot)
 		if err := mgr.AddEnvironment(name, env, valuesContent); err != nil {
-			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao criar ambiente")
+			return errors.Wrap(err, errors.ErrCodeConfig, "falha ao criar o ambiente").
+				WithHint("confira a causa; yby env list mostra os ambientes que já existem")
 		}
 
-		fmt.Printf("✅ Ambiente '%s' criado com sucesso!\n", name)
-		fmt.Printf("   Arquivo de configuração: config/values-%s.yaml\n", name)
+		criados := []linhaCheck{
+			{ui.CheckOk, "ambiente", "criado", name + " · " + envType},
+			{ui.CheckOk, "values", "criado", fmt.Sprintf("config/values-%s.yaml", name)},
+		}
+		tituloComando(w, "env", "create")
+		checksAlinhados(w, append(criados, linhas...)...)
 		if cloudCfg != nil {
-			fmt.Printf("   Cloud provider: %s\n", cloudCfg.Provider)
-			if cloudCfg.Region != "" {
-				fmt.Printf("   Região: %s\n", cloudCfg.Region)
-			}
-			if cloudCfg.Cluster != "" {
-				fmt.Printf("   Cluster: %s\n", cloudCfg.Cluster)
-			}
+			ui.Section(w, "cloud")
+			ui.Campos(w,
+				ui.Campo{Rotulo: "provider", Valor: cloudCfg.Provider},
+				ui.Campo{Rotulo: "região", Valor: cloudCfg.Region},
+				ui.Campo{Rotulo: "cluster", Valor: cloudCfg.Cluster},
+			)
 		}
 
 		// Validação de integridade após criação
 		warnings, err := mgr.ValidateIntegrity()
 		if err == nil && len(warnings) > 0 {
-			fmt.Println("⚠️  Problemas encontrados:")
-			for _, w := range warnings {
-				fmt.Printf("   - %s\n", w)
-			}
+			ui.Section(w, "integridade")
+			renderAvisosIntegridade(w, warnings)
 		}
 
 		return nil
 	},
+}
+
+// renderAvisosIntegridade escreve um aviso por problema encontrado nos ambientes.
+func renderAvisosIntegridade(w io.Writer, warnings []string) {
+	ordenados := append([]string(nil), warnings...)
+	sort.Strings(ordenados)
+	for _, aviso := range ordenados {
+		ui.Check(w, ui.CheckAviso, aviso, "", "")
+	}
 }
 
 // env check
@@ -309,16 +378,16 @@ var envCheckCmd = &cobra.Command{
 
 		warnings, err := mgr.ValidateIntegrity()
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeConfig, "Falha ao validar integridade dos ambientes")
+			return errors.Wrap(err, errors.ErrCodeConfig, "falha ao validar integridade dos ambientes").
+				WithHint("entre na pasta do projeto ou crie um com yby init")
 		}
 
+		w := cmd.OutOrStdout()
+		tituloComando(w, "env", "check")
 		if len(warnings) == 0 {
-			fmt.Println("✅ Todos os ambientes estão íntegros.")
+			ui.Check(w, ui.CheckOk, "todos os ambientes estão íntegros", "", "")
 		} else {
-			fmt.Println("⚠️  Problemas encontrados:")
-			for _, w := range warnings {
-				fmt.Printf("   - %s\n", w)
-			}
+			renderAvisosIntegridade(w, warnings)
 		}
 		return nil
 	},

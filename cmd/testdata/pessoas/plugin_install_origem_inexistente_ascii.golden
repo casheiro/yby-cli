@@ -1,0 +1,5 @@
+
+x erro ao instalar plugin                             ERR_PLUGIN
+  causa     origem do plugin não encontrada ou esquema não suportado ainda: nao-existe
+  faça      informe um arquivo local, uma URL ou um plugin nativo: atlas, bard, sentinel, synapstor ou viz
+  detalhes  rode de novo com --log-level=debug

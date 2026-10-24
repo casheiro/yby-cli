@@ -1,0 +1,3 @@
+
+x nenhum provedor de IA encontrado            ERR_CONFIG_INVALID
+  faça      exporte OPENAI_API_KEY ou GEMINI_API_KEY, ou rode ollama serve

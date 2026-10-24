@@ -1,0 +1,8 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  PLUGIN[0m                                             [38;2;161;147;121mupdate[0m
+
+  [38;2;217;131;97m✕[0m [38;2;221;208;181matlas       falhou    falha ao baixar a release do plugin atlas: 404 Not Found[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mbard        atualizado[0m
+  [38;2;217;131;97m✕[0m [38;2;221;208;181mnaoexiste   falhou    plugin 'naoexiste' não encontrado[0m
+
+[38;2;217;131;97m✕[0m [1;38;2;221;208;181m2 plugins de 3 não foram atualizados[0m                [38;2;161;147;121mERR_PLUGIN[0m
+  [38;2;161;147;121mfaça      [0m[1;38;2;221;208;181mconfira as linhas acima; rode de novo com --log-level=debug para detalhes[0m

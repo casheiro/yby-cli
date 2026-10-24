@@ -15,6 +15,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +50,8 @@ Exemplo:
 		if filePath != "" {
 			data, err := os.ReadFile(filePath)
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler arquivo")
+				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler o arquivo").
+					WithHint("confira o caminho passado em --file")
 			}
 			description = string(data)
 		} else if len(args) > 0 {
@@ -58,63 +60,74 @@ Exemplo:
 			return errors.New(errors.ErrCodeValidation, "informe uma descrição ou use --file")
 		}
 
-		fmt.Println(titleStyle.Render("🧠 Yby AI - Governance Capture"))
-		fmt.Println(stepStyle.Render("🔄 Inicializando provedor de IA..."))
-
 		// 2. Init AI
 		providerName, _ := cmd.Flags().GetString("ai-provider")
 		provider := getAIProvider(ctx, providerName)
 
 		if provider == nil {
-			return errors.New(errors.ErrCodeConfig, "Nenhum provedor de IA encontrado. Dica: Exporte OPENAI_API_KEY, GEMINI_API_KEY ou rode 'ollama serve'")
+			return errors.New(errors.ErrCodeConfig, "nenhum provedor de IA encontrado").
+				WithHint("exporte OPENAI_API_KEY ou GEMINI_API_KEY, ou rode ollama serve")
 		}
 
-		fmt.Printf("%s Usando provedor: %s\n", checkStyle.String(), provider.Name())
-		fmt.Println(stepStyle.Render("🤔 Analisando e estruturando conhecimento... (Isso pode levar alguns segundos)"))
+		w := cmd.OutOrStdout()
+		tituloComando(w, "uki", "capture")
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "provedor", provider.Name(), ""})
+		linhaEmAndamento(w, "analisando e estruturando o conhecimento · pode levar alguns segundos")
 
 		// 3. Generate via Completion
 		blueprint, err := generateGovernanceViaCompletion(ctx, provider, description)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "Erro na geração AI")
+			return errors.Wrap(err, errors.ErrCodeExec, "a IA não gerou a UKI").
+				WithHint("rode yby doctor para conferir o provider de IA e tente de novo")
 		}
 
 		// 4. Save Files
 		baseDir := ".synapstor"
 		// Ensure dirs exist
 		if err := os.MkdirAll(filepath.Join(baseDir, ".uki"), 0755); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "Falha ao criar diretório .uki")
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar a pasta .uki").
+				WithHint("confira se a pasta do projeto pode ser gravada")
 		}
 		if err := os.MkdirAll(filepath.Join(baseDir, ".personas"), 0755); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "Falha ao criar diretório .personas")
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar a pasta .personas").
+				WithHint("confira se a pasta do projeto pode ser gravada")
 		}
 
-		fmt.Println("")
-		fmt.Println(headerStyle.Render("📄 Arquivos Gerados:"))
-
+		var linhas []linhaCheck
+		var ok, aviso, erro int
 		for _, f := range blueprint.Files {
 			// Security check: clean path to avoid writing outside root
 			cleanPath := filepath.Clean(f.Path)
 			if strings.HasPrefix(cleanPath, "..") || strings.HasPrefix(cleanPath, "/") {
-				fmt.Printf("⚠️  Caminho inseguro ignorado: %s\n", f.Path)
+				linhas = append(linhas, linhaCheck{ui.CheckAviso, f.Path, "ignorado", "caminho fora do projeto"})
+				aviso++
 				continue
 			}
 
 			// Create dir if needed
 			dir := filepath.Dir(cleanPath)
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				fmt.Printf("%s Falha ao criar diretório pai %s: %v\n", crossStyle.String(), dir, err)
+				linhas = append(linhas, linhaCheck{ui.CheckErro, filepath.ToSlash(cleanPath), "falhou", fmt.Sprintf("criar %s: %v", dir, err)})
+				erro++
 				continue
 			}
 
 			if err := os.WriteFile(cleanPath, []byte(f.Content), 0644); err != nil {
-				fmt.Printf("%s Falha ao escrever %s: %v\n", crossStyle.String(), cleanPath, err)
+				linhas = append(linhas, linhaCheck{ui.CheckErro, filepath.ToSlash(cleanPath), "falhou", err.Error()})
+				erro++
 			} else {
-				fmt.Printf("%s %s\n", checkStyle.String(), cleanPath)
+				linhas = append(linhas, linhaCheck{ui.CheckOk, filepath.ToSlash(cleanPath), "gravado", ""})
+				ok++
 			}
 		}
 
-		fmt.Println("")
-		fmt.Println(checkStyle.Render("✅ Governança capturada com sucesso!"))
+		ui.Section(w, "arquivos gerados")
+		checksAlinhados(w, linhas...)
+		frase := "governança capturada"
+		if erro > 0 {
+			frase = "parte dos arquivos não foi gravada"
+		}
+		ui.Summary(w, ok, aviso, erro, frase)
 		return nil
 	},
 }

@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
-	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -12,6 +9,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// saidaDoVersion roda o version e devolve o que ele escreveu. A saída vai para
+// cmd.OutOrStdout(), que outros testes podem ter desviado no rootCmd; capturarSaidaPadrao
+// liga a saída do próprio versionCmd ao pipe.
+func saidaDoVersion(t *testing.T) string {
+	t.Helper()
+	var err error
+	saida := capturarSaidaPadrao(t, versionCmd, func() { err = versionCmd.RunE(versionCmd, []string{}) })
+	require.NoError(t, err)
+	return saida
+}
 
 func TestVersionCmd_Estrutura(t *testing.T) {
 	assert.Equal(t, "version", versionCmd.Use, "Use deveria ser 'version'")
@@ -21,20 +29,7 @@ func TestVersionCmd_Estrutura(t *testing.T) {
 }
 
 func TestVersionCmd_SaidaContemVersao(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := versionCmd.RunE(versionCmd, []string{})
-	require.NoError(t, err)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
-
+	output := saidaDoVersion(t)
 	assert.Contains(t, output, Version, "Saída deveria conter a versão")
 }
 
@@ -42,19 +37,7 @@ func TestVersionCmd_SaidaContemOSArch(t *testing.T) {
 	// Garante que log-format seja "text" para evitar saída JSON
 	_ = rootCmd.PersistentFlags().Set("log-format", "text")
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := versionCmd.RunE(versionCmd, []string{})
-	require.NoError(t, err)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := saidaDoVersion(t)
 
 	expectedOSArch := runtime.GOOS + "/" + runtime.GOARCH
 	assert.Contains(t, output, expectedOSArch, "Saída deveria conter OS/ARCH")
@@ -71,19 +54,7 @@ func TestVersionCmd_SaidaComCommit(t *testing.T) {
 	commit = "abc1234"
 	date = "2025-01-01"
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := versionCmd.RunE(versionCmd, []string{})
-	require.NoError(t, err)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := saidaDoVersion(t)
 
 	assert.Contains(t, output, "abc1234", "Saída deveria conter o hash do commit")
 	assert.Contains(t, output, "2025-01-01", "Saída deveria conter a data de build")
@@ -100,19 +71,7 @@ func TestVersionCmd_SaidaSemCommitQuandoNone(t *testing.T) {
 	commit = "none"
 	date = "unknown"
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := versionCmd.RunE(versionCmd, []string{})
-	require.NoError(t, err)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := saidaDoVersion(t)
 
 	assert.NotContains(t, output, "(none)", "Saída não deveria conter '(none)' quando commit é 'none'")
 	assert.NotContains(t, output, "compilado em unknown", "Saída não deveria conter data quando é 'unknown'")
@@ -120,7 +79,7 @@ func TestVersionCmd_SaidaSemCommitQuandoNone(t *testing.T) {
 
 func TestVersionCmd_NaoPanica(t *testing.T) {
 	assert.NotPanics(t, func() {
-		_ = versionCmd.RunE(versionCmd, []string{})
+		saidaDoVersion(t)
 	}, "versionCmd.RunE não deveria causar panic")
 }
 
@@ -141,19 +100,7 @@ func TestVersionCmd_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 	defer rootCmd.PersistentFlags().Set("log-format", "text")
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err = versionCmd.RunE(versionCmd, []string{})
-	require.NoError(t, err)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := saidaDoVersion(t)
 
 	var info map[string]string
 	err = json.Unmarshal([]byte(strings.TrimSpace(output)), &info)

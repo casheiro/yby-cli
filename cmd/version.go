@@ -6,7 +6,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"runtime"
 
 	"github.com/spf13/cobra"
@@ -35,7 +34,7 @@ var versionCmd = &cobra.Command{
 				"os":      runtime.GOOS,
 				"arch":    runtime.GOARCH,
 			}
-			return json.NewEncoder(os.Stdout).Encode(info)
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(info)
 		}
 
 		info := fmt.Sprintf("yby version %s", Version)
@@ -50,7 +49,7 @@ var versionCmd = &cobra.Command{
 
 		info += fmt.Sprintf(" [%s/%s]", runtime.GOOS, runtime.GOARCH)
 
-		fmt.Println(info)
+		fmt.Fprintln(cmd.OutOrStdout(), info)
 		return nil
 	},
 }
