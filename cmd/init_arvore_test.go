@@ -10,11 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/spf13/pflag"
-
-	"github.com/casheiro/yby-cli/pkg/scaffold"
 )
 
 // casosArvoreInit são as combinações de flags do init --non-interactive cuja árvore gerada
@@ -79,61 +76,15 @@ func arvoreGerada(t *testing.T, raiz string) string {
 	return b.String()
 }
 
-// reDefaultSimples acha nos templates o `{{ .Campo | default "valor" }}`: o FuncMap do
-// scaffold não tem a função default, e o scaffold para no primeiro template que a usa.
-var reDefaultSimples = regexp.MustCompile(`\{\{\s*(\.[A-Za-z]+)\s*\|\s*default\s+"([^"]*)"\s*\}\}`)
-
-// templatesSemDefault copia os assets de fsys para a memória trocando, nos .tmpl, o
-// `{{ .Campo | default "valor" }}` por `{{ if .Campo }}{{ .Campo }}{{ else }}valor{{ end }}`,
-// que dá o mesmo texto sem a função que falta.
-func templatesSemDefault(t *testing.T, fsys fs.FS) fs.FS {
-	t.Helper()
-	m := fstest.MapFS{}
-	err := fs.WalkDir(fsys, "assets", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			m[p] = &fstest.MapFile{Mode: fs.ModeDir | 0o755}
-			return nil
-		}
-		dados, err := fs.ReadFile(fsys, p)
-		if err != nil {
-			return err
-		}
-		if strings.HasSuffix(p, ".tmpl") {
-			dados = reDefaultSimples.ReplaceAll(dados, []byte(`{{ if $1 }}{{ $1 }}{{ else }}$2{{ end }}`))
-		}
-		m[p] = &fstest.MapFile{Data: dados, Mode: 0o644}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("copiando os templates: %v", err)
-	}
-	return m
-}
-
-// usarScaffoldCompleto faz o scaffold do init chegar ao fim: os templates passam por
-// templatesSemDefault e o aviso da validação pós-render (campos críticos vazios, que o
-// scaffold devolve como erro) não interrompe o init. Assim o teste cobre também o que o
-// init faz depois do scaffold: values de cada ambiente, manifest e validação dos charts.
-// Sai quando o template for corrigido: aí o init roda com scaffold.Apply puro.
-func usarScaffoldCompleto(t *testing.T) {
-	t.Helper()
-	anterior := aplicarScaffoldInit
-	t.Cleanup(func() { aplicarScaffoldInit = anterior })
-	aplicarScaffoldInit = func(dir string, ctx *scaffold.BlueprintContext, fsys fs.FS) error {
-		err := scaffold.Apply(dir, ctx, templatesSemDefault(t, fsys))
-		if err != nil && strings.Contains(err.Error(), "validação pós-render falhou") {
-			return nil
-		}
-		return err
-	}
-}
-
 // rodarInitComFlags roda o init como a linha de comando: volta as flags ao padrão, lê args
 // e chama o RunE. Roda dentro de dir (fora de qualquer repositório git) e devolve o erro.
 func rodarInitComFlags(t *testing.T, dir string, args []string) error {
+	_, err := rodarInitComSaida(t, dir, args)
+	return err
+}
+
+// rodarInitComSaida é o rodarInitComFlags que devolve também o que o init escreveu.
+func rodarInitComSaida(t *testing.T, dir string, args []string) (string, error) {
 	t.Helper()
 	f := initCmd.Flags()
 	f.VisitAll(func(fl *pflag.Flag) {
@@ -149,7 +100,7 @@ func rodarInitComFlags(t *testing.T, dir string, args []string) error {
 	if err := f.Parse(append([]string{"--non-interactive"}, args...)); err != nil {
 		t.Fatalf("flags: %v", err)
 	}
-	saidaDoComando(t, initCmd)
+	saida := saidaDoComando(t, initCmd)
 
 	anterior, err := os.Getwd()
 	if err != nil {
@@ -159,18 +110,18 @@ func rodarInitComFlags(t *testing.T, dir string, args []string) error {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.Chdir(anterior) }()
-	return initCmd.RunE(initCmd, nil)
+	err = initCmd.RunE(initCmd, nil)
+	return saida.String(), err
 }
 
 // TestInitNaoInterativo_ArvoreIgualALinhaDeBase confere a árvore completa do
 // --non-interactive (scaffold, values de cada ambiente e .yby/project.yaml) contra a do
-// init de antes, rodado com os mesmos templates sem default e o mesmo tratamento do aviso
-// pós-render.
+// init de antes. A linha de base foi gerada com o `| default` dos templates trocado por
+// if/else e sem parar nos campos críticos vazios, que é o que o scaffold faz agora.
 func TestInitNaoInterativo_ArvoreIgualALinhaDeBase(t *testing.T) {
 	for _, c := range casosArvoreInit {
 		t.Run(c.nome, func(t *testing.T) {
 			isolarInit(t)
-			usarScaffoldCompleto(t)
 			dir := t.TempDir()
 
 			resultado := "resultado: ok\n"
@@ -182,17 +133,40 @@ func TestInitNaoInterativo_ArvoreIgualALinhaDeBase(t *testing.T) {
 	}
 }
 
-// TestInitNaoInterativo_ArvoreComTemplatesAtuais confere a árvore que o init deixa com os
-// templates de hoje, que param o scaffold em charts/bootstrap/values.yaml.tmpl: igual à do
-// init de antes. Quando o template for corrigido, o init chega ao fim, este teste falha e
-// deixa de ser necessário (o de cima passa a rodar com scaffold.Apply puro).
-func TestInitNaoInterativo_ArvoreComTemplatesAtuais(t *testing.T) {
+// Sem --git-repo, o init gera o projeto e avisa o repoURL vazio; no --offline, não avisa
+// (o bootstrap aponta para o git-server local).
+func TestInitNaoInterativo_AvisaRepoVazio(t *testing.T) {
 	isolarInit(t)
-	dir := t.TempDir()
-
-	resultado := "resultado: ok\n"
-	if err := rodarInitComFlags(t, dir, casosArvoreInit[0].args); err != nil {
-		resultado = "resultado: o scaffold parou\n"
+	saida, err := rodarInitComSaida(t, t.TempDir(), casosArvoreInit[5].args)
+	if err != nil {
+		t.Fatalf("init: %v", err)
 	}
-	conferirGolden(t, "init_arvore_templates_atuais", resultado+arvoreGerada(t, dir))
+	if !strings.Contains(saida, "repoURL") || !strings.Contains(saida, "use --git-repo ou preencha antes do yby bootstrap") {
+		t.Errorf("esperava o aviso do repoURL vazio:\n%s", saida)
+	}
+
+	isolarInit(t)
+	saida, err = rodarInitComSaida(t, t.TempDir(), casosArvoreInit[0].args)
+	if err != nil {
+		t.Fatalf("init --offline: %v", err)
+	}
+	if strings.Contains(saida, "repoURL") {
+		t.Errorf("no --offline o repoURL vazio não é aviso:\n%s", saida)
+	}
+}
+
+// Sem helm na máquina, a validação vira um aviso só, sem repetir a falha por chart.
+func TestInitNaoInterativo_SemHelm(t *testing.T) {
+	isolarInit(t)
+	lookPath = func(string) (string, error) { return "", fs.ErrNotExist }
+	saida, err := rodarInitComSaida(t, t.TempDir(), casosArvoreInit[5].args)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if !strings.Contains(saida, "helm não encontrado · instale e rode yby validate") {
+		t.Errorf("esperava o aviso do helm:%s", saida)
+	}
+	if strings.Contains(saida, "com problema") {
+		t.Errorf("a falha do helm não deveria repetir por chart:%s", saida)
+	}
 }

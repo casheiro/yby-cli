@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
@@ -326,6 +327,7 @@ func executarInit(w io.Writer, o *InitOptions) error {
 	}
 	rel.secao("arquivos")
 	rel.linha(ui.CheckOk, "scaffold", "gerado", "")
+	avisarCamposVazios(rel, targetDir, o.Offline)
 
 	// 2.5 Camada de IA: só com descrição (--description ou no assistente)
 	bgCtx := context.Background()
@@ -357,6 +359,32 @@ func executarInit(w io.Writer, o *InitOptions) error {
 
 	rel.resumo("próximo passo: yby env list")
 	return nil
+}
+
+// avisarCamposVazios mostra os campos críticos que o scaffold deixou vazios (repoURL
+// sem --git-repo, por exemplo): o projeto é gerado, mas o Argo CD precisa deles. No
+// --offline o repoURL fica vazio de propósito: o bootstrap aponta para o git-server local.
+func avisarCamposVazios(rel *relatorioInit, targetDir string, offline bool) {
+	vazios := scaffold.CamposCriticosVazios(targetDir)
+	campos := make([]string, 0, len(vazios))
+	for campo := range vazios {
+		if offline && (campo == "repoURL" || campo == "repoName") {
+			continue
+		}
+		campos = append(campos, campo)
+	}
+	sort.Strings(campos)
+	for _, campo := range campos {
+		dica := "preencha antes do yby bootstrap"
+		if campo == "repoURL" || campo == "repoName" {
+			dica = "use --git-repo ou preencha antes do yby bootstrap"
+		}
+		arquivos := "arquivos"
+		if vazios[campo] == 1 {
+			arquivos = "arquivo"
+		}
+		rel.linha(ui.CheckAviso, campo, "vazio", fmt.Sprintf("%d %s · %s", vazios[campo], arquivos, dica))
+	}
 }
 
 // gerarComIA pede à IA a governança a partir da descrição e grava os arquivos que vierem.
@@ -407,6 +435,10 @@ func validarChartsInit(rel *relatorioInit, bgCtx context.Context, targetDir stri
 	}
 
 	rel.secao("validação")
+	if _, err := lookPath("helm"); err != nil {
+		rel.linha(ui.CheckAviso, "charts", "não validados", "helm não encontrado · instale e rode yby validate")
+		return
+	}
 	valuesFile := filepath.Join(targetDir, "config/cluster-values.yaml")
 	report, err := novoValidadorInit().Run(bgCtx, existingCharts, valuesFile)
 	if err == nil && report != nil && report.Success {
@@ -414,9 +446,8 @@ func validarChartsInit(rel *relatorioInit, bgCtx context.Context, targetDir stri
 		return
 	}
 	if err != nil {
-		rel.linha(ui.CheckAviso, "charts", "não validados", err.Error())
-	}
-	if report != nil {
+		rel.linha(ui.CheckAviso, "charts", "não validados", mensagemDoErro(err))
+	} else if report != nil {
 		for _, cr := range report.Charts {
 			if cr.Error != "" {
 				rel.linha(ui.CheckAviso, filepath.Base(cr.Chart), "com problema", cr.Error)

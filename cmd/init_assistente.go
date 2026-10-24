@@ -386,6 +386,14 @@ func (a *assistenteInit) aplicar() {
 	}
 	ctx.ProjectName = a.nomeEfetivo()
 	ctx.GitRepoURL = a.repoEfetivo()
+	// o repositório digitado é o mesmo do --git-repo: vai para os templates (repoURL)
+	if repo := strings.TrimSpace(r.Repo); p.repo && repo != "" && ctx.GitRepo == "" {
+		ctx.GitRepo = repo
+		if org := extractGithubOrg(repo); org != "" {
+			ctx.GithubOrg = org
+			ctx.GithubDiscovery = true
+		}
+	}
 	if p.dominio {
 		ctx.Domain = strings.TrimSpace(r.Dominio)
 	}

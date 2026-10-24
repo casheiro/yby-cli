@@ -74,6 +74,15 @@ func isolarInit(t *testing.T) *pluginsFalsos {
 		return nil
 	}
 	novoValidadorInit = func() validate.Service { return &validadorFalso{} }
+	// o validador é falso: o helm da máquina não muda o relatório
+	busca := lookPath
+	t.Cleanup(func() { lookPath = busca })
+	lookPath = func(nome string) (string, error) {
+		if nome == "helm" {
+			return "helm", nil
+		}
+		return busca(nome)
+	}
 	return plugins
 }
 
@@ -261,6 +270,8 @@ func TestInitAssistente_RespostasDigitadas(t *testing.T) {
 
 		assert.Equal(t, "infra", o.TargetDir)
 		assert.Equal(t, "https://github.com/acme/Pay-Gateway.git", ctx.GitRepoURL)
+		assert.Equal(t, "https://github.com/acme/Pay-Gateway.git", ctx.GitRepo, "o repositório digitado vai para o repoURL dos templates")
+		assert.Equal(t, "acme", ctx.GithubOrg)
 		assert.Equal(t, "pay-gateway", ctx.ProjectName, "nome derivado do repositório e sanitizado")
 		assert.Equal(t, "complete", ctx.Topology)
 		assert.Equal(t, "trunkbased", ctx.WorkflowPattern)
@@ -308,6 +319,7 @@ func TestInitAssistente_SoPerguntaOQueFalta(t *testing.T) {
 		{"offline", func(o *InitOptions) { o.Offline = true }, []string{"repositorio", "ia", "provedor", "descricao"},
 			func(t *testing.T, o *InitOptions, ctx *scaffold.BlueprintContext) {
 				assert.Equal(t, repoServidorGitLocal, ctx.GitRepoURL)
+				assert.Equal(t, "", ctx.GitRepo, "no offline o bootstrap aponta o repoURL para o git-server")
 				assert.Equal(t, "repo", ctx.ProjectName, "o nome sai do repositório do servidor git local")
 			}, []string{"ia"}},
 		{"git repo por flag", func(o *InitOptions) { o.GitRepo = "https://github.com/org/meu-repo.git" }, []string{"repositorio"},

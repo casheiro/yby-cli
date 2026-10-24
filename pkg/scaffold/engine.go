@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -15,7 +16,8 @@ import (
 )
 
 // criticalYAMLFields define os campos que não devem estar vazios nos YAMLs gerados.
-var criticalYAMLFields = []string{"repoURL", "repoName", "domainBase", "server"}
+// domainBase fica de fora: vazio é uma escolha válida (sem Ingress, usa port-forward).
+var criticalYAMLFields = []string{"repoURL", "repoName", "server"}
 
 // ValidateRenderedYAML percorre arquivos .yaml/.yml no diretório e verifica
 // se campos críticos não estão com valor vazio.
@@ -57,6 +59,24 @@ func ValidateRenderedYAML(targetDir string) []string {
 	})
 
 	return warnings
+}
+
+// CamposCriticosVazios conta, por campo crítico (repoURL, repoName, server), em quantos
+// YAMLs gerados sob targetDir ele ficou vazio.
+func CamposCriticosVazios(targetDir string) map[string]int {
+	contagem := map[string]int{}
+	for _, w := range ValidateRenderedYAML(targetDir) {
+		_, depois, ok := strings.Cut(w, "campo '")
+		if !ok {
+			continue
+		}
+		campo, _, _ := strings.Cut(depois, "'")
+		if i := strings.LastIndex(campo, "."); i >= 0 {
+			campo = campo[i+1:]
+		}
+		contagem[campo]++
+	}
+	return contagem
 }
 
 // findEmptyCriticalFields busca recursivamente campos críticos com valor vazio em um mapa YAML.
@@ -193,15 +213,8 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 		return ybyerrors.Wrap(err, ybyerrors.ErrCodeScaffold, "scaffold falhou")
 	}
 
-	// Validação pós-render: verificar campos críticos vazios nos YAMLs gerados
-	if warnings := ValidateRenderedYAML(targetDir); len(warnings) > 0 {
-		for _, w := range warnings {
-			slog.Warn("campo vazio detectado no YAML gerado", "detalhe", w)
-		}
-		return ybyerrors.New(ybyerrors.ErrCodeScaffold,
-			fmt.Sprintf("validação pós-render falhou: %d campo(s) crítico(s) vazio(s) encontrado(s)", len(warnings)))
-	}
-
+	// Campos críticos vazios (ex.: repoURL sem --git-repo) não impedem o scaffold: quem
+	// chama mostra os avisos de ValidateRenderedYAML para a pessoa preencher depois.
 	return nil
 }
 
@@ -317,6 +330,7 @@ func contextFuncMap(ctx *BlueprintContext) template.FuncMap {
 		ov = DefaultOverrides()
 	}
 	return template.FuncMap{
+		"default":               valorPadrao,
 		"contains":              strings.Contains,
 		"hasPrefix":             strings.HasPrefix,
 		"hasSuffix":             strings.HasSuffix,
@@ -340,6 +354,18 @@ func contextFuncMap(ctx *BlueprintContext) template.FuncMap {
 		"resourceProfile":      ov.ResourceProfile,
 		"resolveObservability": ov.ResolveObservability,
 	}
+}
+
+// valorPadrao é o default dos templates, como no Helm: `{{ .Campo | default "v" }}`
+// devolve "v" quando o campo é vazio (nil, "" ou o valor zero do tipo).
+func valorPadrao(padrao, valor interface{}) interface{} {
+	if valor == nil {
+		return padrao
+	}
+	if v := reflect.ValueOf(valor); v.IsZero() {
+		return padrao
+	}
+	return valor
 }
 
 // yamlEscape escapa valores para uso seguro em YAML.
