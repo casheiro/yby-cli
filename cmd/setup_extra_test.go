@@ -318,10 +318,11 @@ func TestSetupCmd_Saida_Golden(t *testing.T) {
 			checkToolsResult: &setup.SetupResult{
 				Tools: []setup.ToolStatus{
 					{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
-					{Name: "helm", Installed: false},
-					{Name: "k3d", Installed: false},
+					{Name: "helm", Installed: false, InstallHelp: "https://helm.sh/docs/intro/install/"},
+					{Name: "k3d", Installed: false, InstallHelp: "https://k3d.io/v5.4.6/#installation"},
 				},
-				Missing: []string{"helm", "k3d"},
+				Missing:     []string{"helm", "k3d"},
+				Gerenciador: "apt",
 			},
 			installResults: []setup.InstallResult{
 				{Tool: "helm", Success: true},
@@ -329,7 +330,13 @@ func TestSetupCmd_Saida_Golden(t *testing.T) {
 			},
 		}},
 		{"setup_sem_instalar", false, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
-			Tools:   []setup.ToolStatus{{Name: "helm", Installed: false}},
+			Tools:       []setup.ToolStatus{{Name: "helm", Installed: false, InstallHelp: "https://helm.sh/docs/intro/install/"}},
+			Missing:     []string{"helm"},
+			Gerenciador: "brew",
+		}}},
+		// sem gerenciador suportado (Windows): não pergunta, aponta os links
+		{"setup_sem_gerenciador", true, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
+			Tools:   []setup.ToolStatus{{Name: "helm", Installed: false, InstallHelp: "https://helm.sh/docs/intro/install/"}},
 			Missing: []string{"helm"},
 		}}},
 	}
@@ -339,8 +346,8 @@ func TestSetupCmd_Saida_Golden(t *testing.T) {
 			original, oldPrompter := newSetupService, prompter
 			defer func() { newSetupService, prompter = original, oldPrompter }()
 			newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service { return c.svc }
-			instalar := c.instalar
-			prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return instalar, nil }}
+			instalar, perguntou := c.instalar, false
+			prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { perguntou = true; return instalar, nil }}
 			setupCmd.Flags().Set("profile", "server")
 
 			b := saidaDoComando(t, setupCmd)
@@ -348,6 +355,9 @@ func TestSetupCmd_Saida_Golden(t *testing.T) {
 			saida := b.String()
 			conferirGolden(t, c.nome, saida)
 			conferirSemRestos(t, saida)
+			if c.svc.checkToolsResult.Gerenciador == "" {
+				assert.False(t, perguntou, "sem gerenciador não deveria oferecer a instalação")
+			}
 		})
 	}
 }

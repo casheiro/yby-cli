@@ -2,8 +2,8 @@
 
 FERRAMENTAS
   ✓ kubectl     instalado   /usr/bin/kubectl
-  ✕ helm        ausente
-  ✕ k3d         ausente
+  ✕ helm        ausente     https://helm.sh/docs/intro/install/
+  ✕ k3d         ausente     https://k3d.io/v5.4.6/#installation
 
 RESUMO  1 ok · 0 avisos · 2 erros  · faltam ferramentas
 

@@ -1,8 +1,8 @@
 ◆ YBY  SETUP                                       perfil server
 
 FERRAMENTAS
-  ✕ helm        ausente
+  ✕ helm        ausente     https://helm.sh/docs/intro/install/
 
 RESUMO  0 ok · 0 avisos · 1 erro  · faltam ferramentas
 
-  ○ instale as ferramentas manualmente e rode yby setup de novo
+  ○ instale pelos links acima e rode yby setup de novo

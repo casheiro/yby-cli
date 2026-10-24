@@ -6,6 +6,8 @@ package cmd
 import (
 	gocontext "context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -172,9 +174,18 @@ var envCreateCmd = &cobra.Command{
 		envType, _ := cmd.Flags().GetString("type")
 		description, _ := cmd.Flags().GetString("description")
 
+		infraRoot, err := FindInfraRoot()
+		if err != nil {
+			infraRoot = "."
+		}
+		// sem projeto não há onde criar o ambiente: avisa antes de perguntar o nome
+		if _, err := os.Stat(filepath.Join(infraRoot, ".yby", "environments.yaml")); err != nil {
+			return errors.New(errors.ErrCodeConfig, "nenhum projeto yby nesta pasta").
+				WithHint("entre na pasta do projeto ou crie um com yby init")
+		}
+
 		// Interactive prompts if needed
 		if name == "" {
-			var err error
 			name, err = prompter.Input("Nome do ambiente (ex: qa, uat)", "")
 			if err != nil {
 				return errors.Wrap(err, errors.ErrCodeValidation, "nome do ambiente não informado").
@@ -192,11 +203,6 @@ var envCreateCmd = &cobra.Command{
 		}
 		if description == "" {
 			description = fmt.Sprintf("Environment %s", name)
-		}
-
-		infraRoot, err := FindInfraRoot()
-		if err != nil {
-			infraRoot = "."
 		}
 
 		kubeContext, _ := cmd.Flags().GetString("kube-context")

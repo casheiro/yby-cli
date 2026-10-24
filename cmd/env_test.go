@@ -274,6 +274,11 @@ func TestEnvCreateCmd_SemNome_PerguntaPeloPrompter(t *testing.T) {
 }
 
 func TestEnvCreateCmd_SemNome_SemTerminal(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
 	oldPrompter := prompter
 	defer func() { prompter = oldPrompter }()
 	prompter = &mockPrompter{inputFunc: func(string, string) (string, error) { return "", erroSemTerminal() }}
@@ -287,4 +292,23 @@ func TestEnvCreateCmd_SemNome_SemTerminal(t *testing.T) {
 	err = envCreateCmd.RunE(envCreateCmd, []string{})
 	require.ErrorAs(t, err, &yerr)
 	assert.Equal(t, "nome do ambiente vazio", yerr.Message)
+}
+
+func TestEnvCreateCmd_SemProjeto_NaoPergunta(t *testing.T) {
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(t.TempDir())
+
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	prompter = &mockPrompter{inputFunc: func(string, string) (string, error) {
+		t.Fatal("sem projeto não deveria perguntar o nome")
+		return "", nil
+	}}
+
+	err := envCreateCmd.RunE(envCreateCmd, []string{})
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, errors.ErrCodeConfig, yerr.Code)
+	assert.Equal(t, "entre na pasta do projeto ou crie um com yby init", yerr.Hint)
 }

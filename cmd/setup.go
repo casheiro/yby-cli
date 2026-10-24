@@ -58,7 +58,7 @@ Exemplo:
 			if ts.Installed {
 				ferramentas.linhas = append(ferramentas.linhas, linhaCheck{ui.CheckOk, ts.Name, "instalado", ts.Path})
 			} else {
-				ferramentas.linhas = append(ferramentas.linhas, linhaCheck{ui.CheckErro, ts.Name, "ausente", ""})
+				ferramentas.linhas = append(ferramentas.linhas, linhaCheck{ui.CheckErro, ts.Name, "ausente", ts.InstallHelp})
 			}
 		}
 		renderChecks(w, []secaoCheck{ferramentas}, "faltam ferramentas")
@@ -72,8 +72,12 @@ Exemplo:
 			return nil
 		}
 
-		// 3. Prompt interativo para instalação das ferramentas faltantes
-		install, _ := prompter.Confirm("Deseja tentar instalar as dependências automaticamente (via brew/apt)?", true)
+		// 3. Prompt interativo para instalação das ferramentas faltantes, só quando há um
+		// gerenciador de pacotes suportado (brew, apt, snap; no Windows, nenhum)
+		install := false
+		if result.Gerenciador != "" {
+			install, _ = prompter.Confirm("Instalar as ferramentas que faltam com o "+result.Gerenciador+"?", true)
+		}
 
 		if install {
 			ui.Section(w, "instalação")
@@ -89,7 +93,10 @@ Exemplo:
 			}
 		} else {
 			fmt.Fprintln(w)
-			ui.Check(w, ui.CheckNeutro, "instale as ferramentas manualmente e rode yby setup de novo", "", "")
+			if result.Gerenciador == "" {
+				ui.Check(w, ui.CheckNeutro, "nenhum gerenciador de pacotes suportado (brew, apt, snap)", "", "")
+			}
+			ui.Check(w, ui.CheckNeutro, "instale pelos links acima e rode yby setup de novo", "", "")
 		}
 
 		// 5. Configurar direnv se perfil dev e direnv disponível

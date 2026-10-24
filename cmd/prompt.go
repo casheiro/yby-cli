@@ -41,7 +41,10 @@ func rodar(campo huh.Field) error {
 	if !stdinTerminal() {
 		return erroSemTerminal()
 	}
-	return huh.NewForm(huh.NewGroup(campo)).WithTheme(ui.HuhTheme()).WithShowHelp(false).Run()
+	tema := ui.HuhTheme()
+	// uma linha em branco separa a pergunta do que o comando já escreveu e some com ela
+	tema.Form.Base = tema.Form.Base.MarginTop(1)
+	return huh.NewForm(huh.NewGroup(campo)).WithTheme(tema).WithShowHelp(false).Run()
 }
 
 func (p *HuhPrompter) Input(title string, defaultVal string) (string, error) {
