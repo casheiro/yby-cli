@@ -7,6 +7,9 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/services/environment"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
 // mockPrompter implementa Prompter para testes
@@ -84,7 +87,10 @@ func TestDestroyCmd_NonLocalEnv_WithoutFlag_Rejected(t *testing.T) {
 
 	err := destroyCmd.RunE(destroyCmd, []string{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "requer a flag --yes-destroy-production")
+	assert.Contains(t, err.Error(), "destruir o ambiente prod pede --yes-destroy-production")
+	var yerr *ybyerrors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "confirme com yby destroy --context prod --yes-destroy-production", yerr.Hint)
 }
 
 func TestDestroyCmd_NonLocalEnv_WithFlag_Cancelado(t *testing.T) {

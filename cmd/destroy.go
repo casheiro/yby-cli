@@ -42,8 +42,8 @@ e confirmação interativa digitando o nome do cluster.`,
 			yesDestroy, _ := cmd.Flags().GetBool("yes-destroy-production")
 			if !yesDestroy {
 				return errors.New(errors.ErrCodeValidation,
-					fmt.Sprintf("destruir ambiente '%s' requer a flag --yes-destroy-production", env)).
-					WithHint("confirme com yby destroy --yes-destroy-production")
+					fmt.Sprintf("destruir o ambiente %s pede --yes-destroy-production", env)).
+					WithHint(fmt.Sprintf("confirme com yby destroy --context %s --yes-destroy-production", env))
 			}
 
 			// Confirmação interativa: ↵ só libera depois de digitado o nome do cluster
