@@ -9,7 +9,7 @@ Feature: Plano de Correção e Validação de Fluxos Críticos
     Then o comando deve finalizar com sucesso
     And o arquivo ".yby/environments.yaml" deve existir
     And o arquivo "config/values-local.yaml" deve existir
-    And a saída deve conter "Projeto inicializado com sucesso"
+    And a saída deve conter "próximo passo: yby env list"
 
   Scenario: Suporte a Monorepo (infra subdir)
     Given que eu estou em um diretório limpo

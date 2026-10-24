@@ -98,7 +98,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - `destroy` confirma por nome.
   - O opt-in de telemetria não trava sem TTY: nesse caso fica desligado.
   - Verificar: comandos com stdin não interativo não travam (teste com pipe).
-- [ ] T025 Transformar o init num único `huh.Form` com grupos e `ui.Rota`.
+- [x] T025 Transformar o init num único `huh.Form` com grupos e `ui.Rota`.
   - Permitir voltar (⇧⇥) e não gravar nada antes do fim.
   - Verificar: golden do assistente; `--non-interactive` igual ao de hoje.
 - [x] T026 Migrar as saídas de doctor, status, setup e validate.
@@ -265,3 +265,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T024 | `HuhPrompter` com `ui.HuhTheme()` (Sim/Não) e sem terminal na entrada devolve erro em vez de abrir o prompt (`Confirm` nunca devolve o padrão por engano); `ConfirmarNome` roda o `ui.Confirmar` destrutivo e o `destroy` de ambiente não-local usa ele (cancelar não destrói); `env create` e `uninstall` (novo `--yes`) usam o `Prompter`; opt-in de telemetria sem terminal não grava nada e fica desligado. Conferido com pipe no binário: setup, env create, uninstall, destroy e primeiro uso não travam. Os dois testes de setup que travavam no Windows passam | este commit |
 | 24/10/2026 | T024 · T026 | Teste do usuário: `setup` só oferece instalar quando há gerenciador suportado (`SetupResult.Gerenciador`; no Windows não há) e mostra o link de instalação de cada ferramenta ausente; pergunta com margem própria (some com o formulário); `env create` avisa que não há projeto antes de pedir o nome. Destroy por nome e prompts no tema conferidos pelo usuário | este commit |
 | 24/10/2026 | — | Instalação do `setup` no Windows (winget/scoop/choco) registrada em "Fora do plano", por decisão do usuário | este commit |
+| 24/10/2026 | T025 | `ui.Assistente` (um `huh.Form` com um grupo por passo e a `ui.Rota` em cima; ⇧⇥ volta, esc/ctrl+c cancelam, `/` não abre filtro) e o init com os passos projeto, ambientes, cluster, módulos, IA e revisão; nada é gravado antes de "Gerar o projeto?", cancelar sai com "○ init cancelado" sem erro, sem terminal pede `--non-interactive`. Saída do init e do `--update` na carta (PROJETO, ARQUIVOS, VALIDAÇÃO, PLANO DE MERGE). Árvore do `--non-interactive` igual byte a byte à de a18740d em 7 combinações (`init_arvore_*.golden`, com o `\| default` dos templates contornado no teste); prompt do campo só "› ". Revisado por 3 lentes e conferido | este commit |

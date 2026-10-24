@@ -42,7 +42,10 @@ func HuhTheme() *huh.Theme {
 		f.Directory = s.Tinta
 		f.File = s.Tinta
 
-		f.TextInput.Prompt = s.Ok.SetString(g.Prompt + " ")
+		// o huh renderiza o prompt do próprio campo ("> ") com este estilo; o Transform
+		// troca o texto inteiro pelo "› " da carta, senão sairiam os dois
+		prompt := func(string) string { return g.Prompt + " " }
+		f.TextInput.Prompt = s.Ok.SetString(g.Prompt + " ").Transform(prompt)
 		f.TextInput.Text = s.Tinta
 		f.TextInput.Placeholder = s.TintaSuave
 		f.TextInput.Cursor = s.Tinta
@@ -58,7 +61,7 @@ func HuhTheme() *huh.Theme {
 			f.NoteTitle = f.Title
 			f.SelectSelector = s.TintaSuave.SetString("  ")
 			f.MultiSelectSelector = s.TintaSuave.SetString("  ")
-			f.TextInput.Prompt = s.TintaSuave.SetString(g.Prompt + " ")
+			f.TextInput.Prompt = s.TintaSuave.SetString(g.Prompt + " ").Transform(prompt)
 			f.SelectedOption = s.Tinta
 		}
 	}
