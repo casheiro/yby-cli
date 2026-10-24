@@ -138,23 +138,24 @@ func Apply(targetDir string, ctx *BlueprintContext, sourceFS fs.FS) error {
 		}
 
 		// 3. Resolve Target Path
-		relPath, err := filepath.Rel("assets", path)
-		if err != nil {
-			return err
-		}
+		// os caminhos de um fs.FS usam sempre "/": o achatamento abaixo trabalha com eles
+		// e só no fim o caminho vira o do sistema (com filepath.Rel, no Windows ele vinha
+		// com "\" e os workflows não eram achatados)
+		relPath := strings.TrimPrefix(path, "assets/")
 
 		// Adjust for Workflow Patterns: Flatten the structure
 		// assets/.github/workflows/gitflow/foo.yaml -> .github/workflows/foo.yaml
-		if strings.Contains(relPath, ".github/workflows/") {
-			parts := strings.Split(relPath, string(filepath.Separator))
+		if strings.HasPrefix(relPath, ".github/workflows/") {
+			parts := strings.Split(relPath, "/")
 			// expected: [.github, workflows, gitflow, foo.yaml]
 			// we want: [.github, workflows, foo.yaml]
 			if len(parts) >= 4 {
 				// Remove the pattern directory (index 2)
 				newParts := append(parts[:2], parts[3:]...)
-				relPath = filepath.Join(newParts...)
+				relPath = strings.Join(newParts, "/")
 			}
 		}
+		relPath = filepath.FromSlash(relPath)
 
 		// 4. Handle Root-Level Assets (.github, .devcontainer, .synapstor)
 		// These should always go to the Project Root (Git Root or Parent), not the targetDir (if it is a subdir)

@@ -2,14 +2,13 @@ resultado: ok
 d .github/
 f 2f1f3b515a77f529f1e89cd5e2f5fb5f0076e2c254a139f213741aa1f1332f48 .github/labels.yml
 d .github/workflows/
-d .github/workflows/gitflow/
-f 76e3f8b8af1fe06d02b5092fa494f4affbcd7e77fca1535fc73c64fa5db7b321 .github/workflows/gitflow/feature-pipeline.yaml
-f 48caad3d95ca9ec48c585046d389021f6c451152c879933075bcf16ee0eefa10 .github/workflows/gitflow/ops-create-cluster.yaml
-f cfd3f84918cde8b6dbd61034e150909c6f3e5ae968edf80675a479aee5e12380 .github/workflows/gitflow/pr-main-checks.yaml
-f fa203380270d11c0b70719d41ee1ac4117fa93223a1e7e06f0b3138b27b332ec .github/workflows/gitflow/release-automation.yaml
-f b19d040baaa0496fc4b20d0de128b7de0b0d0d4cb5202189f3598e8f1fd0df27 .github/workflows/gitflow/reusable-e2e-test.yaml
-f 2e9541b68fab185282d34be0850ba80132be4cd199c10f048789026c18495597 .github/workflows/gitflow/start-release.yaml
-f 2e0debceca3406823c714f5b3e09abb783029fd23151379404ae1dfe9b8dbb59 .github/workflows/gitflow/sync-labels.yaml
+f 76e3f8b8af1fe06d02b5092fa494f4affbcd7e77fca1535fc73c64fa5db7b321 .github/workflows/feature-pipeline.yaml
+f 48caad3d95ca9ec48c585046d389021f6c451152c879933075bcf16ee0eefa10 .github/workflows/ops-create-cluster.yaml
+f cfd3f84918cde8b6dbd61034e150909c6f3e5ae968edf80675a479aee5e12380 .github/workflows/pr-main-checks.yaml
+f fa203380270d11c0b70719d41ee1ac4117fa93223a1e7e06f0b3138b27b332ec .github/workflows/release-automation.yaml
+f b19d040baaa0496fc4b20d0de128b7de0b0d0d4cb5202189f3598e8f1fd0df27 .github/workflows/reusable-e2e-test.yaml
+f 2e9541b68fab185282d34be0850ba80132be4cd199c10f048789026c18495597 .github/workflows/start-release.yaml
+f 2e0debceca3406823c714f5b3e09abb783029fd23151379404ae1dfe9b8dbb59 .github/workflows/sync-labels.yaml
 d infra/
 d infra/.synapstor/
 f 82071892440c1e7e0da084ee7c40d2d79d3aaba94bb6f8df05adf7b8a8834a08 infra/.synapstor/00_PROJECT_OVERVIEW.md

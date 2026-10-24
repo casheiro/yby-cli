@@ -2,10 +2,9 @@ resultado: ok
 d .github/
 f 2f1f3b515a77f529f1e89cd5e2f5fb5f0076e2c254a139f213741aa1f1332f48 .github/labels.yml
 d .github/workflows/
-d .github/workflows/trunkbased/
-f decdae823344c03a622bfe943f4f6e39e9b08ac05df1ae07b9d415e763c2fdec .github/workflows/trunkbased/continuous-deploy.yaml
-f 75b1b2045f8600cea0671c88ec62f55e8384b5d1e4aa828bfc15e1510116d6a4 .github/workflows/trunkbased/pr-main-checks.yaml
-f 31661cdeb1d0d15ea5b5509ad1496ce77aa906f1a437616bd69048d39d1e5a96 .github/workflows/trunkbased/sync-labels.yaml
+f decdae823344c03a622bfe943f4f6e39e9b08ac05df1ae07b9d415e763c2fdec .github/workflows/continuous-deploy.yaml
+f 75b1b2045f8600cea0671c88ec62f55e8384b5d1e4aa828bfc15e1510116d6a4 .github/workflows/pr-main-checks.yaml
+f 31661cdeb1d0d15ea5b5509ad1496ce77aa906f1a437616bd69048d39d1e5a96 .github/workflows/sync-labels.yaml
 d .synapstor/
 f 0967eb4ba3d42f9d960b51827aa547c994bdfa39eb71e11bfba9b04a8117f0fd .synapstor/00_PROJECT_OVERVIEW.md
 f 048396554556ebc9e5398c9c4ebd2cc9328583a9c19227e3d1ab316ab8b8ef01 .synapstor/01_ARCHITECTURE_DECISIONS.md

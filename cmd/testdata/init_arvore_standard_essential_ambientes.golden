@@ -2,9 +2,8 @@ resultado: ok
 d .github/
 f 2f1f3b515a77f529f1e89cd5e2f5fb5f0076e2c254a139f213741aa1f1332f48 .github/labels.yml
 d .github/workflows/
-d .github/workflows/essential/
-f cfd3f84918cde8b6dbd61034e150909c6f3e5ae968edf80675a479aee5e12380 .github/workflows/essential/pr-main-checks.yaml
-f 2e0debceca3406823c714f5b3e09abb783029fd23151379404ae1dfe9b8dbb59 .github/workflows/essential/sync-labels.yaml
+f cfd3f84918cde8b6dbd61034e150909c6f3e5ae968edf80675a479aee5e12380 .github/workflows/pr-main-checks.yaml
+f 2e0debceca3406823c714f5b3e09abb783029fd23151379404ae1dfe9b8dbb59 .github/workflows/sync-labels.yaml
 d .synapstor/
 f f771fd17871ec3ba37f52ec221fc67cfd74802f8de96de59405163b46c3ba29f .synapstor/00_PROJECT_OVERVIEW.md
 f 27f4b7e6b6f6ac40c12f3d24a62f48be94633c2327f11f18c4ac0f61cf1b47c5 .synapstor/01_ARCHITECTURE_DECISIONS.md
