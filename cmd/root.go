@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -111,7 +112,56 @@ func handleExecutionError(err error) {
 		yerr = errors.Wrap(err, "", "Falha inesperada").WithHint(errors.GenericHint)
 	}
 	slog.Debug("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
-	fmt.Fprint(saidaErro, ui.RenderError(yerr))
+	// a linha em branco separa o erro do que o comando já escreveu
+	fmt.Fprintln(saidaErro)
+	ui.WriteError(saidaErro, yerr)
+}
+
+var (
+	reComandoDesconhecido = regexp.MustCompile(`^unknown command "([^"]*)" for "([^"]*)"`)
+	reArgumentos          = regexp.MustCompile(`^(accepts|requires at least|requires at most|accepts between) .*arg\(s\), received \d+`)
+)
+
+// traduzirErroDeUso troca os erros de uso do cobra (comando desconhecido, número de
+// argumentos) por um YbyError em português com a dica de ajuda; cmd é o comando que o
+// cobra encontrou. Os demais erros voltam como estão.
+func traduzirErroDeUso(err error, cmd *cobra.Command) error {
+	if err == nil {
+		return nil
+	}
+	var yerr *errors.YbyError
+	if stdErr.As(err, &yerr) {
+		return err
+	}
+	msg := err.Error()
+	if m := reComandoDesconhecido.FindStringSubmatch(msg); m != nil {
+		hint := "rode " + m[2] + " --help para ver os comandos"
+		if sugestoes := sugestoesDoCobra(msg); len(sugestoes) > 0 {
+			hint = "você quis dizer " + m[2] + " " + strings.Join(sugestoes, " ou "+m[2]+" ") + "?"
+		}
+		return errors.New(errors.ErrCodeValidation, "comando desconhecido: "+m[2]+" "+m[1]).WithHint(hint)
+	}
+	if cmd != nil && reArgumentos.MatchString(msg) {
+		return errors.Wrap(err, errors.ErrCodeValidation, "argumentos inválidos para "+cmd.CommandPath()).
+			WithHint("rode " + cmd.CommandPath() + " --help para ver o uso")
+	}
+	return err
+}
+
+// sugestoesDoCobra extrai os nomes listados depois de "Did you mean this?".
+func sugestoesDoCobra(msg string) []string {
+	_, depois, ok := strings.Cut(msg, "Did you mean this?")
+	if !ok {
+		return nil
+	}
+	return strings.Fields(depois)
+}
+
+// erroDeFlag é o FlagErrorFunc do rootCmd (herdado pelos subcomandos): flag desconhecida
+// ou sem valor vira YbyError com a dica de ajuda do comando.
+func erroDeFlag(cmd *cobra.Command, err error) error {
+	return errors.Wrap(err, errors.ErrCodeValidation, "flag inválida para "+cmd.CommandPath()).
+		WithHint("rode " + cmd.CommandPath() + " --help para ver as flags")
 }
 
 // logExecutionError registra o erro via slog, um registro por campo (formato json).
@@ -141,7 +191,8 @@ func Execute() {
 	discoverPlugins(rootCmd, pm)
 
 	start := time.Now()
-	err := rootCmd.Execute()
+	cmd, err := rootCmd.ExecuteC()
+	err = traduzirErroDeUso(err, cmd)
 
 	telemetry.Record("yby-cli", time.Since(start), err)
 	telemetry.Flush()
@@ -161,6 +212,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&contextFlag, "context", "c", "", "Define o contexto de execução (ex: local, staging, prod)")
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "info", "Nível de log (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVar(&logFormatFlag, "log-format", "text", "Formato de log (text, json)")
+	rootCmd.SetFlagErrorFunc(erroDeFlag)
 
 }
 

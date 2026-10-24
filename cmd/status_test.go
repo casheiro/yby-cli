@@ -31,7 +31,7 @@ func TestStatusCmd_WithMock(t *testing.T) {
 				ArgoCD:  status.ComponentStatus{Available: true, Output: "argocd-server Running"},
 				Ingress: status.ComponentStatus{Available: true, Output: "my-ing nginx"},
 				KEDA:    status.ComponentStatus{Available: true, Output: "my-scaler"},
-				Kepler:  status.ComponentStatus{Available: true, Message: "Sensor Kepler ATIVO e monitorando o cluster.", Output: "kepler Running"},
+				Kepler:  status.ComponentStatus{Available: true, Message: status.MensagemKeplerAtivo, Output: "kepler Running"},
 			},
 		}
 	}
@@ -83,16 +83,13 @@ func TestRenderStatusReport_Golden(t *testing.T) {
 		{"status_ativo", &status.StatusReport{
 			Nodes:   status.ComponentStatus{Available: true, Output: "NAME     STATUS   ROLES           AGE\nnode1    Ready    control-plane   3d\n"},
 			ArgoCD:  status.ComponentStatus{Available: true, Output: "NAME                 READY   STATUS\nargocd-server-abc    1/1     Running\n"},
-			Ingress: status.ComponentStatus{Available: true, Message: "Nenhum ingress encontrado."},
-			KEDA:    status.ComponentStatus{Available: false, Message: "KEDA não detectado (CRDs ausentes?)"},
-			Kepler:  status.ComponentStatus{Available: true, Output: "kepler-x Running", Message: "Sensor Kepler ATIVO e monitorando o cluster."},
+			Ingress: status.ComponentStatus{Available: true, Message: "nenhum ingress encontrado"},
+			KEDA:    status.ComponentStatus{Available: false, Message: "KEDA não detectado · CRDs ausentes?"},
+			Kepler:  status.ComponentStatus{Available: true, Output: "kepler-x Running", Message: status.MensagemKeplerAtivo},
 		}},
 		{"status_sem_cluster", &status.StatusReport{
-			Nodes:   status.ComponentStatus{Available: false, Output: "The connection to the server localhost:6443 was refused\n", Message: "Erro ao obter nodes (Cluster rodando?)"},
-			ArgoCD:  status.ComponentStatus{Available: false, Message: "Namespace argocd não encontrado ou vazio."},
-			Ingress: status.ComponentStatus{Available: false, Message: "Erro ao obter ingresses."},
-			KEDA:    status.ComponentStatus{Available: false, Message: "KEDA não detectado (CRDs ausentes?)"},
-			Kepler:  status.ComponentStatus{Available: false, Message: "Sensor Kepler não encontrado no namespace 'kepler'."},
+			SemCluster: true,
+			Nodes:      status.ComponentStatus{Available: false, Output: "The connection to the server localhost:6443 was refused\n", Message: "sem acesso ao cluster"},
 		}},
 	}
 	for _, c := range casos {

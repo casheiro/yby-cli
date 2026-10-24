@@ -91,6 +91,8 @@ func Check(w io.Writer, tipo TipoCheck, nome, versao, nota string) {
 }
 
 // CheckCom é Check com larguras de coluna escolhidas pelo chamador (ver ColunasPara).
+// Quando w é um terminal e a nota não cabe na linha, ela quebra entre palavras e
+// continua alinhada na coluna da nota.
 func CheckCom(w io.Writer, col Colunas, tipo TipoCheck, nome, versao, nota string) {
 	s, g := S(), G()
 	var glifo string
@@ -105,16 +107,25 @@ func CheckCom(w io.Writer, col Colunas, tipo TipoCheck, nome, versao, nota strin
 	default:
 		glifo, est = g.Parado, s.TintaSuave
 	}
-	corpo := nome
+	corpo, notas, recuo := nome, []string{""}, 0
 	if nota != "" || versao != "" {
-		corpo = coluna(nome, col.Nome) + coluna(versao, col.Versao) + nota
+		corpo = coluna(nome, col.Nome) + coluna(versao, col.Versao)
+		// a nota começa depois da margem, do glifo com espaço e das colunas
+		recuo = 3 + lipgloss.Width(glifo) + lipgloss.Width(corpo)
+		notas = Quebrar(nota, larguraDe(w)-recuo)
+		corpo += notas[0]
 	}
 	corpo = strings.TrimRight(corpo, " ")
+	texto := s.Tinta
 	if tipo == CheckNeutro {
-		fmt.Fprintln(w, "  "+s.TintaSuave.Render(glifo+" "+corpo))
-		return
+		texto = s.TintaSuave
+		fmt.Fprintln(w, "  "+texto.Render(glifo+" "+corpo))
+	} else {
+		fmt.Fprintln(w, "  "+est.Render(glifo)+" "+texto.Render(corpo))
 	}
-	fmt.Fprintln(w, "  "+est.Render(glifo)+" "+s.Tinta.Render(corpo))
+	for _, n := range notas[1:] {
+		fmt.Fprintln(w, strings.Repeat(" ", recuo)+texto.Render(n))
+	}
 }
 
 func plural(n int, singular, plur string) string {
@@ -150,28 +161,55 @@ func linhaUnica(s string) string {
 // RenderError formata um YbyError: título com o código à direita, depois as linhas
 // "causa", "faça" (hint em negrito; usa o hint automático do registry quando o erro não
 // tem um) e "detalhes" (contexto diagnóstico ou, na falta dele, a dica de depuração
-// quando o hint ainda não a traz).
-func RenderError(e *yerrors.YbyError) string {
+// quando o erro tem causa, que o debug detalha, e o hint ainda não a traz).
+func RenderError(e *yerrors.YbyError) string { return renderErro(e, 0) }
+
+// WriteError escreve em w o erro formatado por RenderError. Quando w é um terminal, os
+// textos quebram entre palavras na largura dele e, se o título não cabe com o código à
+// direita, o código vai para uma linha "código" no fim.
+func WriteError(w io.Writer, e *yerrors.YbyError) {
+	fmt.Fprint(w, renderErro(e, larguraDe(w)))
+}
+
+// renderErro implementa RenderError; com largura > 0 quebra os textos nessa largura.
+func renderErro(e *yerrors.YbyError, largura int) string {
 	if e == nil {
 		return ""
 	}
 	s := S()
 	var b strings.Builder
-	titulo := s.Erro.Render(G().Falha) + " " + s.Negrito.Render(linhaUnica(e.Message))
-	if e.Code != "" {
-		titulo = duasPontas(titulo, s.TintaSuave.Render(e.Code), msgLargura)
+	msg := linhaUnica(e.Message)
+	larguraTitulo := msgLargura
+	if largura > 0 {
+		larguraTitulo = min(msgLargura, largura)
+	}
+	codigoAoLado := e.Code != "" && (largura <= 0 || 4+lipgloss.Width(msg)+lipgloss.Width(e.Code) <= largura)
+	partes := []string{msg}
+	if !codigoAoLado {
+		partes = Quebrar(msg, largura-2)
+	}
+	titulo := s.Erro.Render(G().Falha) + " " + s.Negrito.Render(partes[0])
+	if codigoAoLado {
+		titulo = duasPontas(titulo, s.TintaSuave.Render(e.Code), larguraTitulo)
 	}
 	b.WriteString(titulo + "\n")
+	for _, p := range partes[1:] {
+		b.WriteString("  " + s.Negrito.Render(p) + "\n")
+	}
 
-	linha := func(rotulo, texto string) {
-		b.WriteString("  " + s.Rotulo.Render(padDireita(rotulo, 10)) + texto + "\n")
+	linha := func(rotulo, texto string, estilo lipgloss.Style) {
+		partes := Quebrar(linhaUnica(texto), largura-12)
+		b.WriteString("  " + s.Rotulo.Render(padDireita(rotulo, 10)) + estilo.Render(partes[0]) + "\n")
+		for _, p := range partes[1:] {
+			b.WriteString(strings.Repeat(" ", 12) + estilo.Render(p) + "\n")
+		}
 	}
 	if e.Cause != nil {
-		linha("causa", s.Tinta.Render(linhaUnica(textoCausa(e.Cause))))
+		linha("causa", textoCausa(e.Cause), s.Tinta)
 	}
 	hint := e.GetHint()
 	if hint != "" {
-		linha("faça", s.Negrito.Render(linhaUnica(hint)))
+		linha("faça", hint, s.Negrito)
 	}
 	if len(e.Context) > 0 {
 		chaves := make([]string, 0, len(e.Context))
@@ -183,9 +221,12 @@ func RenderError(e *yerrors.YbyError) string {
 		for i, k := range chaves {
 			pares[i] = fmt.Sprintf("%s=%v", k, e.Context[k])
 		}
-		linha("detalhes", s.TintaSuave.Render(linhaUnica(strings.Join(pares, " · "))))
-	} else if !strings.Contains(hint, "--log-level=debug") {
-		linha("detalhes", s.TintaSuave.Render("rode de novo com --log-level=debug"))
+		linha("detalhes", strings.Join(pares, " · "), s.TintaSuave)
+	} else if e.Cause != nil && !strings.Contains(hint, "--log-level=debug") {
+		linha("detalhes", "rode de novo com --log-level=debug", s.TintaSuave)
+	}
+	if e.Code != "" && !codigoAoLado {
+		linha("código", e.Code, s.TintaSuave)
 	}
 	return b.String()
 }

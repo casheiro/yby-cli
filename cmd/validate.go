@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/pkg/services/validate"
 	"github.com/casheiro/yby-cli/pkg/ui"
@@ -29,6 +30,11 @@ que os charts Helm estão válidos antes do commit.
 Equivalente ao antigo 'make validate'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := cmd.OutOrStdout()
+
+		if _, err := lookPath("helm"); err != nil {
+			return errors.New(errors.ErrCodeCmdNotFound, "helm não encontrado").
+				WithHint("instale o helm (https://helm.sh/docs/intro/install) e rode yby validate de novo")
+		}
 
 		root, err := FindInfraRoot()
 		if err != nil {

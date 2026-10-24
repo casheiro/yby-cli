@@ -166,6 +166,15 @@ func TestRenderErrorVariacoes(t *testing.T) {
 	if strings.Contains(out, "  detalhes  ") {
 		t.Errorf("detalhes repete a dica do hint:\n%s", out)
 	}
+	// com causa e sem contexto, detalhes manda depurar; sem causa, a linha some
+	out = RenderError(yerrors.Wrap(stderrors.New("boom"), yerrors.ErrCodeCmdNotFound, "falhou"))
+	if !strings.Contains(out, "  detalhes  rode de novo com --log-level=debug\n") {
+		t.Errorf("faltou a dica de depuração:\n%s", out)
+	}
+	out = RenderError(yerrors.New(yerrors.ErrCodeCmdNotFound, "falhou"))
+	if strings.Contains(out, "detalhes") {
+		t.Errorf("sem causa não deveria haver detalhes:\n%s", out)
+	}
 	// causa YbyError aninhada: mensagens encadeadas, sem o prefixo [CODE]
 	interno := yerrors.Wrap(stderrors.New("arquivo ausente"), yerrors.ErrCodePlugin, "origem não encontrada")
 	out = RenderError(yerrors.Wrap(interno, yerrors.ErrCodePlugin, "Erro ao instalar plugin"))

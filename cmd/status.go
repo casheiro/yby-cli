@@ -44,7 +44,8 @@ Equivalente ao antigo 'make status'.`,
 }
 
 // renderStatusReport escreve o relatório de status: uma seção por componente, com a
-// saída do kubectl recuada ou uma linha de verificação quando não há o que listar.
+// saída do kubectl recuada ou uma linha de verificação quando não há o que listar. Sem
+// acesso ao cluster, os componentes aparecem neutros com "sem cluster".
 func renderStatusReport(w io.Writer, report *status.StatusReport, quando time.Time) {
 	ui.Title(w, "status", quando.Format("02/01 15:04"))
 
@@ -54,6 +55,14 @@ func renderStatusReport(w io.Writer, report *status.StatusReport, quando time.Ti
 		saidaRecuada(w, report.Nodes.Output, true)
 	} else {
 		saidaRecuada(w, report.Nodes.Output, false)
+	}
+
+	if report.SemCluster {
+		for _, secao := range []string{"argo cd", "ingresses", "autoscaling · keda", "eficiência energética · kepler"} {
+			ui.Section(w, secao)
+			ui.Check(w, ui.CheckNeutro, "sem cluster", "", "")
+		}
+		return
 	}
 
 	componente := func(secao string, c status.ComponentStatus) {
@@ -75,7 +84,7 @@ func renderStatusReport(w io.Writer, report *status.StatusReport, quando time.Ti
 	switch {
 	case !report.Kepler.Available:
 		ui.Check(w, ui.CheckNeutro, report.Kepler.Message, "", "")
-	case report.Kepler.Output != "" && report.Kepler.Message == "Sensor Kepler ATIVO e monitorando o cluster.":
+	case report.Kepler.Output != "" && report.Kepler.Message == status.MensagemKeplerAtivo:
 		ui.Check(w, ui.CheckOk, report.Kepler.Message, "", "")
 	default:
 		ui.Check(w, ui.CheckAviso, report.Kepler.Message, "", "")
@@ -84,7 +93,8 @@ func renderStatusReport(w io.Writer, report *status.StatusReport, quando time.Ti
 
 // saidaRecuada escreve a saída de um comando externo sem a quebra de linha final:
 // recuada em 2 células e em Tinta quando é o conteúdo da seção; com detalhe, é o
-// complemento da linha de verificação acima, recuado em 4 células e em TintaSuave.
+// complemento da linha de verificação acima, recuado em 4 células, em TintaSuave e com
+// as linhas longas quebradas na largura do terminal.
 func saidaRecuada(w io.Writer, saida string, detalhe bool) {
 	saida = strings.TrimRight(saida, "\n")
 	if saida == "" {
@@ -95,7 +105,13 @@ func saidaRecuada(w io.Writer, saida string, detalhe bool) {
 		recuo, estilo = "    ", ui.S().TintaSuave
 	}
 	for _, l := range strings.Split(saida, "\n") {
-		fmt.Fprintln(w, recuo+estilo.Render(strings.TrimRight(l, "\r")))
+		partes := []string{strings.TrimRight(l, "\r")}
+		if detalhe {
+			partes = ui.Quebrar(partes[0], ui.Largura(w)-len(recuo))
+		}
+		for _, p := range partes {
+			fmt.Fprintln(w, recuo+estilo.Render(p))
+		}
 	}
 }
 

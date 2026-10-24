@@ -81,7 +81,7 @@ func relatorioComFalhas() *doctor.DoctorReport {
 			{Name: "Sealed Secrets", Status: false, Message: "Não encontrado (opcional)", Opcional: true},
 		},
 		Cluster: []doctor.CheckResult{
-			{Name: "Conexão", Status: false, Message: "Verifique o KUBECONFIG ou se o cluster está rodando."},
+			{Name: "Conexão", Status: false, Message: "confira o KUBECONFIG ou se o cluster está no ar"},
 		},
 		CRDs: []doctor.CheckResult{
 			{Name: "Prometheus Operator", Status: false, Message: "Ausente (CRD não instalado)"},

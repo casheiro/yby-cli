@@ -79,7 +79,7 @@ func (s *doctorService) checkDockerPermissions(ctx context.Context) CheckResult 
 func (s *doctorService) checkClusterConnection(ctx context.Context) CheckResult {
 	_, err := s.runner.RunCombinedOutput(ctx, "kubectl", "--insecure-skip-tls-verify", "get", "nodes")
 	if err != nil {
-		return CheckResult{Name: "Conexão", Status: false, Message: "Verifique o KUBECONFIG ou se o cluster está rodando."}
+		return CheckResult{Name: "Conexão", Status: false, Message: "confira o KUBECONFIG ou se o cluster está no ar"}
 	}
 	return CheckResult{Name: "Conexão", Status: true, Message: "OK"}
 }

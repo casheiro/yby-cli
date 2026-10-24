@@ -10,7 +10,7 @@ FERRAMENTAS
   o Sealed Secrets       ausente     opcional
 
 CLUSTER
-  ! conexão              sem acesso  Verifique o KUBECONFIG ou se o cluster está rodando.
+  ! conexão              sem acesso  confira o KUBECONFIG ou se o cluster está no ar
 
 PLATAFORMA
   o Prometheus Operator  sem cluster

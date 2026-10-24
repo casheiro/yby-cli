@@ -56,12 +56,12 @@ func TestHandleExecutionError_Texto_ComHint(t *testing.T) {
 
 	saida, registros := capturarErro(t, "text", "info", yerr)
 
-	linhas := strings.Split(strings.TrimRight(saida, "\n"), "\n")
-	require.Len(t, linhas, 3)
+	require.True(t, strings.HasPrefix(saida, "\n"), "o erro começa com uma linha em branco")
+	linhas := strings.Split(strings.Trim(saida, "\n"), "\n")
+	require.Len(t, linhas, 2, "sem causa, não há o que o debug detalhar")
 	assert.True(t, strings.HasPrefix(linhas[0], "✕ Não deu para falar com o cluster staging"))
 	assert.True(t, strings.HasSuffix(linhas[0], "ERR_CLUSTER_OFFLINE"))
 	assert.Equal(t, "  faça      yby cloud refresh --provider aws", linhas[1])
-	assert.Equal(t, "  detalhes  rode de novo com --log-level=debug", linhas[2])
 	assert.Empty(t, registros, "no formato text o erro não passa pelo slog")
 }
 
@@ -79,7 +79,7 @@ func TestHandleExecutionError_Texto_HintDoRegistry(t *testing.T) {
 func TestHandleExecutionError_Texto_ErroGenerico(t *testing.T) {
 	saida, _ := capturarErro(t, "text", "info", fmt.Errorf("erro genérico inesperado"))
 
-	assert.Equal(t, "✕ Falha inesperada\n"+
+	assert.Equal(t, "\n✕ Falha inesperada\n"+
 		"  causa     erro genérico inesperado\n"+
 		"  faça      "+errors.GenericHint+"\n", saida)
 }
@@ -146,4 +146,58 @@ func TestHandleExecutionError_SemInitConfig_UsaFlag(t *testing.T) {
 
 	assert.Empty(t, saida)
 	assert.Len(t, registros, 2)
+}
+
+// ========================================================
+// traduzirErroDeUso e erroDeFlag — erros de uso do cobra
+// ========================================================
+
+func TestTraduzirErroDeUso_ComandoDesconhecido(t *testing.T) {
+	err := traduzirErroDeUso(fmt.Errorf(`unknown command "comando-inexistente" for "yby"`), rootCmd)
+
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, errors.ErrCodeValidation, yerr.Code)
+	assert.Equal(t, "comando desconhecido: yby comando-inexistente", yerr.Message)
+	assert.Equal(t, "rode yby --help para ver os comandos", yerr.Hint)
+}
+
+func TestTraduzirErroDeUso_ComSugestoes(t *testing.T) {
+	err := traduzirErroDeUso(fmt.Errorf("unknown command \"stat\" for \"yby\"\n\nDid you mean this?\n\tstatus\n\tsetup\n"), rootCmd)
+
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "comando desconhecido: yby stat", yerr.Message)
+	assert.Equal(t, "você quis dizer yby status ou yby setup?", yerr.Hint)
+}
+
+func TestTraduzirErroDeUso_Argumentos(t *testing.T) {
+	err := traduzirErroDeUso(fmt.Errorf("accepts 1 arg(s), received 0"), statusCmd)
+
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "argumentos inválidos para yby status", yerr.Message)
+	assert.Equal(t, "rode yby status --help para ver o uso", yerr.Hint)
+	assert.EqualError(t, yerr.Cause, "accepts 1 arg(s), received 0")
+}
+
+func TestTraduzirErroDeUso_MantemOsDemais(t *testing.T) {
+	assert.NoError(t, traduzirErroDeUso(nil, rootCmd))
+
+	generico := fmt.Errorf("falha qualquer")
+	assert.Same(t, generico, traduzirErroDeUso(generico, rootCmd))
+
+	yerr := errors.New(errors.ErrCodeIO, "unknown command \"x\" for \"yby\"")
+	assert.Same(t, yerr, traduzirErroDeUso(yerr, rootCmd), "YbyError não é traduzido")
+}
+
+func TestErroDeFlag(t *testing.T) {
+	err := erroDeFlag(statusCmd, fmt.Errorf("unknown flag: --xpto"))
+
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, errors.ErrCodeValidation, yerr.Code)
+	assert.Equal(t, "flag inválida para yby status", yerr.Message)
+	assert.Equal(t, "rode yby status --help para ver as flags", yerr.Hint)
+	assert.NotNil(t, rootCmd.FlagErrorFunc(), "o rootCmd registra o erroDeFlag")
 }

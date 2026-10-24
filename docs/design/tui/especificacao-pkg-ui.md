@@ -103,6 +103,8 @@ RESUMO  4 ok · 1 aviso · 1 erro  · o erro impede yby up          ← Summary
 
 Colunas de `Check`: nome com 12 células e versão com 10; quando o texto enche a coluna, segue com 2 espaços. Para alinhar um relatório com nomes longos (ex.: `Prometheus Operator`), `CheckCom(w, ColunasPara(nomes...), …)` alarga a coluna do nome até o mais largo + 2.
 
+Largura do terminal **(decisão)**: quando `w` é um terminal (`ui.Largura(w) > 0`), a nota de `Check` quebra entre palavras e continua alinhada na coluna da nota; fora do terminal (pipe, arquivo) nada quebra. `ui.Quebrar(texto, largura)` faz a quebra (não quebra abaixo de 16 células nem parte palavras, como caminhos).
+
 `Steps` (yby up): `  ✓ cluster yby-local   criado   38 s` / `  ◈ argo cd   ━━━━┄┄ 64%   25 s` / `  ◇ root-app`.
 
 Erro (`RenderError(*errors.YbyError)`):
@@ -113,6 +115,8 @@ Erro (`RenderError(*errors.YbyError)`):
   faça      yby cloud refresh --provider aws          ← hint, em negrito
   detalhes  rode de novo com --log-level=debug
 ```
+
+`WriteError(w, e)` escreve o mesmo bloco ajustado ao terminal: causa, faça e detalhes quebram com recuo de 12 células; se o título não cabe com o código à direita, ele quebra e o código vai para uma linha `código` no fim. A linha `detalhes` com a dica de depuração só aparece quando o erro tem causa (é o que o debug detalha) e o hint ainda não manda depurar. Os comandos escrevem o erro depois de uma linha em branco.
 
 ## 8. Teclas (`keys.go`, folha 04)
 

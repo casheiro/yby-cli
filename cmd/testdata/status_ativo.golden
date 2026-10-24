@@ -9,10 +9,10 @@ ARGO CD
   argocd-server-abc    1/1     Running
 
 INGRESSES
-  ○ Nenhum ingress encontrado.
+  ○ nenhum ingress encontrado
 
 AUTOSCALING · KEDA
-  ▲ KEDA não detectado (CRDs ausentes?)
+  ▲ KEDA não detectado · CRDs ausentes?
 
 EFICIÊNCIA ENERGÉTICA · KEPLER
-  ✓ Sensor Kepler ATIVO e monitorando o cluster.
+  ✓ sensor Kepler ativo e monitorando o cluster
