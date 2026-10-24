@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -14,7 +12,6 @@ import (
 // Variáveis mockáveis para testes
 var osExecutable = os.Executable
 var osRemove = os.Remove
-var stdinReader io.Reader = os.Stdin
 
 // uninstallCmd represents the uninstall command
 var uninstallCmd = &cobra.Command{
@@ -31,16 +28,16 @@ Arquivos de configuração e dados em ~/.yby PAG não serã removidos automatica
 
 		fmt.Println(titleStyle.Render("🗑️  Yby Uninstall"))
 		fmt.Printf("O executável localizado em: %s será removido.\n", exePath)
-		fmt.Println(warningStyle.Render("⚠️  Tem certeza que deseja continuar? (y/N)"))
-
-		reader := bufio.NewReader(stdinReader)
-		fmt.Print("-> ")
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-
-		if response != "y" && response != "s" && response != "sim" && response != "yes" {
-			fmt.Println("Operação cancelada.")
-			return nil
+		if sim, _ := cmd.Flags().GetBool("yes"); !sim {
+			confirmado, err := prompter.Confirm("Remover o Yby CLI deste computador?", false)
+			if err != nil {
+				return errors.Wrap(err, errors.ErrCodeValidation, "desinstalação não confirmada").
+					WithHint("rode yby uninstall num terminal ou confirme com yby uninstall --yes")
+			}
+			if !confirmado {
+				fmt.Println("Operação cancelada.")
+				return nil
+			}
 		}
 
 		fmt.Printf("Removendo %s... ", exePath)
@@ -60,4 +57,5 @@ Arquivos de configuração e dados em ~/.yby PAG não serã removidos automatica
 
 func init() {
 	rootCmd.AddCommand(uninstallCmd)
+	uninstallCmd.Flags().BoolP("yes", "y", false, "Remove sem perguntar (para scripts e terminais não interativos)")
 }

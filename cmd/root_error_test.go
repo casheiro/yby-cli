@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -200,4 +202,32 @@ func TestErroDeFlag(t *testing.T) {
 	assert.Equal(t, "flag inválida para yby status", yerr.Message)
 	assert.Equal(t, "rode yby status --help para ver as flags", yerr.Hint)
 	assert.NotNil(t, rootCmd.FlagErrorFunc(), "o rootCmd registra o erroDeFlag")
+}
+
+// ========================================================
+// askTelemetryOptIn — primeiro uso
+// ========================================================
+
+func TestAskTelemetryOptIn_SemTerminal_NaoGrava(t *testing.T) {
+	oldPrompter := prompter
+	t.Cleanup(func() { prompter = oldPrompter })
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return false, erroSemTerminal() }}
+
+	configPath := filepath.Join(t.TempDir(), ".yby", "config.yaml")
+	askTelemetryOptIn(configPath)
+
+	assert.NoFileExists(t, configPath, "sem terminal nada é gravado e a telemetria fica desligada")
+}
+
+func TestAskTelemetryOptIn_Aceita(t *testing.T) {
+	oldPrompter := prompter
+	t.Cleanup(func() { prompter = oldPrompter })
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return true, nil }}
+
+	configPath := filepath.Join(t.TempDir(), ".yby", "config.yaml")
+	askTelemetryOptIn(configPath)
+
+	conteudo, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, "telemetry:\n  enabled: true\n", string(conteudo))
 }

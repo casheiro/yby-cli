@@ -40,6 +40,10 @@ func (m *mockSetupSvc) ConfigureDirenv(workDir string) error {
 func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
 	original := newSetupService
 	defer func() { newSetupService = original }()
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	// sem terminal, o Confirm devolve false com erro: nada é instalado
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return false, erroSemTerminal() }}
 
 	mockSvc := &mockSetupSvc{
 		checkToolsResult: &setup.SetupResult{
@@ -59,7 +63,6 @@ func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
 
 	setupCmd.Flags().Set("profile", "dev")
 
-	// O survey.AskOne vai falhar silenciosamente sem stdin interativo
 	capturarStdout(t, func() {
 		err := setupCmd.RunE(setupCmd, []string{})
 		assert.NoError(t, err)
@@ -69,6 +72,10 @@ func TestSetupCmd_DevProfile_FerramentasFaltando(t *testing.T) {
 func TestSetupCmd_ServerProfile_FerramentasFaltando(t *testing.T) {
 	original := newSetupService
 	defer func() { newSetupService = original }()
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	// sem terminal, o Confirm devolve false com erro: nada é instalado
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return false, erroSemTerminal() }}
 
 	mockSvc := &mockSetupSvc{
 		checkToolsResult: &setup.SetupResult{

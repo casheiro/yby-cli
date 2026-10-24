@@ -92,7 +92,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 - [x] T023 Usar `ui.RenderError` em `handleExecutionError` (`cmd/root.go`).
   - Com `--log-format json`, a saída fica idêntica à de hoje.
   - Verificar: testes de erro com e sem hint, em texto e em JSON.
-- [ ] T024 Unificar os prompts.
+- [x] T024 Unificar os prompts.
   - `cmd/prompt.go` aplica `ui.HuhTheme()`.
   - `env create` (`fmt.Scanln`) e `uninstall` (`bufio` y/N) passam a usar o `Prompter`.
   - `destroy` confirma por nome.
@@ -256,3 +256,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T026 | doctor, status, setup e validate com `ui.Title`, `Section`, `Check` e `Summary`; goldens em `cmd/testdata`; doctor sem despejar a saída de `docker info`/`kubectl` (`RunCombinedOutput`), `Opcional` no `CheckResult`, CRDs "sem cluster" quando a conexão falha; `ui.CheckCom`/`ColunasPara` para nomes longos. Conferido em `bin/yby.exe`. `yby setup` sem TTY trava no confirm (já travava antes; fica para a T024) | este commit |
 | 24/10/2026 | T023 · T026 | Ajustes do teste do usuário no Windows Terminal: notas de `Check`, erros (`ui.WriteError`) e detalhes do `status` quebram na largura do terminal (`ui.Largura`, `ui.Quebrar`); erro depois de uma linha em branco; "detalhes · debug" só com causa; comando desconhecido, flag e argumentos inválidos viram `ERR_VALIDATION` em português com a dica de ajuda (e "você quis dizer"); `status` para nos nodes sem cluster e mostra o resto "sem cluster"; `validate` confere o helm antes; mensagens de doctor e status no tom da carta | este commit |
 | 24/10/2026 | T023 · T026 | Segundo teste do usuário (janela estreita): nota de `Check` que não cabe desce inteira sob o nome (não parte `C:\Program Files\…`); `Title` na largura do terminal, direita desce se não couber; frase do `Summary` desce sob a contagem. Saída redirecionada conferida sem quebra nem cor | este commit |
+| 24/10/2026 | T024 | `HuhPrompter` com `ui.HuhTheme()` (Sim/Não) e sem terminal na entrada devolve erro em vez de abrir o prompt (`Confirm` nunca devolve o padrão por engano); `ConfirmarNome` roda o `ui.Confirmar` destrutivo e o `destroy` de ambiente não-local usa ele (cancelar não destrói); `env create` e `uninstall` (novo `--yes`) usam o `Prompter`; opt-in de telemetria sem terminal não grava nada e fica desligado. Conferido com pipe no binário: setup, env create, uninstall, destroy e primeiro uso não travam. Os dois testes de setup que travavam no Windows passam | este commit |

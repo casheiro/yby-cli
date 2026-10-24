@@ -7,6 +7,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/environment"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -44,17 +45,15 @@ e confirmação interativa digitando o nome do cluster.`,
 					WithHint("Use: yby destroy --yes-destroy-production")
 			}
 
-			// Confirmação interativa: digitar o nome do cluster
-			typed, err := prompter.Input(
-				fmt.Sprintf("Digite o nome do cluster '%s' para confirmar a destruição:", clusterName),
-				"",
-			)
+			// Confirmação interativa: ↵ só libera depois de digitado o nome do cluster
+			confirmado, err := prompter.ConfirmarNome("destruir cluster", clusterName)
 			if err != nil {
-				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler confirmação")
+				return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler confirmação").
+					WithHint("rode yby destroy num terminal interativo para digitar o nome do cluster")
 			}
-			if typed != clusterName {
-				return errors.New(errors.ErrCodeValidation,
-					fmt.Sprintf("nome digitado '%s' não confere com o cluster '%s'. Destruição cancelada", typed, clusterName))
+			if !confirmado {
+				ui.Check(cmd.OutOrStdout(), ui.CheckNeutro, "destruição cancelada", "", "")
+				return nil
 			}
 		}
 

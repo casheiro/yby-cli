@@ -262,6 +262,8 @@ func initConfig(cmd *cobra.Command, args []string) {
 }
 
 // askTelemetryOptIn pergunta ao usuário se deseja habilitar telemetria no primeiro uso.
+// Sem terminal (pipe, CI) a pergunta não abre: nada é gravado, a telemetria fica
+// desligada (padrão do config) e a pergunta volta no próximo uso num terminal.
 func askTelemetryOptIn(configPath string) {
 	enabled, err := prompter.Confirm("Deseja habilitar telemetria anônima para ajudar a melhorar o Yby CLI?", false)
 	if err != nil {

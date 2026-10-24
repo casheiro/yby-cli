@@ -6,6 +6,7 @@ package cmd
 import (
 	gocontext "context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/cloud"
@@ -173,9 +174,16 @@ var envCreateCmd = &cobra.Command{
 
 		// Interactive prompts if needed
 		if name == "" {
-			fmt.Print("Nome do ambiente (ex: qa, uat): ")
-			if _, err := fmt.Scanln(&name); err != nil {
-				return errors.Wrap(err, errors.ErrCodeValidation, "Prompt cancelado")
+			var err error
+			name, err = prompter.Input("Nome do ambiente (ex: qa, uat)", "")
+			if err != nil {
+				return errors.Wrap(err, errors.ErrCodeValidation, "nome do ambiente não informado").
+					WithHint("informe o nome: yby env create <nome>")
+			}
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return errors.New(errors.ErrCodeValidation, "nome do ambiente vazio").
+					WithHint("informe o nome: yby env create <nome>")
 			}
 		}
 		if envType == "" {

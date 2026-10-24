@@ -11,8 +11,9 @@ import (
 
 // mockPrompter implementa Prompter para testes
 type mockPrompter struct {
-	inputFunc   func(title string, defaultVal string) (string, error)
-	confirmFunc func(title string, defaultVal bool) (bool, error)
+	inputFunc         func(title string, defaultVal string) (string, error)
+	confirmFunc       func(title string, defaultVal bool) (bool, error)
+	confirmarNomeFunc func(acao, nome string) (bool, error)
 }
 
 func (m *mockPrompter) Input(title string, defaultVal string) (string, error) {
@@ -37,6 +38,13 @@ func (m *mockPrompter) Select(title string, options []string, defaultVal string)
 
 func (m *mockPrompter) MultiSelect(title string, options []string, defaults []string) ([]string, error) {
 	return nil, nil
+}
+
+func (m *mockPrompter) ConfirmarNome(acao, nome string) (bool, error) {
+	if m.confirmarNomeFunc != nil {
+		return m.confirmarNomeFunc(acao, nome)
+	}
+	return false, nil
 }
 
 // mockDestroyClusterManager substitui a factory do destroy para testes
@@ -79,14 +87,18 @@ func TestDestroyCmd_NonLocalEnv_WithoutFlag_Rejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "requer a flag --yes-destroy-production")
 }
 
-func TestDestroyCmd_NonLocalEnv_WithFlag_WrongName(t *testing.T) {
-	teardown := mockDestroyClusterManager(nil)
-	defer teardown()
+func TestDestroyCmd_NonLocalEnv_WithFlag_Cancelado(t *testing.T) {
+	original := newDestroyClusterManager
+	defer func() { newDestroyClusterManager = original }()
+	newDestroyClusterManager = func() environment.ClusterManager {
+		t.Fatal("não deveria destruir quando o usuário cancela")
+		return nil
+	}
 
 	oldPrompter := prompter
 	prompter = &mockPrompter{
-		inputFunc: func(title string, defaultVal string) (string, error) {
-			return "wrong-name", nil
+		confirmarNomeFunc: func(acao, nome string) (bool, error) {
+			return false, nil
 		},
 	}
 	defer func() { prompter = oldPrompter }()
@@ -97,9 +109,10 @@ func TestDestroyCmd_NonLocalEnv_WithFlag_WrongName(t *testing.T) {
 	destroyCmd.Flags().Set("yes-destroy-production", "true")
 	defer destroyCmd.Flags().Set("yes-destroy-production", "false")
 
+	b := saidaDoComando(t, destroyCmd)
 	err := destroyCmd.RunE(destroyCmd, []string{})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "não confere com o cluster")
+	assert.NoError(t, err)
+	assert.Contains(t, b.String(), "destruição cancelada")
 }
 
 func TestDestroyCmd_NonLocalEnv_WithFlag_CorrectName(t *testing.T) {
@@ -107,9 +120,11 @@ func TestDestroyCmd_NonLocalEnv_WithFlag_CorrectName(t *testing.T) {
 	defer teardown()
 
 	oldPrompter := prompter
+	var acaoPedida, nomePedido string
 	prompter = &mockPrompter{
-		inputFunc: func(title string, defaultVal string) (string, error) {
-			return "prod-cluster", nil
+		confirmarNomeFunc: func(acao, nome string) (bool, error) {
+			acaoPedida, nomePedido = acao, nome
+			return true, nil
 		},
 	}
 	defer func() { prompter = oldPrompter }()
@@ -122,13 +137,15 @@ func TestDestroyCmd_NonLocalEnv_WithFlag_CorrectName(t *testing.T) {
 
 	err := destroyCmd.RunE(destroyCmd, []string{})
 	assert.NoError(t, err)
+	assert.Equal(t, "destruir cluster", acaoPedida)
+	assert.Equal(t, "prod-cluster", nomePedido)
 }
 
 func TestDestroyCmd_NonLocalEnv_PromptError(t *testing.T) {
 	oldPrompter := prompter
 	prompter = &mockPrompter{
-		inputFunc: func(title string, defaultVal string) (string, error) {
-			return "", fmt.Errorf("terminal não interativo")
+		confirmarNomeFunc: func(acao, nome string) (bool, error) {
+			return false, fmt.Errorf("terminal não interativo")
 		},
 	}
 	defer func() { prompter = oldPrompter }()
