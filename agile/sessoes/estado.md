@@ -7,10 +7,10 @@
 
 - **Projeto ativo:** `Carta do terminal (redesign das TUIs e saídas)`
 - **Plano:** `agile/planning/tui-redesign/tasks.md`
-- **Branch:** `feat/tui-carta`
-- **Próxima ação:** com o aval do usuário, fazer a T023 (`cmd/root.go`, `handleExecutionError` → `ui.RenderError`) e a T026 (saídas de `cmd/doctor.go`, `status.go`, `setup.go`, `validate.go`), as primeiras migrações testáveis no binário real (`task build` → `yby doctor`).
-- **Aguardando o usuário:** aprovar a mudança no plano: não abrir PR só com a lib; `pkg/ui` sobe junto com a primeira migração real; começar pela fase 1 (T023 + T026) antes do Bard. Sem push até ele testar o CLI real localmente.
-- **Atenção:** fase 0 completa (T001–T010) e só local: 25 commits à frente de `origin/main`, nenhum push. Nenhum comando usa `pkg/ui` ainda. Push em `feat/**` faz o CI abrir sozinho um PR para `develop`. Antes da fase 2 (Bard), atualizar esta branch com a `main` (correções para Windows).
+- **Branch:** `feat/tui-bard`
+- **Próxima ação:** fase 2 (Bard), começando pela T011 (fluxo de resposta em eventos), na `feat/tui-bard`, que nasceu da `feat/tui-carta`.
+- **Aguardando o usuário:** revisão e merge do PR #201 (fases 0 e 1, `feat/tui-carta` → `develop`).
+- **Atenção:** fases 0 e 1 completas (T001–T010, T023–T028) no PR #201. O job "Create PR to Develop" do CI falha com HTTP 401 (token do workflow); a validação passa e os PRs são abertos à mão com `gh pr create`. A `feat/tui-bard` leva por cherry-pick 4 correções para Windows da `feat/multicloud-support` (local, sem push; PR #200). `~/.yby/plugins` do usuário tem plugins falsos que testes antigos deixaram (`yby-plugin-dup`, `-fake`, `-http`…); não foram apagados. Teste real: o usuário aceita as capturas do agente (ConPTY + xterm.js + Playwright) publicadas numa galeria.
 
 ## Ambiente
 
