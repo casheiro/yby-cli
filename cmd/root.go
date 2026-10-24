@@ -3,9 +3,11 @@ package cmd
 import (
 	stdErr "errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/config"
@@ -13,6 +15,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/telemetry"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +23,12 @@ var (
 	contextFlag   string
 	logLevelFlag  string
 	logFormatFlag string
+
+	// logFormatEfetivo é o formato de log resolvido em initConfig (flags > env > config).
+	logFormatEfetivo string
+
+	// saidaErro recebe o erro renderizado por handleExecutionError.
+	saidaErro io.Writer = os.Stderr
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -84,8 +93,29 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 }
 
 // handleExecutionError trata erros de execução, diferenciando YbyError de erros genéricos.
-// Exibe hints (sugestões de correção) quando disponíveis.
+// No formato text, escreve o erro em saidaErro com ui.RenderError (causa, hint e
+// detalhes); no formato json, mantém os registros slog de sempre.
 func handleExecutionError(err error) {
+	formato := logFormatEfetivo
+	if formato == "" {
+		// initConfig não rodou (ex.: erro no parse das flags).
+		formato = logFormatFlag
+	}
+	if strings.ToLower(formato) == "json" {
+		logExecutionError(err)
+		return
+	}
+
+	var yerr *errors.YbyError
+	if !stdErr.As(err, &yerr) {
+		yerr = errors.Wrap(err, "", "Falha inesperada").WithHint(errors.GenericHint)
+	}
+	slog.Debug("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
+	fmt.Fprint(saidaErro, ui.RenderError(yerr))
+}
+
+// logExecutionError registra o erro via slog, um registro por campo (formato json).
+func logExecutionError(err error) {
 	var yerr *errors.YbyError
 	if stdErr.As(err, &yerr) {
 		if logLevelFlag == "debug" {
@@ -160,6 +190,10 @@ func initConfig(cmd *cobra.Command, args []string) {
 		Level:  logLevel,
 		Format: logFormat,
 	})
+	logFormatEfetivo = logFormat
+
+	// Modo visual das saídas: YBY_THEME, YBY_ASCII e NO_COLOR > ui.* do config
+	ui.Configurar(ui.ResolverOpcoes(ui.Opcoes{}, false, os.Getenv, cfg.UI))
 
 	// Primeiro uso: se o arquivo de config não existe, pergunta sobre telemetria
 	if home, err := os.UserHomeDir(); err == nil {

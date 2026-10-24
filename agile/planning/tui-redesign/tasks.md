@@ -2,7 +2,7 @@
 
 > **Fonte da verdade do progresso.** Toda sessão de trabalho começa e termina neste arquivo.
 > Briefing: [docs/design/tui/briefing.md](../../../docs/design/tui/briefing.md) · Plano: [docs/design/tui/plano-migracao.md](../../../docs/design/tui/plano-migracao.md) · Prancha aprovada: https://claude.ai/artifact/MuC7dcxzr8xxMAxqubQJQk
-> **Ordem:** fase 0 → 2 → 3 → 1 → 4 → 5. Dentro de cada fase, na ordem dos IDs.
+> **Ordem:** fase 0 → 1 → 2 → 3 → 4 → 5. Dentro de cada fase, na ordem dos IDs. Exceção na fase 1: T023 e T026 vêm primeiro (decisão de 24/10/2026).
 > **Verificação geral:** `go test ./pkg/... ./plugins/... ./cmd/...` + `go test -tags k8s ./plugins/sentinel/...` + `golangci-lint run` + `task build`.
 
 ## Como retomar
@@ -83,7 +83,35 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Seção "Interface" no `CLAUDE.md`: toda saída para pessoas usa `pkg/ui`.
   - Verificar: catálogo conferido no Windows Terminal (escuro e claro), com `NO_COLOR=1` e com `YBY_ASCII=1`.
 
-**Checkpoint fase 0:** cobertura de `pkg/ui` ≥ 80%, lint limpo, catálogo conferido com a prancha → PR "feat(ui): pacote pkg/ui da carta do terminal".
+**Checkpoint fase 0:** cobertura de `pkg/ui` ≥ 80%, lint limpo, catálogo conferido com a prancha. Sem PR próprio (decisão de 24/10/2026): `pkg/ui` sobe no PR da fase 1.
+
+---
+
+### Fase 1 · Core: erros, prompts e saídas (`cmd/`, `pkg/`)
+
+- [x] T023 Usar `ui.RenderError` em `handleExecutionError` (`cmd/root.go`).
+  - Com `--log-format json`, a saída fica idêntica à de hoje.
+  - Verificar: testes de erro com e sem hint, em texto e em JSON.
+- [ ] T024 Unificar os prompts.
+  - `cmd/prompt.go` aplica `ui.HuhTheme()`.
+  - `env create` (`fmt.Scanln`) e `uninstall` (`bufio` y/N) passam a usar o `Prompter`.
+  - `destroy` confirma por nome.
+  - O opt-in de telemetria não trava sem TTY: nesse caso fica desligado.
+  - Verificar: comandos com stdin não interativo não travam (teste com pipe).
+- [ ] T025 Transformar o init num único `huh.Form` com grupos e `ui.Rota`.
+  - Permitir voltar (⇧⇥) e não gravar nada antes do fim.
+  - Verificar: golden do assistente; `--non-interactive` igual ao de hoje.
+- [ ] T026 Migrar as saídas de doctor, status, setup e validate.
+  - Verificar: golden; fim de "✅ ✅" e de strings vazias de `SetString`.
+- [ ] T027 Migrar as saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade.
+  - `pkg/executor` e `pkg/mirror` passam a usar `ui.Steps`.
+  - Verificar: golden do `up` (etapas e cota).
+- [ ] T028 Migrar as saídas restantes e remover os estilos antigos.
+  - secret (todos), uki, env, plugin, chart, logs e cloud list/status/audit/refresh.
+  - Remover `cmd/style.go`.
+  - Verificar: `grep` sem emoji nem `lipgloss.Color(` fora de `pkg/ui` em `cmd/` e `pkg/`; saídas JSON e export inalteradas.
+
+**Checkpoint fase 1:** todos os comandos do core conferidos no terminal real e com `NO_COLOR` → PR "feat(cli): pkg/ui e erros, prompts e saídas da carta do terminal" (leva também a fase 0).
 
 ---
 
@@ -149,34 +177,6 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Verificar: teste "com busca ativa, a ação atinge a linha selecionada na tela"; golden da tela "ações e confirmação".
 
 **Checkpoint fase 3:** as 2 telas do Viz batem com a prancha; rodado contra um cluster k3d local → PR "feat(viz): nova TUI da carta do terminal".
-
----
-
-### Fase 1 · Core: erros, prompts e saídas (`cmd/`, `pkg/`)
-
-- [ ] T023 Usar `ui.RenderError` em `handleExecutionError` (`cmd/root.go`).
-  - Com `--log-format json`, a saída fica idêntica à de hoje.
-  - Verificar: testes de erro com e sem hint, em texto e em JSON.
-- [ ] T024 Unificar os prompts.
-  - `cmd/prompt.go` aplica `ui.HuhTheme()`.
-  - `env create` (`fmt.Scanln`) e `uninstall` (`bufio` y/N) passam a usar o `Prompter`.
-  - `destroy` confirma por nome.
-  - O opt-in de telemetria não trava sem TTY: nesse caso fica desligado.
-  - Verificar: comandos com stdin não interativo não travam (teste com pipe).
-- [ ] T025 Transformar o init num único `huh.Form` com grupos e `ui.Rota`.
-  - Permitir voltar (⇧⇥) e não gravar nada antes do fim.
-  - Verificar: golden do assistente; `--non-interactive` igual ao de hoje.
-- [ ] T026 Migrar as saídas de doctor, status, setup e validate.
-  - Verificar: golden; fim de "✅ ✅" e de strings vazias de `SetString`.
-- [ ] T027 Migrar as saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade.
-  - `pkg/executor` e `pkg/mirror` passam a usar `ui.Steps`.
-  - Verificar: golden do `up` (etapas e cota).
-- [ ] T028 Migrar as saídas restantes e remover os estilos antigos.
-  - secret (todos), uki, env, plugin, chart, logs e cloud list/status/audit/refresh.
-  - Remover `cmd/style.go`.
-  - Verificar: `grep` sem emoji nem `lipgloss.Color(` fora de `pkg/ui` em `cmd/` e `pkg/`; saídas JSON e export inalteradas.
-
-**Checkpoint fase 1:** todos os comandos do core conferidos no terminal real e com `NO_COLOR` → PR "feat(cli): erros, prompts e saídas da carta do terminal".
 
 ---
 
@@ -251,3 +251,5 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 23/10/2026 | T010 | Conferência no Windows Terminal (escuro e claro): texto de dados e seleção saíam na cor padrão do terminal; corrigido para Tinta, com teste `tinta_test.go` | `c8f6b91` |
 | 23/10/2026 | T010 | Catálogo conferido pelo usuário no Windows Terminal: escuro, claro (One Half Light), `NO_COLOR=1` e `YBY_ASCII=1`; teclas com nome em texto no ASCII (`396c6b3`) | `0094a88` · `c8f6b91` · `396c6b3` |
 | 23/10/2026 | Checkpoint fase 0 | `pkg/ui` 99,1% de cobertura; golangci-lint 2.15 (config do repo migrada para v2 só localmente) sem achados em `pkg/ui`, `tools`, `pkg/config`; catálogo conferido pelo usuário | — |
+| 24/10/2026 | — | Ordem mudada pelo usuário: fase 1 logo após a fase 0, começando por T023 e T026; sem PR só com a lib, `pkg/ui` vai no PR da fase 1 | este commit |
+| 24/10/2026 | T023 | `handleExecutionError` usa `ui.RenderError` em `saidaErro` (stderr) no formato text; json mantém os registros slog de antes; `initConfig` aplica `ui.Configurar`. `RenderError`: título sem código não tem espaços à direita, causa YbyError aninhada sem `[CODE]`, sem "detalhes" quando o hint já manda depurar. Conferido em `bin/yby.exe` (Unicode, `YBY_ASCII`, `NO_COLOR`, json) | este commit |

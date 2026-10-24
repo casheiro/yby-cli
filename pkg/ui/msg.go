@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -122,7 +123,8 @@ func linhaUnica(s string) string {
 
 // RenderError formata um YbyError: título com o código à direita, depois as linhas
 // "causa", "faça" (hint em negrito; usa o hint automático do registry quando o erro não
-// tem um) e "detalhes" (contexto diagnóstico ou, na falta dele, a dica de depuração).
+// tem um) e "detalhes" (contexto diagnóstico ou, na falta dele, a dica de depuração
+// quando o hint ainda não a traz).
 func RenderError(e *yerrors.YbyError) string {
 	if e == nil {
 		return ""
@@ -130,13 +132,16 @@ func RenderError(e *yerrors.YbyError) string {
 	s := S()
 	var b strings.Builder
 	titulo := s.Erro.Render(G().Falha) + " " + s.Negrito.Render(linhaUnica(e.Message))
-	b.WriteString(duasPontas(titulo, s.TintaSuave.Render(e.Code), msgLargura) + "\n")
+	if e.Code != "" {
+		titulo = duasPontas(titulo, s.TintaSuave.Render(e.Code), msgLargura)
+	}
+	b.WriteString(titulo + "\n")
 
 	linha := func(rotulo, texto string) {
 		b.WriteString("  " + s.Rotulo.Render(padDireita(rotulo, 10)) + texto + "\n")
 	}
 	if e.Cause != nil {
-		linha("causa", s.Tinta.Render(linhaUnica(e.Cause.Error())))
+		linha("causa", s.Tinta.Render(linhaUnica(textoCausa(e.Cause))))
 	}
 	hint := e.GetHint()
 	if hint != "" {
@@ -153,10 +158,26 @@ func RenderError(e *yerrors.YbyError) string {
 			pares[i] = fmt.Sprintf("%s=%v", k, e.Context[k])
 		}
 		linha("detalhes", s.TintaSuave.Render(linhaUnica(strings.Join(pares, " · "))))
-	} else if hint != yerrors.GenericHint {
+	} else if !strings.Contains(hint, "--log-level=debug") {
 		linha("detalhes", s.TintaSuave.Render("rode de novo com --log-level=debug"))
 	}
 	return b.String()
+}
+
+// textoCausa descreve a causa sem o prefixo "[CODE]" de YbyErrors aninhados: usa a
+// mensagem de cada nível, separada por ": ".
+func textoCausa(err error) string {
+	var partes []string
+	for err != nil {
+		var ye *yerrors.YbyError
+		if !errors.As(err, &ye) {
+			partes = append(partes, err.Error())
+			break
+		}
+		partes = append(partes, ye.Message)
+		err = ye.Cause
+	}
+	return strings.Join(partes, ": ")
 }
 
 // Steps escreve em w as etapas de um comando (ex.: yby up), uma por linha e recuadas em

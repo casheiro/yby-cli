@@ -130,6 +130,22 @@ func TestRenderErrorVariacoes(t *testing.T) {
 	if strings.Count(out, "--log-level=debug") > 1 {
 		t.Errorf("dica genérica repetida:\n%s", out)
 	}
+	// hint que já manda depurar (ERR_PLUGIN) não ganha a mesma dica em detalhes
+	out = RenderError(yerrors.New(yerrors.ErrCodePlugin, "falhou"))
+	if strings.Contains(out, "  detalhes  ") {
+		t.Errorf("detalhes repete a dica do hint:\n%s", out)
+	}
+	// causa YbyError aninhada: mensagens encadeadas, sem o prefixo [CODE]
+	interno := yerrors.Wrap(stderrors.New("arquivo ausente"), yerrors.ErrCodePlugin, "origem não encontrada")
+	out = RenderError(yerrors.Wrap(interno, yerrors.ErrCodePlugin, "Erro ao instalar plugin"))
+	if !strings.Contains(out, "causa     origem não encontrada: arquivo ausente\n") {
+		t.Errorf("causa aninhada inesperada:\n%s", out)
+	}
+	// sem código: o título não ganha espaços à direita
+	out = RenderError(yerrors.Wrap(stderrors.New("boom"), "", "Falha inesperada"))
+	if primeira := strings.SplitN(out, "\n", 2)[0]; primeira != "✕ Falha inesperada" {
+		t.Errorf("título sem código inesperado: %q", primeira)
+	}
 }
 
 func TestSteps(t *testing.T) {
