@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -110,4 +111,50 @@ func TestValidateCmd_FalhaTemplate(t *testing.T) {
 	err := validateCmd.RunE(validateCmd, []string{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "template")
+}
+
+func TestRenderValidateReport_Golden(t *testing.T) {
+	casos := []struct {
+		nome      string
+		relatorio *validate.ValidateReport
+	}{
+		{"validate_ok", &validate.ValidateReport{Success: true, Charts: []validate.ChartResult{
+			{Chart: "charts/system", DepsOK: true, LintOK: true, TemplateOK: true},
+			{Chart: "charts/bootstrap", DepsOK: true, LintOK: true, TemplateOK: true},
+		}}},
+		{"validate_falha_template", &validate.ValidateReport{Charts: []validate.ChartResult{
+			{Chart: "charts/system", DepsOK: true, LintOK: true, TemplateOK: true},
+			{Chart: "charts/bootstrap", DepsOK: true, LintOK: true, Error: "falha no template: Error: template failed\nlinha 2\n"},
+		}}},
+		{"validate_falha_lint", &validate.ValidateReport{Charts: []validate.ChartResult{
+			{Chart: "charts/system", DepsOK: true, Error: "falha no lint: exit status 1"},
+			{Chart: "charts/bootstrap", DepsOK: true},
+		}}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			usarSaidaTexto(t, false)
+			var b bytes.Buffer
+			renderValidateReport(&b, c.relatorio)
+			conferirGolden(t, c.nome, b.String())
+			conferirSemRestos(t, b.String())
+		})
+	}
+}
+
+func TestValidateCmd_Sucesso_Resumo(t *testing.T) {
+	usarSaidaTexto(t, false)
+	original := newValidateService
+	defer func() { newValidateService = original }()
+	newValidateService = func(_ shared.Runner) validate.Service {
+		return validate.NewService(&mockValidateHelmRunner{})
+	}
+
+	b := saidaDoComando(t, validateCmd)
+	assert.NoError(t, validateCmd.RunE(validateCmd, []string{}))
+	saida := b.String()
+
+	assert.Contains(t, saida, "◆ YBY  VALIDATE")
+	assert.Contains(t, saida, "RESUMO  3 ok · 0 avisos · 0 erros  · charts válidos")
+	conferirSemRestos(t, saida)
 }

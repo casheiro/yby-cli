@@ -294,3 +294,53 @@ func TestSystemPackageManager_AptNaoDetectaForaLinux(t *testing.T) {
 
 	assert.Equal(t, "", pkg.Detect())
 }
+
+func TestSetupCmd_Saida_Golden(t *testing.T) {
+	casos := []struct {
+		nome     string
+		instalar bool
+		svc      *mockSetupSvc
+	}{
+		{"setup_tudo_instalado", true, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
+			Tools: []setup.ToolStatus{
+				{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+				{Name: "helm", Installed: true, Path: "/usr/bin/helm"},
+			},
+		}}},
+		{"setup_instalacao", true, &mockSetupSvc{
+			checkToolsResult: &setup.SetupResult{
+				Tools: []setup.ToolStatus{
+					{Name: "kubectl", Installed: true, Path: "/usr/bin/kubectl"},
+					{Name: "helm", Installed: false},
+					{Name: "k3d", Installed: false},
+				},
+				Missing: []string{"helm", "k3d"},
+			},
+			installResults: []setup.InstallResult{
+				{Tool: "helm", Success: true},
+				{Tool: "k3d", Success: false, Output: "E: Unable to locate package k3d\n"},
+			},
+		}},
+		{"setup_sem_instalar", false, &mockSetupSvc{checkToolsResult: &setup.SetupResult{
+			Tools:   []setup.ToolStatus{{Name: "helm", Installed: false}},
+			Missing: []string{"helm"},
+		}}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			usarSaidaTexto(t, false)
+			original, oldPrompter := newSetupService, prompter
+			defer func() { newSetupService, prompter = original, oldPrompter }()
+			newSetupService = func(r shared.Runner, fs shared.Filesystem) setup.Service { return c.svc }
+			instalar := c.instalar
+			prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return instalar, nil }}
+			setupCmd.Flags().Set("profile", "server")
+
+			b := saidaDoComando(t, setupCmd)
+			assert.NoError(t, setupCmd.RunE(setupCmd, []string{}))
+			saida := b.String()
+			conferirGolden(t, c.nome, saida)
+			conferirSemRestos(t, saida)
+		})
+	}
+}

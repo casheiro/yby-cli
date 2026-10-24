@@ -1,0 +1,18 @@
+◆ YBY  STATUS                                        24/10 09:30
+
+NODES
+  NAME     STATUS   ROLES           AGE
+  node1    Ready    control-plane   3d
+
+ARGO CD
+  NAME                 READY   STATUS
+  argocd-server-abc    1/1     Running
+
+INGRESSES
+  ○ Nenhum ingress encontrado.
+
+AUTOSCALING · KEDA
+  ▲ KEDA não detectado (CRDs ausentes?)
+
+EFICIÊNCIA ENERGÉTICA · KEPLER
+  ✓ Sensor Kepler ATIVO e monitorando o cluster.

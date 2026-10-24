@@ -101,6 +101,8 @@ FERRAMENTAS                                                       ← Section (T
 RESUMO  4 ok · 1 aviso · 1 erro  · o erro impede yby up          ← Summary
 ```
 
+Colunas de `Check`: nome com 12 células e versão com 10; quando o texto enche a coluna, segue com 2 espaços. Para alinhar um relatório com nomes longos (ex.: `Prometheus Operator`), `CheckCom(w, ColunasPara(nomes...), …)` alarga a coluna do nome até o mais largo + 2.
+
 `Steps` (yby up): `  ✓ cluster yby-local   criado   38 s` / `  ◈ argo cd   ━━━━┄┄ 64%   25 s` / `  ◇ root-app`.
 
 Erro (`RenderError(*errors.YbyError)`):

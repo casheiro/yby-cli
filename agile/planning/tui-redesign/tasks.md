@@ -101,7 +101,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 - [ ] T025 Transformar o init num único `huh.Form` com grupos e `ui.Rota`.
   - Permitir voltar (⇧⇥) e não gravar nada antes do fim.
   - Verificar: golden do assistente; `--non-interactive` igual ao de hoje.
-- [ ] T026 Migrar as saídas de doctor, status, setup e validate.
+- [x] T026 Migrar as saídas de doctor, status, setup e validate.
   - Verificar: golden; fim de "✅ ✅" e de strings vazias de `SetString`.
 - [ ] T027 Migrar as saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade.
   - `pkg/executor` e `pkg/mirror` passam a usar `ui.Steps`.
@@ -253,3 +253,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 23/10/2026 | Checkpoint fase 0 | `pkg/ui` 99,1% de cobertura; golangci-lint 2.15 (config do repo migrada para v2 só localmente) sem achados em `pkg/ui`, `tools`, `pkg/config`; catálogo conferido pelo usuário | — |
 | 24/10/2026 | — | Ordem mudada pelo usuário: fase 1 logo após a fase 0, começando por T023 e T026; sem PR só com a lib, `pkg/ui` vai no PR da fase 1 | este commit |
 | 24/10/2026 | T023 | `handleExecutionError` usa `ui.RenderError` em `saidaErro` (stderr) no formato text; json mantém os registros slog de antes; `initConfig` aplica `ui.Configurar`. `RenderError`: título sem código não tem espaços à direita, causa YbyError aninhada sem `[CODE]`, sem "detalhes" quando o hint já manda depurar. Conferido em `bin/yby.exe` (Unicode, `YBY_ASCII`, `NO_COLOR`, json) | este commit |
+| 24/10/2026 | T026 | doctor, status, setup e validate com `ui.Title`, `Section`, `Check` e `Summary`; goldens em `cmd/testdata`; doctor sem despejar a saída de `docker info`/`kubectl` (`RunCombinedOutput`), `Opcional` no `CheckResult`, CRDs "sem cluster" quando a conexão falha; `ui.CheckCom`/`ColunasPara` para nomes longos. Conferido em `bin/yby.exe`. `yby setup` sem TTY trava no confirm (já travava antes; fica para a T024) | este commit |

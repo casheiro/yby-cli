@@ -41,6 +41,14 @@ func padDireita(s string, w int) string {
 	return s
 }
 
+// coluna completa s até w células; se s já ocupa a coluna, separa com 2 espaços.
+func coluna(s string, w int) string {
+	if s != "" && lipgloss.Width(s) >= w {
+		return s + "  "
+	}
+	return padDireita(s, w)
+}
+
 // duasPontas coloca esq e dir nas pontas de uma linha de largura w (mínimo 2 espaços).
 func duasPontas(esq, dir string, w int) string {
 	folga := w - lipgloss.Width(esq) - lipgloss.Width(dir)
@@ -63,9 +71,27 @@ func Section(w io.Writer, nome string) {
 	fmt.Fprintln(w, S().Rotulo.Render(strings.ToUpper(nome)))
 }
 
+// Colunas define as larguras, em células, das colunas de nome e de versão de CheckCom.
+type Colunas struct{ Nome, Versao int }
+
+// ColunasPara devolve as colunas padrão alargadas para caber o nome mais largo de
+// nomes (mais 2 espaços), para alinhar um relatório com nomes longos.
+func ColunasPara(nomes ...string) Colunas {
+	c := Colunas{Nome: msgColNome, Versao: msgColVersao}
+	for _, n := range nomes {
+		c.Nome = max(c.Nome, lipgloss.Width(n)+2)
+	}
+	return c
+}
+
 // Check escreve uma linha de verificação com colunas alinhadas por largura em células:
 // glifo, nome, versão e nota. Versão e nota são opcionais.
 func Check(w io.Writer, tipo TipoCheck, nome, versao, nota string) {
+	CheckCom(w, Colunas{Nome: msgColNome, Versao: msgColVersao}, tipo, nome, versao, nota)
+}
+
+// CheckCom é Check com larguras de coluna escolhidas pelo chamador (ver ColunasPara).
+func CheckCom(w io.Writer, col Colunas, tipo TipoCheck, nome, versao, nota string) {
 	s, g := S(), G()
 	var glifo string
 	var est lipgloss.Style
@@ -81,7 +107,7 @@ func Check(w io.Writer, tipo TipoCheck, nome, versao, nota string) {
 	}
 	corpo := nome
 	if nota != "" || versao != "" {
-		corpo = padDireita(nome, msgColNome) + padDireita(versao, msgColVersao) + nota
+		corpo = coluna(nome, col.Nome) + coluna(versao, col.Versao) + nota
 	}
 	corpo = strings.TrimRight(corpo, " ")
 	if tipo == CheckNeutro {

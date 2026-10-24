@@ -1,0 +1,8 @@
+◆ YBY  SETUP                                       perfil server
+
+FERRAMENTAS
+  ✕ helm        ausente
+
+RESUMO  0 ok · 0 avisos · 1 erro  · faltam ferramentas
+
+  ○ instale as ferramentas manualmente e rode yby setup de novo

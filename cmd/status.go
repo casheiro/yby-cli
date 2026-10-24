@@ -5,10 +5,14 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/pkg/services/status"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -34,70 +38,64 @@ Equivalente ao antigo 'make status'.`,
 		svc := newStatusService(runner)
 		report := svc.Check(cmd.Context())
 
-		renderStatusReport(report)
+		renderStatusReport(cmd.OutOrStdout(), report, agora())
 		return nil
 	},
 }
 
-// renderStatusReport exibe o relatório de status usando os estilos do CLI.
-func renderStatusReport(report *status.StatusReport) {
-	fmt.Println(titleStyle.Render("📊 Status do Cluster"))
-	fmt.Println("---------------------------------------")
+// renderStatusReport escreve o relatório de status: uma seção por componente, com a
+// saída do kubectl recuada ou uma linha de verificação quando não há o que listar.
+func renderStatusReport(w io.Writer, report *status.StatusReport, quando time.Time) {
+	ui.Title(w, "status", quando.Format("02/01 15:04"))
 
-	// Nodes
-	fmt.Println(headerStyle.Render("🖥️  Nodes"))
+	ui.Section(w, "nodes")
 	if !report.Nodes.Available {
-		fmt.Println(crossStyle.Render(report.Nodes.Message))
-		if report.Nodes.Output != "" {
-			fmt.Println(grayStyle.Render(report.Nodes.Output))
+		ui.Check(w, ui.CheckErro, report.Nodes.Message, "", "")
+		saidaRecuada(w, report.Nodes.Output, true)
+	} else {
+		saidaRecuada(w, report.Nodes.Output, false)
+	}
+
+	componente := func(secao string, c status.ComponentStatus) {
+		ui.Section(w, secao)
+		switch {
+		case !c.Available:
+			ui.Check(w, ui.CheckAviso, c.Message, "", "")
+		case c.Output == "":
+			ui.Check(w, ui.CheckNeutro, c.Message, "", "")
+		default:
+			saidaRecuada(w, c.Output, false)
 		}
-	} else {
-		fmt.Println(report.Nodes.Output)
 	}
+	componente("argo cd", report.ArgoCD)
+	componente("ingresses", report.Ingress)
+	componente("autoscaling · keda", report.KEDA)
 
-	// Argo CD
-	fmt.Println("")
-	fmt.Println(headerStyle.Render("🐙 Argo CD Pods"))
-	if !report.ArgoCD.Available {
-		fmt.Println(warningStyle.Render(report.ArgoCD.Message))
-	} else {
-		fmt.Println(report.ArgoCD.Output)
+	ui.Section(w, "eficiência energética · kepler")
+	switch {
+	case !report.Kepler.Available:
+		ui.Check(w, ui.CheckNeutro, report.Kepler.Message, "", "")
+	case report.Kepler.Output != "" && report.Kepler.Message == "Sensor Kepler ATIVO e monitorando o cluster.":
+		ui.Check(w, ui.CheckOk, report.Kepler.Message, "", "")
+	default:
+		ui.Check(w, ui.CheckAviso, report.Kepler.Message, "", "")
 	}
+}
 
-	// Ingresses
-	fmt.Println("")
-	fmt.Println(headerStyle.Render("🔗 Ingresses"))
-	if !report.Ingress.Available {
-		fmt.Println(warningStyle.Render(report.Ingress.Message))
-	} else if report.Ingress.Output == "" {
-		fmt.Println(report.Ingress.Message)
-	} else {
-		fmt.Println(report.Ingress.Output)
+// saidaRecuada escreve a saída de um comando externo sem a quebra de linha final:
+// recuada em 2 células e em Tinta quando é o conteúdo da seção; com detalhe, é o
+// complemento da linha de verificação acima, recuado em 4 células e em TintaSuave.
+func saidaRecuada(w io.Writer, saida string, detalhe bool) {
+	saida = strings.TrimRight(saida, "\n")
+	if saida == "" {
+		return
 	}
-
-	// KEDA
-	fmt.Println("")
-	fmt.Println(headerStyle.Render("⚡ Autoscaling (KEDA)"))
-	if !report.KEDA.Available {
-		fmt.Println(warningStyle.Render(report.KEDA.Message))
-	} else if report.KEDA.Output == "" {
-		fmt.Println(report.KEDA.Message)
-	} else {
-		fmt.Println(report.KEDA.Output)
+	recuo, estilo := "  ", ui.S().Tinta
+	if detalhe {
+		recuo, estilo = "    ", ui.S().TintaSuave
 	}
-
-	// Kepler
-	fmt.Println("")
-	fmt.Println(headerStyle.Render("🍃 Eficiência Energética (Kepler)"))
-	if !report.Kepler.Available {
-		fmt.Println(crossStyle.Render(report.Kepler.Message))
-	} else if report.Kepler.Message != "" {
-		// Kepler disponível — verificar se está ativo ou só instalado
-		if report.Kepler.Output != "" && report.Kepler.Message == "Sensor Kepler ATIVO e monitorando o cluster." {
-			fmt.Println(checkStyle.Render(report.Kepler.Message))
-		} else {
-			fmt.Println(warningStyle.Render(report.Kepler.Message))
-		}
+	for _, l := range strings.Split(saida, "\n") {
+		fmt.Fprintln(w, recuo+estilo.Render(strings.TrimRight(l, "\r")))
 	}
 }
 

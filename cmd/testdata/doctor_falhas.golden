@@ -1,0 +1,21 @@
+◆ YBY  DOCTOR                                        24/10 09:30
+
+SISTEMA
+  ○ memória              ignorada    verificação só no Linux
+
+FERRAMENTAS
+  ✕ kubectl              ausente
+  ✓ helm                 instalado   /usr/bin/helm
+  ✕ docker               parado      Erro de permissão ou não rodando
+  ○ Sealed Secrets       ausente     opcional
+
+CLUSTER
+  ▲ conexão              sem acesso  Verifique o KUBECONFIG ou se o cluster está rodando.
+
+PLATAFORMA
+  ○ Prometheus Operator  sem cluster
+
+CLOUD
+  ○ nenhum provider detectado
+
+RESUMO  1 ok · 1 aviso · 2 erros  · corrija os erros antes do yby up

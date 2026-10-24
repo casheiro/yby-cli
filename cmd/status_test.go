@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -72,4 +73,35 @@ func TestStatusCmd_KubectlNotFound_ReturnsError(t *testing.T) {
 	err := statusCmd.RunE(statusCmd, []string{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "kubectl")
+}
+
+func TestRenderStatusReport_Golden(t *testing.T) {
+	casos := []struct {
+		nome      string
+		relatorio *status.StatusReport
+	}{
+		{"status_ativo", &status.StatusReport{
+			Nodes:   status.ComponentStatus{Available: true, Output: "NAME     STATUS   ROLES           AGE\nnode1    Ready    control-plane   3d\n"},
+			ArgoCD:  status.ComponentStatus{Available: true, Output: "NAME                 READY   STATUS\nargocd-server-abc    1/1     Running\n"},
+			Ingress: status.ComponentStatus{Available: true, Message: "Nenhum ingress encontrado."},
+			KEDA:    status.ComponentStatus{Available: false, Message: "KEDA não detectado (CRDs ausentes?)"},
+			Kepler:  status.ComponentStatus{Available: true, Output: "kepler-x Running", Message: "Sensor Kepler ATIVO e monitorando o cluster."},
+		}},
+		{"status_sem_cluster", &status.StatusReport{
+			Nodes:   status.ComponentStatus{Available: false, Output: "The connection to the server localhost:6443 was refused\n", Message: "Erro ao obter nodes (Cluster rodando?)"},
+			ArgoCD:  status.ComponentStatus{Available: false, Message: "Namespace argocd não encontrado ou vazio."},
+			Ingress: status.ComponentStatus{Available: false, Message: "Erro ao obter ingresses."},
+			KEDA:    status.ComponentStatus{Available: false, Message: "KEDA não detectado (CRDs ausentes?)"},
+			Kepler:  status.ComponentStatus{Available: false, Message: "Sensor Kepler não encontrado no namespace 'kepler'."},
+		}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			usarSaidaTexto(t, false)
+			var b bytes.Buffer
+			renderStatusReport(&b, c.relatorio, quandoGolden)
+			conferirGolden(t, c.nome, b.String())
+			conferirSemRestos(t, b.String())
+		})
+	}
 }

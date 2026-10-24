@@ -114,6 +114,37 @@ func TestMsgSummaryPlural(t *testing.T) {
 	}
 }
 
+func TestCheckColunaEstourada(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	var b bytes.Buffer
+	Check(&b, CheckOk, "Prometheus Operator", "instalado", "")
+	Check(&b, CheckErro, "helm", "/usr/local/bin/helm", "nota")
+	esperado := "  ✓ Prometheus Operator  instalado\n" +
+		"  ✕ helm        /usr/local/bin/helm  nota\n"
+	if b.String() != esperado {
+		t.Errorf("saída inesperada:\n%q\nesperado:\n%q", b.String(), esperado)
+	}
+}
+
+func TestCheckComColunasPara(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	col := ColunasPara("git", "Prometheus Operator")
+	if col != (Colunas{Nome: 21, Versao: msgColVersao}) {
+		t.Fatalf("colunas inesperadas: %+v", col)
+	}
+	if c := ColunasPara("git"); c != (Colunas{Nome: msgColNome, Versao: msgColVersao}) {
+		t.Errorf("nomes curtos deveriam manter o padrão: %+v", c)
+	}
+	var b bytes.Buffer
+	CheckCom(&b, col, CheckOk, "git", "instalado", "")
+	CheckCom(&b, col, CheckAviso, "Prometheus Operator", "ausente", "CRD não instalado")
+	esperado := "  ✓ git                  instalado\n" +
+		"  ▲ Prometheus Operator  ausente   CRD não instalado\n"
+	if b.String() != esperado {
+		t.Errorf("saída inesperada:\n%q\nesperado:\n%q", b.String(), esperado)
+	}
+}
+
 func TestRenderErrorVariacoes(t *testing.T) {
 	usarTema(t, true, termenv.Ascii, false)
 	if RenderError(nil) != "" {

@@ -1,0 +1,7 @@
+
+DEPENDÊNCIAS
+  ✓ charts/system
+  ✓ charts/bootstrap
+
+HELM LINT
+  ✕ charts/system

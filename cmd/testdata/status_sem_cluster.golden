@@ -1,0 +1,17 @@
+◆ YBY  STATUS                                        24/10 09:30
+
+NODES
+  ✕ Erro ao obter nodes (Cluster rodando?)
+    The connection to the server localhost:6443 was refused
+
+ARGO CD
+  ▲ Namespace argocd não encontrado ou vazio.
+
+INGRESSES
+  ▲ Erro ao obter ingresses.
+
+AUTOSCALING · KEDA
+  ▲ KEDA não detectado (CRDs ausentes?)
+
+EFICIÊNCIA ENERGÉTICA · KEPLER
+  ○ Sensor Kepler não encontrado no namespace 'kepler'.
