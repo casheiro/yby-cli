@@ -262,13 +262,14 @@ func renderErro(e *yerrors.YbyError, largura int) string {
 }
 
 // textoCausa descreve a causa sem o prefixo "[CODE]" de YbyErrors aninhados: usa a
-// mensagem de cada nível, separada por ": ".
+// mensagem de cada nível, separada por ": ". O último nível, quando traz a saída de um
+// comando externo, fica só com a linha de erro (yerrors.ResumirSaida).
 func textoCausa(err error) string {
 	var partes []string
 	for err != nil {
 		var ye *yerrors.YbyError
 		if !errors.As(err, &ye) {
-			partes = append(partes, err.Error())
+			partes = append(partes, yerrors.ResumirSaida(err.Error()))
 			break
 		}
 		partes = append(partes, ye.Message)

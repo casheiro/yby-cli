@@ -107,28 +107,28 @@ func (m *MirrorManager) EnsureGitServer() error {
 	// 1. Create Namespace
 	nsTpl, err := manifestsFS.ReadFile("manifests/namespace.yaml")
 	if err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "failed to read namespace manifest")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "falha ao ler o manifesto do namespace do git server")
 	}
 	nsManifest := fmt.Sprintf(string(nsTpl), m.Namespace)
 
 	if err := m.Runner.RunStdin(context.Background(), nsManifest, "kubectl", "apply", "-f", "-"); err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "failed to create namespace")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "falha ao criar o namespace do git server")
 	}
 
 	// 2. Apply Manifests (Deployment + Service)
 	serverTpl, err := manifestsFS.ReadFile("manifests/git-server.yaml")
 	if err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "failed to read git-server manifest")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "falha ao ler o manifesto do git server")
 	}
 	manifest := fmt.Sprintf(string(serverTpl), m.Namespace, m.Namespace)
 
 	if err := m.Runner.RunStdin(context.Background(), manifest, "kubectl", "apply", "-f", "-"); err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "failed to apply git-server manifests")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "falha ao aplicar os manifestos do git server")
 	}
 
 	// Wait for rollout
 	if err := m.Runner.Run(context.Background(), "kubectl", "rollout", "status", "deployment/git-server", "-n", m.Namespace, "--timeout=60s"); err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "git-server failed to start")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "o git server não subiu")
 	}
 
 	return nil
@@ -143,12 +143,12 @@ func (m *MirrorManager) SetupTunnel(ctx context.Context) error {
 
 	pf, err := factory(m.Namespace, "git-server", 9418)
 	if err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodePortForward, "failed to create port forwarder")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePortForward, "falha ao preparar o túnel até o git server")
 	}
 
 	port, err := pf.Start(ctx)
 	if err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodePortForward, "failed to start port forwarder")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodePortForward, "falha ao abrir o túnel até o git server")
 	}
 
 	m.mu.Lock()
@@ -167,13 +167,13 @@ func (m *MirrorManager) Sync() error {
 	m.mu.Unlock()
 
 	if port == 0 {
-		return ybyerrors.New(ybyerrors.ErrCodePortForward, "tunnel not established. Call SetupTunnel() first")
+		return ybyerrors.New(ybyerrors.ErrCodePortForward, "o túnel até o git server não foi aberto")
 	}
 
 	remoteURL := fmt.Sprintf("git://localhost:%d/repo.git", port)
 
 	if err := m.Runner.Run(context.Background(), "git", "push", remoteURL, "HEAD:main", "--force"); err != nil {
-		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "git push failed")
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeExec, "o git push para o git server falhou")
 	}
 
 	return nil

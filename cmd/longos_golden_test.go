@@ -616,7 +616,8 @@ func TestDestroyGolden_ProducaoConfirmadaEFalha(t *testing.T) {
 	usarSaidaTexto(t, false)
 	rel := novoRelogioFalso()
 	usarProgressoFalso(t, rel)
-	prepararDestroy(t, rel, "staging", fmt.Errorf("cluster 'yby-local' não existe"))
+	prepararDestroy(t, rel, "staging", fmt.Errorf("cluster 'yby-staging' não existe"))
+	t.Setenv("YBY_CLUSTER_NAME", "yby-staging")
 	require.NoError(t, destroyCmd.Flags().Set("yes-destroy-production", "true"))
 	pediu := ""
 	prompter = &mockPrompter{confirmarNomeFunc: func(acao, nome string) (bool, error) {
@@ -627,7 +628,7 @@ func TestDestroyGolden_ProducaoConfirmadaEFalha(t *testing.T) {
 	b := saidaDoComando(t, destroyCmd)
 	err := destroyCmd.RunE(destroyCmd, []string{})
 	require.Error(t, err)
-	assert.Equal(t, "yby-local", pediu, "ambiente não-local confirma digitando o nome do cluster")
+	assert.Equal(t, "yby-staging", pediu, "ambiente não-local confirma digitando o nome do cluster dele")
 	saida := comErro(t, b.String(), err)
 	conferirGolden(t, "destroy_falha", saida)
 	conferirSemEstiloAntigo(t, saida)

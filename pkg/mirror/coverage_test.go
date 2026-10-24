@@ -80,7 +80,7 @@ func TestSetupTunnel_ErroNaFactory(t *testing.T) {
 	ctx := context.Background()
 	err := m.SetupTunnel(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create port forwarder")
+	assert.Contains(t, err.Error(), "falha ao preparar o túnel até o git server")
 }
 
 func TestSetupTunnel_ErroNoStart(t *testing.T) {
@@ -99,7 +99,7 @@ func TestSetupTunnel_ErroNoStart(t *testing.T) {
 	ctx := context.Background()
 	err := m.SetupTunnel(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to start port forwarder")
+	assert.Contains(t, err.Error(), "falha ao abrir o túnel até o git server")
 }
 
 func TestSetupTunnel_FactoryNilUsaDefault(t *testing.T) {
@@ -118,7 +118,7 @@ func TestSetupTunnel_FactoryNilUsaDefault(t *testing.T) {
 	ctx := context.Background()
 	err := m.SetupTunnel(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create port forwarder")
+	assert.Contains(t, err.Error(), "falha ao preparar o túnel até o git server")
 }
 
 // --- Testes para StartSyncLoop com ticker (cobrindo o caminho do ticker.C) ---
@@ -294,7 +294,7 @@ func TestSync_TableDriven(t *testing.T) {
 			localPort: 0,
 			runErr:    nil,
 			wantErr:   true,
-			errMsg:    "tunnel not established",
+			errMsg:    "o túnel até o git server não foi aberto",
 		},
 		{
 			name:      "push com sucesso",
@@ -307,14 +307,14 @@ func TestSync_TableDriven(t *testing.T) {
 			localPort: 9999,
 			runErr:    errors.New("connection refused"),
 			wantErr:   true,
-			errMsg:    "git push failed",
+			errMsg:    "o git push para o git server falhou",
 		},
 		{
 			name:      "push com erro de autenticacao",
 			localPort: 8888,
 			runErr:    errors.New("authentication failed"),
 			wantErr:   true,
-			errMsg:    "git push failed",
+			errMsg:    "o git push para o git server falhou",
 		},
 	}
 
@@ -517,14 +517,14 @@ func TestSetupTunnel_TableDriven(t *testing.T) {
 			name:       "erro na factory",
 			factoryErr: errors.New("falha na factory"),
 			wantErr:    true,
-			wantErrMsg: "failed to create port forwarder",
+			wantErrMsg: "falha ao preparar o túnel até o git server",
 		},
 		{
 			name:       "erro no start",
 			factoryErr: nil,
 			startErr:   errors.New("timeout ao iniciar"),
 			wantErr:    true,
-			wantErrMsg: "failed to start port forwarder",
+			wantErrMsg: "falha ao abrir o túnel até o git server",
 		},
 	}
 
@@ -588,7 +588,7 @@ func TestEnsureGitServer_TableDriven(t *testing.T) {
 			},
 			runErr:     nil,
 			wantErr:    true,
-			wantErrMsg: "failed to create namespace",
+			wantErrMsg: "falha ao criar o namespace do git server",
 		},
 		{
 			name: "erro na aplicacao de manifestos",
@@ -600,14 +600,14 @@ func TestEnsureGitServer_TableDriven(t *testing.T) {
 			},
 			runErr:     nil,
 			wantErr:    true,
-			wantErrMsg: "failed to apply git-server manifests",
+			wantErrMsg: "falha ao aplicar os manifestos do git server",
 		},
 		{
 			name:       "erro no rollout",
 			stdinErr:   func(call int) error { return nil },
 			runErr:     errors.New("rollout timeout"),
 			wantErr:    true,
-			wantErrMsg: "git-server failed to start",
+			wantErrMsg: "o git server não subiu",
 		},
 	}
 

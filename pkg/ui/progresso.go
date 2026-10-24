@@ -37,10 +37,11 @@ type Progresso struct {
 
 	etapas  []Etapa
 	inicios []time.Time
-	atual   int // índice da etapa em andamento; -1 sem nenhuma
-	fixas   int // etapas do começo já escritas de vez
-	vivas   int // linhas do trecho redesenhável na tela (só no terminal)
-	pausas  int // Pausar em vigor: sem trecho redesenhável enquanto > 0
+	atual   int  // índice da etapa em andamento; -1 sem nenhuma
+	fixas   int  // etapas do começo já escritas de vez
+	vivas   int  // linhas do trecho redesenhável na tela (só no terminal)
+	pausas  int  // Pausar em vigor: sem trecho redesenhável enquanto > 0
+	falhou  bool // a última etapa encerrada falhou: as pendentes saem da tela
 }
 
 // NovoProgresso cria um Progresso que escreve em w; rotulos são as etapas planejadas,
@@ -109,6 +110,7 @@ func (p *Progresso) Iniciar(rotulo string) {
 	p.etapas[i].Nota, p.etapas[i].Fracao, p.etapas[i].Duracao = "", 0, 0
 	p.inicios[i] = agora
 	p.atual = i
+	p.falhou = false
 	p.desenhar(agora)
 }
 
@@ -137,7 +139,9 @@ func (p *Progresso) Tique() {
 // Concluir encerra a etapa atual com sucesso; nota sai em TintaSuave depois do rótulo.
 func (p *Progresso) Concluir(nota string) { p.encerrar(EtapaFeita, nota) }
 
-// Falhar encerra a etapa atual com erro.
+// Falhar encerra a etapa atual com erro. No terminal, as pendentes saem da tela (como
+// fora dele, onde nunca aparecem): o erro que vem a seguir explica onde o comando parou.
+// Se outra etapa começar depois, elas voltam.
 func (p *Progresso) Falhar(nota string) { p.encerrar(EtapaFalha, nota) }
 
 func (p *Progresso) encerrar(estado EstadoEtapa, nota string) {
@@ -148,6 +152,7 @@ func (p *Progresso) encerrar(estado EstadoEtapa, nota string) {
 		return
 	}
 	p.terminar(estado, nota, agora)
+	p.falhou = estado == EtapaFalha
 	p.desenhar(agora)
 }
 
@@ -350,7 +355,7 @@ func (p *Progresso) escreverFixas() {
 // escreverVivas escreve a etapa atual e as pendentes, que serão redesenhadas.
 func (p *Progresso) escreverVivas(agora time.Time) {
 	vivas := p.copia(agora)[p.fixas:]
-	if len(vivas) == 0 {
+	if len(vivas) == 0 || (p.falhou && p.atual < 0) {
 		return
 	}
 	Steps(p.w, vivas, p.largura)

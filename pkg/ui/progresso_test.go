@@ -306,3 +306,28 @@ func TestProgressoPausar(t *testing.T) {
 		t.Errorf("ao retomar, o trecho vivo volta uma vez: %q", b.String())
 	}
 }
+
+func TestProgressoFalhaNoTerminalTiraAsPendentes(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, true)
+	var b bytes.Buffer
+	p := progressoDeTeste(&b, true, "cluster", "git server", "argo cd")
+	p.Iniciar("cluster")
+	p.Concluir("criado")
+	p.Iniciar("git server")
+	p.Falhar("")
+
+	// depois da falha, o trecho redesenhado só tem o que já terminou
+	depois := b.String()[strings.LastIndex(b.String(), "\x1b[J")+len("\x1b[J"):]
+	if strings.Contains(depois, "argo cd") {
+		t.Errorf("a pendente continuou na tela depois da falha: %q", depois)
+	}
+	if !strings.Contains(depois, "x git server") {
+		t.Errorf("a etapa que falhou deveria ficar: %q", depois)
+	}
+
+	// se o comando seguir, as pendentes voltam
+	p.Iniciar("argo cd")
+	if !strings.HasSuffix(strings.TrimRight(b.String(), "\n"), "argo cd") {
+		t.Errorf("a próxima etapa deveria aparecer: %q", b.String())
+	}
+}

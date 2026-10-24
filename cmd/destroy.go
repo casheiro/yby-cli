@@ -18,8 +18,9 @@ var destroyCmd = &cobra.Command{
 	Short: "Destroi o ambiente (cluster k3d)",
 	Long: `Remove o cluster Yby e limpa recursos associados.
 ATENÇÃO: Este comando é destrutivo e removerá o cluster criado pelo 'yby up'.
-Para ambientes não-locais (dev/staging/prod), exige a flag --yes-destroy-production
-e confirmação interativa digitando o nome do cluster.`,
+Para ambientes não-locais (dev/staging/prod), o cluster k3d vem de YBY_CLUSTER_NAME
+(sem ela, o comando recusa em vez de apagar o cluster local) e exige a flag
+--yes-destroy-production e confirmação interativa digitando o nome do cluster.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := cmd.OutOrStdout()
 		env := os.Getenv("YBY_ENV")
@@ -27,15 +28,23 @@ e confirmação interativa digitando o nome do cluster.`,
 			env = contextFlag
 		}
 
-		clusterName := os.Getenv("YBY_CLUSTER_NAME")
-		if clusterName == "" {
-			clusterName = "yby-local"
-		}
 		ambiente := env
 		if ambiente == "" {
 			ambiente = "local"
 		}
 		ui.Title(w, "destroy", "ambiente "+ambiente)
+
+		// o cluster padrão (yby-local) é o do ambiente local: outro ambiente precisa dizer
+		// qual cluster k3d é o dele, senão o destroy apagaria o cluster local
+		clusterName := os.Getenv("YBY_CLUSTER_NAME")
+		if clusterName == "" {
+			if ambiente != "local" {
+				return errors.New(errors.ErrCodeValidation,
+					fmt.Sprintf("o ambiente %s não tem cluster k3d definido", env)).
+					WithHint("o yby destroy remove clusters k3d: defina o do ambiente em YBY_CLUSTER_NAME; um cluster remoto se remove pelo provedor")
+			}
+			clusterName = "yby-local"
+		}
 
 		// Para ambientes não-locais, exigir double-confirm
 		if env != "" && env != "local" {

@@ -3,6 +3,6 @@
   ◈ gerando o Secret payments/db
 
 ✕ falha ao gerar secret                          ERR_EXEC_FAILED
-  causa     error: the server doesn't have a resource type "secrets"
+  causa     the server doesn't have a resource type "secrets"
   faça      confira o kubectl e o acesso ao cluster com yby doctor
   detalhes  rode de novo com --log-level=debug

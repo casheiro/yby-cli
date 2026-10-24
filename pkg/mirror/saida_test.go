@@ -116,7 +116,7 @@ func TestStartSyncLoop_SyncInicialFalhaLinha(t *testing.T) {
 	cancelar := rodarLaco(m)
 	esperarTexto(t, saida, "✕ sync")
 	cancelar()
-	assert.Contains(t, saida.String(), "  ✕ sync   tunnel not established. Call SetupTunnel() first · t…\n")
+	assert.Contains(t, saida.String(), "  ✕ sync   o túnel até o git server não foi aberto · tenta de n…\n")
 }
 
 func TestStartSyncLoop_ReconexaoLinhas(t *testing.T) {

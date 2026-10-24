@@ -286,6 +286,7 @@ func (s *scenarioContext) oComandoDeveValidarParametros() error {
 			strings.Contains(output, "Connection refused") ||
 			strings.Contains(output, "k3d não encontrado") ||
 			strings.Contains(output, "failed to create port forwarder") ||
+			strings.Contains(output, "falha ao preparar o túnel até o git server") ||
 			strings.Contains(output, "exec: \"k3d\": executable file not found") ||
 			strings.Contains(output, "falha ao iniciar o ambiente local") ||
 			strings.Contains(output, "ERR_EXEC_FAILED") {

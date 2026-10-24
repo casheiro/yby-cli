@@ -80,8 +80,30 @@ func TestDestroyCmd_LocalEnv_WithMock(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// Sem YBY_CLUSTER_NAME, um ambiente não local não cai no cluster local (yby-local).
+func TestDestroyCmd_NonLocalEnv_SemCluster_NaoApagaOLocal(t *testing.T) {
+	original := newDestroyClusterManager
+	defer func() { newDestroyClusterManager = original }()
+	newDestroyClusterManager = func() environment.ClusterManager {
+		t.Fatal("não deveria destruir nenhum cluster")
+		return nil
+	}
+	t.Setenv("YBY_ENV", "qa")
+	t.Setenv("YBY_CLUSTER_NAME", "")
+	destroyCmd.Flags().Set("yes-destroy-production", "true")
+	defer destroyCmd.Flags().Set("yes-destroy-production", "false")
+
+	saidaDoComando(t, destroyCmd)
+	err := destroyCmd.RunE(destroyCmd, []string{})
+	var yerr *ybyerrors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "o ambiente qa não tem cluster k3d definido", yerr.Message)
+	assert.Contains(t, yerr.Hint, "YBY_CLUSTER_NAME")
+}
+
 func TestDestroyCmd_NonLocalEnv_WithoutFlag_Rejected(t *testing.T) {
 	t.Setenv("YBY_ENV", "prod")
+	t.Setenv("YBY_CLUSTER_NAME", "prod-cluster")
 
 	destroyCmd.Flags().Set("yes-destroy-production", "false")
 
