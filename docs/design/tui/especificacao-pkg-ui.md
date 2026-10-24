@@ -103,7 +103,7 @@ RESUMO  4 ok · 1 aviso · 1 erro  · o erro impede yby up          ← Summary
 
 Colunas de `Check`: nome com 12 células e versão com 10; quando o texto enche a coluna, segue com 2 espaços. Para alinhar um relatório com nomes longos (ex.: `Prometheus Operator`), `CheckCom(w, ColunasPara(nomes...), …)` alarga a coluna do nome até o mais largo + 2.
 
-Largura do terminal **(decisão)**: quando `w` é um terminal (`ui.Largura(w) > 0`), a nota de `Check` quebra entre palavras e continua alinhada na coluna da nota; fora do terminal (pipe, arquivo) nada quebra. `ui.Quebrar(texto, largura)` faz a quebra (não quebra abaixo de 16 células nem parte palavras, como caminhos).
+Largura do terminal **(decisão)**: quando `w` é um terminal (`ui.Largura(w) > 0`) mais estreito que a linha, a nota de `Check` desce inteira para a linha de baixo, recuada sob o nome (4 células), e só quebra entre palavras se ainda não couber; assim caminhos com espaço (`C:\Program Files\…`) não se partem. `Title` se ajusta à largura do terminal e, se os dois lados não cabem, o da direita desce; em `Summary` a frase desce, alinhada sob a contagem. Fora do terminal (pipe, arquivo) nada quebra. `ui.Quebrar(texto, largura)` faz a quebra (não quebra abaixo de 16 células nem parte palavras).
 
 `Steps` (yby up): `  ✓ cluster yby-local   criado   38 s` / `  ◈ argo cd   ━━━━┄┄ 64%   25 s` / `  ◇ root-app`.
 

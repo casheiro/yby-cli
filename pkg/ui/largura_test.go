@@ -62,32 +62,66 @@ func TestQuebrar(t *testing.T) {
 	}
 }
 
-func TestCheckQuebraNotaNoTerminal(t *testing.T) {
+func TestCheckNotaDesceNoTerminal(t *testing.T) {
 	usarTema(t, true, termenv.Ascii, false)
 	fixarLargura(t, 60)
+	col := ColunasPara("Prometheus Operator")
 	var b bytes.Buffer
-	CheckCom(&b, ColunasPara("Prometheus Operator"), CheckAviso, "conexão", "sem acesso",
-		"confira o KUBECONFIG ou se o cluster está no ar")
-	esperado := "  ▲ conexão              sem acesso  confira o KUBECONFIG ou\n" +
-		"                                     se o cluster está no ar\n"
+	CheckCom(&b, col, CheckAviso, "conexão", "sem acesso", "confira o KUBECONFIG ou se o cluster está no ar")
+	CheckCom(&b, col, CheckOk, "git", "instalado", `C:\Program Files\Git\cmd\git.exe`)
+	CheckCom(&b, col, CheckOk, "docker", "ativo", "27.3")
+	esperado := "  ▲ conexão              sem acesso\n" +
+		"    confira o KUBECONFIG ou se o cluster está no ar\n" +
+		"  ✓ git                  instalado\n" +
+		`    C:\Program Files\Git\cmd\git.exe` + "\n" +
+		"  ✓ docker               ativo     27.3\n"
 	if b.String() != esperado {
-		t.Errorf("saída inesperada:\n%q\nesperado:\n%q", b.String(), esperado)
+		t.Errorf("saída inesperada:\n%s\nesperado:\n%s", b.String(), esperado)
 	}
-	for _, l := range strings.Split(strings.TrimRight(b.String(), "\n"), "\n") {
-		if lipgloss.Width(l) > 60 {
-			t.Errorf("linha passa da largura: %q", l)
-		}
-	}
-	// neutro: a continuação também sai em TintaSuave, alinhada na coluna da nota
+
+	// abaixo, a nota ainda quebra entre palavras se não couber
+	fixarLargura(t, 30)
 	b.Reset()
 	Check(&b, CheckNeutro, "az", "ausente", "opcional · instale com winget install Microsoft.AzureCLI")
-	linhas := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
-	if len(linhas) != 2 {
-		t.Fatalf("esperava 2 linhas:\n%s", b.String())
+	for i, l := range strings.Split(strings.TrimRight(b.String(), "\n"), "\n") {
+		if lipgloss.Width(l) > 30 {
+			t.Errorf("linha passa da largura: %q", l)
+		}
+		if i > 0 && !strings.HasPrefix(l, "    ") {
+			t.Errorf("continuação sem recuo sob o nome: %q", l)
+		}
 	}
-	colunaNota := lipgloss.Width(linhas[0][:strings.Index(linhas[0], "opcional")])
-	if recuo := len(linhas[1]) - len(strings.TrimLeft(linhas[1], " ")); recuo != colunaNota {
-		t.Errorf("continuação desalinhada (recuo %d, nota na coluna %d):\n%s", recuo, colunaNota, b.String())
+}
+
+func TestTitleESummaryNoTerminal(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+
+	// terminal mais estreito que a largura padrão: o título se ajusta a ele
+	fixarLargura(t, 50)
+	var b bytes.Buffer
+	Title(&b, "doctor", "24/10 12:03")
+	if l := strings.TrimRight(b.String(), "\n"); lipgloss.Width(l) != 50 || !strings.HasSuffix(l, "24/10 12:03") {
+		t.Errorf("título inesperado: %q", l)
+	}
+
+	// estreito demais para os dois: a direita desce
+	fixarLargura(t, 24)
+	b.Reset()
+	Title(&b, "validate", `B:\projetos\yby-cli`)
+	if b.String() != "◆ YBY  VALIDATE\n  B:\\projetos\\yby-cli\n" {
+		t.Errorf("título inesperado: %q", b.String())
+	}
+
+	fixarLargura(t, 50)
+	b.Reset()
+	Summary(&b, 3, 1, 3, "corrija os erros antes do yby up")
+	if b.String() != "\nRESUMO  3 ok · 1 aviso · 3 erros\n        corrija os erros antes do yby up\n" {
+		t.Errorf("resumo inesperado: %q", b.String())
+	}
+	b.Reset()
+	Summary(&b, 3, 0, 0, "ok")
+	if b.String() != "\nRESUMO  3 ok · 0 avisos · 0 erros  · ok\n" {
+		t.Errorf("resumo que cabe não deveria quebrar: %q", b.String())
 	}
 }
 

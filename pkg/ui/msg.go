@@ -58,11 +58,27 @@ func duasPontas(esq, dir string, w int) string {
 	return esq + strings.Repeat(" ", folga) + dir
 }
 
+// larguraLinha devolve a largura das saídas em w: a padrão, ou a do terminal quando ele
+// é mais estreito.
+func larguraLinha(w io.Writer) int {
+	if l := larguraDe(w); l > 0 {
+		return min(msgLargura, l)
+	}
+	return msgLargura
+}
+
 // Title escreve o cabeçalho "◆ YBY  INSTRUMENTO" com o texto da direita (data, contexto) em TintaSuave.
+// Num terminal estreito demais para os dois, o texto da direita desce para a linha de baixo.
 func Title(w io.Writer, instrumento, direita string) {
 	s := S()
 	esq := s.Ok.Render(G().Ativo) + " " + s.Negrito.Render("YBY  "+strings.ToUpper(instrumento))
-	fmt.Fprintln(w, duasPontas(esq, s.TintaSuave.Render(direita), msgLargura))
+	larg := larguraLinha(w)
+	if l := larguraDe(w); l > 0 && lipgloss.Width(esq)+2+lipgloss.Width(direita) > l {
+		fmt.Fprintln(w, esq)
+		fmt.Fprintln(w, "  "+s.TintaSuave.Render(direita))
+		return
+	}
+	fmt.Fprintln(w, duasPontas(esq, s.TintaSuave.Render(direita), larg))
 }
 
 // Section escreve o nome de uma seção em TintaSuave e caixa-alta, precedido de linha em branco.
@@ -91,8 +107,9 @@ func Check(w io.Writer, tipo TipoCheck, nome, versao, nota string) {
 }
 
 // CheckCom é Check com larguras de coluna escolhidas pelo chamador (ver ColunasPara).
-// Quando w é um terminal e a nota não cabe na linha, ela quebra entre palavras e
-// continua alinhada na coluna da nota.
+// Quando w é um terminal e a nota não cabe na linha, ela desce inteira para a linha de
+// baixo, recuada sob o nome (e quebra entre palavras só se ainda não couber), para não
+// partir caminhos como "C:\Program Files\…".
 func CheckCom(w io.Writer, col Colunas, tipo TipoCheck, nome, versao, nota string) {
 	s, g := S(), G()
 	var glifo string
@@ -107,13 +124,16 @@ func CheckCom(w io.Writer, col Colunas, tipo TipoCheck, nome, versao, nota strin
 	default:
 		glifo, est = g.Parado, s.TintaSuave
 	}
-	corpo, notas, recuo := nome, []string{""}, 0
+	// recuo sob o nome: margem, glifo e espaço
+	corpo, recuo := nome, 3+lipgloss.Width(glifo)
+	var abaixo []string
 	if nota != "" || versao != "" {
 		corpo = coluna(nome, col.Nome) + coluna(versao, col.Versao)
-		// a nota começa depois da margem, do glifo com espaço e das colunas
-		recuo = 3 + lipgloss.Width(glifo) + lipgloss.Width(corpo)
-		notas = Quebrar(nota, larguraDe(w)-recuo)
-		corpo += notas[0]
+		if l := larguraDe(w); l > 0 && nota != "" && recuo+lipgloss.Width(corpo)+lipgloss.Width(nota) > l {
+			abaixo = Quebrar(nota, l-recuo)
+		} else {
+			corpo += nota
+		}
 	}
 	corpo = strings.TrimRight(corpo, " ")
 	texto := s.Tinta
@@ -123,7 +143,7 @@ func CheckCom(w io.Writer, col Colunas, tipo TipoCheck, nome, versao, nota strin
 	} else {
 		fmt.Fprintln(w, "  "+est.Render(glifo)+" "+texto.Render(corpo))
 	}
-	for _, n := range notas[1:] {
+	for _, n := range abaixo {
 		fmt.Fprintln(w, strings.Repeat(" ", recuo)+texto.Render(n))
 	}
 }
@@ -136,7 +156,8 @@ func plural(n int, singular, plur string) string {
 }
 
 // Summary escreve a linha "RESUMO  4 ok · 1 aviso · 1 erro" com a contagem colorida;
-// frase, se não vazia, entra ao final depois de "· " em TintaSuave.
+// frase, se não vazia, entra ao final depois de "· " em TintaSuave. Num terminal estreito
+// demais, a frase desce para a linha de baixo, alinhada sob a contagem.
 func Summary(w io.Writer, ok, aviso, erro int, frase string) {
 	s := S()
 	partes := []string{
@@ -145,12 +166,21 @@ func Summary(w io.Writer, ok, aviso, erro int, frase string) {
 		s.Erro.Render(plural(erro, "erro", "erros")),
 	}
 	sep := s.TintaSuave.Render(" · ")
-	linha := s.Rotulo.Render("RESUMO") + "  " + strings.Join(partes, sep)
+	rotulo := "RESUMO  "
+	linha := s.Rotulo.Render(strings.TrimSpace(rotulo)) + "  " + strings.Join(partes, sep)
+	var abaixo []string
 	if frase != "" {
-		linha += "  " + s.TintaSuave.Render("· "+frase)
+		if l := larguraDe(w); l > 0 && lipgloss.Width(linha)+4+lipgloss.Width(frase) > l {
+			abaixo = Quebrar(frase, l-len(rotulo))
+		} else {
+			linha += "  " + s.TintaSuave.Render("· "+frase)
+		}
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, linha)
+	for _, f := range abaixo {
+		fmt.Fprintln(w, strings.Repeat(" ", len(rotulo))+s.TintaSuave.Render(f))
+	}
 }
 
 // linhaUnica troca quebras de linha por espaço.
