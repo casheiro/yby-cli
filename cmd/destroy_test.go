@@ -216,5 +216,5 @@ func TestDestroyCmd_DeleteError(t *testing.T) {
 
 	err := destroyCmd.RunE(destroyCmd, []string{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Erro ao destruir cluster")
+	assert.Contains(t, err.Error(), "falha ao destruir o cluster")
 }

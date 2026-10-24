@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -41,7 +42,14 @@ func (m *RealClusterNetworkManager) HasService(ctx context.Context, kubeContext,
 	return err == nil
 }
 
+// pausaPortForward é a espera entre as tentativas do port-forward. Variável para os testes.
+var pausaPortForward = 2 * time.Second
+
+// PortForward repete o kubectl port-forward até o contexto acabar. A saída do kubectl vai
+// para o log em debug; por isso cada causa nova de falha (porta ocupada, pod não pronto)
+// sai uma vez em warn, para o túnel que não sobe não ficar em silêncio.
 func (m *RealClusterNetworkManager) PortForward(ctx context.Context, kubeContext, ns, resource, ports string) error {
+	ultimaCausa := ""
 	for {
 		select {
 		case <-ctx.Done():
@@ -51,7 +59,11 @@ func (m *RealClusterNetworkManager) PortForward(ctx context.Context, kubeContext
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				time.Sleep(2 * time.Second)
+				if causa := shared.CausaCurta(err); causa != ultimaCausa {
+					ultimaCausa = causa
+					slog.Warn("túnel não subiu, tentando de novo", "recurso", resource, "portas", ports, "causa", causa)
+				}
+				time.Sleep(pausaPortForward)
 				continue
 			}
 			return nil

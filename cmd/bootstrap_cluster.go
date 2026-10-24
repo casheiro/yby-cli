@@ -10,6 +10,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,9 @@ var newBootstrapClusterService = func(runner shared.Runner, fs shared.Filesystem
 	k8s := &bootstrap.RealK8sClient{Runner: runner}
 	return bootstrap.NewService(runner, fs, k8s)
 }
+
+// acharRaizInfra localiza a raiz da infraestrutura (substituível em testes).
+var acharRaizInfra = FindInfraRoot
 
 var bootstrapClusterCmd = &cobra.Command{
 	Use:   "cluster",
@@ -34,20 +38,23 @@ var bootstrapClusterCmd = &cobra.Command{
   # Forçar uso do blueprint para versões
   yby bootstrap cluster --context prod`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Cluster GitOps"))
-		fmt.Println("---------------------------------------")
+		w := cmd.OutOrStdout()
 
 		// 0. Resolve Infra Root
-		root, err := FindInfraRoot()
+		root, err := acharRaizInfra()
 		if err != nil {
-			fmt.Println(warningStyle.Render("⚠️  Raiz da infraestrutura não encontrada (.yby/). Assumindo diretório atual '.'"))
 			root = "."
-		} else {
-			fmt.Printf("📂 Infraestrutura detectada em: %s\n", root)
+		}
+		ui.Title(w, "bootstrap cluster", agora().Format("02/01 15:04"))
+		if err != nil {
+			ui.Check(w, ui.CheckAviso, "raiz .yby/ não encontrada · usando o diretório atual", "", "")
 		}
 
-		// Inject Dependencies
-		runner := &shared.RealRunner{}
+		// Inject Dependencies: a saída dos comandos externos não atropela as etapas, mas o
+		// que um plugin exec do kubeconfig pede no stderr (login de um cluster gerenciado)
+		// aparece abaixo delas
+		prog := novoProgresso(w, bootstrap.Rotulos...)
+		runner := runnerAoVivo{Runner: &shared.RealRunner{}, aviso: prog.Detalhe, atraso: atrasoAviso}
 		filesystem := &shared.RealFilesystem{}
 		svc := newBootstrapClusterService(runner, filesystem)
 
@@ -56,14 +63,20 @@ var bootstrapClusterCmd = &cobra.Command{
 			RepoURL:     os.Getenv("GITHUB_REPO"),
 			Context:     contextFlag,
 			Environment: os.Getenv("YBY_ENV"),
+			Etapas:      prog,
 		}
 
-		if err := svc.Run(cmd.Context(), opts); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "Erro no bootstrap")
+		parar := animar(prog)
+		err = svc.Run(cmd.Context(), opts)
+		parar()
+		if err != nil {
+			return errors.Wrap(err, errors.ErrCodeExec, "falha no bootstrap do cluster").
+				WithHint(dicaDe(err, "confira o acesso ao cluster com yby doctor e rode o bootstrap de novo; ele retoma da última fase"))
 		}
 
-		fmt.Println("\n" + checkStyle.Render("🎉 Bootstrap do Cluster concluído!"))
-		fmt.Println("👉 Execute 'yby access' para acessar os dashboards.")
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckOk, "stack GitOps instalada", "", "")
+		ui.Check(w, ui.CheckNeutro, "yby access abre os dashboards", "", "")
 		return nil
 	},
 }

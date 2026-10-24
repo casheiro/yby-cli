@@ -1,0 +1,11 @@
+* YBY  BOOTSTRAP VPS                      ubuntu@203.0.113.10:22
+  v conexão ssh                                            0,8 s
+  v requisitos mínimos   7812 MB de memória                0,3 s
+  v sistema e dependências                             1 min 4 s
+  v firewall (ufw)                                         2,0 s
+  v docker                                                  41 s
+  v k3s v1.31.2+k3s1                                  1 min 33 s
+  v kubeconfig   contexto yby-prod                         1,5 s
+
+  v vps pronta
+  o yby bootstrap cluster instala a stack GitOps

@@ -1,0 +1,7 @@
+◆ YBY  DESTROY                                  ambiente staging
+  ✕ cluster yby-local                                      3,2 s
+
+✕ falha ao destruir o cluster                    ERR_EXEC_FAILED
+  causa     cluster 'yby-local' não existe
+  faça      confira o nome com k3d cluster list e se o Docker está rodando
+  detalhes  rode de novo com --log-level=debug

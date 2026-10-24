@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -19,15 +20,16 @@ var uninstallCmd = &cobra.Command{
 	Short: "Desinstala o Yby CLI do sistema",
 	Long: `Remove o binário do Yby CLI do sistema.
 Esta ação é irreversível e removerá apenas o executável atual.
-Arquivos de configuração e dados em ~/.yby PAG não serã removidos automaticamente.`,
+Arquivos de configuração e dados em ~/.yby não serão removidos automaticamente.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		w := cmd.OutOrStdout()
 		exePath, err := osExecutable()
 		if err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao localizar o binário")
 		}
 
-		fmt.Println(titleStyle.Render("🗑️  Yby Uninstall"))
-		fmt.Printf("O executável localizado em: %s será removido.\n", exePath)
+		ui.Title(w, "uninstall", "versão "+Version)
+		ui.Check(w, ui.CheckNeutro, "remove o executável", exePath, "")
 		if sim, _ := cmd.Flags().GetBool("yes"); !sim {
 			confirmado, err := prompter.Confirm("Remover o Yby CLI deste computador?", false)
 			if err != nil {
@@ -35,22 +37,25 @@ Arquivos de configuração e dados em ~/.yby PAG não serã removidos automatica
 					WithHint("rode yby uninstall num terminal ou confirme com yby uninstall --yes")
 			}
 			if !confirmado {
-				fmt.Println("Operação cancelada.")
+				ui.Check(w, ui.CheckNeutro, "desinstalação cancelada", "", "")
 				return nil
 			}
 		}
 
-		fmt.Printf("Removendo %s... ", exePath)
 		if err := osRemove(exePath); err != nil {
+			e := errors.Wrap(err, errors.ErrCodeExec, "falha ao remover o binário")
 			// Dica caso seja erro de permissão
 			if strings.Contains(err.Error(), "permission denied") {
-				fmt.Println(grayStyle.Render("💡 Tente rodar com sudo: sudo yby uninstall"))
+				e = e.WithHint("rode com sudo: sudo yby uninstall")
+			} else {
+				e = e.WithHint("feche outros terminais que estejam usando o yby e tente de novo")
 			}
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao remover o binário")
+			return e
 		}
 
-		fmt.Println("\n" + checkStyle.Render("✅ Yby CLI desinstalado com sucesso!"))
-		fmt.Println("Até logo! 👋")
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckOk, "Yby CLI desinstalado", "", "")
+		ui.Check(w, ui.CheckNeutro, "~/.yby fica no lugar, com a configuração e os dados", "", "")
 		return nil
 	},
 }

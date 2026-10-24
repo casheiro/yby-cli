@@ -12,11 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/executor"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -39,49 +42,29 @@ Pré-requisitos (verificados automaticamente):
   # Provisionar máquina local (laptop/desktop)
   yby bootstrap vps --local`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(titleStyle.Render("🚀 Yby Bootstrap - Provisionamento de VPS"))
-		fmt.Println("---------------------------------------")
+		w := cmd.OutOrStdout()
 
 		// 0. Detect Mode
 		isLocal, _ := cmd.Flags().GetBool("local")
-		var execClient executor.Executor
-		var host string
+		var avisos []linhaCheck
 
-		if isLocal {
-			fmt.Println(stepStyle.Render("📡 Modo Local Detectado"))
-			execClient = executor.NewLocalExecutor()
-			// For kubeconfig setup later, we use "localhost" or detect public IP?
-			// For now, let's assume if local, we want kubeconfig to point to localhost or internal IP?
-			// K3s writes to /etc/rancher/k3s/k3s.yaml.
-			// The fetchKubeconfig logic assumes we want to MERGE with ~/.kube/config.
-			host = "127.0.0.1"
-		} else {
-			// 1. Carregar configuração (Flag > Manifesto > Env (Legacy))
-			host = vpsHost
-			user := vpsUser
-			port := vpsPort
-
+		// 1. Carregar configuração (Flag > Manifesto > Env (Legacy))
+		host, user, port := vpsHost, vpsUser, vpsPort
+		if !isLocal {
 			// Smart Local Detection:
 			// If no host provided, and we are on Linux, ask if user wants to provision THIS machine.
 			if host == "" && runtime.GOOS == "linux" {
 				confirmLocal, _ := prompter.Confirm("Nenhum host remoto definido. Deseja provisionar ESTA máquina como uma VPS Yby (localhost)?", false)
-
-				if confirmLocal {
-					isLocal = true
-					fmt.Println(stepStyle.Render("🔄 Alternando para modo Auto-Provisionamento (Local)"))
-					// Re-initialize as local
-					execClient = executor.NewLocalExecutor()
-					host = "127.0.0.1"
-				}
+				isLocal = confirmLocal
 			}
 
 			// Legacy .env support (Deprecation Warning)
-			if host == "" {
+			if !isLocal && host == "" {
 				// Try loading .env only if strictly necessary
 				if _, err := os.Stat("../.env"); err == nil {
 					_ = godotenv.Load("../.env")
 					if val := os.Getenv("VPS_HOST"); val != "" {
-						fmt.Println(warningStyle.Render("⚠️  Usando VPS_HOST do arquivo .env (Depreciado). Use --host ou manifesto."))
+						avisos = append(avisos, linhaCheck{ui.CheckAviso, "VPS_HOST lido do ../.env · obsoleto, use --host", "", ""})
 						host = val
 					}
 					if user == "root" && os.Getenv("VPS_USER") != "" {
@@ -90,44 +73,68 @@ Pré-requisitos (verificados automaticamente):
 				}
 			}
 
-			if host == "" {
-				return errors.New(errors.ErrCodeValidation, "Host não definido. Use --host.")
+			if !isLocal && host == "" {
+				ui.Title(w, "bootstrap vps", "")
+				return errors.New(errors.ErrCodeValidation, "host não definido").
+					WithHint("yby bootstrap vps --host IP --user USUÁRIO, ou --local para esta máquina")
 			}
+		}
 
-			fmt.Printf("%s Conectando a %s@%s:%s...\n", stepStyle.Render("📡"), user, host, port)
+		destino := user + "@" + host + ":" + port
+		if isLocal {
+			// K3s grava o kubeconfig em /etc/rancher/k3s/k3s.yaml; localmente ele aponta
+			// para 127.0.0.1 antes do merge com ~/.kube/config.
+			host = "127.0.0.1"
+			destino = "esta máquina"
+		}
+		ui.Title(w, "bootstrap vps", destino)
+		for _, a := range avisos {
+			ui.Check(w, a.tipo, a.nome, a.estado, a.nota)
+		}
 
-			// 2. Conexão SSH (Only if not swapped to local)
-			if !isLocal {
-				var err error
-				execClient, err = executor.NewSSHExecutor(user, host, port)
-				if err != nil {
-					return errors.Wrap(err, errors.ErrCodeUnreachable, "Erro na conexão SSH")
-				}
+		// K3s Version Resolution
+		// Priority: Flag > cluster-values.yaml > Default
+		if !cmd.Flags().Changed("k3s-version") {
+			if v := versaoK3sDoClusterValues(); v != "" {
+				k3sVersion = v
+				ui.Check(w, ui.CheckNeutro, "k3s "+k3sVersion+" · lido de config/cluster-values.yaml", "", "")
 			}
+		}
+
+		rotuloK3s := "k3s " + k3sVersion
+		plano := []string{"requisitos mínimos", "sistema e dependências", "firewall (ufw)", "docker", rotuloK3s, "kubeconfig"}
+		if !isLocal {
+			plano = append([]string{"conexão ssh"}, plano...)
+		}
+		prog := novoProgresso(w, plano...)
+		parar := animar(prog)
+		defer parar()
+
+		// 2. Conexão SSH (só no modo remoto)
+		var execClient executor.Executor
+		if isLocal {
+			execClient = novoExecutorLocal(prog)
+		} else {
+			prog.Iniciar("conexão ssh")
+			var err error
+			execClient, err = novoExecutorSSH(user, host, port, prog)
+			if err != nil {
+				prog.Falhar("")
+				return errors.Wrap(err, errors.ErrCodeUnreachable, "falha na conexão SSH").
+					WithHint("confira host, usuário e se a chave está no ssh-agent (ssh-add -l)")
+			}
+			prog.Concluir("")
 		}
 		defer execClient.Close()
 
-		if !isLocal {
-			fmt.Println(checkStyle.Render("✅ Conexão SSH estabelecida!"))
-		}
-
-		if err := runEx(execClient, "Verificando Requisitos Mínimos", `
-			TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-			# 4GB ~ 4000000 kB. Warning if < 3.8GB to be safe
-			if [ "$TOTAL_MEM_KB" -lt 3800000 ]; then
-				echo "⚠️  AVISO: Memória disponível ("$((TOTAL_MEM_KB/1024))" MB) é inferior a 4GB."
-				echo "   A stack Yby completa requer no mínimo 4GB de RAM para estabilidade."
-				echo "   Continuando em 5 segundos... (Ctrl+C para cancelar)"
-				sleep 5
-			else
-				echo "✅ Memória OK: "$((TOTAL_MEM_KB/1024))" MB"
-			fi
-		`); err != nil {
+		// 3. Requisitos: a memória é lida aqui (e não num script) para o alerta aparecer
+		// antes da espera em que o ctrl+c ainda cancela
+		if err := conferirMemoria(execClient, prog); err != nil {
 			return err
 		}
 
 		// 4. Preparar Servidor
-		if err := runEx(execClient, "Atualizando sistema e instalando dependências", `
+		if err := runEx(execClient, "sistema e dependências", `
 			export DEBIAN_FRONTEND=noninteractive
 			apt-get update -qq
 			if ! command -v curl >/dev/null; then apt-get install -y -qq curl; fi
@@ -140,7 +147,7 @@ Pré-requisitos (verificados automaticamente):
 		}
 
 		// 4. Firewall
-		if err := runEx(execClient, "Configurando Firewall (UFW)", `
+		if err := runEx(execClient, "firewall (ufw)", `
 			ufw --force reset
 			ufw default deny incoming
 			ufw default allow outgoing
@@ -157,7 +164,7 @@ Pré-requisitos (verificados automaticamente):
 		}
 
 		// 5. Docker
-		if err := runEx(execClient, "Instalando Docker", `
+		if err := runEx(execClient, "docker", `
 			if ! command -v docker >/dev/null 2>&1; then
 				curl -fsSL https://get.docker.com -o get-docker.sh
 				sh get-docker.sh
@@ -180,32 +187,11 @@ Pré-requisitos (verificados automaticamente):
 			k3sToken = hex.EncodeToString(tokenBytes)
 		}
 
-		// 6. K3s Version Resolution
-		// Priority: Flag > cluster-values.yaml > Default
-		if !cmd.Flags().Changed("k3s-version") {
-			if data, err := os.ReadFile("config/cluster-values.yaml"); err == nil {
-				var config struct {
-					System struct {
-						K3s struct {
-							Version string `yaml:"version"`
-						} `yaml:"k3s"`
-					} `yaml:"system"`
-				}
-				if err := yaml.Unmarshal(data, &config); err == nil && config.System.K3s.Version != "" {
-					k3sVersion = config.System.K3s.Version
-					fmt.Printf("📄 Usando versão K3s do cluster-values.yaml: %s\n", k3sVersion)
-				}
-			}
-		}
-
 		// 7. K3s Installation
 		// Logic adjustment: for local mode, "host" for tls-san should ideally be the public IP or hostname.
 		// Since we default host to 127.0.0.1 for local, we might want to also add the machine's hostname.
 		// For MVP, lets keep 127.0.0.1 and maybe detected hostname if we can (via hostname command in script?)
-
-		fmt.Printf("📦 Versão K3s alvo: %s\n", k3sVersion)
-
-		if err := runEx(execClient, "Instalando K3s", fmt.Sprintf(`
+		if err := runEx(execClient, rotuloK3s, fmt.Sprintf(`
 			if ! command -v k3s >/dev/null 2>&1; then
 				curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="%s" K3S_TOKEN="%s" sh -s - server --cluster-init --write-kubeconfig-mode=644 --tls-san %s
 			else
@@ -216,16 +202,66 @@ Pré-requisitos (verificados automaticamente):
 		}
 
 		// 7. Fetch Kubeconfig
-		fmt.Println(stepStyle.Render("🔄 Configurando acesso local (kubeconfig)..."))
-		runner := &shared.RealRunner{}
-		if err := fetchKubeconfig(execClient, host, runner); err != nil {
-			return errors.Wrap(err, errors.ErrCodeConfig, "Erro ao configurar kubeconfig")
+		prog.Iniciar("kubeconfig")
+		runner := runnerQuieto{&shared.RealRunner{}}
+		if err := configurarKubeconfig(execClient, host, runner); err != nil {
+			prog.Falhar("")
+			return errors.Wrap(err, errors.ErrCodeConfig, "falha ao configurar o kubeconfig").
+				WithHint("confira se o k3s gerou /etc/rancher/k3s/k3s.yaml no servidor")
 		}
+		prog.Concluir("contexto " + nomeContextoVps())
+		parar()
 
-		fmt.Println("\n" + checkStyle.Render("🎉 Bootstrap VPS concluído com sucesso!"))
-		fmt.Println("👉 Próximo passo: 'yby bootstrap cluster' para instalar a stack GitOps.")
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckOk, "vps pronta", "", "")
+		ui.Check(w, ui.CheckNeutro, "yby bootstrap cluster instala a stack GitOps", "", "")
 		return nil
 	},
+}
+
+// novoExecutorLocal cria o executor desta máquina (substituível em testes).
+var novoExecutorLocal = func(etapas shared.Etapas) executor.Executor {
+	return &executor.LocalExecutor{Etapas: etapas}
+}
+
+// novoExecutorSSH conecta ao servidor remoto (substituível em testes).
+var novoExecutorSSH = func(user, host, port string, etapas shared.Etapas) (executor.Executor, error) {
+	e, err := executor.NewSSHExecutor(user, host, port)
+	if err != nil {
+		return nil, err
+	}
+	e.Etapas = etapas
+	return e, nil
+}
+
+// configurarKubeconfig traz o kubeconfig do k3s para ~/.kube/config (substituível em testes).
+var configurarKubeconfig = fetchKubeconfig
+
+// versaoK3sDoClusterValues lê system.k3s.version de config/cluster-values.yaml, ou "".
+func versaoK3sDoClusterValues() string {
+	data, err := os.ReadFile("config/cluster-values.yaml")
+	if err != nil {
+		return ""
+	}
+	var config struct {
+		System struct {
+			K3s struct {
+				Version string `yaml:"version"`
+			} `yaml:"k3s"`
+		} `yaml:"system"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return ""
+	}
+	return config.System.K3s.Version
+}
+
+// nomeContextoVps é o nome do contexto do kubeconfig do VPS: CLUSTER_NAME ou yby-prod.
+func nomeContextoVps() string {
+	if nome := os.Getenv("CLUSTER_NAME"); nome != "" {
+		return nome
+	}
+	return "yby-prod"
 }
 
 var k3sVersion string
@@ -245,9 +281,51 @@ func init() {
 		"Desabilita verificação TLS do certificado do cluster (INSEGURO, usar apenas para debug)")
 }
 
+// memoriaMinimaKB é a memória abaixo da qual o bootstrap avisa: 3,8 GB, com folga sobre os
+// 4 GB que a stack completa pede.
+const memoriaMinimaKB = 3800000
+
+// esperaMemoriaBaixa é o tempo para o ctrl+c depois do alerta de memória baixa
+// (substituível em testes).
+var esperaMemoriaBaixa = 5 * time.Second
+
+// conferirMemoria é a etapa "requisitos mínimos": lê o MemTotal de /proc/meminfo do
+// servidor e, abaixo de memoriaMinimaKB, alerta e espera esperaMemoriaBaixa antes de
+// seguir.
+func conferirMemoria(e executor.Executor, etapas shared.Etapas) error {
+	etapas.Iniciar("requisitos mínimos")
+	dados, err := e.FetchFile("/proc/meminfo")
+	if err != nil {
+		etapas.Falhar("")
+		return errors.Wrap(err, errors.ErrCodeExec, "falha ao ler a memória do servidor").
+			WithHint("o bootstrap vps pede Linux com /proc/meminfo, como o Ubuntu 22.04+")
+	}
+	var kb int
+	for _, linha := range strings.Split(string(dados), "\n") {
+		if campos := strings.Fields(linha); len(campos) >= 2 && campos[0] == "MemTotal:" {
+			kb, _ = strconv.Atoi(campos[1])
+			break
+		}
+	}
+	if kb <= 0 {
+		// sem a leitura, não há como avisar; o resto do bootstrap decide
+		etapas.Concluir("memória não identificada")
+		return nil
+	}
+	etapas.Concluir(fmt.Sprintf("%d MB de memória", kb/1024))
+	if kb >= memoriaMinimaKB {
+		return nil
+	}
+	etapas.Avisar(fmt.Sprintf("abaixo dos 4 GB da stack · segue em %s, ctrl+c cancela",
+		ui.FormatarDuracao(esperaMemoriaBaixa)))
+	time.Sleep(esperaMemoriaBaixa)
+	return nil
+}
+
 func runEx(e executor.Executor, name, script string) error {
 	if err := e.Run(name, script); err != nil {
-		return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("Erro executando %s", name))
+		return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("falha na etapa %s", name)).
+			WithHint("veja a saída do script acima, corrija e rode yby bootstrap vps de novo")
 	}
 	return nil
 }
@@ -266,10 +344,7 @@ func fetchKubeconfig(e executor.Executor, host string, runner shared.Runner) err
 	content = strings.ReplaceAll(content, "localhost", host)
 
 	// Determine Cluster Name
-	clusterName := os.Getenv("CLUSTER_NAME")
-	if clusterName == "" {
-		clusterName = "yby-prod"
-	}
+	clusterName := nomeContextoVps()
 
 	// Save to temp file
 	tempFile, err := os.CreateTemp("", "k3s-config-*.yaml")
@@ -317,7 +392,7 @@ func fetchKubeconfig(e executor.Executor, host string, runner shared.Runner) err
 		return err
 	}
 
-	fmt.Printf("%s Kubeconfig atualizado! Contexto: %s\n", checkStyle.String(), clusterName)
+	slog.Debug("kubeconfig atualizado", "contexto", clusterName, "arquivo", mainConfigPath)
 	return nil
 }
 

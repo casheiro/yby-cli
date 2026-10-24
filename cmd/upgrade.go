@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -63,6 +64,10 @@ var httpGet = func(url string) (*http.Response, error) {
 	return client.Get(url)
 }
 
+// sistemaUpgrade e arquiteturaUpgrade escolhem o asset do release (substituíveis em
+// testes, para o golden ser o mesmo em toda plataforma).
+var sistemaUpgrade, arquiteturaUpgrade = runtime.GOOS, runtime.GOARCH
+
 // releaseInfo representa os dados relevantes de um release do GitHub
 type releaseInfo struct {
 	TagName string         `json:"tag_name"`
@@ -87,9 +92,12 @@ e substitui o binário atual.`,
   yby upgrade
   yby upgrade --version v0.6.0`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		w := cmd.OutOrStdout()
 		checkOnly, _ := cmd.Flags().GetBool("check")
 		force, _ := cmd.Flags().GetBool("force")
 		targetVersion, _ := cmd.Flags().GetString("version")
+
+		ui.Title(w, "upgrade", sistemaUpgrade+"/"+arquiteturaUpgrade)
 
 		// Buscar informações do release
 		var release *releaseInfo
@@ -101,26 +109,35 @@ e substitui o binário atual.`,
 			release, err = fetchLatestRelease()
 		}
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao buscar informações do release")
-		}
-
-		fmt.Printf("Versão atual: %s\n", Version)
-		fmt.Printf("Versão disponível: %s\n", release.TagName)
-
-		if !force && release.TagName == Version {
-			fmt.Println("Você já está na versão mais recente.")
-			return nil
-		}
-
-		if checkOnly {
-			if release.TagName != Version {
-				fmt.Println("Execute 'yby upgrade' para atualizar.")
+			dica := "confira a conexão com a internet; atrás de proxy com CA própria, use YBY_CA_BUNDLE"
+			if strings.Contains(err.Error(), "HTTP 404") {
+				// sem --version, o 404 é da busca do último release, não de uma tag
+				dica = "nenhum release publicado foi encontrado; veja github.com/casheiro-org/yby-cli/releases"
+				if targetVersion != "" {
+					dica = "o release " + targetVersion + " não foi encontrado; confira a tag em --version"
+				}
 			}
+			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao buscar informações do release").
+				WithHint(dica)
+		}
+
+		emDia := release.TagName == Version
+		ui.Check(w, ui.CheckNeutro, "instalada", Version, "")
+		switch {
+		case emDia:
+			ui.Check(w, ui.CheckOk, "disponível", release.TagName, "já é a mais recente")
+		case checkOnly:
+			ui.Check(w, ui.CheckAviso, "disponível", release.TagName, "yby upgrade atualiza")
+		default:
+			ui.Check(w, ui.CheckAviso, "disponível", release.TagName, "")
+		}
+
+		if checkOnly || (!force && emDia) {
 			return nil
 		}
 
 		// Determinar o asset correto
-		assetName := fmt.Sprintf("yby_%s_%s_%s.tar.gz", release.TagName, runtime.GOOS, runtime.GOARCH)
+		assetName := fmt.Sprintf("yby_%s_%s_%s.tar.gz", release.TagName, sistemaUpgrade, arquiteturaUpgrade)
 		var assetURL string
 		for _, a := range release.Assets {
 			if a.Name == assetName {
@@ -130,74 +147,106 @@ e substitui o binário atual.`,
 		}
 		if assetURL == "" {
 			return errors.New(errors.ErrCodeValidation,
-				fmt.Sprintf("asset '%s' não encontrado no release %s", assetName, release.TagName))
+				fmt.Sprintf("asset '%s' não encontrado no release %s", assetName, release.TagName)).
+				WithHint("este sistema pode não ter binário nesse release; veja github.com/casheiro-org/yby-cli/releases")
 		}
 
 		// Buscar checksums
 		checksums, err := fetchChecksums(release)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao buscar checksums")
+			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao buscar checksums").
+				WithHint("tente de novo em instantes; o release pode estar sendo publicado")
 		}
+
+		fmt.Fprintln(w)
+		prog := novoProgresso(w, "download", "checksum", "instalação")
+		parar := animar(prog)
+		defer parar()
 
 		// Download do asset
-		fmt.Printf("Baixando %s...", assetName)
+		prog.Iniciar("download")
 		assetData, err := downloadAsset(assetURL)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao baixar asset")
+			prog.Falhar("")
+			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao baixar asset").
+				WithHint("confira a conexão e rode yby upgrade de novo")
 		}
-		fmt.Println(" OK")
+		prog.Concluir(assetName)
 
 		// Verificar checksum
-		fmt.Print("Verificando checksum...")
+		prog.Iniciar("checksum")
 		expectedHash, ok := checksums[assetName]
 		if !ok {
-			return errors.New(errors.ErrCodeValidation, "checksum não encontrado para o asset")
+			prog.Falhar("")
+			return errors.New(errors.ErrCodeValidation, "checksum não encontrado para o asset").
+				WithHint("o release está incompleto; baixe o binário à mão em github.com/casheiro-org/yby-cli/releases")
 		}
 
 		actualHash := sha256.Sum256(assetData)
 		actualHashStr := hex.EncodeToString(actualHash[:])
 		if actualHashStr != expectedHash {
-			return errors.New(errors.ErrCodeValidation,
-				fmt.Sprintf("checksum inválido: esperado %s, obtido %s", expectedHash, actualHashStr))
+			prog.Falhar("")
+			// os hashes vão no contexto: no título, quebrariam a linha do erro
+			return errors.New(errors.ErrCodeValidation, "checksum do download não confere").
+				WithContext("esperado", expectedHash).
+				WithContext("obtido", actualHashStr).
+				WithHint("o download veio corrompido ou alterado; rode yby upgrade de novo")
 		}
-		fmt.Println(" OK")
+		prog.Concluir("sha256 confere")
 
-		// Extrair binário do tar.gz
+		// Extrair binário do tar.gz e trocar o executável
+		prog.Iniciar("instalação")
 		binaryData, err := extractBinaryFromTarGz(assetData)
 		if err != nil {
+			prog.Falhar("")
 			return errors.Wrap(err, errors.ErrCodeIO, "falha ao extrair binário do arquivo")
 		}
-
-		// Self-replace com rollback
-		execPath, err := os.Executable()
+		execPath, err := instalarBinario(binaryData)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao obter caminho do executável")
+			prog.Falhar("")
+			return err
 		}
-		execPath, err = filepath.EvalSymlinks(execPath)
-		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao resolver symlinks")
-		}
+		prog.Concluir(execPath)
+		parar()
 
-		backupPath := execPath + ".bak"
-
-		// Renomear binário atual para .bak
-		if err := os.Rename(execPath, backupPath); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar backup do binário atual")
-		}
-
-		// Escrever novo binário
-		if err := os.WriteFile(execPath, binaryData, 0755); err != nil {
-			// Rollback: restaurar backup
-			_ = os.Rename(backupPath, execPath)
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao instalar novo binário")
-		}
-
-		// Remover backup
-		_ = os.Remove(backupPath)
-
-		fmt.Printf("Atualizado para %s!\n", release.TagName)
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckOk, "atualizado para "+release.TagName, "", "")
 		return nil
 	},
+}
+
+// instalarBinario troca o executável atual por binario, com backup e rollback, e devolve
+// o caminho instalado. Variável para os testes não tocarem no binário de verdade.
+var instalarBinario = func(binario []byte) (string, error) {
+	// Self-replace com rollback
+	execPath, err := os.Executable()
+	if err != nil {
+		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao obter caminho do executável")
+	}
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao resolver symlinks")
+	}
+
+	backupPath := execPath + ".bak"
+
+	// Renomear binário atual para .bak
+	if err := os.Rename(execPath, backupPath); err != nil {
+		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao criar backup do binário atual").
+			WithHint("sem permissão na pasta do executável? rode com sudo ou reinstale pelo instalador")
+	}
+
+	// Escrever novo binário
+	if err := os.WriteFile(execPath, binario, 0755); err != nil {
+		// Rollback: restaurar backup
+		_ = os.Rename(backupPath, execPath)
+		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao instalar novo binário").
+			WithHint("o binário anterior foi restaurado; rode yby upgrade de novo")
+	}
+
+	// Remover backup
+	_ = os.Remove(backupPath)
+	return execPath, nil
 }
 
 // fetchLatestRelease busca o último release do GitHub

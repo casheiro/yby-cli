@@ -1,0 +1,7 @@
+◆ YBY  BOOTSTRAP VPS                      ubuntu@203.0.113.10:22
+  ✕ conexão ssh                                            0,8 s
+
+✕ falha na conexão SSH                           ERR_UNREACHABLE
+  causa     ssh: handshake failed: knownhosts: key is unknown
+  faça      confira host, usuário e se a chave está no ssh-agent (ssh-add -l)
+  detalhes  rode de novo com --log-level=debug

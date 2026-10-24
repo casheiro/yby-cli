@@ -103,7 +103,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Verificar: golden do assistente; `--non-interactive` igual ao de hoje.
 - [x] T026 Migrar as saídas de doctor, status, setup e validate.
   - Verificar: golden; fim de "✅ ✅" e de strings vazias de `SetString`.
-- [ ] T027 Migrar as saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade.
+- [x] T027 Migrar as saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade.
   - `pkg/executor` e `pkg/mirror` passam a usar `ui.Steps`.
   - Verificar: golden do `up` (etapas e cota).
 - [ ] T028 Migrar as saídas restantes e remover os estilos antigos.
@@ -266,3 +266,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T024 · T026 | Teste do usuário: `setup` só oferece instalar quando há gerenciador suportado (`SetupResult.Gerenciador`; no Windows não há) e mostra o link de instalação de cada ferramenta ausente; pergunta com margem própria (some com o formulário); `env create` avisa que não há projeto antes de pedir o nome. Destroy por nome e prompts no tema conferidos pelo usuário | este commit |
 | 24/10/2026 | — | Instalação do `setup` no Windows (winget/scoop/choco) registrada em "Fora do plano", por decisão do usuário | este commit |
 | 24/10/2026 | T025 | `ui.Assistente` (um `huh.Form` com um grupo por passo e a `ui.Rota` em cima; ⇧⇥ volta, esc/ctrl+c cancelam, `/` não abre filtro) e o init com os passos projeto, ambientes, cluster, módulos, IA e revisão; nada é gravado antes de "Gerar o projeto?", cancelar sai com "○ init cancelado" sem erro, sem terminal pede `--non-interactive`. Saída do init e do `--update` na carta (PROJETO, ARQUIVOS, VALIDAÇÃO, PLANO DE MERGE). Árvore do `--non-interactive` igual byte a byte à de a18740d em 7 combinações (`init_arvore_*.golden`, com o `\| default` dos templates contornado no teste); prompt do campo só "› ". Revisado por 3 lentes e conferido | este commit |
+| 24/10/2026 | T027 | `ui.Progresso` (no terminal, as etapas feitas ficam e a atual e as pendentes se redesenham; fora dele, uma linha por etapa ao terminar) em up, bootstrap vps/cluster, destroy e upgrade; access, uninstall e upgrade na carta. Serviços recebem `shared.Etapas` (com `Avisar` ▲) e não escrevem na tela; comandos externos por `runnerQuieto`/`runnerAoVivo` (saída no log em debug, pedido de login do kubelogin aparece), slog desviado acima das etapas (`logger.Desviar`), `shared.CausaCurta` nas falhas do mirror e do sync. Port-forward do access avisa cada causa nova de falha em warn. Golden do up com etapas e cota; E2E ajustados (sem rodar, exige Docker). Revisado por 3 lentes e conferido | este commit |

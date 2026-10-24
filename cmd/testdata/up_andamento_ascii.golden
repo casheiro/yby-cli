@@ -1,0 +1,9 @@
+* YBY  UP                                         ambiente local
+  v cluster yby-local   criado                              38 s
+  v git server                                             4,0 s
+  v túnel   localhost:51234                                1,2 s
+  v sync inicial                                           0,6 s
+  + argo cd  ========--------------------------  24%  1 min 12 s
+  o secrets
+  o root-app
+  o convergência
