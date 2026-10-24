@@ -138,11 +138,11 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 					"confira o .sops.yaml do projeto e a chave age; para criar a chave rode yby secret init-sops")
 			}
 
-			checksAlinhados(w, linhaCheck{ui.CheckOk, "Secret SOPS", "salvo", finalPath})
+			checksAlinhados(w, linhaCheck{ui.CheckOk, "Secret SOPS", "salvo", caminhoExibido(finalPath)})
 			ui.Section(w, "próximos passos")
 			ui.Passos(w,
 				"faça commit e push para o GitOps aplicar",
-				"para aplicar à mão: sops --decrypt "+finalPath+" | kubectl apply -f -",
+				"para aplicar à mão: sops --decrypt "+caminhoExibido(finalPath)+" | kubectl apply -f -",
 			)
 		} else {
 			// 2b. Selar com Kubeseal
@@ -156,7 +156,7 @@ usando a estratégia configurada (sealed-secrets ou sops).`,
 				return falhaComHint(err, errors.ErrCodeExec, "falha ao selar secret", hintSealedSecrets)
 			}
 
-			checksAlinhados(w, linhaCheck{ui.CheckOk, "SealedSecret", "salvo", finalPath})
+			checksAlinhados(w, linhaCheck{ui.CheckOk, "SealedSecret", "salvo", caminhoExibido(finalPath)})
 			ui.Section(w, "próximo passo")
 			ui.Passos(w, "faça commit e push para o GitOps aplicar")
 		}

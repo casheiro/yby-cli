@@ -4,6 +4,9 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/ui"
@@ -12,6 +15,28 @@ import (
 
 // Peças das saídas de comando curtas (secret, env, plugin, cloud…), montadas sobre
 // pkg/ui no mesmo formato do doctor e do status.
+
+// pastaAtual é a pasta de trabalho para caminhoExibido. Variável para os testes.
+var pastaAtual = os.Getwd
+
+// caminhoExibido mostra p relativo à pasta atual quando fica dentro dela
+// ("bootstrap/secret-store-vault.yaml"), para a linha caber no terminal; fora dela,
+// mostra p como veio.
+func caminhoExibido(p string) string {
+	wd, err := pastaAtual()
+	if err != nil {
+		return p
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	rel, err := filepath.Rel(wd, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return p
+	}
+	return filepath.ToSlash(rel)
+}
 
 // linhaEmAndamento escreve "  ◈ texto": o que o comando está fazendo agora, antes de uma
 // etapa que pode demorar (reiniciar o controller, falar com a cloud).

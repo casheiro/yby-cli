@@ -89,7 +89,9 @@ func TestRenderStatusReport_Golden(t *testing.T) {
 		}},
 		{"status_sem_cluster", &status.StatusReport{
 			SemCluster: true,
-			Nodes:      status.ComponentStatus{Available: false, Output: "The connection to the server localhost:6443 was refused\n", Message: "sem acesso ao cluster"},
+			Nodes: status.ComponentStatus{Available: false, Message: "sem acesso ao cluster", Output: "E1024 15:46:20.317079   39364 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list\"\n" +
+				"E1024 15:46:20.329701   39364 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list\"\n" +
+				"The connection to the server localhost:6443 was refused\n"},
 		}},
 	}
 	for _, c := range casos {

@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -820,4 +821,18 @@ func TestSaidasMigradas_SemEstilosAntigos(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestCaminhoExibido(t *testing.T) {
+	raiz := t.TempDir()
+	anterior := pastaAtual
+	t.Cleanup(func() { pastaAtual = anterior })
+	pastaAtual = func() (string, error) { return raiz, nil }
+
+	assert.Equal(t, "bootstrap/secret-store-vault.yaml", caminhoExibido(filepath.Join(raiz, "bootstrap", "secret-store-vault.yaml")))
+	fora := filepath.Join(filepath.Dir(raiz), "outro", "x.yaml")
+	assert.Equal(t, fora, caminhoExibido(fora), "fora da pasta atual, o caminho fica como veio")
+
+	pastaAtual = func() (string, error) { return "", os.ErrNotExist }
+	assert.Equal(t, "a/b.yaml", caminhoExibido("a/b.yaml"))
 }

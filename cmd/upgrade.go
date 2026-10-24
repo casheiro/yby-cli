@@ -110,14 +110,17 @@ e substitui o binário atual.`,
 		}
 		if err != nil {
 			dica := "confira a conexão com a internet; atrás de proxy com CA própria, use YBY_CA_BUNDLE"
+			codigo := errors.ErrCodeNetworkTimeout
 			if strings.Contains(err.Error(), "HTTP 404") {
+				// o servidor respondeu: não é falha de rede, é release ou tag inexistente
+				codigo = errors.ErrCodeValidation
 				// sem --version, o 404 é da busca do último release, não de uma tag
-				dica = "nenhum release publicado foi encontrado; veja github.com/casheiro-org/yby-cli/releases"
+				dica = "nenhum release publicado foi encontrado; veja github.com/casheiro/yby-cli/releases"
 				if targetVersion != "" {
 					dica = "o release " + targetVersion + " não foi encontrado; confira a tag em --version"
 				}
 			}
-			return errors.Wrap(err, errors.ErrCodeNetworkTimeout, "falha ao buscar informações do release").
+			return errors.Wrap(err, codigo, "falha ao buscar informações do release").
 				WithHint(dica)
 		}
 
@@ -148,7 +151,7 @@ e substitui o binário atual.`,
 		if assetURL == "" {
 			return errors.New(errors.ErrCodeValidation,
 				fmt.Sprintf("asset '%s' não encontrado no release %s", assetName, release.TagName)).
-				WithHint("este sistema pode não ter binário nesse release; veja github.com/casheiro-org/yby-cli/releases")
+				WithHint("este sistema pode não ter binário nesse release; veja github.com/casheiro/yby-cli/releases")
 		}
 
 		// Buscar checksums
@@ -179,7 +182,7 @@ e substitui o binário atual.`,
 		if !ok {
 			prog.Falhar("")
 			return errors.New(errors.ErrCodeValidation, "checksum não encontrado para o asset").
-				WithHint("o release está incompleto; baixe o binário à mão em github.com/casheiro-org/yby-cli/releases")
+				WithHint("o release está incompleto; baixe o binário à mão em github.com/casheiro/yby-cli/releases")
 		}
 
 		actualHash := sha256.Sum256(assetData)
@@ -254,12 +257,12 @@ var instalarBinario = func(binario []byte) (string, error) {
 
 // fetchLatestRelease busca o último release do GitHub
 func fetchLatestRelease() (*releaseInfo, error) {
-	return fetchReleaseFromURL("https://api.github.com/repos/casheiro-org/yby-cli/releases/latest")
+	return fetchReleaseFromURL("https://api.github.com/repos/casheiro/yby-cli/releases/latest")
 }
 
 // fetchRelease busca um release específico por tag
 func fetchRelease(tag string) (*releaseInfo, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/casheiro-org/yby-cli/releases/tags/%s", tag)
+	url := fmt.Sprintf("https://api.github.com/repos/casheiro/yby-cli/releases/tags/%s", tag)
 	return fetchReleaseFromURL(url)
 }
 

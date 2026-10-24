@@ -25,7 +25,10 @@ func NewClusterNetworkAdapter() *RealClusterNetworkManager {
 
 func (m *RealClusterNetworkManager) GetCurrentContext() (string, error) {
 	out, err := m.Runner.RunCombinedOutput(context.Background(), "kubectl", "config", "current-context")
-	return strings.TrimSpace(string(out)), err
+	if err != nil {
+		return "", shared.ComSaida(err, out)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (m *RealClusterNetworkManager) GetSecretValue(ctx context.Context, kubeContext, ns, secret, jsonPathKey string) (string, error) {

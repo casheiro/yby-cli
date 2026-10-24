@@ -52,7 +52,7 @@ func renderStatusReport(w io.Writer, report *status.StatusReport, quando time.Ti
 	ui.Section(w, "nodes")
 	if !report.Nodes.Available {
 		ui.Check(w, ui.CheckErro, report.Nodes.Message, "", "")
-		saidaRecuada(w, report.Nodes.Output, true)
+		saidaRecuada(w, shared.SemLogDoKlog(report.Nodes.Output), true)
 	} else {
 		saidaRecuada(w, report.Nodes.Output, false)
 	}

@@ -74,7 +74,7 @@ Salva em: charts/cluster-config/templates/events/sealed-secret-github.yaml`,
 		}
 
 		tituloComando(w, "secret", "webhook · "+provider)
-		linhas := []linhaCheck{{ui.CheckOk, "SealedSecret", "salvo", outputFile}}
+		linhas := []linhaCheck{{ui.CheckOk, "SealedSecret", "salvo", caminhoExibido(outputFile)}}
 		if opts.SecretVal == "" {
 			linhas = append([]linhaCheck{{ui.CheckAviso, "WEBHOOK_SECRET", "ausente", "gerado um segredo aleatório"}}, linhas...)
 		}
@@ -117,7 +117,7 @@ Salva em: charts/system/templates/secrets/sealed-secret-minio.yaml`,
 			return falhaComHint(err, errors.ErrCodeExec, "falha ao gerar secret MinIO", hintSealedSecrets)
 		}
 
-		checksAlinhados(w, linhaCheck{ui.CheckOk, "SealedSecret", "salvo", outputFile})
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "SealedSecret", "salvo", caminhoExibido(outputFile)})
 		return nil
 	},
 }
@@ -179,7 +179,7 @@ Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especific
 		tituloComando(w, "secret", "backup")
 		linhas := []linhaCheck{
 			{ui.CheckOk, "chave", "encontrada", keyName},
-			{ui.CheckOk, "backup", "salvo", outputFile},
+			{ui.CheckOk, "backup", "salvo", caminhoExibido(outputFile)},
 		}
 		if len(args) == 0 {
 			linhas = append(linhas, linhaCheck{ui.CheckAviso, "git", "não versione", "nunca num repositório público"})
@@ -304,12 +304,12 @@ Use com --backend: vault, aws, gcp, azure`,
 		// o título sai só depois de gravar: uma falha antes disso aparece só com o erro
 		w := cmd.OutOrStdout()
 		tituloComando(w, "secret", "init-eso · "+initESOBackend)
-		checksAlinhados(w, linhaCheck{ui.CheckOk, "SecretStore", "salvo", outputFile})
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "SecretStore", "salvo", caminhoExibido(outputFile)})
 		ui.Section(w, "próximos passos")
 		ui.Passos(w,
 			"edite o arquivo gerado com os valores do seu ambiente",
 			"instale o External Secrets Operator no cluster",
-			"aplique com kubectl apply -f "+outputFile,
+			"aplique com kubectl apply -f "+caminhoExibido(outputFile),
 		)
 		return nil
 	},

@@ -16,7 +16,7 @@ f 82071892440c1e7e0da084ee7c40d2d79d3aaba94bb6f8df05adf7b8a8834a08 infra/.synaps
 f 2afb2dd9fbf4edb3dd7508bcce0db2231b8cb5b3066e440fb1f078261a188970 infra/.synapstor/01_ARCHITECTURE_DECISIONS.md
 d infra/.yby/
 f b5524da782a2a3be3a55e2a16af24c074c3de0124b3e06c4f7fe5235ba2ef9dc infra/.yby/blueprint.yaml
-f a23f5a390c84dd88dc05d216ea88c3bccb55d482eb28b028c8f93d61f6326ec9 infra/.yby/environments.yaml
+f 835aab60588306bc2de7b5a249f301e3de697e56586e5987da54d421dcfad45a infra/.yby/environments.yaml
 f 7ea9e7ec91090b4d9f2e863e0fbdb70c1d50c5c26624e0fc327b6f675c7c9a69 infra/.yby/project.yaml
 d infra/argo-workflows/
 f 6fac987c3156e5bff45cdf3cfa18ceca02cab9330ba84fe7d059c9de7043d143 infra/argo-workflows/compliance-validate.yaml

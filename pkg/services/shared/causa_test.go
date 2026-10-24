@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
@@ -36,4 +38,24 @@ func TestCausaCurta(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSemLogDoKlog(t *testing.T) {
+	klog := `E1024 15:46:20.317079   39364 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list"`
+	assert.Equal(t, "Unable to connect to the server: dial tcp [::1]:8080",
+		SemLogDoKlog(klog+"\n"+klog+"\nUnable to connect to the server: dial tcp [::1]:8080\n"))
+	assert.Equal(t, klog, SemLogDoKlog(klog+"\n"), "só log: fica a última linha")
+	assert.Equal(t, "error: current-context is not set", SemLogDoKlog("error: current-context is not set\r\n"))
+	assert.Equal(t, "", SemLogDoKlog(""))
+}
+
+func TestComSaida(t *testing.T) {
+	base := stdErr.New("exit status 1")
+	err := ComSaida(base, []byte("error: current-context is not set\n"))
+	assert.EqualError(t, err, "error: current-context is not set")
+	assert.ErrorIs(t, err, base, "o erro original continua acessível")
+	assert.Equal(t, "current-context is not set", CausaCurta(err))
+
+	assert.Same(t, base, ComSaida(base, []byte("  \n")), "sem saída, fica o erro")
+	assert.NoError(t, ComSaida(nil, []byte("qualquer coisa")))
 }

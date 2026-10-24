@@ -2,8 +2,8 @@
 
   + gerando o Secret payments/db
   + encriptando com o SOPS
-  v Secret SOPS  salvo     <raiz>/charts/cluster-config/templates/secrets/sops-secret-db.yaml
+  v Secret SOPS  salvo     charts/cluster-config/templates/secrets/sops-secret-db.yaml
 
 PRÓXIMOS PASSOS
   1. faça commit e push para o GitOps aplicar
-  2. para aplicar à mão: sops --decrypt <raiz>/charts/cluster-config/templates/secrets/sops-secret-db.yaml | kubectl apply -f -
+  2. para aplicar à mão: sops --decrypt charts/cluster-config/templates/secrets/sops-secret-db.yaml | kubectl apply -f -

@@ -255,7 +255,7 @@ var envCreateCmd = &cobra.Command{
 			// Could add prompt here
 		}
 		if description == "" {
-			description = fmt.Sprintf("Environment %s", name)
+			description = fmt.Sprintf("ambiente %s", name)
 		}
 
 		kubeContext, _ := cmd.Flags().GetString("kube-context")

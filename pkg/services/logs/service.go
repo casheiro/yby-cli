@@ -47,7 +47,7 @@ func (s *logsService) ListPods(ctx context.Context, namespace string) ([]string,
 	out, err := s.runner.RunCombinedOutput(ctx, "kubectl", "get", "pods",
 		"-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeExec, "falha ao listar pods").
+		return nil, errors.Wrap(shared.ComSaida(err, out), errors.ErrCodeExec, "falha ao listar pods").
 			WithHint(fmt.Sprintf("confira se o namespace %s existe e se o kubectl aponta para o cluster certo", namespace))
 	}
 

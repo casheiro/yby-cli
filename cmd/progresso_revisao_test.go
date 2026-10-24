@@ -224,7 +224,7 @@ func TestUpgrade_DicaDo404(t *testing.T) {
 		require.True(t, stdErr.As(err, &ye), "%v", err)
 		return ye.Hint
 	}
-	assert.Equal(t, "nenhum release publicado foi encontrado; veja github.com/casheiro-org/yby-cli/releases", dica(),
+	assert.Equal(t, "nenhum release publicado foi encontrado; veja github.com/casheiro/yby-cli/releases", dica(),
 		"sem --version, a dica não fala da tag")
 	require.NoError(t, upgradeCmd.Flags().Set("version", "v9.9.9"))
 	assert.Equal(t, "o release v9.9.9 não foi encontrado; confira a tag em --version", dica())

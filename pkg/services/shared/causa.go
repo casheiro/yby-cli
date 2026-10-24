@@ -57,3 +57,49 @@ func CausaCurta(err error) string {
 	}
 	return partes[len(partes)-1]
 }
+
+// reLinhaKlog acha as linhas de log do client-go que o kubectl escreve no stderr
+// ("E1024 15:46:20.317079 39364 memcache.go:265] ...").
+var reLinhaKlog = regexp.MustCompile(`^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d+ +\d+ [^ ]+:\d+\] `)
+
+// SemLogDoKlog tira da saída do kubectl as linhas de log do client-go, que repetem a
+// mesma falha várias vezes, e deixa a mensagem final ("Unable to connect to the
+// server: ..."). Se só houver linhas de log, fica a última.
+func SemLogDoKlog(saida string) string {
+	var resto []string
+	ultimaDeLog := ""
+	for _, l := range strings.Split(strings.TrimRight(saida, "\n"), "\n") {
+		l = strings.TrimRight(l, "\r")
+		if reLinhaKlog.MatchString(l) {
+			ultimaDeLog = l
+			continue
+		}
+		if strings.TrimSpace(l) != "" {
+			resto = append(resto, l)
+		}
+	}
+	if len(resto) == 0 {
+		return ultimaDeLog
+	}
+	return strings.Join(resto, "\n")
+}
+
+// erroComSaida é o erro de um comando externo com a mensagem que ele escreveu.
+type erroComSaida struct {
+	saida string
+	err   error
+}
+
+func (e *erroComSaida) Error() string { return e.saida }
+func (e *erroComSaida) Unwrap() error { return e.err }
+
+// ComSaida troca o "exit status 1" de err pela mensagem que o comando escreveu (sem as
+// linhas de log do client-go), para a causa do erro dizer o motivo. O erro original
+// continua acessível por errors.Is/As. Sem saída, devolve err.
+func ComSaida(err error, saida []byte) error {
+	msg := strings.TrimSpace(SemLogDoKlog(string(saida)))
+	if err == nil || msg == "" {
+		return err
+	}
+	return &erroComSaida{saida: msg, err: err}
+}
