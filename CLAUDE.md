@@ -119,7 +119,7 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 
 ### Interface (pkg/ui)
 
-Toda saída para pessoas (TUIs e comandos) usa `pkg/ui`: paleta, glifos, componentes e saídas de comando (`Title`, `Check`, `Steps`, `RenderError`). Não monte cores ou glifos à mão. Especificação em `docs/design/tui/especificacao-pkg-ui.md`; catálogo visual com `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
+Toda saída para pessoas (TUIs e comandos) usa `pkg/ui`: paleta, glifos, componentes e saídas de comando (`Title`, `Check`, `Steps`, `Listagem`, `Campos`, `Passos`, `RenderError`). Não monte cores ou glifos à mão. Comandos longos usam `ui.Progresso`; os serviços recebem `shared.Etapas` (ou `EtapasMudas`) e não escrevem na tela, e os comandos externos rodam por `runnerQuieto`/`runnerAoVivo` (`cmd/progresso.go`), que mandam a saída para o log em debug. Prompts usam o `Prompter` de `cmd/prompt.go`: sem terminal na entrada, nenhum prompt abre e o comando devolve erro em vez de travar. Especificação em `docs/design/tui/especificacao-pkg-ui.md`; catálogo visual com `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
 
 Modo visual: env `YBY_THEME` (auto|dark|light), `YBY_ASCII=1` e `NO_COLOR`; config `ui.theme` e `ui.ascii` em `~/.yby/config.yaml`. Precedência: flags > env > config > padrão.
 
@@ -228,7 +228,7 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Scaffold Merge (`yby init --update`)
 
-`yby init --update` faz merge inteligente entre templates novos e customizações do usuário, usando hash tracking (SHA-256) no manifest (`.yby/project.yaml`). Mutuamente exclusivo com `--force`. Resolve conflitos interativamente (survey) ou com marcadores estilo Git (`--non-interactive`). Implementado em `pkg/scaffold/merge.go`.
+`yby init` sem flags abre o assistente (`ui.Assistente`: rota, ⇧⇥ volta, nada é gravado antes da revisão); sem terminal, exige `--non-interactive`. `yby init --update` faz merge inteligente entre templates novos e customizações do usuário, usando hash tracking (SHA-256) no manifest (`.yby/project.yaml`). Mutuamente exclusivo com `--force`. Pede confirmação do plano (seção PLANO DE MERGE) e resolve conflitos com marcadores estilo Git. Implementado em `pkg/scaffold/merge.go`.
 
 ### Plugin Bard — Assistente IA (v1.0.0)
 

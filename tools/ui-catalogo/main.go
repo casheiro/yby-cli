@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
@@ -89,11 +90,14 @@ func Gerar(w io.Writer, largura int) {
 		{"etapas", etapas},
 		{"cota", cotas},
 		{"rota", rota},
+		{"assistente", assistente},
 		{"toast", toast},
 		{"confirmar", confirmar},
 		{"estados", estados},
 		{"doctor", doctor},
 		{"up", up},
+		{"progresso", progresso},
+		{"listagem, campos e passos", listagem},
 		{"erro", erro},
 	}
 	for _, s := range secoes {
@@ -254,6 +258,27 @@ func rota(w io.Writer, largura int) {
 	fmt.Fprintln(w, ui.Rota([]string{"projeto", "cluster", "argo cd", "apps", "dns", "verificar"}, 2, min(largura, 64)))
 }
 
+// assistente mostra o primeiro passo de um assistente do init: a rota em cima e o
+// grupo do huh com o campo em foco.
+func assistente(w io.Writer, largura int) {
+	nome, topologia, gerar := "", "standard", true
+	a := ui.NovoAssistente(min(largura, 64),
+		ui.PassoAssistente{Marco: "projeto", Campos: []huh.Field{
+			huh.NewInput().Key("nome").Title("Nome do projeto").
+				Description("slug do Kubernetes: minúsculas, números e hífens").Placeholder("loja").Value(&nome),
+		}},
+		ui.PassoAssistente{Marco: "cluster", Campos: []huh.Field{
+			huh.NewSelect[string]().Key("topologia").Title("Topologia").
+				Options(huh.NewOptions("single", "standard", "complete")...).Value(&topologia),
+		}},
+		ui.PassoAssistente{Marco: "revisão", Campos: []huh.Field{
+			huh.NewConfirm().Key("gerar").Title("Gerar o projeto?").Affirmative("Gerar").Negative("Cancelar").Value(&gerar),
+		}},
+	)
+	a.Init()
+	fmt.Fprintln(w, a.View())
+}
+
 func toast(w io.Writer, _ int) {
 	t := ui.NovoToast()
 	for _, e := range []struct {
@@ -299,6 +324,42 @@ func up(w io.Writer, _ int) {
 		{Rotulo: "argo cd", Estado: ui.EtapaAtual, Fracao: 0.64, Duracao: 25 * time.Second},
 		{Rotulo: "root-app", Estado: ui.EtapaPendente},
 	}, 64)
+}
+
+// progresso mostra o quadro de um yby up em andamento, como o terminal o redesenha:
+// feitas com a duração, a atual com a cota e as pendentes.
+func progresso(w io.Writer, _ int) {
+	agora := time.Date(2026, 10, 23, 12, 10, 0, 0, time.UTC)
+	p := ui.NovoProgressoCom(io.Discard, ui.OpcoesProgresso{
+		Terminal: func(io.Writer) bool { return true },
+		Relogio:  func() time.Time { return agora },
+		Largura:  64,
+	}, "cluster yby-local", "argo cd", "root-app")
+	p.Iniciar("cluster yby-local")
+	agora = agora.Add(38 * time.Second)
+	p.Concluir("criado")
+	p.Iniciar("argo cd")
+	agora = agora.Add(25 * time.Second)
+	p.Avancar(0.64)
+	fmt.Fprint(w, p.Quadro())
+}
+
+// listagem mostra as saídas curtas: env list (Listagem), env show (Campos) e os
+// próximos passos do secret init-eso (Passos).
+func listagem(w io.Writer, _ int) {
+	ui.Title(w, "env", "ativo local")
+	fmt.Fprintln(w)
+	ui.Listagem(w, []ui.Coluna{{Titulo: ""}, {Titulo: "ambiente"}, {Titulo: "tipo"}, {Titulo: "descrição"}},
+		[]ui.Linha{
+			{Celulas: []string{ui.S().Ok.Render(ui.G().Ativo), "local", "local", "cluster k3d"}},
+			{Celulas: []string{"", "prod", "remote", "produção"}},
+		})
+	fmt.Fprintln(w)
+	ui.Campos(w, ui.Campo{Rotulo: "ambiente", Valor: "prod"}, ui.Campo{Rotulo: "tipo", Valor: "remote"},
+		ui.Campo{Rotulo: "values", Valor: "config/values-prod.yaml"})
+	fmt.Fprintln(w)
+	ui.Passos(w, "aplique o SecretStore: kubectl apply -f secret-store.yaml",
+		"crie o ExternalSecret de cada app")
 }
 
 func erro(w io.Writer, _ int) {

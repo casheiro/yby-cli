@@ -85,7 +85,8 @@ Responsivo:
 - **Toast:** na linha de estado, `✓ Deployment api reiniciado · 3 réplicas` ou `✕ sem permissão para escalar · RBAC`; some em 6 s.
 - **Confirmar:** destrutivo = Quadro com fio `Erro`, rótulo `EXCLUIR POD`, `digite  <nome em negrito>`, campo `› ` com cursor, `esc cancelar`; ↵ só confirma com o nome exato. Reversível = ↵ confirma, esc cancela.
 - **Estados:** carregando `◈ lendo pods de payments`; vazio `○ nenhum pod com esse filtro · esc limpa`; erro `✕ sem acesso ao cluster · r tenta de novo`.
-- **Campo (tema huh):** título em caixa-alta negrito, `› ` + valor, descrição em `TintaSuave`.
+- **Campo (tema huh):** título em caixa-alta negrito, `› ` + valor (sem o `> ` do huh), descrição em `TintaSuave`.
+- **Assistente** (`assistente.go`, folha "assistente"): `NovoAssistente(largura, passos...)` com `PassoAssistente{Marco, Campos, Ocultar}` monta um único `huh.Form`, um grupo por passo, com a Rota em cima marcando o passo do campo em foco. Passos seguidos com o mesmo marco dividem o marco; passo sem campos fica de fora; `Ocultar` pula o grupo. `⇧⇥` volta um campo e, no primeiro campo do passo, o passo anterior; `esc` e `ctrl+c` cancelam (as listas não abrem filtro com `/`, para o `esc` sempre cancelar). Legenda `↵ continuar · ⇧⇥ voltar · esc cancelar`, que perde itens em janela estreita. Largura até 64; altura a da janela menos 7 linhas. Ao terminar, a view fica vazia e quem roda lê `Concluido` e `Cancelado`. Usado pelo `yby init`, que não grava nada antes da revisão.
 
 ## 7. Saídas de comando (`msg.go`, folha "Saídas de comando")
 
@@ -107,6 +108,18 @@ Largura do terminal **(decisão)**: quando `w` é um terminal (`ui.Largura(w) > 
 
 `Steps` (yby up): `  ✓ cluster yby-local   criado   38 s` / `  ◈ argo cd   ━━━━┄┄ 64%   25 s` / `  ◇ root-app`.
 
+`Progresso` (`progresso.go`, folha "progresso") conduz os `Steps` dos comandos longos (up, bootstrap vps/cluster, destroy, upgrade). No terminal, as etapas terminadas ficam fixas e a atual e as pendentes se redesenham no lugar; fora dele, cada etapa sai uma vez ao terminar e as pendentes não aparecem. API: `NovoProgresso(w, rótulos...)` e `NovoProgressoCom(w, OpcoesProgresso{Terminal, Relogio, Largura}, …)`; `Iniciar`, `Avancar` (a fração vira cota), `Concluir`, `Falhar`, `Avisar` (▲ abaixo da etapa), `Detalhe` (texto recuado 4 células), `Animar(intervalo)`, `Escritor(destino)` (escreve linhas acima do trecho vivo, usado para o slog), `Pausar` (tira o trecho vivo da tela, por exemplo durante um pedido de senha do sudo), `Etapas` e `Quadro`. Os serviços recebem a interface `shared.Etapas` (ou `EtapasMudas`) e não escrevem na tela; os comandos externos rodam por `runnerQuieto`/`runnerAoVivo` (`cmd/progresso.go`), que mandam a saída deles para o log em debug.
+
+Listagens, campos e passos (`listagem.go`, folha "listagem, campos e passos"):
+
+- `Listagem(w, []Coluna, []Linha)`: cabeçalho em `TintaSuave` e caixa-alta, recuo de 2, cada coluna na largura da célula mais larga (com `Max` e reticências), separadas por 2 espaços, sem espaço à direita; célula que já traz ANSI não é retingida; em terminal estreito encolhe como a Tabela. Ex.: `env list`, com uma coluna de marca vazia e `◆` em `Ok` no ativo.
+- `Campos(w, Campo{Rotulo, Valor}...)`: rótulos alinhados pelo mais largo + 2; valor vazio não aparece. Ex.: `env show`, `env dump`.
+- `Passos(w, ...)`: lista numerada `1. texto` para os próximos passos (`secret init-eso`, `seal`).
+
+Convenção dos comandos curtos: `Title` com o subcomando à direita, uma linha em branco e o corpo; `◈ texto` antes de etapas lentas; linhas `Check` com o estado na coluna de versão (`salvo`, `criado`, `ativo`, `falhou`); quando a operação é rápida, o título só sai depois dela, para o erro não ficar com duas linhas em branco. Saídas para máquina (`--export`, `telemetry export`) sem dados deixam o stdout vazio e avisam em stderr.
+
+O `yby init` usa as seções `PROJETO`, `ARQUIVOS` (campos críticos vazios, como `repoURL` sem `--git-repo`, saem como ▲), `VALIDAÇÃO` (no `--update`, `PLANO DE MERGE`) e fecha com o `Summary` "próximo passo: yby env list".
+
 Erro (`RenderError(*errors.YbyError)`):
 
 ```
@@ -117,6 +130,8 @@ Erro (`RenderError(*errors.YbyError)`):
 ```
 
 `WriteError(w, e)` escreve o mesmo bloco ajustado ao terminal: causa, faça e detalhes quebram com recuo de 12 células; se o título não cabe com o código à direita, ele quebra e o código vai para uma linha `código` no fim. A linha `detalhes` com a dica de depuração só aparece quando o erro tem causa (é o que o debug detalha) e o hint ainda não manda depurar. Os comandos escrevem o erro depois de uma linha em branco.
+
+Título e hint seguem o tom da seção 9: título em minúscula, sem ponto; hint no imperativo, em minúscula e sem ponto final (`confira o caminho passado em --file`). Cada erro dos comandos traz o próprio hint; as dicas padrão de `pkg/errors/hints.go`, usadas quando não há hint, seguem o mesmo tom.
 
 ## 8. Teclas (`keys.go`, folha 04)
 
