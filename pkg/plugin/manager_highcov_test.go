@@ -499,8 +499,11 @@ func TestExecuteCommandHook_PluginFalha(t *testing.T) {
 	}
 
 	err := m.ExecuteCommandHook("falha", []string{})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "execução interativa do plugin falhou")
+	// o plugin já mostrou o próprio erro: o core só repassa o código de saída
+	var saida *SaidaDoPlugin
+	require.ErrorAs(t, err, &saida)
+	assert.Equal(t, 1, saida.Codigo)
+	assert.Contains(t, err.Error(), "o plugin saiu com o código 1")
 }
 
 func TestExecuteCommandHook_ComContextoDeAmbiente(t *testing.T) {

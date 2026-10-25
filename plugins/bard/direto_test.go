@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -252,7 +253,8 @@ func TestDireto_FalhaFinalComRespostaParcial(t *testing.T) {
 	if strings.Contains(tela, "recomeçou") {
 		t.Errorf("sem nova tentativa, nada recomeça:\n%s", tela)
 	}
-	if !strings.Contains(tela, "✕ gerar resposta") || !strings.Contains(tela, "401 chave inválida\n\n✕ a IA não respondeu") {
+	// a etapa pode trazer o tempo no fim da linha ("0,0 s"), conforme a resolução do relógio
+	if !strings.Contains(tela, "✕ gerar resposta") || !regexp.MustCompile(`401 chave inválida[^\n]*\n\n✕ a IA não respondeu`).MatchString(tela) {
 		t.Errorf("faltou a etapa que falhou e a linha em branco antes do erro:\n%s", tela)
 	}
 }
