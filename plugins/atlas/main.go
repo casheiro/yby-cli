@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,85 +16,139 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
+	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/atlas/analysis"
 	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
 )
 
+// provedoresDeIA lista os providers de IA para o refinamento, em cascata (trocado por
+// falsos nos testes; nunca há IA de verdade neles).
+var provedoresDeIA = ai.GetAllAvailableProviders
+
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
-		os.Exit(1)
-	}
+	os.Exit(executar(os.Stdout, os.Stderr))
 }
 
-func run() error {
+// executar roda o plugin e devolve o código de saída. Os hooks manifest e context
+// respondem JSON no stdout (com o erro no campo error); o command escreve para pessoas,
+// com os erros no formato de ui.WriteError no stderr, e o core só repassa o código.
+func executar(saida, erros io.Writer) int {
 	var req plugin.PluginRequest
 
 	// 1. Verificar protocolo via variável de ambiente
 	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
 		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
-			return fail(fmt.Errorf("falha ao decodificar requisição do env: %w", err))
+			return falhaJSON(saida, erros, fmt.Errorf("falha ao decodificar requisição do env: %w", err))
 		}
 	} else {
 		// 2. Fallback para stdin
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
-			return fail(fmt.Errorf("falha ao decodificar requisição do stdin: %w", err))
+			return falhaJSON(saida, erros, fmt.Errorf("falha ao decodificar requisição do stdin: %w", err))
 		}
 	}
 
 	switch req.Hook {
 	case "manifest":
-		return respond(plugin.PluginManifest{
+		if err := respond(saida, plugin.PluginManifest{
 			Name:        "atlas",
 			Version:     "1.0.0",
-			Description: "Scanner de topologia de infraestrutura com diagramas Mermaid e refinamento IA",
+			Description: "Mapa da topologia da infraestrutura em diagramas Mermaid, refinados pela IA",
 			Hooks:       []string{"context", "manifest", "command"},
-		})
+		}); err != nil {
+			return falhaJSON(saida, erros, err)
+		}
+		return 0
 	case "context":
 		blueprint, err := scanProject()
 		if err != nil {
-			return fail(err)
+			return falhaJSON(saida, erros, err)
 		}
-		return respond(map[string]interface{}{
+		if err := respond(saida, map[string]interface{}{
 			"blueprint": blueprint,
-		})
+		}); err != nil {
+			return falhaJSON(saida, erros, err)
+		}
+		return 0
 	case "command":
-		return handleCommand(req.Args)
+		// Log e modo visual (tema, ASCII, sem cor) antes de qualquer saída.
+		configurarLog()
+		configurarModoVisual(os.Getenv)
+		if err := handleCommand(req.Args, saida, erros); err != nil {
+			return sairComErro(erros, err)
+		}
+		return 0
 	default:
-		return fail(fmt.Errorf("hook desconhecido: %s", req.Hook))
+		return falhaJSON(saida, erros, fmt.Errorf("hook desconhecido: %s", req.Hook))
 	}
 }
 
-// loadConfig carrega a configuração externa do Atlas a partir de .yby/atlas.yaml.
-// Retorna nil se o arquivo não existir ou não puder ser lido.
-func loadConfig() *discovery.AtlasConfig {
+// dicaDoLogDoPlugin é o jeito de ver o log no plugin: o --log-level do core não chega a
+// este processo, e o YBY_LOG_LEVEL chega (configurarLog o aplica).
+const dicaDoLogDoPlugin = "rode de novo com YBY_LOG_LEVEL=debug"
+
+// sairComErro escreve err em w como ui.WriteError (um erro comum vira ERR_PLUGIN),
+// depois de uma linha em branco que o separa do que já saiu, e devolve o código de saída.
+// As dicas de depuração que mandam usar o --log-level viram a do YBY_LOG_LEVEL.
+func sairComErro(w io.Writer, err error) int {
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) {
+		ye = yerrors.Wrap(err, yerrors.ErrCodePlugin, "o Atlas falhou")
+	}
+	ui.DefinirDicaDoLog(dicaDoLogDoPlugin)
+	if strings.Contains(ye.GetHint(), "--log-level") {
+		ye = ye.WithHint(dicaDoLogDoPlugin + " para ver os detalhes")
+	}
+	fmt.Fprintln(w)
+	ui.WriteError(w, ye)
+	return 1
+}
+
+// lerConfig lê a configuração externa do Atlas em .yby/atlas.yaml. Sem o arquivo, devolve
+// nil sem erro (valem os padrões); com o arquivo ilegível, devolve nil e o erro.
+func lerConfig() (*discovery.AtlasConfig, error) {
 	configPath := filepath.Join(".yby", "atlas.yaml")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil // Arquivo não existe, usar defaults
+		return nil, nil // Arquivo não existe, usar defaults
 	}
 	var cfg discovery.AtlasConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "aviso: erro ao ler .yby/atlas.yaml: %v\n", err)
-		return nil
+		return nil, err
 	}
-	return &cfg
+	return &cfg, nil
 }
 
-func respond(data interface{}) error {
+// loadConfig carrega a configuração externa do Atlas a partir de .yby/atlas.yaml.
+// Retorna nil se o arquivo não existir ou não puder ser lido (o erro vai para o log).
+func loadConfig() *discovery.AtlasConfig {
+	cfg, err := lerConfig()
+	if err != nil {
+		slog.Warn("não deu para ler .yby/atlas.yaml; seguindo com o padrão", "erro", err)
+	}
+	return cfg
+}
+
+func respond(w io.Writer, data interface{}) error {
 	resp := plugin.PluginResponse{Data: data}
-	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		return fmt.Errorf("falha ao codificar resposta: %w", err)
 	}
 	return nil
 }
 
-func fail(err error) error {
+// falhaJSON responde o erro no campo error do JSON (para o core, nos hooks de máquina),
+// repete-o no stderr e devolve o código de saída 1.
+func falhaJSON(saida, erros io.Writer, err error) int {
 	resp := plugin.PluginResponse{Error: err.Error()}
-	_ = json.NewEncoder(os.Stdout).Encode(resp)
-	return err
+	_ = json.NewEncoder(saida).Encode(resp)
+	fmt.Fprintf(erros, "erro: %v\n", err)
+	return 1
 }
+
+// ignoradosPadrao são as pastas que o Atlas nunca percorre.
+var ignoradosPadrao = []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
 
 // scanProject executa a descoberta de componentes no diretório atual,
 // aplicando configuração externa quando disponível.
@@ -102,7 +159,7 @@ func scanProject() (*discovery.Blueprint, error) {
 	}
 
 	cfg := loadConfig()
-	ignores := []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
+	ignores := append([]string(nil), ignoradosPadrao...)
 	var rules []discovery.Rule
 	if cfg != nil {
 		if len(cfg.Ignores) > 0 {
@@ -117,145 +174,182 @@ func scanProject() (*discovery.Blueprint, error) {
 }
 
 // handleCommand roteia subcomandos do hook "command".
-func handleCommand(args []string) error {
-	if len(args) == 0 {
-		printUsage()
+func handleCommand(args []string, saida, erros io.Writer) error {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		escreverAjuda(saida, "")
 		return nil
 	}
 
-	subcommand := args[0]
-	if subcommand == "--help" || subcommand == "-h" || subcommand == "help" {
-		printUsage()
-		return nil
-	}
-
-	subArgs := args[1:]
-
+	subcommand, subArgs := args[0], args[1:]
 	switch subcommand {
 	case "diagram":
-		return handleDiagram(subArgs)
+		if pedeAjuda(subArgs) {
+			escreverAjuda(saida, subcommand)
+			return nil
+		}
+		return handleDiagram(subArgs, saida, erros)
 	default:
-		return fail(fmt.Errorf("subcomando desconhecido: %s (disponíveis: diagram)", subcommand))
+		return yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("o Atlas não tem o comando %q", subcommand)).
+			WithHint("rode yby atlas --help para ver os comandos")
 	}
 }
 
-// printUsage exibe a ajuda do Atlas.
-func printUsage() {
-	fmt.Println("Atlas - Scanner de topologia de infraestrutura")
-	fmt.Println()
-	fmt.Println("Uso: yby atlas <subcomando> [opcoes]")
-	fmt.Println()
-	fmt.Println("Subcomandos:")
-	fmt.Println("  diagram [flags]       Gera diagrama da topologia de infraestrutura")
-	fmt.Println()
-	fmt.Println("Flags:")
-	fmt.Println("  --detail full         Mostra todos os recursos (RBAC, CRDs, ConfigMaps...)")
-	fmt.Println("  --no-ai               Desabilita refinamento com IA")
-	fmt.Println()
-	fmt.Println("Exemplos:")
-	fmt.Println("  yby atlas diagram                 Topologia principal (com IA se disponivel)")
-	fmt.Println("  yby atlas diagram --detail full    Todos os recursos")
-	fmt.Println("  yby atlas diagram --no-ai          Sem refinamento IA")
+// opcoesDiagrama são as flags de yby atlas diagram.
+type opcoesDiagrama struct {
+	detail analysis.DetailLevel
+	useAI  bool
 }
+
+// lerOpcoesDiagrama lê as flags do diagram: --detail (ou -d) overview|full, na forma
+// "--detail full" ou "--detail=full", e --no-ai.
+func lerOpcoesDiagrama(args []string) (opcoesDiagrama, error) {
+	op := opcoesDiagrama{detail: analysis.DetailOverview, useAI: true}
+	ajuda := "rode yby atlas diagram --help para ver as flags"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--no-ai":
+			op.useAI = false
+		case a == "--detail" || a == "-d" || strings.HasPrefix(a, "--detail="):
+			valor, ok := strings.CutPrefix(a, "--detail=")
+			if !ok {
+				if i+1 >= len(args) {
+					return op, yerrors.New(yerrors.ErrCodeValidation, "falta o valor de "+a).WithHint(ajuda)
+				}
+				valor = args[i+1]
+				i++
+			}
+			switch analysis.DetailLevel(valor) {
+			case analysis.DetailOverview, analysis.DetailFull:
+				op.detail = analysis.DetailLevel(valor)
+			default:
+				return op, yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("nível de detalhe desconhecido: %s", valor)).
+					WithHint("use --detail overview ou --detail full")
+			}
+		default:
+			return op, yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("o diagram não reconhece %s", a)).WithHint(ajuda)
+		}
+	}
+	return op, nil
+}
+
+// arquivoDoDiagrama é onde o diagrama é gravado, relativo à pasta do projeto.
+var arquivoDoDiagrama = filepath.Join(".yby", "atlas-diagram.mmd")
 
 // handleDiagram gera diagrama da topologia de infraestrutura e salva em arquivo.
-func handleDiagram(args []string) error {
+func handleDiagram(args []string, saida, erros io.Writer) error {
+	op, err := lerOpcoesDiagrama(args)
+	if err != nil {
+		return err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fail(err)
+		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para ler a pasta atual")
 	}
 
-	// Parsear flags
-	detail := analysis.DetailOverview
-	useAI := true
-	for i, arg := range args {
-		switch arg {
-		case "--detail", "-d":
-			if i+1 < len(args) && args[i+1] == "full" {
-				detail = analysis.DetailFull
-			}
-		case "full":
-			// capturado pelo case anterior
-		case "--no-ai":
-			useAI = false
-		}
-		if strings.HasPrefix(arg, "--detail=") {
-			if strings.TrimPrefix(arg, "--detail=") == "full" {
-				detail = analysis.DetailFull
-			}
-		}
-	}
+	ui.Title(saida, "atlas", "diagram · "+string(op.detail))
+	fmt.Fprintln(saida)
+	prog := novoProgresso(saida)
+	parar := animar(prog, erros)
+	defer parar()
 
-	ignores := []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
-	cfg := loadConfig()
+	prog.Iniciar("procurar a infraestrutura")
+	ignores := append([]string(nil), ignoradosPadrao...)
+	cfg, errCfg := lerConfig()
 	if cfg != nil && len(cfg.Ignores) > 0 {
 		ignores = append(ignores, cfg.Ignores...)
 	}
-
 	infraBP, err := discovery.ScanInfra(cwd, ignores)
 	if err != nil {
-		return fail(err)
+		prog.Falhar("")
+		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para ler os arquivos do projeto").
+			WithContext("pasta", cwd)
+	}
+	if len(infraBP.Resources) == 0 {
+		prog.Concluir("nenhum recurso")
+	} else {
+		prog.Concluir(plural(len(infraBP.Resources), "recurso", "recursos"))
+	}
+	if errCfg != nil {
+		prog.Avisar("não deu para ler .yby/atlas.yaml; segui com o padrão")
+		slog.Debug("não deu para ler .yby/atlas.yaml", "erro", errCfg)
 	}
 
 	if len(infraBP.Resources) == 0 {
-		fmt.Println("Nenhuma topologia de infraestrutura identificada neste projeto.")
-		fmt.Println()
-		fmt.Println("O Atlas procura por: Helm charts, manifests K8s, docker-compose,")
-		fmt.Println("kustomization.yaml e arquivos Terraform (.tf).")
+		parar()
+		fmt.Fprintln(saida)
+		ui.Check(saida, ui.CheckNeutro, "nenhuma topologia de infraestrutura neste projeto", "", "")
+		ui.Campos(saida, ui.Campo{Rotulo: "o Atlas procura", Valor: "charts do Helm, manifests do Kubernetes, docker-compose, kustomization.yaml e Terraform (.tf)"})
 		return nil
 	}
 
-	diagram := analysis.GenerateInfraMermaid(infraBP, detail)
+	prog.Iniciar("montar o diagrama")
+	diagram := analysis.GenerateInfraMermaid(infraBP, op.detail)
+	stats := analysis.GetInfraStats(infraBP, op.detail)
 	if diagram == "" {
-		fmt.Println("Nenhum recurso de topologia encontrado para o nivel de detalhe selecionado.")
+		prog.Concluir("nada no nível " + string(op.detail))
+		parar()
+		fmt.Fprintln(saida)
+		ui.Check(saida, ui.CheckNeutro, "nenhum recurso de topologia no nível "+string(op.detail), "", "")
+		ui.Section(saida, "próximo passo")
+		ui.Passos(saida, "yby atlas diagram --detail full mostra todos os recursos")
 		return nil
 	}
+	prog.Concluir(fmt.Sprintf("%s · %s", plural(stats.VisibleResources, "nó", "nós"), plural(stats.Relations, "relação", "relações")))
 
 	// Tentar refinar com IA (se disponível e habilitado)
-	refined := false
-	aiSource := ""
-	if useAI {
-		ctx := context.Background()
-
-		fmt.Println("Refinando diagrama com IA...")
+	prog.Iniciar("refinar com a IA")
+	if !op.useAI {
+		prog.Pular("desligado com --no-ai")
+	} else {
 		summary := buildResourceSummary(infraBP)
-		refinedDiagram, source, refineErr := refineDiagramWithAI(ctx, diagram, summary)
+		refinedDiagram, source, refineErr := refineDiagramWithAI(context.Background(), diagram, summary)
 		if refineErr == nil && refinedDiagram != "" {
 			diagram = refinedDiagram
-			refined = true
-			aiSource = source
-		} else if refineErr != nil {
-			fmt.Fprintf(os.Stderr, "aviso: refinamento IA indisponivel, usando diagrama programatico: %v\n", refineErr)
+			prog.Concluir(source)
+		} else {
+			slog.Debug("refinamento com IA indisponível; usando o diagrama programático", "erro", refineErr)
+			prog.Pular("sem IA disponível")
 		}
 	}
 
-	filename := "atlas-diagram.mmd"
-
 	// Salvar arquivo
-	outputDir := filepath.Join(".yby")
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return fail(fmt.Errorf("falha ao criar diretorio .yby: %w", err))
+	prog.Iniciar("gravar o diagrama")
+	if err := os.MkdirAll(filepath.Dir(arquivoDoDiagrama), 0755); err != nil {
+		prog.Falhar("")
+		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para criar a pasta .yby").
+			WithContext("pasta", filepath.Join(cwd, ".yby"))
 	}
+	if err := os.WriteFile(arquivoDoDiagrama, []byte(diagram), 0644); err != nil {
+		prog.Falhar("")
+		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para gravar o diagrama").
+			WithContext("arquivo", filepath.Join(cwd, arquivoDoDiagrama))
+	}
+	prog.Concluir("")
+	parar()
 
-	outputPath := filepath.Join(outputDir, filename)
-	if err := os.WriteFile(outputPath, []byte(diagram), 0644); err != nil {
-		return fail(fmt.Errorf("falha ao salvar diagrama: %w", err))
+	nivel := "full"
+	if op.detail == analysis.DetailOverview {
+		nivel = "overview · --detail full mostra todos os recursos"
 	}
-
-	stats := analysis.GetInfraStats(infraBP, detail)
-	fmt.Printf("Diagrama gerado com sucesso: %s\n", outputPath)
-	fmt.Printf("Recursos: %d/%d (visíveis/total) | Relacoes: %d | Analyzers: %s\n",
-		stats.VisibleResources, stats.TotalResources, stats.Relations,
-		strings.Join(stats.Analyzers, ", "))
-	if refined {
-		fmt.Printf("Refinado com IA (%s)\n", aiSource)
-	}
-	if detail == analysis.DetailOverview {
-		fmt.Println("Nivel: overview (use --detail full para todos os recursos)")
-	}
-	fmt.Println()
-	fmt.Println("Para visualizar, abra em: https://mermaid.live ou extensao Mermaid do VS Code")
+	ui.Section(saida, "diagrama")
+	ui.Campos(saida,
+		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(arquivoDoDiagrama)},
+		ui.Campo{Rotulo: "recursos", Valor: fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)},
+		ui.Campo{Rotulo: "relações", Valor: fmt.Sprintf("%d", stats.Relations)},
+		ui.Campo{Rotulo: "analyzers", Valor: strings.Join(stats.Analyzers, ", ")},
+		ui.Campo{Rotulo: "nível", Valor: nivel},
+	)
+	ui.Section(saida, "para ver")
+	ui.Passos(saida, "abra o arquivo em https://mermaid.live ou na extensão Mermaid do VS Code")
 	return nil
+}
+
+func plural(n int, singular, plur string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plur)
 }
 
 // buildResourceSummary cria um resumo compacto dos recursos para o prompt da IA.
@@ -305,31 +399,31 @@ func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary stri
 	userPrompt := fmt.Sprintf("DIAGRAMA RASCUNHO:\n\n%s\n\n%s\n\nProduza o diagrama Mermaid refinado:", mermaidDraft, resourceSummary)
 
 	// Montar lista de providers para tentar em ordem
-	providers := ai.GetAllAvailableProviders(ctx)
+	providers := provedoresDeIA(ctx)
 	if len(providers) == 0 {
-		return "", "", fmt.Errorf("nenhum provider de IA disponivel")
+		return "", "", fmt.Errorf("nenhum provider de IA disponível")
 	}
 
 	var lastErr error
 	for _, provider := range providers {
 		result, err := provider.Completion(ctx, prompts.Get("atlas.refine"), userPrompt)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "aviso: %s falhou, tentando proximo provider: %v\n", provider.Name(), err)
+			slog.Debug("o provider falhou; tentando o próximo", "provider", provider.Name(), "erro", err)
 			lastErr = err
 			continue
 		}
 
 		refined := extractMermaidFromResponse(result)
 		if refined == "" || !strings.Contains(refined, "flowchart") {
-			fmt.Fprintf(os.Stderr, "aviso: %s retornou resposta invalida, tentando proximo provider\n", provider.Name())
-			lastErr = fmt.Errorf("resposta de %s nao contem Mermaid valido", provider.Name())
+			slog.Debug("o provider não devolveu um Mermaid válido; tentando o próximo", "provider", provider.Name())
+			lastErr = fmt.Errorf("resposta de %s não contém Mermaid válido", provider.Name())
 			continue
 		}
 
 		return refined, provider.Name(), nil
 	}
 
-	return "", "", fmt.Errorf("todos os providers falharam, ultimo erro: %v", lastErr)
+	return "", "", fmt.Errorf("todos os providers falharam, último erro: %v", lastErr)
 }
 
 // extractMermaidFromResponse extrai o código Mermaid de uma resposta que pode conter markdown.

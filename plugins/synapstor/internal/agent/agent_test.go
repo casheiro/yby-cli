@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
 // MockProvider implements ai.Provider for testing
@@ -64,9 +67,12 @@ func TestCapture(t *testing.T) {
 
 	agent := NewAgent(mockProvider, tmpDir)
 
-	err = agent.Capture("Test input")
+	res, err := agent.Capture(context.Background(), "Test input")
 	if err != nil {
 		t.Fatalf("Capture failed: %v", err)
+	}
+	if res.Titulo != "Test UKI" || res.Arquivo != filepath.Join(".synapstor", ".uki", "UKI-123-test.md") {
+		t.Errorf("resultado inesperado: %+v", res)
 	}
 
 	// Verify file creation
@@ -96,10 +102,10 @@ func TestStudy_NoFiles(t *testing.T) {
 	mockProvider := &MockProvider{Response: "{}"}
 	agent := NewAgent(mockProvider, tmpDir)
 
-	// Should not fail, just find nothing
-	err = agent.Study("nonexistent")
-	if err != nil {
-		t.Fatalf("Study failed: %v", err)
+	// Sem arquivos sobre o tópico, devolve ErrSemArquivos sem chamar a IA
+	res, err := agent.Study(context.Background(), "nonexistent")
+	if !errors.Is(err, ErrSemArquivos) || res != nil {
+		t.Fatalf("esperado ErrSemArquivos, obtido %v (%+v)", err, res)
 	}
 }
 
@@ -197,9 +203,12 @@ func TestSaveResponse_ComValidacaoERetry(t *testing.T) {
 
 	// Usar diretamente saveResponse com JSON inválido (título vazio)
 	invalidJson := `{"title": "", "filename": "UKI-123-teste.md", "content": "conteúdo", "summary": "resumo"}`
-	err := agent.saveResponse(invalidJson, "Teste")
+	res, err := agent.saveResponse(context.Background(), invalidJson)
 	if err != nil {
 		t.Fatalf("saveResponse deveria ter corrigido via retry, mas falhou: %v", err)
+	}
+	if !res.Corrigida || res.Titulo != "Corrigido" {
+		t.Errorf("esperado UKI corrigido, obtido %+v", res)
 	}
 
 	_ = callCount // Evitar warning de variável não utilizada
@@ -208,5 +217,102 @@ func TestSaveResponse_ComValidacaoERetry(t *testing.T) {
 	files, _ := os.ReadDir(filepath.Join(tmpDir, ".synapstor", ".uki"))
 	if len(files) == 0 {
 		t.Error("esperado pelo menos um arquivo UKI criado após retry")
+	}
+}
+
+// TestCapture_FalhaDaIAViraYbyError verifica que a falha do provider sai como YbyError
+// com o nome dele nos detalhes.
+func TestCapture_FalhaDaIAViraYbyError(t *testing.T) {
+	agt := NewAgent(&MockProvider{Err: errors.New("conexão recusada")}, t.TempDir())
+	_, err := agt.Capture(context.Background(), "texto")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeExec || ye.Context["provider"] != "mock" {
+		t.Fatalf("esperado YbyError ERR_EXEC_FAILED com o provider, obtido %#v", err)
+	}
+}
+
+// TestCapture_RespostaSemJSON verifica o erro de quando a IA não devolve um UKI.
+func TestCapture_RespostaSemJSON(t *testing.T) {
+	agt := NewAgent(&MockProvider{Response: "não sei"}, t.TempDir())
+	_, err := agt.Capture(context.Background(), "texto")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodePlugin || ye.GetHint() == "" {
+		t.Fatalf("esperado YbyError ERR_PLUGIN com hint, obtido %#v", err)
+	}
+}
+
+// TestCapture_NomeDoArquivoFicaNaPastaDosUKIs verifica que um filename ou um título com
+// separadores de pasta, vindo da IA, grava um único UKI dentro de .synapstor/.uki, com o
+// prefixo UKI-, e nada fora dela.
+func TestCapture_NomeDoArquivoFicaNaPastaDosUKIs(t *testing.T) {
+	casos := []struct{ nome, titulo, filename string }{
+		{"barra", "Fuga", "UKI-1/../../../fuga.md"},
+		{"contrabarra", "Fuga", `UKI-1\..\..\..\fuga.md`},
+		{"título com barra", "CI/CD no GitLab", "cicd.md"},
+		{"título com contrabarra", `..\..\fuga`, "fuga.md"},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			raiz := t.TempDir()
+			b, _ := json.Marshal(SynapstorResponse{Title: c.titulo, Filename: c.filename, Content: "# Fuga"})
+			res, err := NewAgent(&MockProvider{Response: string(b)}, raiz).Capture(context.Background(), "texto")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pasta := filepath.Join(".synapstor", ".uki")
+			if filepath.Dir(res.Arquivo) != pasta || !strings.HasPrefix(filepath.Base(res.Arquivo), "UKI-") {
+				t.Errorf("UKI fora da pasta ou sem o prefixo UKI-: %s", res.Arquivo)
+			}
+			entradas, err := os.ReadDir(filepath.Join(raiz, pasta))
+			if err != nil || len(entradas) != 1 || entradas[0].IsDir() || entradas[0].Name() != filepath.Base(res.Arquivo) {
+				t.Errorf("esperado só o UKI em %s, obtido %v (%v)", pasta, entradas, err)
+			}
+			for _, fora := range []string{"fuga.md", filepath.Join(".synapstor", "fuga.md")} {
+				if _, err := os.Stat(filepath.Join(raiz, fora)); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("gravou fora da pasta dos UKIs: %s", fora)
+				}
+			}
+		})
+	}
+}
+
+// TestCapture_NaoSobrescreveUKI verifica que um UKI com o mesmo nome de um que já existe
+// ganha um sufixo em vez de apagar o anterior.
+func TestCapture_NaoSobrescreveUKI(t *testing.T) {
+	raiz := t.TempDir()
+	resp := `{"title": "Deploy", "filename": "UKI-1-deploy.md", "content": "# Novo", "summary": ""}`
+	agt := NewAgent(&MockProvider{Response: resp}, raiz)
+	primeiro, err := agt.Capture(context.Background(), "texto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	segundo, err := agt.Capture(context.Background(), "texto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if primeiro.Arquivo == segundo.Arquivo || filepath.Base(segundo.Arquivo) != "UKI-1-deploy-2.md" {
+		t.Errorf("esperado UKI-1-deploy-2.md no segundo, obtido %s e %s", primeiro.Arquivo, segundo.Arquivo)
+	}
+	for _, r := range []*Resultado{primeiro, segundo} {
+		if _, err := os.Stat(filepath.Join(raiz, r.Arquivo)); err != nil {
+			t.Errorf("UKI não gravado: %v", err)
+		}
+	}
+}
+
+func TestNomeDoUKI(t *testing.T) {
+	casos := []struct{ nome, titulo, prefixo, sufixo string }{
+		{"UKI-1-ok.md", "x", "UKI-1-ok.md", ""},
+		{"UKI-1-sem-extensao", "x", "UKI-1-sem-extensao.md", ""},
+		{"UKI-1-a/b.md", "x", "UKI-1-a-b.md", ""},
+		{"documento.md", "CI/CD no GitLab", "UKI-", "-ci-cd-no-gitlab.md"},
+		{"../..", "///", "UKI-", "-uki.md"},
+		{"UKI-", "Título", "UKI-", ""},
+	}
+	for _, c := range casos {
+		obtido := nomeDoUKI(c.nome, c.titulo)
+		if !strings.HasPrefix(obtido, c.prefixo) || !strings.HasSuffix(obtido, c.sufixo) || strings.ContainsAny(obtido, `/\:`) {
+			t.Errorf("nomeDoUKI(%q, %q) = %q", c.nome, c.titulo, obtido)
+		}
 	}
 }

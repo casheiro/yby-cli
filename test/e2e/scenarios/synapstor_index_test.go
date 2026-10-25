@@ -201,14 +201,10 @@ func TestSynapstor_IndexReport(t *testing.T) {
 		return
 	}
 
-	// Se por algum motivo tiver provider (ex: Ollama local), verificar métricas
-	assert.True(t,
-		strings.Contains(outputStr, "Arquivos escaneados") ||
-			strings.Contains(outputStr, "escaneados"),
-		"output deveria conter métricas de arquivos escaneados: %s", outputStr)
-	assert.True(t,
-		strings.Contains(outputStr, "Chunks gerados") ||
-			strings.Contains(outputStr, "chunks"),
-		"output deveria conter métricas de chunks: %s", outputStr)
+	// Com provider (Ollama local ou o modelo local de embeddings), conferir as etapas e o
+	// resumo da indexação.
+	assert.Contains(t, outputStr, "procurar documentos", "output deveria mostrar a etapa de procurar documentos")
+	assert.Contains(t, outputStr, "2 arquivos", "output deveria contar os 2 documentos encontrados")
+	assert.Contains(t, outputStr, "2 indexados", "output deveria resumir os documentos indexados")
+	assert.Contains(t, outputStr, "0 removidos", "output deveria resumir os documentos removidos")
 }
-

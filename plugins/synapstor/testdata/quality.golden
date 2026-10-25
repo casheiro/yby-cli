@@ -1,0 +1,9 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  SYNAPSTOR[0m                                [38;2;161;147;121mquality · 3 UKIs[0m
+
+[38;2;161;147;121mNOTAS[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mDeploy com Argo CD  82/100[0m
+  [38;2;217;174;95m▲[0m [38;2;221;208;181mCharts do Helm      45/100   sem exemplos e metadados[0m
+  [38;2;217;131;97m✕[0m [38;2;221;208;181mRascunho de redis   0/100    sem contexto, exemplos, seções, links e metadados · texto curto[0m
+
+[38;2;161;147;121mRESUMO[0m  [38;2;167;188;113m1 bom[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 a melhorar[0m[38;2;161;147;121m · [0m[38;2;217;131;97m1 fraco[0m  [38;2;161;147;121m· média 42/100[0m
+  [38;2;161;147;121mpasta  [0m[38;2;221;208;181m.synapstor/.uki[0m
