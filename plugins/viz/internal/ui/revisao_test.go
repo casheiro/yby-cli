@@ -405,7 +405,9 @@ func TestAjuda_InterrogacaoMostraTodasAsTeclas(t *testing.T) {
 	m, _ = teclas(t, m, "2")
 	linhas := strings.Split(ansi.Strip(m.View()), "\n")
 	legenda := strings.Join(strings.Fields(linhas[len(linhas)-1]), " ")
-	if legenda != "↑↓ mover ↵ abrir / buscar f filtrar x ações n namespace ? ajuda q sair" {
+	// abaixo de 120 colunas o painel não está ao lado: o b dele vem para a
+	// legenda da lista quando cabe inteiro
+	if legenda != "↑↓ mover ↵ abrir / buscar f filtrar x ações n namespace b perguntar ao Bard ? ajuda q sair" {
 		t.Errorf("legenda dos Deployments: %q", legenda)
 	}
 	m.width = 72

@@ -134,6 +134,13 @@ func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.S
 		novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida = k, b, c, p, r, te, l
 		os.RemoveAll(filepath.Join(homeDeTeste, ".yby"))
 	})
+	// Os namespaces dos testes existem no cluster falso: o scan confere o namespace antes
+	// das etapas.
+	if fc, ok := client.(*fake.Clientset); ok {
+		for _, ns := range []string{"payments", "default"} {
+			_ = fc.Tracker().Add(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
+		}
+	}
 	novoClienteKube = func() (kubernetes.Interface, error) { return client, nil }
 	backendsDoScan = func() []backends.SecurityBackend { return bs }
 	checksDoScan = func() []checks.SecurityCheck { return cs }
@@ -310,8 +317,8 @@ func TestScan_ClusterSemResposta(t *testing.T) {
 	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeClusterOffline || ye.Hint == "" {
 		t.Fatalf("esperava ERR_CLUSTER_OFFLINE com hint, obtido %v", err)
 	}
-	if !strings.Contains(saida, "✕ polaris") || !strings.Contains(saida, "connection refused") {
-		t.Errorf("a etapa que falhou aparece com o motivo:\n%s", saida)
+	if !strings.Contains(saida, "✕ polaris") || !strings.Contains(saida, "o cluster parou de responder") || strings.Contains(saida, "connection refused") {
+		t.Errorf("a etapa que falhou aparece com o motivo em PT-BR, sem o erro cru:\n%s", saida)
 	}
 }
 

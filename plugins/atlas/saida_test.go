@@ -246,24 +246,38 @@ func TestDiagram_GoldenComIA(t *testing.T) {
 
 func TestDiagram_IAIndisponivelPula(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
-	semIA := [][]ai.Provider{nil, {
-		&provedorFalso{nome: "ollama", err: errors.New("fora do ar")},
-		&provedorFalso{nome: "gemini-cli", resposta: "não sei"},
-	}}
-	for _, provs := range semIA {
-		usarDependencias(t, provs...)
+	casos := []struct {
+		nome   string
+		provs  []ai.Provider
+		etapa  string
+		motivo string
+	}{
+		{"sem provider", nil, "○ refinar com a IA   sem IA disponível", ""},
+		{"resposta sem Mermaid", []ai.Provider{
+			&provedorFalso{nome: "ollama", err: errors.New("fora do ar")},
+			&provedorFalso{nome: "gemini-cli", resposta: "não sei"},
+		}, "○ refinar com a IA   a resposta veio sem diagrama", "ficou o diagrama montado a partir dos arquivos"},
+		{"todos falharam", []ai.Provider{
+			&provedorFalso{nome: "ollama", err: errors.New("fora do ar")},
+		}, "○ refinar com a IA   a IA não respondeu", "ficou o diagrama montado a partir dos arquivos"},
+	}
+	for _, c := range casos {
+		usarDependencias(t, c.provs...)
 		projetoComChart(t)
 		log := capturarLog(t)
 		saida, erros, err := rodar(t, "diagram", "-d", "full")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(saida, "refinar com a IA   sem IA disponível") {
-			t.Errorf("sem IA, a etapa é pulada:\n%s", saida)
+		if !strings.Contains(saida, c.etapa) || !strings.Contains(saida, c.motivo) {
+			t.Errorf("%s: a etapa diz o que houve com a IA (%q):\n%s", c.nome, c.etapa, saida)
+		}
+		if c.motivo == "" && strings.Contains(saida, "ficou o diagrama") {
+			t.Errorf("%s: sem IA, a etapa basta:\n%s", c.nome, saida)
 		}
 		// o motivo já está na etapa; o detalhe fica no log de depuração
 		if erros != "" || log.Len() > 0 {
-			t.Errorf("%d providers: nada no stderr nem no log no nível info, obtido %q e %q", len(provs), erros, log.String())
+			t.Errorf("%s: nada no stderr nem no log no nível info, obtido %q e %q", c.nome, erros, log.String())
 		}
 	}
 }

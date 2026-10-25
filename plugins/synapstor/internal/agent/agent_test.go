@@ -239,6 +239,10 @@ func TestCapture_RespostaSemJSON(t *testing.T) {
 	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodePlugin || ye.GetHint() == "" {
 		t.Fatalf("esperado YbyError ERR_PLUGIN com hint, obtido %#v", err)
 	}
+	// a causa na tela é em PT-BR; o "invalid character" do encoding/json fica no log
+	if !errors.Is(err, ai.ErrRespostaNaoEJSON) || strings.Contains(ye.Cause.Error(), "invalid character") {
+		t.Errorf("causa em PT-BR esperada, obtido %v", ye.Cause)
+	}
 }
 
 // TestCapture_NomeDoArquivoFicaNaPastaDosUKIs verifica que um filename ou um título com

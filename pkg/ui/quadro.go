@@ -16,6 +16,10 @@ const (
 	QuadroFoco
 	// QuadroDestrutivo usa o fio em Erro (ação destrutiva).
 	QuadroDestrutivo
+	// QuadroSuave usa o fio em Fio, como o QuadroNormal, e o rótulo em TintaSuave sem
+	// negrito, como o do QuadroComTecla: o quadro de leitura das saídas de comando (o
+	// diagnóstico do Sentinel), com o rótulo legível sobre o fundo como nas pranchas.
+	QuadroSuave
 )
 
 // larguraMinQuadro é a menor largura total que ainda comporta borda, respiro e conteúdo.
@@ -60,11 +64,16 @@ func quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
 	largura = max(largura, larguraMinQuadro)
 	s := S()
 	estilo := s.Fio
+	rot := estilo.Bold(true)
 	switch v {
 	case QuadroFoco:
 		estilo = s.Tinta
+		rot = estilo.Bold(true)
 	case QuadroDestrutivo:
 		estilo = s.Erro
+		rot = estilo.Bold(true)
+	case QuadroSuave:
+		rot = s.TintaSuave
 	}
 
 	cantoSE, cantoSD, cantoIE, cantoID, horiz, vert := "┌", "┐", "└", "┘", "─", "│"
@@ -79,7 +88,7 @@ func quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
 	if rotulo != "" {
 		texto := truncarCelulas(rotulo, largura-6)
 		falta := largura - 2 - lipgloss.Width(texto) - 2
-		topo = estilo.Render(cantoSE+" ") + estilo.Bold(true).Render(texto) +
+		topo = estilo.Render(cantoSE+" ") + rot.Render(texto) +
 			estilo.Render(" "+strings.Repeat(horiz, max(falta, 0))+cantoSD)
 	} else {
 		topo = estilo.Render(cantoSE + strings.Repeat(horiz, largura-2) + cantoSD)

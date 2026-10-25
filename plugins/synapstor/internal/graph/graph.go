@@ -52,8 +52,9 @@ var reIDRef = regexp.MustCompile(`\*\*ID:\*\*\s*(UKI-[^\s]+)`)
 // Regex para extrair título do markdown: # Título
 var reTitle = regexp.MustCompile(`(?m)^#\s+(.+)$`)
 
-// Regex para extrair tipo: **Type:** ou **Tipo:**
-var reType = regexp.MustCompile(`\*\*(?:Type|Tipo):\*\*\s*(\w+)`)
+// Regex para extrair tipo: **Type:** ou **Tipo:**. O grupo aceita letras com acento
+// ("Decisão", "Referência", do prompt synapstor.capture em PT-BR), que o \w do Go não pega.
+var reType = regexp.MustCompile(`\*\*(?:Type|Tipo):\*\*\s*([\p{L}\p{N}_-]+)`)
 
 // Regex para detectar referências inline a UKI IDs
 var reUKIRef = regexp.MustCompile(`UKI-[\w-]+`)

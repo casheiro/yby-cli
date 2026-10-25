@@ -34,6 +34,10 @@ func configurarLog() {
 var (
 	relogio    = time.Now
 	terminalEm = func(w io.Writer) bool { return ui.Largura(w) > 0 }
+	// larguraTerminal é a largura do terminal ligado a w (0 fora dele), a mesma que o
+	// ui.Check usa para quebrar a nota; as linhas do scan que quebram por conta própria
+	// (checkNaColuna, checkComCaminho) medem com ela.
+	larguraTerminal = ui.Largura
 )
 
 // larguraPadrao é a largura das saídas do Sentinel, a mesma das saídas de comando do core.

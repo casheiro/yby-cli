@@ -304,12 +304,22 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	} else {
 		summary := buildResourceSummary(infraBP)
 		refinedDiagram, source, refineErr := refineDiagramWithAI(context.Background(), diagram, summary)
-		if refineErr == nil && refinedDiagram != "" {
+		switch {
+		case refineErr == nil && refinedDiagram != "":
 			diagram = refinedDiagram
 			prog.Concluir(source)
-		} else {
-			slog.Debug("refinamento com IA indisponível; usando o diagrama programático", "erro", refineErr)
+		case errors.Is(refineErr, errSemIA):
 			prog.Pular("sem IA disponível")
+		case errors.Is(refineErr, errSemDiagrama):
+			// A IA respondeu, mas sem um Mermaid: o motivo vai na etapa, e a resposta, no
+			// log de depuração.
+			slog.Debug("a IA respondeu sem diagrama; ficou o programático", "erro", refineErr)
+			prog.Pular("a resposta veio sem diagrama")
+			prog.Detalhe("ficou o diagrama montado a partir dos arquivos")
+		default:
+			slog.Debug("a IA falhou; ficou o diagrama programático", "erro", refineErr)
+			prog.Pular("a IA não respondeu")
+			prog.Detalhe("ficou o diagrama montado a partir dos arquivos")
 		}
 	}
 
@@ -334,10 +344,10 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	}
 	ui.Section(saida, "diagrama")
 	ui.Campos(saida,
-		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(arquivoDoDiagrama)},
+		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(arquivoDoDiagrama), Caminho: true},
 		ui.Campo{Rotulo: "recursos", Valor: fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)},
 		ui.Campo{Rotulo: "relações", Valor: fmt.Sprintf("%d", stats.Relations)},
-		ui.Campo{Rotulo: "analyzers", Valor: strings.Join(stats.Analyzers, ", ")},
+		ui.Campo{Rotulo: "analisadores", Valor: strings.Join(stats.Analyzers, ", ")},
 		ui.Campo{Rotulo: "nível", Valor: nivel},
 	)
 	ui.Section(saida, "para ver")
@@ -393,18 +403,28 @@ func buildResourceSummary(bp *discovery.InfraBlueprint) string {
 	return b.String()
 }
 
+// Por que o refinamento não trouxe diagrama: nenhuma IA disponível, ou alguma respondeu,
+// mas sem um Mermaid. Uma falha de todos os providers (fora do ar, cota) é outro erro.
+var (
+	errSemIA       = errors.New("nenhum provider de IA disponível")
+	errSemDiagrama = errors.New("a resposta da IA não trouxe um diagrama Mermaid")
+)
+
 // refineDiagramWithAI tenta refinar o diagrama usando múltiplos providers em cascata.
-// Tenta cada provider disponível até um funcionar. Se todos falharem, retorna erro.
+// Tenta cada provider disponível até um funcionar. Se nenhum trouxer diagrama, retorna
+// errSemIA (não há provider), errSemDiagrama (algum respondeu sem Mermaid) ou o último
+// erro dos providers.
 func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary string) (string, string, error) {
 	userPrompt := fmt.Sprintf("DIAGRAMA RASCUNHO:\n\n%s\n\n%s\n\nProduza o diagrama Mermaid refinado:", mermaidDraft, resourceSummary)
 
 	// Montar lista de providers para tentar em ordem
 	providers := provedoresDeIA(ctx)
 	if len(providers) == 0 {
-		return "", "", fmt.Errorf("nenhum provider de IA disponível")
+		return "", "", errSemIA
 	}
 
 	var lastErr error
+	respondeuSemDiagrama := false
 	for _, provider := range providers {
 		result, err := provider.Completion(ctx, prompts.Get("atlas.refine"), userPrompt)
 		if err != nil {
@@ -415,15 +435,18 @@ func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary stri
 
 		refined := extractMermaidFromResponse(result)
 		if refined == "" || !strings.Contains(refined, "flowchart") {
-			slog.Debug("o provider não devolveu um Mermaid válido; tentando o próximo", "provider", provider.Name())
-			lastErr = fmt.Errorf("resposta de %s não contém Mermaid válido", provider.Name())
+			slog.Debug("o provider não devolveu um Mermaid válido; tentando o próximo", "provider", provider.Name(), "resposta", result)
+			respondeuSemDiagrama = true
 			continue
 		}
 
 		return refined, provider.Name(), nil
 	}
 
-	return "", "", fmt.Errorf("todos os providers falharam, último erro: %v", lastErr)
+	if respondeuSemDiagrama {
+		return "", "", errSemDiagrama
+	}
+	return "", "", fmt.Errorf("todos os providers falharam, último erro: %w", lastErr)
 }
 
 // extractMermaidFromResponse extrai o código Mermaid de uma resposta que pode conter markdown.

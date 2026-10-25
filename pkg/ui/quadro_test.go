@@ -71,3 +71,22 @@ func TestQuadroNomeado(t *testing.T) {
 		}
 	}
 }
+
+// TestQuadroSuave: o fio e o corpo são os do QuadroNormal; só o rótulo muda, para
+// TintaSuave sem negrito, como o do QuadroComTecla (legível sobre o fundo escuro).
+func TestQuadroSuave(t *testing.T) {
+	etapasPorModo(t, "quadro_suave", func() string { return Quadro("diagnóstico", "o worker não acha o banco", 40, QuadroSuave) })
+
+	usarTema(t, true, termenv.TrueColor, false)
+	suave := strings.Split(Quadro("diagnóstico", "a\nb", 40, QuadroSuave), "\n")
+	normal := strings.Split(Quadro("diagnóstico", "a\nb", 40, QuadroNormal), "\n")
+	if strings.Join(suave[1:], "\n") != strings.Join(normal[1:], "\n") {
+		t.Errorf("o corpo e o fio de baixo são os do QuadroNormal:\n%s\n%s", strings.Join(suave, "\n"), strings.Join(normal, "\n"))
+	}
+	if !strings.Contains(suave[0], S().TintaSuave.Render("DIAGNÓSTICO")) || strings.Contains(suave[0], "\x1b[1;") {
+		t.Errorf("o rótulo sai em TintaSuave, sem negrito: %q", suave[0])
+	}
+	if !strings.HasPrefix(suave[0], S().Fio.Render("┌ ")) {
+		t.Errorf("o canto e o fio continuam em Fio: %q", suave[0])
+	}
+}

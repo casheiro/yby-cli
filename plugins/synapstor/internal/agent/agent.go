@@ -241,10 +241,11 @@ func limparJSON(s string) string {
 }
 
 // respostaInvalida é o erro de quando a resposta da IA não forma um UKI; a resposta crua
-// vai para o log de depuração.
+// e o erro técnico do encoding/json (em inglês) vão para o log de depuração, e a causa na
+// tela sai em PT-BR (ai.CausaForaDoFormato).
 func respostaInvalida(err error, resposta string) error {
 	slog.Debug("resposta da IA fora do formato do UKI", "resposta", resposta)
-	return yerrors.Wrap(err, yerrors.ErrCodePlugin, "a resposta da IA não veio no formato de um UKI").
+	return yerrors.Wrap(ai.CausaForaDoFormato(err), yerrors.ErrCodePlugin, "a resposta da IA não veio no formato de um UKI").
 		WithHint("rode de novo; se repetir, troque o modelo com YBY_AI_MODEL (com YBY_LOG_LEVEL=debug a resposta sai no log)")
 }
 

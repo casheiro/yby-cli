@@ -98,16 +98,19 @@ func juntarCelulas(celulas []string, colunas []Coluna, larguras []int) string {
 	return strings.TrimRight(strings.Join(partes, strings.Repeat(" ", espacoColunas)), " ")
 }
 
-// Campo é um par rótulo e valor de Campos.
+// Campo é um par rótulo e valor de Campos. Com Caminho, o valor é um caminho de arquivo:
+// a home do usuário vira ~ (AbreviarHome) e, quando ele não cabe no terminal, quebra só
+// nos separadores (QuebrarCaminho), nunca no meio de um nome.
 type Campo struct {
 	Rotulo, Valor string
+	Caminho       bool
 }
 
 // Campos escreve pares rótulo e valor, um por linha e recuados em 2 células, como nas
 // linhas "causa" e "faça" de RenderError: o rótulo em TintaSuave, numa coluna com a
 // largura do mais largo mais 2 espaços, e o valor em Tinta. Um par com valor vazio não
-// aparece. Quando w é um terminal e o valor não cabe, ele quebra entre palavras, alinhado
-// sob o começo do valor.
+// aparece. Quando w é um terminal e o valor não cabe, ele quebra entre palavras (um
+// caminho, nos separadores), alinhado sob o começo do valor.
 func Campos(w io.Writer, campos ...Campo) {
 	s := S()
 	col := 0
@@ -120,9 +123,17 @@ func Campos(w io.Writer, campos ...Campo) {
 		if c.Valor == "" {
 			continue
 		}
-		partes := []string{c.Valor}
+		valor := c.Valor
+		if c.Caminho {
+			valor = AbreviarHome(valor)
+		}
+		partes := []string{valor}
 		if l := larguraDe(w); l > 0 {
-			partes = Quebrar(c.Valor, l-2-col)
+			if c.Caminho {
+				partes = QuebrarCaminho(valor, l-2-col)
+			} else {
+				partes = Quebrar(valor, l-2-col)
+			}
 		}
 		fmt.Fprintln(w, "  "+s.Rotulo.Render(padDireita(c.Rotulo, col))+s.Tinta.Render(partes[0]))
 		for _, p := range partes[1:] {

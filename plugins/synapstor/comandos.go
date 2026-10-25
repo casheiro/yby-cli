@@ -129,7 +129,7 @@ func gerarUKI(saida, erros io.Writer, provider ai.Provider, raiz string, gerar f
 	ui.Section(saida, "uki gravado")
 	ui.Campos(saida,
 		ui.Campo{Rotulo: "título", Valor: res.Titulo},
-		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(res.Arquivo)},
+		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(res.Arquivo), Caminho: true},
 	)
 	ui.Section(saida, "próximo passo")
 	ui.Passos(saida, "yby synapstor index põe o UKI na busca e no Bard")
@@ -200,7 +200,7 @@ func escreverIndexacao(w io.Writer, r *indexer.IndexReport) {
 		partes = append(partes, ui.ParteResumo{Texto: plural(r.FilesSkipped, "sem mudança", "sem mudança"), Tipo: ui.CheckNeutro})
 	}
 	ui.SummaryCom(w, partes, "")
-	ui.Campos(w, ui.Campo{Rotulo: "índice", Valor: filepath.ToSlash(filepath.Join(".synapstor", ".index"))})
+	ui.Campos(w, ui.Campo{Rotulo: "índice", Valor: filepath.ToSlash(filepath.Join(".synapstor", ".index")), Caminho: true})
 }
 
 // faixaDaNota classifica a nota de um UKI: 70 ou mais é bom, abaixo de 40 é fraco.
@@ -308,7 +308,7 @@ func escreverQualidade(w io.Writer, scores []quality.QualityScore) {
 		{Texto: plural(medios, "a melhorar", "a melhorar"), Tipo: ui.CheckAviso},
 		{Texto: plural(fracos, "fraco", "fracos"), Tipo: ui.CheckErro},
 	}, fmt.Sprintf("média %d/100", soma/len(scores)))
-	ui.Campos(w, ui.Campo{Rotulo: "pasta", Valor: filepath.ToSlash(pastaDosUKIs)})
+	ui.Campos(w, ui.Campo{Rotulo: "pasta", Valor: filepath.ToSlash(pastaDosUKIs), Caminho: true})
 }
 
 // runDecay aponta os UKIs sem atividade recente no git.
@@ -444,7 +444,7 @@ func runExport(raiz string, args []string, saida, erros io.Writer) error {
 	ui.Section(saida, "exportação")
 	ui.Campos(saida,
 		ui.Campo{Rotulo: "formato", Valor: format},
-		ui.Campo{Rotulo: "destino", Valor: filepath.ToSlash(mostrado)},
+		ui.Campo{Rotulo: "destino", Valor: filepath.ToSlash(mostrado), Caminho: true},
 		ui.Campo{Rotulo: "UKIs", Valor: fmt.Sprintf("%d", len(ukis))},
 	)
 	return nil

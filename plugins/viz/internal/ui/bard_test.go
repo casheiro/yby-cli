@@ -472,3 +472,37 @@ func TestAjudanteSaida(t *testing.T) {
 	}
 	os.Exit(n)
 }
+
+// TestTeclaBNaLegenda: o b aparece no rodapé do painel ao lado (curto, "b Bard",
+// quando "perguntar ao Bard" não cabe) e, sem o painel ao lado, na legenda da
+// lista quando cabe inteiro, sem tirar o "? ajuda" a 80 colunas.
+func TestTeclaBNaLegenda(t *testing.T) {
+	descricoes := func(largura int) []string {
+		var d []string
+		for _, b := range teclasDoPainel("pod", largura) {
+			d = append(d, b.Help().Key+" "+b.Help().Desc)
+		}
+		return d
+	}
+	if got := strings.Join(descricoes(60), "  "); got != "l logs  y yaml  e eventos  b perguntar ao Bard" {
+		t.Errorf("com espaço, o b vai inteiro: %q", got)
+	}
+	if got := strings.Join(descricoes(44), "  "); got != "l logs  y yaml  e eventos  b Bard" {
+		t.Errorf("sem espaço, o b fica curto: %q", got)
+	}
+	if got := teclasDoPainel("pod", 44)[3]; !got.Enabled() || strings.Join(got.Keys(), ",") != "b" {
+		t.Errorf("a tecla curta continua sendo o b: %v", got.Keys())
+	}
+
+	for _, c := range []struct {
+		largura int
+		comB    bool
+	}{{80, false}, {100, true}, {140, false}} {
+		m := telaDaPrancha(t, c.largura, 30)
+		linhas := strings.Split(ansi.Strip(m.View()), "\n")
+		legenda := linhas[len(linhas)-1]
+		if strings.Contains(legenda, "b perguntar ao Bard") != c.comB || !strings.Contains(legenda, "? ajuda") {
+			t.Errorf("%d colunas: legenda da lista %q (b esperado: %v)", c.largura, legenda, c.comB)
+		}
+	}
+}

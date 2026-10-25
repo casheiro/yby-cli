@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +21,8 @@ import (
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -70,9 +74,12 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 	if err != nil {
 		return semCluster(err)
 	}
+	if err := verificarNamespace(ctx, k8sClient, namespace); err != nil {
+		return err
+	}
 
-	// O título só sai depois das verificações rápidas (perfil e cliente), para o erro
-	// delas não ficar separado dele por duas linhas em branco.
+	// O título só sai depois das verificações rápidas (perfil, cliente e namespace), para
+	// o erro delas não ficar separado dele por duas linhas em branco.
 	telaDasEtapas := saida
 	if op.paraScripts() {
 		telaDasEtapas = erros
@@ -83,22 +90,53 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 
 	prog := novoProgresso(telaDasEtapas)
 	parar := animar(prog, erros)
-	report, patches, falhaPatches, err := coletarScan(ctx, prog, k8sClient, namespace, selecionados, op)
+	c, err := coletarScan(ctx, prog, k8sClient, namespace, selecionados, op)
 	parar()
 	if err != nil {
 		return err
 	}
-	if err := escreverResultadoScan(saida, report, patches, namespace, op); err != nil {
+	if err := escreverResultadoScan(saida, c, namespace, op); err != nil {
 		return err
 	}
 	// Patches que o --fix não aplicou saem como erro depois do resultado, para o código de
 	// saída dizer a scripts e à CI que nada (ou nem tudo) foi corrigido.
-	return falhaPatches
+	return c.falhaPatches
+}
+
+// verificarNamespace lê o namespace antes do scan, como o investigate lê o pod: um
+// namespace que não existe vira erro de validação (sem relatório nem achados do OPA para
+// um namespace que não está lá), e um cluster que não responde para aqui, antes das
+// etapas. Sem permissão para ler namespaces, o scan segue: cada etapa diz o que leu.
+func verificarNamespace(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	_, err := client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	switch {
+	case err == nil:
+		return nil
+	case apierrors.IsNotFound(err):
+		slog.Debug("o namespace não existe", "namespace", namespace, "erro", err)
+		return yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("o namespace %s não existe no cluster", namespace)).
+			WithHint("veja os namespaces com kubectl get ns ou no yby viz (tecla n)")
+	case apierrors.IsForbidden(err):
+		slog.Debug("sem permissão para ler o namespace; o scan segue", "namespace", namespace, "erro", err)
+		return nil
+	case apierrors.IsUnauthorized(err):
+		return yerrors.Wrap(err, yerrors.ErrCodeValidation, "o cluster recusou as credenciais do kubeconfig").
+			WithContext("namespace", namespace).
+			WithHint("confira o contexto com kubectl config current-context e renove as credenciais")
+	}
+	return yerrors.Wrap(err, yerrors.ErrCodeClusterOffline, "não deu para consultar o cluster").
+		WithContext("namespace", namespace).
+		WithHint("confira se o cluster responde com kubectl get pods -n " + namespace)
 }
 
 // escreverResultadoScan escreve o json ou o markdown (no stdout ou no arquivo) ou, no
 // formato terminal, o resumo na tela, com o relatório completo em ~/.yby/reports/.
-func escreverResultadoScan(saida io.Writer, report ScanReport, patches []remediation.RemediationPatch, namespace string, op opcoes) error {
+//
+// Sem achados, a linha só diz "nenhum problema" quando todas as verificações rodaram;
+// senão ela é um aviso com quantas não rodaram (as etapas acima dizem quais). O código de
+// saída continua 0, como num scan com achados: ele diz se o scan rodou, não o que achou.
+func escreverResultadoScan(saida io.Writer, c coleta, namespace string, op opcoes) error {
+	report := c.report
 	switch op.formato {
 	case "json":
 		data, _ := json.MarshalIndent(report, "", "  ")
@@ -108,20 +146,35 @@ func escreverResultadoScan(saida io.Writer, report ScanReport, patches []remedia
 	}
 	if len(report.Findings) == 0 {
 		fmt.Fprintln(saida)
-		ui.Check(saida, ui.CheckOk, "nenhum problema de segurança encontrado", "", "")
+		if c.naoRodaram > 0 {
+			ui.Check(saida, ui.CheckAviso, "nenhum problema nas verificações que rodaram · "+contar(c.naoRodaram, "não rodou", "não rodaram"), "", "")
+		} else {
+			ui.Check(saida, ui.CheckOk, "nenhum problema de segurança encontrado", "", "")
+		}
 		ui.Campos(saida, ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)})
 		return nil
 	}
 	caminho, errRelatorio := saveReportToGlobal(report, namespace)
-	escreverScan(saida, report, patches, op, caminho, errRelatorio)
+	escreverScan(saida, report, c.patches, op, caminho, errRelatorio)
 	return nil
 }
 
+// coleta é o que coletarScan junta: o relatório, os patches gerados com --fix ou
+// --fix-dry-run, o erro dos patches que o --fix não aplicou e quantas verificações não
+// rodaram (um backend que falhou por inteiro conta 1; as de uma falha parcial e os checks
+// internos que falharam contam cada uma).
+type coleta struct {
+	report       ScanReport
+	patches      []remediation.RemediationPatch
+	falhaPatches error
+	naoRodaram   int
+}
+
 // coletarScan roda os backends (ou os checks internos), as recomendações da IA e, com
-// --fix, os patches, uma etapa de prog para cada. Devolve os patches gerados com --fix ou
-// --fix-dry-run e, em falhaPatches, o erro dos patches que o --fix não aplicou; err é a
-// falha que interrompe o scan.
-func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Interface, namespace string, selecionados []checks.SecurityCheck, op opcoes) (report ScanReport, patches []remediation.RemediationPatch, falhaPatches, err error) {
+// --fix, os patches, uma etapa de prog para cada; err é a falha que interrompe o scan. O
+// motivo de uma etapa que falhou sai em PT-BR embaixo dela (motivoNaTela); o erro cru vai
+// para o log de depuração.
+func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Interface, namespace string, selecionados []checks.SecurityCheck, op opcoes) (c coleta, err error) {
 	var findings []checks.SecurityFinding
 	var sources []string
 	consultou := false
@@ -134,9 +187,12 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 		prog.Iniciar(b.Name())
 		bf, errBackend := b.ScanCluster(ctx, client, namespace)
-		if errBackend != nil {
+		var parcial *backends.FalhaParcial
+		if errBackend != nil && !errors.As(errBackend, &parcial) {
 			prog.Falhar("falhou")
-			prog.Detalhe(errBackend.Error())
+			slog.Debug("o backend falhou", "backend", b.Name(), "erro", errBackend)
+			prog.Detalhe(motivoNaTela(errBackend))
+			c.naoRodaram++
 			if primeiroErro == nil {
 				primeiroErro = errBackend
 			}
@@ -144,6 +200,13 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 		consultou = true
 		prog.Concluir(contar(len(bf), "achado", "achados"))
+		if parcial != nil {
+			// Os achados das outras verificações valem; as que não rodaram aparecem como
+			// aviso na etapa, e o motivo vai para o log de depuração.
+			slog.Debug("verificações do backend não rodaram", "backend", b.Name(), "erro", parcial.Causa)
+			c.naoRodaram += len(parcial.Falhas)
+			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(parcial.Falhas), "verificação não rodou", "verificações não rodaram"), strings.Join(parcial.Falhas, ", ")))
+		}
 		if len(bf) > 0 {
 			sources = append(sources, b.Name())
 		}
@@ -171,6 +234,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		for _, check := range selecionados {
 			cf, errCheck := check.Run(ctx, client, namespace)
 			if errCheck != nil {
+				slog.Debug("o check falhou", "check", check.Name(), "erro", errCheck)
 				falhas = append(falhas, check.Name())
 				if primeiroErro == nil {
 					primeiroErro = errCheck
@@ -182,12 +246,14 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 		if !consultou && primeiroErro != nil {
 			prog.Falhar("falhou")
-			return ScanReport{}, nil, nil, yerrors.Wrap(primeiroErro, yerrors.ErrCodeClusterOffline,
+			prog.Detalhe(motivoNaTela(primeiroErro))
+			return coleta{}, yerrors.Wrap(primeiroErro, yerrors.ErrCodeClusterOffline,
 				"não deu para consultar o cluster").
 				WithContext("namespace", namespace).
 				WithHint("confira se o cluster responde com kubectl get pods -n " + namespace)
 		}
 		prog.Concluir(contar(len(findings)-antes, "achado", "achados"))
+		c.naoRodaram += len(falhas)
 		if len(falhas) > 0 {
 			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(falhas), "check falhou", "checks falharam"), strings.Join(falhas, ", ")))
 		}
@@ -195,9 +261,9 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 
 	// 3. Deduplicar findings (mesmo recurso + mesma mensagem)
 	findings = deduplicateFindings(findings)
-	report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources}
+	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources}
 	if len(findings) == 0 {
-		return report, nil, nil, nil
+		return c, nil
 	}
 
 	// 4. Recomendações via IA
@@ -207,18 +273,20 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))
 		if errIA != nil {
 			prog.Falhar("indisponíveis")
-			prog.Detalhe(errIA.Error())
+			slog.Debug("as recomendações da IA falharam", "provider", provider.Name(), "erro", errIA)
+			prog.Detalhe(motivoDaIA(errIA))
 		} else {
-			report.Recommendations = recommendations
+			c.report.Recommendations = recommendations
 			prog.Concluir(provider.Name())
 		}
 	}
 
 	// 5. Remediação
 	if !op.fix && !op.fixDryRun {
-		return report, nil, nil, nil
+		return c, nil
 	}
-	patches = remediation.GeneratePatches(findings)
+	patches := remediation.GeneratePatches(findings)
+	c.patches = patches
 	if op.fix && !op.fixDryRun && len(patches) > 0 {
 		prog.Iniciar("aplicar patches")
 		if errs := remediation.ApplyPatches(ctx, client, patches); len(errs) > 0 {
@@ -226,7 +294,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			for _, e := range errs {
 				prog.Detalhe(e.Error())
 			}
-			falhaPatches = yerrors.Wrap(errs[0], yerrors.ErrCodePlugin,
+			c.falhaPatches = yerrors.Wrap(errs[0], yerrors.ErrCodePlugin,
 				fmt.Sprintf("o --fix não aplicou %d de %d patches", len(errs), len(patches))).
 				WithContext("namespace", namespace).
 				WithHint("o motivo de cada um está na etapa aplicar patches; confira as permissões com kubectl auth can-i patch deployments -n " + namespace)
@@ -234,7 +302,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			prog.Concluir(contar(len(patches), "aplicado", "aplicados"))
 		}
 	}
-	return report, patches, falhaPatches, nil
+	return c, nil
 }
 
 // gravarRelatorio escreve o json ou o markdown no stdout ou, com -f, no arquivo; neste
@@ -250,7 +318,7 @@ func gravarRelatorio(saida io.Writer, conteudo, arquivo, formato string) error {
 			WithHint("confira se a pasta existe e se você pode escrever nela")
 	}
 	fmt.Fprintln(saida)
-	ui.Check(saida, ui.CheckOk, "relatório", formato, arquivo)
+	checkComCaminho(saida, ui.CheckOk, "relatório", formato, filepath.ToSlash(arquivo))
 	return nil
 }
 

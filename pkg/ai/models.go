@@ -20,6 +20,9 @@ type ModelCatalog struct {
 	Models   []string // os modelos conhecidos, com o padrão primeiro
 	Local    bool     // a lista veio do próprio provider (o /api/tags do Ollama)
 	Warning  string   // por que a lista ficou curta (o Ollama não respondeu)
+	// Embeddings são os modelos baixados que só geram embeddings (o nomic-embed-text do
+	// Ollama): ficam fora de Models, porque não conversam.
+	Embeddings []string
 }
 
 // modelSpec é o que a factory sabe dos modelos de um provider.
@@ -76,11 +79,12 @@ func IsKnownProvider(name string) bool {
 	return ok
 }
 
-// Avisos da lista do Ollama: fora do ar não há o que escolher, e a lista vazia pede um
-// ollama pull.
+// Avisos da lista do Ollama: fora do ar não há o que escolher, e a lista vazia (ou só com
+// modelos de embeddings, que não conversam) pede um ollama pull.
 const (
-	avisoOllamaFora  = "o Ollama não respondeu"
-	avisoOllamaVazio = "nenhum modelo baixado no Ollama"
+	avisoOllamaFora         = "o Ollama não respondeu"
+	avisoOllamaVazio        = "nenhum modelo baixado no Ollama"
+	avisoOllamaSoEmbeddings = "o Ollama só tem modelos de embeddings"
 )
 
 // ollamaListTimeout limita a leitura dos modelos locais: o Ollama fora do ar não pode
@@ -112,20 +116,29 @@ func listOllamaModels(ctx context.Context, p *OllamaProvider) ModelCatalog {
 	cat := ModelCatalog{Provider: "ollama"}
 	ctx, cancel := context.WithTimeout(ctx, ollamaListTimeout)
 	defer cancel()
-	var locais []string
+	var baixados []ollamaModelo
 	var err error
 	if p.IsAvailable(ctx) {
-		locais, err = p.localModels(ctx)
+		baixados, err = p.localModels(ctx)
+	}
+	// Só os modelos de conversa entram na lista: um de embeddings não responde ao Bard.
+	locais := nomesDeConversa(baixados)
+	for _, m := range baixados {
+		if m.deEmbeddings() {
+			cat.Embeddings = append(cat.Embeddings, m.Name)
+		}
 	}
 	switch {
 	case p.BaseURL == "" || err != nil:
 		cat.Warning = avisoOllamaFora
-	case len(locais) == 0:
+	case len(baixados) == 0:
 		cat.Warning = avisoOllamaVazio
+	case len(locais) == 0:
+		cat.Warning = avisoOllamaSoEmbeddings
 	default:
 		cat.Local = true
 	}
-	// Sem modelo no config, o Ollama usa o primeiro baixado (resolveModel).
+	// Sem modelo no config, o Ollama usa o primeiro de conversa baixado (resolveModel).
 	cat.Default = p.Model
 	if !p.modelConfigured && len(locais) > 0 {
 		cat.Default = locais[0]
@@ -181,6 +194,13 @@ func validarModelo(ctx context.Context, provider, model string) (string, error) 
 		if err := erroListaOllama(cat, model); err != nil {
 			return "", err
 		}
+		for _, m := range cat.Embeddings {
+			if strings.EqualFold(m, model) || strings.EqualFold(m, model+":latest") {
+				return "", errors.New(errors.ErrCodeValidation, "o "+m+" é um modelo de embeddings e não conversa").
+					WithContext("provider", provider).WithContext("model", model).
+					WithHint("Escolha um modelo de conversa: " + strings.Join(cat.Models, ", "))
+			}
+		}
 		conhecidos = cat.Models
 		// "llama3" é o "llama3:latest" que o /api/tags devolve.
 		for _, m := range conhecidos {
@@ -227,6 +247,10 @@ func erroListaOllama(cat ModelCatalog, model string) error {
 		return errors.New(errors.ErrCodeValidation, avisoOllamaVazio).
 			WithContext("provider", "ollama").WithContext("model", model).
 			WithHint("Baixe um modelo com 'ollama pull <modelo>'")
+	case cat.Warning == avisoOllamaSoEmbeddings:
+		return errors.New(errors.ErrCodeValidation, avisoOllamaSoEmbeddings).
+			WithContext("provider", "ollama").WithContext("model", model).
+			WithHint("Baixe um modelo de conversa com 'ollama pull llama3.2'")
 	default:
 		return errors.New(errors.ErrCodeValidation, avisoOllamaFora).
 			WithContext("provider", "ollama").WithContext("model", model).

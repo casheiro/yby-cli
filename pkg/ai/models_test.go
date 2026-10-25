@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -178,9 +179,12 @@ func ollamaFalso(t *testing.T, modelos ...string) *httptest.Server {
 		}
 		var tags ollamaTagsResponse
 		for _, m := range modelos {
-			tags.Models = append(tags.Models, struct {
-				Name string `json:"name"`
-			}{m})
+			modelo := ollamaModelo{Name: m}
+			if strings.HasPrefix(m, "all-minilm") {
+				// sem "embed" no nome: a família diz que é de embeddings
+				modelo.Details.Family = "bert"
+			}
+			tags.Models = append(tags.Models, modelo)
 		}
 		_ = json.NewEncoder(w).Encode(tags)
 	}))
@@ -277,4 +281,44 @@ func TestGetProviderWithModel_Ollama(t *testing.T) {
 	ye := codigoErro(t, err)
 	assert.Equal(t, "o ollama não tem o modelo mistral", ye.Message)
 	assert.Contains(t, ye.Hint, "qwen2.5:7b, llama3:latest")
+}
+
+// O /api/tags pode trazer um modelo de embeddings na frente (nomic-embed-text): ele não
+// vira o padrão de conversa nem aparece na lista do /modelo, e escolhê-lo dá um erro
+// que diz por quê.
+func TestListModels_OllamaPulaEmbeddings(t *testing.T) {
+	isolarConfig(t)
+	srv := ollamaFalso(t, "nomic-embed-text:latest", "all-minilm:latest", "llama3.2:latest", "qwen2.5:7b")
+
+	cat := listOllamaModels(context.Background(), &OllamaProvider{Model: defaultOllamaModel, Endpoints: []string{srv.URL}})
+	assert.True(t, cat.Local)
+	assert.Equal(t, "llama3.2:latest", cat.Default, "o padrão é o primeiro modelo de conversa")
+	assert.Equal(t, []string{"llama3.2:latest", "qwen2.5:7b"}, cat.Models)
+	assert.Equal(t, []string{"nomic-embed-text:latest", "all-minilm:latest"}, cat.Embeddings)
+
+	p := &OllamaProvider{Model: defaultOllamaModel, BaseURL: srv.URL}
+	require.NoError(t, p.resolveModel(context.Background()))
+	assert.Equal(t, "llama3.2:latest", p.Model, "sem config, a conversa usa o primeiro modelo que conversa")
+
+	t.Setenv("OLLAMA_HOST", srv.URL)
+	_, _, err := GetProviderWithModel(context.Background(), "ollama", "nomic-embed-text")
+	ye := codigoErro(t, err)
+	assert.Equal(t, "o nomic-embed-text:latest é um modelo de embeddings e não conversa", ye.Message)
+	assert.Contains(t, ye.Hint, "llama3.2:latest, qwen2.5:7b")
+}
+
+func TestListModels_OllamaSoComEmbeddings(t *testing.T) {
+	isolarConfig(t)
+	srv := ollamaFalso(t, "nomic-embed-text:latest")
+
+	cat := listOllamaModels(context.Background(), &OllamaProvider{Model: defaultOllamaModel, Endpoints: []string{srv.URL}})
+	assert.False(t, cat.Local)
+	assert.Equal(t, "o Ollama só tem modelos de embeddings", cat.Warning)
+	ye := codigoErro(t, erroListaOllama(cat, "llama3"))
+	assert.Contains(t, ye.Hint, "ollama pull llama3.2")
+
+	p := &OllamaProvider{Model: defaultOllamaModel, BaseURL: srv.URL}
+	err := p.resolveModel(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "só tem modelos de embeddings")
 }

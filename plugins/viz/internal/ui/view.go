@@ -384,7 +384,7 @@ func (m Model) teclas() ([]key.Binding, key.Binding) {
 		return nil, key.Binding{}
 	case m.painelPorCima():
 		// O painel por cima não tem rodapé: as teclas dele vêm para a legenda.
-		t := append([]key.Binding{atalho(setas(), "mover", "up", "down", "j", "k")}, teclasDoPainel(abas[m.activeTab].kind)...)
+		t := append([]key.Binding{atalho(setas(), "mover", "up", "down", "j", "k")}, teclasDoPainel(abas[m.activeTab].kind, 0)...)
 		if len(acoesDoTipo(abas[m.activeTab].kind)) > 0 {
 			t = append(t, l.Acoes)
 		}
@@ -401,6 +401,15 @@ func (m Model) teclas() ([]key.Binding, key.Binding) {
 	t = append(t, l.Namespace)
 	if m.temFiltro() {
 		t = append(t, atalho("esc", "limpar filtros", "esc"))
+	}
+	if !m.painelAoLado() && m.itemCount() > 0 {
+		// Sem o painel ao lado (abaixo de 120 colunas), o b do painel vem para a
+		// legenda depois das teclas da prancha, só quando cabe inteira: sem
+		// espaço, ele não tira o "? ajuda" do lugar.
+		comBard := append(append([]key.Binding(nil), t...), l.Bard, g.Ajuda)
+		if larguraDaLegenda(comBard)+2+larguraDaLegenda([]key.Binding{g.Sair}) <= m.width {
+			t = append(t, l.Bard)
+		}
 	}
 	return append(t, g.Ajuda), key.Binding{}
 }

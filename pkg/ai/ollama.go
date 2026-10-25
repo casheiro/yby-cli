@@ -163,27 +163,82 @@ type ollamaRequest struct {
 }
 
 type ollamaTagsResponse struct {
-	Models []struct {
-		Name string `json:"name"`
-	} `json:"models"`
+	Models []ollamaModelo `json:"models"`
 }
 
+// ollamaModelo é um modelo do /api/tags; os detalhes dizem a família (bert, nomic-bert…).
+type ollamaModelo struct {
+	Name    string `json:"name"`
+	Details struct {
+		Family   string   `json:"family"`
+		Families []string `json:"families"`
+	} `json:"details"`
+}
+
+// familiasDeEmbeddings são as famílias do /api/tags que só geram embeddings.
+var familiasDeEmbeddings = map[string]bool{"bert": true, "nomic-bert": true}
+
+// deEmbeddings diz se o modelo só gera embeddings (nomic-embed-text, mxbai-embed-large,
+// all-minilm…): o nome traz "embed" ou a família é de embeddings. Um modelo assim não
+// conversa, e o /api/generate dele falha.
+func (m ollamaModelo) deEmbeddings() bool {
+	if strings.Contains(strings.ToLower(m.Name), "embed") {
+		return true
+	}
+	if familiasDeEmbeddings[strings.ToLower(m.Details.Family)] {
+		return true
+	}
+	for _, f := range m.Details.Families {
+		if familiasDeEmbeddings[strings.ToLower(f)] {
+			return true
+		}
+	}
+	return false
+}
+
+// nomesDeConversa são os nomes dos modelos que conversam, na ordem do /api/tags.
+func nomesDeConversa(modelos []ollamaModelo) []string {
+	var nomes []string
+	for _, m := range modelos {
+		if !m.deEmbeddings() {
+			nomes = append(nomes, m.Name)
+		}
+	}
+	return nomes
+}
+
+// resolveModel escolhe o modelo de conversa sem config: o primeiro baixado que não é de
+// embeddings (o /api/tags pode trazer o nomic-embed-text na frente do llama3.2).
 func (p *OllamaProvider) resolveModel(ctx context.Context) error {
 	modelos, err := p.localModels(ctx)
 	if err != nil {
 		return err
 	}
-	if len(modelos) > 0 {
-		// Pick the first one. Most users have "latest" or "llama3" as default.
-		p.Model = modelos[0]
+	if conversa := nomesDeConversa(modelos); len(conversa) > 0 {
+		p.Model = conversa[0]
 		return nil
 	}
-
+	if len(modelos) > 0 {
+		return fmt.Errorf("o Ollama só tem modelos de embeddings (%s); baixe um de conversa com ollama pull llama3.2", modelos[0].Name)
+	}
 	return fmt.Errorf("nenhum modelo encontrado no Ollama")
 }
 
+// modeloDeEmbeddings é o modelo dos embeddings sem config: o primeiro baixado, de qualquer
+// tipo, como sempre foi (trocar o modelo mudaria os vetores de um índice já gravado).
+func (p *OllamaProvider) modeloDeEmbeddings(ctx context.Context) (string, error) {
+	modelos, err := p.localModels(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(modelos) == 0 {
+		return "", fmt.Errorf("nenhum modelo encontrado no Ollama")
+	}
+	return modelos[0].Name, nil
+}
+
 // localModels lista os modelos baixados no Ollama (/api/tags), na ordem que ele devolve.
-func (p *OllamaProvider) localModels(ctx context.Context) ([]string, error) {
+func (p *OllamaProvider) localModels(ctx context.Context) ([]ollamaModelo, error) {
 	client := http.Client{Timeout: 2 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/api/tags", nil)
 	if err != nil {
@@ -202,10 +257,10 @@ func (p *OllamaProvider) localModels(ctx context.Context) ([]string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
 		return nil, err
 	}
-	modelos := make([]string, 0, len(tags.Models))
+	modelos := make([]ollamaModelo, 0, len(tags.Models))
 	for _, m := range tags.Models {
 		if m.Name != "" {
-			modelos = append(modelos, m.Name)
+			modelos = append(modelos, m)
 		}
 	}
 	return modelos, nil
@@ -374,18 +429,18 @@ func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([]
 		return nil, nil
 	}
 
-	if !p.modelConfigured {
-		if err := p.resolveModel(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	// Usar modelo de embedding específico se configurado
+	// Usar modelo de embedding específico se configurado; sem config, o primeiro baixado
 	origModel := p.Model
+	defer func() { p.Model = origModel }()
 	if embModel := GetEmbeddingModel("ollama"); embModel != "" {
 		p.Model = embModel
+	} else if !p.modelConfigured {
+		modelo, err := p.modeloDeEmbeddings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		p.Model = modelo
 	}
-	defer func() { p.Model = origModel }()
 
 	results, err := p.embedBatch(ctx, texts)
 	if err != nil {

@@ -5,6 +5,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -163,9 +166,42 @@ func mensagemNaTela(f checks.SecurityFinding) string {
 	return f.Description
 }
 
-// maxColunaRecurso limita a coluna dos recursos: um nome mais longo empurra só a própria
-// linha.
+// maxColunaRecurso limita a coluna dos recursos (com os 2 espaços de separação): um nome
+// mais longo é encurtado no meio (encurtarRecurso), para a severidade e a descrição
+// ficarem na coluna de todas as linhas.
 const maxColunaRecurso = 32
+
+// encurtarRecurso encurta um recurso para caber em n células, com reticências no meio do
+// nome: em 30 células, "Deployment/local-path-provisioner (+6)" vira
+// "Deployment/l…-provisioner (+6)".
+// A contagem dos outros recursos do check (" (+6)") fica inteira.
+func encurtarRecurso(recurso string, n int) string {
+	if lipgloss.Width(recurso) <= n {
+		return recurso
+	}
+	nome, resto := recurso, ""
+	if i := strings.LastIndex(recurso, " (+"); i > 0 && strings.HasSuffix(recurso, ")") {
+		nome, resto = recurso[:i], recurso[i:]
+	}
+	return reticenciasNoMeio(nome, n-lipgloss.Width(resto)) + resto
+}
+
+// reticenciasNoMeio corta o meio de s para caber em n células, guardando o começo e o
+// fim, que distinguem os nomes do Kubernetes (o tipo e o sufixo).
+func reticenciasNoMeio(s string, n int) string {
+	runas := []rune(s)
+	if len(runas) <= n {
+		return s
+	}
+	reticencias := ui.G().Reticencias
+	cabe := n - lipgloss.Width(reticencias)
+	if cabe < 2 {
+		return string(runas[:max(n, 0)])
+	}
+	esq := (cabe + 1) / 2
+	dir := cabe - esq
+	return string(runas[:esq]) + reticencias + string(runas[len(runas)-dir:])
+}
 
 // escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
 // achado (glifo e palavra da severidade, recurso e mensagem), a remediação do dry-run, o
@@ -204,12 +240,13 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 		}
 		sev := severidadeDe(f)
 		contagem[sev]++
-		ui.CheckCom(w, col, severidades[sev].tipo, f.Resource, severidades[sev].singular, mensagemNaTela(f))
+		checkNaColuna(w, col, severidades[sev].tipo, encurtarRecurso(f.Resource, col.Nome-2), severidades[sev].singular, mensagemNaTela(f))
 	}
 
 	if op.fixDryRun || op.fix {
 		escreverRemediacao(w, patches, op)
 	}
+	escreverRecomendacoes(w, report.Recommendations, caminho != "")
 
 	var partes []ui.ParteResumo
 	for _, s := range ordemSeveridades {
@@ -221,11 +258,129 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 
 	ui.Campos(w,
 		ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
-		ui.Campo{Rotulo: "relatório", Valor: caminho},
+		ui.Campo{Rotulo: "relatório", Valor: filepath.ToSlash(caminho), Caminho: true},
 	)
 	if errRelatorio != nil {
-		ui.Check(w, ui.CheckAviso, "relatório", "", "não foi salvo: "+errRelatorio.Error())
+		slog.Debug("o relatório não foi salvo", "erro", errRelatorio)
+		motivo := "não foi salvo em ~/.yby/reports; " + dicaDoLogDoPlugin + " para ver o motivo"
+		if os.IsPermission(errRelatorio) {
+			motivo = "não foi salvo: sem permissão para gravar em ~/.yby/reports"
+		}
+		ui.Check(w, ui.CheckAviso, "relatório", "", motivo)
 	}
+}
+
+// minColunaDescricao é a largura mínima, em células, para a descrição de um achado
+// quebrar dentro da coluna dela; mais estreita, ela desce para a linha de baixo, como no
+// ui.CheckCom.
+const minColunaDescricao = 30
+
+// recuoDoCheck é a coluna onde o nome começa numa linha de ui.Check: a margem, o glifo
+// do tipo e um espaço.
+func recuoDoCheck(tipo ui.TipoCheck) int {
+	g := ui.G()
+	glifo := g.Parado
+	switch tipo {
+	case ui.CheckOk:
+		glifo = g.Feito
+	case ui.CheckAviso:
+		glifo = g.Alerta
+	case ui.CheckErro:
+		glifo = g.Falha
+	}
+	return 3 + lipgloss.Width(glifo)
+}
+
+// continuarCheck escreve as linhas de continuação de uma linha de ui.Check, recuadas em
+// recuo células e no estilo do texto dela (TintaSuave no neutro, Tinta nos outros).
+func continuarCheck(w io.Writer, tipo ui.TipoCheck, recuo int, linhas []string) {
+	s := ui.S()
+	texto := s.Tinta
+	if tipo == ui.CheckNeutro {
+		texto = s.TintaSuave
+	}
+	for _, l := range linhas {
+		fmt.Fprintln(w, strings.Repeat(" ", recuo)+texto.Render(l))
+	}
+}
+
+// checkNaColuna é o ui.CheckCom de um achado em que a descrição longa quebra dentro da
+// coluna dela, com as continuações recuadas sob o começo da descrição, em vez de descer
+// inteira para baixo do recurso. Fora do terminal, quando cabe, ou quando a coluna teria
+// menos de minColunaDescricao células, é o ui.CheckCom.
+func checkNaColuna(w io.Writer, col ui.Colunas, tipo ui.TipoCheck, nome, versao, nota string) {
+	recuo := recuoDoCheck(tipo) + col.Nome + col.Versao
+	l := larguraTerminal(w)
+	if l <= 0 || recuo+lipgloss.Width(nota) <= l || l-recuo < minColunaDescricao {
+		ui.CheckCom(w, col, tipo, nome, versao, nota)
+		return
+	}
+	linhas := ui.Quebrar(nota, l-recuo)
+	ui.CheckCom(w, col, tipo, nome, versao, linhas[0])
+	continuarCheck(w, tipo, recuo, linhas[1:])
+}
+
+// checkComCaminho é o ui.Check com um caminho de arquivo na nota: a home vira ~ e, quando
+// o caminho não cabe na linha, ele desce para a de baixo, recuado sob o nome e quebrado só
+// nos separadores (ui.QuebrarCaminho), nunca no meio de um nome.
+func checkComCaminho(w io.Writer, tipo ui.TipoCheck, nome, versao, caminho string) {
+	caminho = ui.AbreviarHome(caminho)
+	col := ui.ColunasPara()
+	recuo := recuoDoCheck(tipo)
+	l := larguraTerminal(w)
+	if l <= 0 || recuo+col.Nome+col.Versao+lipgloss.Width(caminho) <= l {
+		ui.Check(w, tipo, nome, versao, caminho)
+		return
+	}
+	ui.Check(w, tipo, nome, versao, "")
+	continuarCheck(w, tipo, recuo, ui.QuebrarCaminho(caminho, l-recuo))
+}
+
+// maxLinhasRecomendacoes é quantas linhas das recomendações da IA o scan mostra na tela;
+// o texto inteiro fica no relatório.
+const maxLinhasRecomendacoes = 6
+
+// escreverRecomendacoes mostra o começo das recomendações da IA, sem a marcação do
+// markdown, e diz onde está o resto: no relatório, ou no -o markdown quando ele não foi
+// salvo. Sem recomendações, não escreve nada.
+func escreverRecomendacoes(w io.Writer, texto string, noRelatorio bool) {
+	larg := larguraSaida(w) - 2
+	var linhas []string
+	for _, l := range strings.Split(strings.TrimSpace(texto), "\n") {
+		if l = linhaSemMarkdown(l); l != "" {
+			linhas = append(linhas, ui.Quebrar(l, larg)...)
+		}
+	}
+	if len(linhas) == 0 {
+		return
+	}
+	ui.Section(w, "recomendações da IA")
+	s := ui.S()
+	for _, l := range linhas[:min(len(linhas), maxLinhasRecomendacoes)] {
+		fmt.Fprintln(w, "  "+s.Tinta.Render(l))
+	}
+	if len(linhas) <= maxLinhasRecomendacoes {
+		return
+	}
+	resto := "o texto inteiro está no relatório"
+	if !noRelatorio {
+		resto = "o texto inteiro sai com -o markdown"
+	}
+	ui.Check(w, ui.CheckNeutro, resto, "", "")
+}
+
+// linhaSemMarkdown tira de uma linha das recomendações a marcação que não faz sentido no
+// terminal: títulos (#), negrito (**), código (`) e réguas; o marcador de lista * vira -.
+func linhaSemMarkdown(l string) string {
+	l = strings.TrimSpace(l)
+	if strings.Trim(l, "-=*_ ") == "" {
+		return "" // régua ou linha vazia
+	}
+	l = strings.TrimSpace(strings.TrimLeft(l, "#"))
+	if r, ok := strings.CutPrefix(l, "* "); ok {
+		l = "- " + r
+	}
+	return strings.NewReplacer("**", "", "__", "", "`", "").Replace(l)
 }
 
 // escreverRemediacao lista os patches do --fix-dry-run (o --fix já os mostrou como etapa)
@@ -293,11 +448,11 @@ func escreverAnalise(w io.Writer, result AnalysisResult) {
 		diag = append(diag, "", strings.Join(paragrafos(d, interno), "\n"))
 	}
 	diag = append(diag, "", ui.Cota("confiança", float64(result.Confidence)/100, interno))
-	fmt.Fprintln(w, ui.Quadro("diagnóstico", strings.Join(diag, "\n"), larg, ui.QuadroNormal))
+	fmt.Fprintln(w, ui.Quadro("diagnóstico", strings.Join(diag, "\n"), larg, ui.QuadroSuave))
 
 	fmt.Fprintln(w)
 	sug := paragrafos(result.SuggestedFix, interno)
-	fmt.Fprintln(w, ui.Quadro("sugestão de correção", strings.Join(sug, "\n"), larg, ui.QuadroNormal))
+	fmt.Fprintln(w, ui.Quadro("sugestão de correção", strings.Join(sug, "\n"), larg, ui.QuadroSuave))
 
 	// O comando fica fora do quadro e inteiro, para copiar: quebrado no meio, ou cortado
 	// pelo quadro, ele não rodaria.

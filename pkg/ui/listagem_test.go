@@ -37,7 +37,7 @@ func msgListagem() string {
 	Section(&b, "auditoria")
 	listagemComStatus(&b)
 	Section(&b, "ambiente")
-	Campos(&b, Campo{"nome", "local"}, Campo{"values", "config/values-local.yaml"}, Campo{"url", ""})
+	Campos(&b, Campo{Rotulo: "nome", Valor: "local"}, Campo{Rotulo: "values", Valor: "config/values-local.yaml"}, Campo{Rotulo: "url"})
 	Section(&b, "próximos passos")
 	Passos(&b, "edite o arquivo gerado", "aplique com kubectl apply -f bootstrap/secret-store-vault.yaml")
 	return b.String()
@@ -138,7 +138,7 @@ func TestCamposEPassosNoTerminal(t *testing.T) {
 	usarTema(t, true, termenv.Ascii, false)
 	fixarLargura(t, 34)
 	var b bytes.Buffer
-	Campos(&b, Campo{"identidade", "arn:aws:iam::123 usuário ana da conta de produção"}, Campo{"vazio", ""})
+	Campos(&b, Campo{Rotulo: "identidade", Valor: "arn:aws:iam::123 usuário ana da conta de produção"}, Campo{Rotulo: "vazio"})
 	Passos(&b, "aplique com kubectl apply -f bootstrap/secret-store-vault.yaml")
 	esperado := "  identidade  arn:aws:iam::123\n" +
 		"              usuário ana da conta\n" +

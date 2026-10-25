@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
@@ -163,7 +164,9 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 		slog.Debug("resposta da IA fora do formato", "resposta", analysisJSON)
 		// O --log-level do core não chega ao plugin, que roda em outro processo: o nível
 		// do log vem do YBY_LOG_LEVEL (ou do log.level do config).
-		return yerrors.Wrap(err, yerrors.ErrCodePlugin, "a resposta da IA não veio no formato esperado").
+		// A causa do encoding/json vem em inglês; na tela vai a causa em PT-BR, e o
+		// detalhe técnico, para o log de depuração.
+		return yerrors.Wrap(ai.CausaForaDoFormato(err), yerrors.ErrCodePlugin, "não deu para ler a análise da IA").
 			WithContext("resposta", inicioDaResposta(analysisJSON)).
 			WithHint("rode de novo; para ver a resposta inteira no log, rode com YBY_LOG_LEVEL=debug")
 	}
@@ -179,7 +182,9 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 func erroAoLerPod(err error, podName, namespace string) error {
 	switch {
 	case apierrors.IsNotFound(err):
-		return yerrors.Wrap(err, yerrors.ErrCodeValidation, fmt.Sprintf("o pod %s não existe no namespace %s", podName, namespace)).
+		// A causa do Kubernetes ('pods "x" not found', em inglês) só repetiria o título.
+		slog.Debug("o pod não existe", "pod", namespace+"/"+podName, "erro", err)
+		return yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("o pod %s não existe no namespace %s", podName, namespace)).
 			WithHint("confira o nome com kubectl get pods -n " + namespace)
 	case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
 		return yerrors.Wrap(err, yerrors.ErrCodeValidation, fmt.Sprintf("sem permissão para ler o pod %s no namespace %s", podName, namespace)).

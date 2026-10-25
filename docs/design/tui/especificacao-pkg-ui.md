@@ -88,7 +88,7 @@ Quem desenha a lista e o detalhe usa as medidas da moldura: `LargurasLadoALado(l
 
 - **Tabs:** ativa `◆ Pods 8` em negrito (◆ em `Ok`); outras `◇ Deployments 4` em `TintaSuave`; `⇥ mais` quando não cabem; teclas 1–9.
 - **Filtro:** `filtros  [status: com problema ✕]  [app=api ✕]` à esquerda, `8 de 42` à direita em `TintaSuave`.
-- **Quadro:** painel com borda em `Fio` e rótulo em caixa-alta no fio de cima (`┌ DETALHE · POD ───┐`); com foco o fio vira `Tinta`. Variante destrutiva com fio `Erro`.
+- **Quadro:** painel com borda em `Fio` e rótulo em caixa-alta no fio de cima (`┌ DETALHE · POD ───┐`); com foco o fio vira `Tinta`. Variante destrutiva com fio `Erro`. Variante `QuadroSuave`: o fio do normal com o rótulo em `TintaSuave` sem negrito, como o do Quadro com tecla; é o quadro de leitura das saídas de comando (diagnóstico e sugestão do `yby sentinel investigate`), com o rótulo legível sobre o fundo escuro.
 - **Table:** rótulos de coluna em `TintaSuave` caixa-alta; largura em células (`lipgloss.Width` / `ansi.StringWidth`); truncar com `…`; colunas com prioridade somem primeiro em terminal estreito; linha selecionada em tinta invertida (+ negrito no nome: as colunas com `Nome`, ou a primeira); `LargurasDasColunas` dá a largura que a tabela daria a cada coluna, para ajustar o conteúdo de uma célula antes de desenhar; itens concluídos em `TintaSuave`.
 - **Status:** sempre glifo + cor + palavra: `● Running` (Ok), `✕ CrashLoopBackOff` (Erro), `▲ Pending` (Aviso), `✓ Completed` e `○ Parado` (TintaSuave).
 - **Etapas:** linhas `✓ contexto do projeto   0,3 s` (✓ em Ok), `◈ kubectl get pvc -A   2,1 s` (atual, negrito), `◇ resposta` (TintaSuave), `✕` em Erro. Tempo à direita em `TintaSuave`, formato `0,3 s`, `38 s`, `1 min 12 s` (vírgula decimal).
@@ -131,7 +131,7 @@ Largura do terminal **(decisão)**: quando `w` é um terminal (`ui.Largura(w) > 
 Listagens, campos e passos (`listagem.go`, folha "listagem, campos e passos"):
 
 - `Listagem(w, []Coluna, []Linha)`: cabeçalho em `TintaSuave` e caixa-alta, recuo de 2, cada coluna na largura da célula mais larga (com `Max` e reticências), separadas por 2 espaços, sem espaço à direita; célula que já traz ANSI não é retingida; em terminal estreito encolhe como a Tabela. Ex.: `env list`, com uma coluna de marca vazia e `◆` em `Ok` no ativo.
-- `Campos(w, Campo{Rotulo, Valor}...)`: rótulos alinhados pelo mais largo + 2; valor vazio não aparece. Ex.: `env show`, `env dump`.
+- `Campos(w, Campo{Rotulo, Valor, Caminho}...)`: rótulos alinhados pelo mais largo + 2; valor vazio não aparece. Ex.: `env show`, `env dump`. Com `Caminho`, o valor é um caminho de arquivo: a home vira `~` (`AbreviarHome`, também no Windows, por `os.UserHomeDir`, `HOME` e `USERPROFILE`) e, no terminal, quebra só depois de um separador (`QuebrarCaminho`), nunca no meio de um nome. Ex.: o relatório do `yby sentinel scan`, o arquivo do `yby atlas diagram`.
 - `Passos(w, ...)`: lista numerada `1. texto` para os próximos passos (`secret init-eso`, `seal`).
 
 Convenção dos comandos curtos: `Title` com o subcomando à direita, uma linha em branco e o corpo; `◈ texto` antes de etapas lentas; linhas `Check` com o estado na coluna de versão (`salvo`, `criado`, `ativo`, `falhou`); quando a operação é rápida, o título só sai depois dela, para o erro não ficar com duas linhas em branco. Saídas para máquina (`--export`, `telemetry export`) sem dados deixam o stdout vazio e avisam em stderr.
