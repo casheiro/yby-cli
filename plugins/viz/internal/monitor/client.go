@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -37,8 +40,14 @@ type Client interface {
 
 // K8sClient conecta ao cluster real
 type K8sClient struct {
-	clientset  *kubernetes.Clientset
+	clientset  kubernetes.Interface
 	restConfig *rest.Config
+	contexto   string // contexto atual do kubeconfig
+}
+
+// Contexto devolve o nome do contexto atual do kubeconfig (vazio se não há).
+func (c *K8sClient) Contexto() string {
+	return c.contexto
 }
 
 // Clientset retorna o clientset Kubernetes para uso em operações avançadas
@@ -53,8 +62,6 @@ func (c *K8sClient) RESTConfig() *rest.Config {
 
 // NewK8sClient cria um novo client Kubernetes a partir do kubeconfig
 func NewK8sClient() (*K8sClient, error) {
-	fmt.Println("🔌 Conectando ao Cluster K8s Real...")
-
 	kubeconfig := os.Getenv("KUBECONFIG")
 	if kubeconfig == "" {
 		home, _ := os.UserHomeDir()
@@ -71,7 +78,14 @@ func NewK8sClient() (*K8sClient, error) {
 		return nil, fmt.Errorf("falha ao criar clientset: %w", err)
 	}
 
-	return &K8sClient{clientset: clientset, restConfig: config}, nil
+	// O nome do contexto só aparece na tela: sem ele, a TUI mostra só o namespace.
+	contexto := ""
+	if raw, err := clientcmd.LoadFromFile(kubeconfig); err == nil {
+		contexto = raw.CurrentContext
+	}
+	slog.Debug("viz: conectando ao cluster", "kubeconfig", kubeconfig, "contexto", contexto, "servidor", config.Host)
+
+	return &K8sClient{clientset: clientset, restConfig: config, contexto: contexto}, nil
 }
 
 // podMetricsResult representa a resposta da API de métricas de pods.
@@ -100,7 +114,11 @@ func podMetricsKey(namespace, name string) string {
 func (c *K8sClient) fetchPodMetrics() map[string][2]string {
 	result := make(map[string][2]string)
 
-	data, err := c.clientset.RESTClient().
+	rc := c.clientset.Discovery().RESTClient()
+	if rc == nil {
+		return result // client sem REST (o falso dos testes)
+	}
+	data, err := rc.
 		Get().
 		AbsPath("/apis/metrics.k8s.io/v1beta1/pods").
 		DoRaw(context.Background())
@@ -142,27 +160,92 @@ func (c *K8sClient) GetPods(filter ListFilter) ([]Pod, error) {
 	metrics := c.fetchPodMetrics()
 
 	var pods []Pod
-	for _, p := range list.Items {
-		cpu := "N/A"
-		memory := "N/A"
-		key := podMetricsKey(p.Namespace, p.Name)
-		if m, ok := metrics[key]; ok {
-			if m[0] != "" {
-				cpu = m[0]
-			}
-			if m[1] != "" {
-				memory = m[1]
-			}
-		}
-		pods = append(pods, Pod{
-			Name:      p.Name,
-			Namespace: p.Namespace,
-			Status:    string(p.Status.Phase),
-			CPU:       cpu,
-			Memory:    memory,
-		})
+	for i := range list.Items {
+		pods = append(pods, podDeK8s(&list.Items[i], metrics))
 	}
 	return pods, nil
+}
+
+// podDeK8s converte o pod da API: estado como o kubectl mostra, contêineres
+// prontos, reinícios, nó, IP e as métricas, quando o metrics-server responde.
+func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
+	pod := Pod{
+		Name:       p.Name,
+		Namespace:  p.Namespace,
+		Status:     statusDoPod(p),
+		CPU:        "N/A",
+		Memory:     "N/A",
+		Containers: int32(len(p.Spec.Containers)),
+		No:         p.Spec.NodeName,
+		IP:         p.Status.PodIP,
+		CriadoEm:   p.CreationTimestamp.Time,
+		Labels:     p.Labels,
+	}
+	if m, ok := metrics[podMetricsKey(p.Namespace, p.Name)]; ok {
+		if m[0] != "" {
+			pod.CPU = m[0]
+		}
+		if m[1] != "" {
+			pod.Memory = m[1]
+		}
+	}
+	for _, c := range p.Status.ContainerStatuses {
+		if c.Ready {
+			pod.Prontos++
+		}
+		pod.Reinicios += c.RestartCount
+		if t := c.LastTerminationState.Terminated; c.RestartCount > 0 && t != nil && t.FinishedAt.After(pod.UltimoReinicio) {
+			pod.UltimoReinicio = t.FinishedAt.Time
+		}
+	}
+	return pod
+}
+
+// statusDoPod resume o estado do pod como a coluna STATUS do kubectl: o pod
+// saindo é Terminating; um init container pendente vira Init:…; senão vale o
+// motivo do contêiner (o primeiro da lista com motivo), e por fim a fase.
+func statusDoPod(p *corev1.Pod) string {
+	if p.DeletionTimestamp != nil {
+		return "Terminating"
+	}
+	motivo := string(p.Status.Phase)
+	if p.Status.Reason != "" {
+		motivo = p.Status.Reason
+	}
+	for i, c := range p.Status.InitContainerStatuses {
+		switch {
+		case c.State.Terminated != nil && c.State.Terminated.ExitCode == 0:
+			continue
+		case c.State.Terminated != nil:
+			if c.State.Terminated.Reason != "" {
+				return "Init:" + c.State.Terminated.Reason
+			}
+			return fmt.Sprintf("Init:ExitCode:%d", c.State.Terminated.ExitCode)
+		case c.State.Waiting != nil && c.State.Waiting.Reason != "" && c.State.Waiting.Reason != "PodInitializing":
+			return "Init:" + c.State.Waiting.Reason
+		default:
+			return fmt.Sprintf("Init:%d/%d", i, len(p.Spec.InitContainers))
+		}
+	}
+	rodando := false
+	for i := len(p.Status.ContainerStatuses) - 1; i >= 0; i-- {
+		c := p.Status.ContainerStatuses[i]
+		switch {
+		case c.State.Waiting != nil && c.State.Waiting.Reason != "":
+			motivo = c.State.Waiting.Reason
+		case c.State.Terminated != nil && c.State.Terminated.Reason != "":
+			motivo = c.State.Terminated.Reason
+		case c.State.Terminated != nil && c.State.Terminated.ExitCode != 0:
+			motivo = fmt.Sprintf("ExitCode:%d", c.State.Terminated.ExitCode)
+		case c.State.Running != nil && c.Ready:
+			rodando = true
+		}
+	}
+	// Um contêiner que terminou bem ao lado de outro rodando não encerra o pod.
+	if motivo == "Completed" && rodando {
+		motivo = "Running"
+	}
+	return motivo
 }
 
 // GetDeployments lista deployments com filtros opcionais de namespace e label.
@@ -185,11 +268,14 @@ func (c *K8sClient) GetDeployments(filter ListFilter) ([]Deployment, error) {
 			replicas = *d.Spec.Replicas
 		}
 		deps = append(deps, Deployment{
-			Name:      d.Name,
-			Namespace: d.Namespace,
-			Replicas:  replicas,
-			Ready:     ready,
-			Available: available,
+			Name:        d.Name,
+			Namespace:   d.Namespace,
+			Replicas:    replicas,
+			Ready:       ready,
+			Available:   available,
+			Atualizados: d.Status.UpdatedReplicas,
+			CriadoEm:    d.CreationTimestamp.Time,
+			Labels:      d.Labels,
 		})
 	}
 	return deps, nil
@@ -221,6 +307,8 @@ func (c *K8sClient) GetServices(filter ListFilter) ([]Service, error) {
 			Type:      string(s.Spec.Type),
 			ClusterIP: s.Spec.ClusterIP,
 			Ports:     ports,
+			CriadoEm:  s.CreationTimestamp.Time,
+			Labels:    s.Labels,
 		})
 	}
 	return svcs, nil
@@ -253,6 +341,8 @@ func (c *K8sClient) GetNodes(filter ListFilter) ([]Node, error) {
 			CPUCapacity:    cpuCap,
 			MemoryCapacity: memCap,
 			Version:        n.Status.NodeInfo.KubeletVersion,
+			CriadoEm:       n.CreationTimestamp.Time,
+			Labels:         n.Labels,
 		})
 	}
 	return nodes, nil
@@ -276,10 +366,13 @@ func (c *K8sClient) GetStatefulSets(filter ListFilter) ([]StatefulSet, error) {
 			replicas = *s.Spec.Replicas
 		}
 		result = append(result, StatefulSet{
-			Name:      s.Name,
-			Namespace: s.Namespace,
-			Replicas:  replicas,
-			Ready:     s.Status.ReadyReplicas,
+			Name:        s.Name,
+			Namespace:   s.Namespace,
+			Replicas:    replicas,
+			Ready:       s.Status.ReadyReplicas,
+			Atualizados: s.Status.UpdatedReplicas,
+			CriadoEm:    s.CreationTimestamp.Time,
+			Labels:      s.Labels,
 		})
 	}
 	return result, nil
@@ -302,6 +395,18 @@ func (c *K8sClient) GetJobs(filter ListFilter) ([]Job, error) {
 		if j.Spec.Completions != nil {
 			completions = *j.Spec.Completions
 		}
+		concluido, falhou := false, false
+		for _, c := range j.Status.Conditions {
+			if c.Status != corev1.ConditionTrue {
+				continue
+			}
+			switch c.Type {
+			case batchv1.JobComplete:
+				concluido = true
+			case batchv1.JobFailed:
+				falhou = true
+			}
+		}
 		result = append(result, Job{
 			Name:        j.Name,
 			Namespace:   j.Namespace,
@@ -309,6 +414,10 @@ func (c *K8sClient) GetJobs(filter ListFilter) ([]Job, error) {
 			Active:      j.Status.Active,
 			Succeeded:   j.Status.Succeeded,
 			Failed:      j.Status.Failed,
+			Concluido:   concluido,
+			Falhou:      falhou,
+			CriadoEm:    j.CreationTimestamp.Time,
+			Labels:      j.Labels,
 		})
 	}
 	return result, nil
@@ -349,6 +458,8 @@ func (c *K8sClient) GetIngresses(filter ListFilter) ([]Ingress, error) {
 			Class:     class,
 			Hosts:     strings.Join(hosts, ", "),
 			Paths:     strings.Join(paths, ", "),
+			CriadoEm:  ing.CreationTimestamp.Time,
+			Labels:    ing.Labels,
 		})
 	}
 	return result, nil
@@ -383,6 +494,8 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 			Namespace: cm.Namespace,
 			Keys:      len(cm.Data) + len(cm.BinaryData),
 			DataSize:  dataSize,
+			CriadoEm:  cm.CreationTimestamp.Time,
+			Labels:    cm.Labels,
 		})
 	}
 	return result, nil
@@ -400,6 +513,19 @@ func formatAge(d time.Duration) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// Idade formata o tempo de desde até agora como o kubectl ("52m", "3h", "6d");
+// sem data devolve vazio.
+func Idade(desde, agora time.Time) string {
+	if desde.IsZero() {
+		return ""
+	}
+	d := agora.Sub(desde)
+	if d < 0 {
+		d = 0
+	}
+	return formatAge(d)
 }
 
 // GetEvents lista eventos com filtros opcionais de namespace e label.
@@ -426,12 +552,14 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 			age = formatAge(time.Since(e.LastTimestamp.Time))
 		}
 		result = append(result, Event{
+			ID:        e.Name,
 			Name:      e.InvolvedObject.Name,
 			Namespace: e.Namespace,
 			Type:      e.Type,
 			Reason:    e.Reason,
 			Message:   e.Message,
 			Age:       age,
+			Labels:    e.Labels,
 		})
 	}
 	return result, nil

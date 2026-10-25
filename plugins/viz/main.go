@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/casheiro/yby-cli/pkg/config"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +21,20 @@ type (
 	PluginRequest  = plugin.PluginRequest
 	PluginResponse = plugin.PluginResponse
 )
+
+// configurarVisual aplica no processo do plugin o modo visual do core: YBY_THEME,
+// YBY_ASCII e NO_COLOR > ui.theme e ui.ascii do ~/.yby/config.yaml > padrão. O Viz
+// roda em outro processo, então o ui.Configurar do cmd/root.go não chega até aqui.
+// Depois fixa o fundo e o perfil de cor antes de a TUI assumir o terminal: no tema
+// auto, a primeira consulta do lipgloss ao fundo (OSC 11) aconteceria com o Bubble
+// Tea já lendo a entrada.
+func configurarVisual(getenv func(string) string) {
+	yui.Configurar(yui.ResolverOpcoes(yui.Opcoes{}, false, getenv, config.Get().UI))
+	if yui.Atual().Tema == yui.TemaAuto {
+		lipgloss.SetHasDarkBackground(lipgloss.HasDarkBackground())
+	}
+	lipgloss.SetColorProfile(lipgloss.ColorProfile())
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -29,12 +46,13 @@ func main() {
 func run() error {
 	var rootCmd = &cobra.Command{
 		Use:   "viz",
-		Short: "Yby Viz - Observability TUI",
+		Short: "Yby Viz: observabilidade do cluster no terminal",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configurarVisual(os.Getenv)
 			client, err := monitor.NewK8sClient()
 			if err != nil {
-				// Passa nil para mostrar mensagem de erro na TUI
-				p := tea.NewProgram(ui.NewModel(nil), tea.WithAltScreen())
+				// Passa nil para mostrar a falha de conexão na TUI
+				p := tea.NewProgram(ui.NewModelComErro(err), tea.WithAltScreen())
 				if _, err := p.Run(); err != nil {
 					return fmt.Errorf("ops, ocorreu um erro: %w", err)
 				}

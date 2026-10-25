@@ -169,17 +169,17 @@ func TestAcao_StatefulSetUsaAsFuncoesDeStatefulSet(t *testing.T) {
 
 // TestListaVazia_PorFiltroNaoMostraCarregando: depois que a lista chegou,
 // uma lista vazia diz que nada passa nos filtros ou que não há recursos, e
-// "Carregando" fica só para antes da primeira resposta.
+// "lendo pods" fica só para antes da primeira resposta.
 func TestListaVazia_PorFiltroNaoMostraCarregando(t *testing.T) {
-	m := NewModel(&MockClient{})
-	if v := m.View(); !strings.Contains(v, "Carregando pods") {
-		t.Fatalf("antes da primeira resposta deveria mostrar Carregando:\n%s", v)
+	m := comJanela(NewModel(&MockClient{}))
+	if v := m.View(); !strings.Contains(v, "lendo pods") {
+		t.Fatalf("antes da primeira resposta deveria mostrar que está lendo:\n%s", v)
 	}
 
 	nm, _ := m.Update([]monitor.Pod{{Name: "api-1", Namespace: "loja"}, {Name: "api-2", Namespace: "loja"}})
 	m = buscar(t, nm.(Model), "nada")
 	v := m.View()
-	if strings.Contains(v, "Carregando") || !strings.Contains(v, "Nenhum dos 2 pods passa nos filtros") {
+	if strings.Contains(v, "lendo") || !strings.Contains(v, "nenhum pod com esse filtro") || !strings.Contains(v, "0 de 2") {
 		t.Fatalf("com filtro sem resultado:\n%s", v)
 	}
 
@@ -187,7 +187,7 @@ func TestListaVazia_PorFiltroNaoMostraCarregando(t *testing.T) {
 	m = nm.(Model)
 	m.filter = FilterState{}
 	v = m.View()
-	if strings.Contains(v, "Carregando") || !strings.Contains(v, "Nenhum recurso em pods") {
+	if strings.Contains(v, "lendo") || !strings.Contains(v, "nenhum pod no cluster") {
 		t.Fatalf("com a lista vazia no cluster:\n%s", v)
 	}
 }

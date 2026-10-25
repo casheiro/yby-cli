@@ -1,8 +1,7 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
+	yui "github.com/casheiro/yby-cli/pkg/ui"
 )
 
 // ActionMode controla o modo de ação do usuário
@@ -19,29 +18,18 @@ const (
 	ActionConfirmRestart
 )
 
-// renderActionPrompt renderiza o prompt de confirmação/input da ação atual
-func renderActionPrompt(mode ActionMode, resourceName, inputBuffer string) string {
-	var sb strings.Builder
-
+// renderActionPrompt renderiza, na linha de estado, a pergunta da ação atual
+// com o que já foi digitado. O menu e a confirmação por nome são a T022.
+func renderActionPrompt(mode ActionMode, kind, resourceName, inputBuffer string) string {
+	s := yui.S()
+	digitado := s.Negrito.Render(inputBuffer) + cursor()
 	switch mode {
 	case ActionConfirmDelete:
-		sb.WriteString(errorStyle.Render(fmt.Sprintf(
-			"Deletar '%s'? Digite 'yes' para confirmar: %s_",
-			resourceName, inputBuffer)))
+		return frase(yui.StatusFalha, "excluir "+kind+" "+resourceName+"? digite yes para confirmar: ") + digitado
 	case ActionInputScale:
-		sb.WriteString(filterStyle.Render(fmt.Sprintf(
-			"Escalar '%s' para quantas réplicas? %s_",
-			resourceName, inputBuffer)))
+		return frase(yui.StatusAlerta, "escalar "+kind+" "+resourceName+" para quantas réplicas? ") + digitado
 	case ActionConfirmRestart:
-		sb.WriteString(filterStyle.Render(fmt.Sprintf(
-			"Reiniciar '%s'? Digite 'yes' para confirmar: %s_",
-			resourceName, inputBuffer)))
+		return frase(yui.StatusAlerta, "reiniciar "+kind+" "+resourceName+"? digite yes para confirmar: ") + digitado
 	}
-
-	return sb.String()
-}
-
-// renderFeedback renderiza a mensagem de feedback após uma ação
-func renderFeedback(message string) string {
-	return strings.TrimSpace(runningStyle.Render(message))
+	return ""
 }

@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
+	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	tea "github.com/charmbracelet/bubbletea"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -29,8 +31,8 @@ type Model struct {
 	err            error
 	width          int
 	height         int
-	scrollY        int
-	selectedIndex  int
+	scrollY        int // primeira linha da lista na janela
+	selectedIndex  int // linha selecionada na lista visível
 	reconnecting   bool
 	retryCount     int
 	filter         FilterState
@@ -39,12 +41,17 @@ type Model struct {
 	detailTitle    string
 	detailScrollY  int
 	actionMode     ActionMode
-	actionTarget   string // nome do recurso alvo da ação
-	actionKind     string // tipo do recurso alvo, guardado quando a ação abre
-	actionNS       string // namespace do recurso alvo, guardado quando a ação abre
-	actionBuffer   string // buffer de input para ações (scale, confirmação)
-	actionFeedback string // mensagem de feedback após ação
-	carregadas     uint16 // bit por aba: a lista já chegou do cluster ao menos uma vez
+	actionTarget   string           // nome do recurso alvo da ação
+	actionKind     string           // tipo do recurso alvo, guardado quando a ação abre
+	actionNS       string           // namespace do recurso alvo, guardado quando a ação abre
+	actionBuffer   string           // buffer de input para ações (scale, confirmação)
+	actionFeedback string           // resultado da última ação, já com glifo (linha de estado)
+	carregadas     uint16           // bit por aba: a lista já chegou do cluster ao menos uma vez
+	atualizado     time.Time        // hora da última lista recebida (linha de estado)
+	agora          func() time.Time // relógio, injetável nos testes
+	rodizio        ResourceTab      // última aba de fundo relida pelo relógio
+	// tique agenda a próxima leitura do relógio (tea.Tick; injetável nos testes).
+	tique func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
 
 // FilterState mantém o estado dos filtros de busca
@@ -67,279 +74,127 @@ func NewModel(client monitor.Client) Model {
 	return Model{
 		client: client,
 		err:    err,
+		agora:  time.Now,
+		tique:  tea.Tick,
 	}
 }
 
-// Init inicializa o modelo do Bubbletea
+// NewModelComErro cria o modelo sem client, para mostrar na TUI por que a
+// conexão com o cluster falhou (kubeconfig inválido, cluster fora do ar).
+func NewModelComErro(err error) Model {
+	m := NewModel(nil)
+	if err != nil {
+		m.err = err
+	}
+	return m
+}
+
+// Init inicializa o modelo do Bubbletea: a primeira leitura abre o relógio,
+// e cada resposta do relógio agenda a seguinte (uma leitura por vez).
 func (m Model) Init() tea.Cmd {
 	if m.err != nil {
 		return nil
 	}
-	return tea.Batch(
-		tea.Tick(time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		}),
-		m.fetchResources,
-	)
+	return m.ler(true, m.activeTab)
 }
 
-// fetchResources busca os recursos da aba ativa
-func (m Model) fetchResources() tea.Msg {
-	if m.client == nil {
-		return nil
+// leituraMsg é a resposta de uma leitura do cluster: a lista (ou o erro) de
+// cada aba lida, a primeira sendo a aba ativa, e o namespace da leitura.
+type leituraMsg struct {
+	namespace string
+	relogio   bool      // leitura do relógio: a resposta agenda a próxima
+	respostas []tea.Msg // []monitor.Pod, []monitor.Deployment… ou error
+}
+
+// ler devolve o comando que lê as abas dadas no namespace atual. O label, o
+// status e a busca são filtros da tela: a leitura traz a lista inteira, que
+// também dá o total do "N de M".
+func (m Model) ler(relogio bool, tabs ...ResourceTab) tea.Cmd {
+	client, ns := m.client, m.filter.Namespace
+	return func() tea.Msg {
+		msg := leituraMsg{namespace: ns, relogio: relogio}
+		for _, t := range tabs {
+			msg.respostas = append(msg.respostas, lerAba(client, ns, t))
+		}
+		return msg
 	}
-	filter := monitor.ListFilter{
-		Namespace:     m.filter.Namespace,
-		LabelSelector: m.filter.LabelSelector,
+}
+
+// lerAba busca a lista de uma aba; devolve a lista ou o erro.
+func lerAba(client monitor.Client, ns string, tab ResourceTab) tea.Msg {
+	if client == nil {
+		return fmt.Errorf("client K8s não disponível")
 	}
-	switch m.activeTab {
+	filter := monitor.ListFilter{Namespace: ns}
+	var data any
+	var err error
+	switch tab {
 	case TabPods:
-		data, err := m.client.GetPods(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetPods(filter)
 	case TabDeployments:
-		data, err := m.client.GetDeployments(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetDeployments(filter)
 	case TabServices:
-		data, err := m.client.GetServices(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetServices(filter)
 	case TabNodes:
-		data, err := m.client.GetNodes(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetNodes(filter)
 	case TabStatefulSets:
-		data, err := m.client.GetStatefulSets(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetStatefulSets(filter)
 	case TabJobs:
-		data, err := m.client.GetJobs(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetJobs(filter)
 	case TabIngresses:
-		data, err := m.client.GetIngresses(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetIngresses(filter)
 	case TabConfigMaps:
-		data, err := m.client.GetConfigMaps(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetConfigMaps(filter)
 	case TabEvents:
-		data, err := m.client.GetEvents(filter)
-		if err != nil {
-			return err
-		}
-		return data
+		data, err = client.GetEvents(filter)
+	default:
+		return fmt.Errorf("aba desconhecida: %d", tab)
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	return data
 }
 
-// visibleHeight retorna o número de linhas visíveis (reservando espaço para UI)
-func (m Model) visibleHeight() int {
+// alturaCorpo é a altura do corpo da moldura: a janela menos masthead, régua,
+// abas e filtros em cima e régua, estado e legenda embaixo.
+func (m Model) alturaCorpo() int {
+	return max(1, m.height-7)
+}
+
+// linhasDeDados é quantas linhas da tabela cabem no corpo (sem a linha em
+// branco e o cabeçalho acima delas e, quando a lista não cabe, sem a última
+// linha, que avisa quantas ficaram fora); sem tamanho de janela, não há limite.
+func (m Model) linhasDeDados() int {
 	if m.height <= 0 {
-		return 1000 // sem limite quando tamanho da janela não foi definido
+		return 1000
 	}
-	h := m.height - 5
-	if h < 1 {
-		h = 1
+	h := max(1, m.alturaCorpo()-2)
+	if m.itemCount() > h {
+		h = max(1, h-1)
 	}
 	return h
 }
 
-// itemCount retorna o número de itens de dados na aba ativa (sem o header), com filtros aplicados
+// itemCount retorna o número de linhas da lista visível da aba ativa.
 func (m Model) itemCount() int {
-	switch m.activeTab {
-	case TabPods:
-		return len(m.visiblePods())
-	case TabDeployments:
-		return len(m.filteredDeployments())
-	case TabServices:
-		return len(m.filteredServices())
-	case TabNodes:
-		return len(m.filteredNodes())
-	case TabStatefulSets:
-		return len(m.filteredStatefulSets())
-	case TabJobs:
-		return len(m.filteredJobs())
-	case TabIngresses:
-		return len(m.filteredIngresses())
-	case TabConfigMaps:
-		return len(m.filteredConfigMaps())
-	case TabEvents:
-		return len(m.filteredEvents())
+	return len(m.itensDaAba(m.activeTab))
+}
+
+// seguirSelecao rola a lista para a linha selecionada ficar na janela.
+func (m *Model) seguirSelecao() {
+	h := m.linhasDeDados()
+	if m.selectedIndex >= m.scrollY+h {
+		m.scrollY = m.selectedIndex - h + 1
 	}
-	return 0
-}
-
-// visiblePods retorna os pods como aparecem na tela: filtro de status e busca por nome
-func (m Model) visiblePods() []monitor.Pod {
-	return filterByName(m.filteredPods(), m.filter.SearchQuery, func(p monitor.Pod) string { return p.Name })
-}
-
-// filteredItems retorna os itens da aba ativa com filtros de status e busca aplicados
-func (m Model) filteredDeployments() []monitor.Deployment {
-	return filterByName(m.deployments, m.filter.SearchQuery, func(d monitor.Deployment) string { return d.Name })
-}
-
-func (m Model) filteredServices() []monitor.Service {
-	return filterByName(m.services, m.filter.SearchQuery, func(s monitor.Service) string { return s.Name })
-}
-
-func (m Model) filteredNodes() []monitor.Node {
-	return filterByName(m.nodes, m.filter.SearchQuery, func(n monitor.Node) string { return n.Name })
-}
-
-func (m Model) filteredStatefulSets() []monitor.StatefulSet {
-	return filterByName(m.statefulsets, m.filter.SearchQuery, func(s monitor.StatefulSet) string { return s.Name })
-}
-
-func (m Model) filteredJobs() []monitor.Job {
-	return filterByName(m.jobs, m.filter.SearchQuery, func(j monitor.Job) string { return j.Name })
-}
-
-func (m Model) filteredIngresses() []monitor.Ingress {
-	return filterByName(m.ingresses, m.filter.SearchQuery, func(i monitor.Ingress) string { return i.Name })
-}
-
-func (m Model) filteredConfigMaps() []monitor.ConfigMap {
-	return filterByName(m.configmaps, m.filter.SearchQuery, func(c monitor.ConfigMap) string { return c.Name })
-}
-
-func (m Model) filteredEvents() []monitor.Event {
-	return filterByName(m.events, m.filter.SearchQuery, func(e monitor.Event) string { return e.Name })
-}
-
-// contentLines retorna o conteúdo renderizado da aba ativa
-func (m Model) contentLines() []string {
-	var content string
-	switch m.activeTab {
-	case TabPods:
-		pods := m.visiblePods()
-		if len(pods) == 0 {
-			content = m.listaVazia(len(m.pods), "pods")
-		} else {
-			content = renderPodTable(pods)
-		}
-	case TabDeployments:
-		deps := m.filteredDeployments()
-		if len(deps) == 0 {
-			content = m.listaVazia(len(m.deployments), "deployments")
-		} else {
-			content = renderDeploymentTable(deps)
-		}
-	case TabServices:
-		svcs := m.filteredServices()
-		if len(svcs) == 0 {
-			content = m.listaVazia(len(m.services), "services")
-		} else {
-			content = renderServiceTable(svcs)
-		}
-	case TabNodes:
-		nodes := m.filteredNodes()
-		if len(nodes) == 0 {
-			content = m.listaVazia(len(m.nodes), "nodes")
-		} else {
-			content = renderNodeTable(nodes)
-		}
-	case TabStatefulSets:
-		sets := m.filteredStatefulSets()
-		if len(sets) == 0 {
-			content = m.listaVazia(len(m.statefulsets), "statefulsets")
-		} else {
-			content = renderStatefulSetTable(sets)
-		}
-	case TabJobs:
-		jobs := m.filteredJobs()
-		if len(jobs) == 0 {
-			content = m.listaVazia(len(m.jobs), "jobs")
-		} else {
-			content = renderJobTable(jobs)
-		}
-	case TabIngresses:
-		ings := m.filteredIngresses()
-		if len(ings) == 0 {
-			content = m.listaVazia(len(m.ingresses), "ingresses")
-		} else {
-			content = renderIngressTable(ings)
-		}
-	case TabConfigMaps:
-		cms := m.filteredConfigMaps()
-		if len(cms) == 0 {
-			content = m.listaVazia(len(m.configmaps), "configmaps")
-		} else {
-			content = renderConfigMapTable(cms)
-		}
-	case TabEvents:
-		evts := m.filteredEvents()
-		if len(evts) == 0 {
-			content = m.listaVazia(len(m.events), "eventos")
-		} else {
-			content = renderEventTable(evts)
-		}
+	if m.selectedIndex < m.scrollY {
+		m.scrollY = m.selectedIndex
 	}
-
-	lines := strings.Split(content, "\n")
-
-	// Aplicar highlight na linha selecionada
-	// Header com BorderBottom gera 2 linhas (header + borda), dados a partir da linha 2
-	count := m.itemCount()
-	if count > 0 && m.selectedIndex >= 0 && m.selectedIndex < count {
-		lineIdx := m.selectedIndex + 2
-		if lineIdx < len(lines) {
-			lines[lineIdx] = selectedStyle.Render(lines[lineIdx])
-		}
-	}
-
-	return lines
-}
-
-// listaVazia explica a lista vazia da aba ativa: ainda carregando, nada no
-// cluster ou nada que passe nos filtros (total é o tamanho antes dos filtros)
-func (m Model) listaVazia(total int, nome string) string {
-	switch {
-	case m.carregadas&(1<<uint(m.activeTab)) == 0:
-		return "  Carregando " + nome + "...\n"
-	case total > 0:
-		return fmt.Sprintf("  Nenhum dos %d %s passa nos filtros. esc limpa os filtros.\n", total, nome)
-	default:
-		return "  Nenhum recurso em " + nome + ".\n"
-	}
-}
-
-// filteredPods aplica filtro de status client-side nos pods
-func (m Model) filteredPods() []monitor.Pod {
-	if m.filter.StatusFilter == "" {
-		return m.pods
-	}
-	var filtered []monitor.Pod
-	for _, p := range m.pods {
-		if strings.EqualFold(p.Status, m.filter.StatusFilter) {
-			filtered = append(filtered, p)
-		}
-	}
-	return filtered
 }
 
 // clampScroll garante que scrollY está dentro dos limites válidos
-func (m *Model) clampScroll(totalLines int) {
-	maxScroll := totalLines - m.visibleHeight()
+func (m *Model) clampScroll(total int) {
+	maxScroll := total - m.linhasDeDados()
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
@@ -351,8 +206,146 @@ func (m *Model) clampScroll(totalLines int) {
 	}
 }
 
-// reconnectMsg sinaliza uma tentativa de reconexão
-type reconnectMsg struct{}
+// reselecionar mantém a seleção no mesmo recurso quando a lista chega de novo
+// (na ordem "problemas primeiro" um recurso muda de lugar quando muda de
+// estado); se ele saiu da lista, a seleção fica dentro dela. A janela só
+// acompanha a seleção quando ela muda de linha: a rolagem do usuário fica.
+func (m *Model) reselecionar(chave string, antes int) {
+	itens := m.itensDaAba(m.activeTab)
+	novo := -1
+	if chave != "" {
+		if antes >= 0 && antes < len(itens) && itens[antes].chave == chave {
+			novo = antes // chave repetida (eventos sem ID) fica na mesma linha
+		} else {
+			for i, it := range itens {
+				if it.chave == chave {
+					novo = i
+					break
+				}
+			}
+		}
+	}
+	if novo < 0 {
+		novo = max(0, min(antes, len(itens)-1))
+	}
+	mudou := novo != m.selectedIndex
+	m.selectedIndex = novo
+	if mudou {
+		m.seguirSelecao()
+		return
+	}
+	m.clampScroll(len(itens))
+}
+
+// intervaloAtualizacao é o tempo entre leituras do cluster ("ao vivo · 2 s").
+const intervaloAtualizacao = 2 * time.Second
+
+// intervaloSemConexao é o tempo entre tentativas depois que a conexão caiu.
+const intervaloSemConexao = 5 * time.Second
+
+// proximoTique agenda a próxima leitura do relógio: a cada 2 s, com espera
+// crescente enquanto reconecta e devagar sem conexão.
+func (m Model) proximoTique() tea.Cmd {
+	if m.client == nil || m.tique == nil {
+		return nil
+	}
+	d := intervaloAtualizacao
+	switch {
+	case m.err != nil:
+		d = intervaloSemConexao
+	case m.reconnecting:
+		d = time.Duration(1<<uint(max(0, m.retryCount-1))) * time.Second
+	}
+	return m.tique(d, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// abaDeFundo escolhe a próxima aba já lida, fora a ativa, para o relógio
+// reler junto (uma por vez, em rodízio): as contagens das abas seguem vivas.
+func (m Model) abaDeFundo() (ResourceTab, bool) {
+	for i := ResourceTab(1); i <= tabCount; i++ {
+		t := (m.rodizio + i) % tabCount
+		if t != m.activeTab && m.carregada(t) {
+			return t, true
+		}
+	}
+	return 0, false
+}
+
+// receber guarda a lista que chegou e devolve se a mensagem era uma lista.
+func (m *Model) receber(msg tea.Msg) bool {
+	chave, antes := m.chaveSelecionada(), m.selectedIndex
+	var tab ResourceTab
+	switch d := msg.(type) {
+	case []monitor.Pod:
+		tab, m.pods = TabPods, d
+	case []monitor.Deployment:
+		tab, m.deployments = TabDeployments, d
+	case []monitor.Service:
+		tab, m.services = TabServices, d
+	case []monitor.Node:
+		tab, m.nodes = TabNodes, d
+	case []monitor.StatefulSet:
+		tab, m.statefulsets = TabStatefulSets, d
+	case []monitor.Job:
+		tab, m.jobs = TabJobs, d
+	case []monitor.Ingress:
+		tab, m.ingresses = TabIngresses, d
+	case []monitor.ConfigMap:
+		tab, m.configmaps = TabConfigMaps, d
+	case []monitor.Event:
+		tab, m.events = TabEvents, d
+	default:
+		return false
+	}
+	m.carregadas |= 1 << uint(tab)
+	m.err = nil
+	m.reconnecting = false
+	m.retryCount = 0
+	m.atualizado = m.agora()
+	if tab == m.activeTab {
+		m.reselecionar(chave, antes)
+	}
+	return true
+}
+
+// temDados diz se alguma aba tem lista para mostrar enquanto reconecta.
+func (m Model) temDados() bool {
+	return len(m.pods) > 0 || len(m.deployments) > 0 || len(m.services) > 0 || len(m.nodes) > 0 ||
+		len(m.statefulsets) > 0 || len(m.jobs) > 0 || len(m.ingresses) > 0 || len(m.configmaps) > 0 || len(m.events) > 0
+}
+
+// falhar registra uma leitura que falhou: sem dados, mostra o erro; com
+// dados, tenta reconectar preservando o último estado até maxRetries.
+func (m *Model) falhar(err error) {
+	if !m.temDados() {
+		m.err = err
+		return
+	}
+	m.retryCount++
+	if m.retryCount >= maxRetries {
+		m.err = err
+		m.reconnecting = false
+		return
+	}
+	m.reconnecting = true
+}
+
+// esquecerListas apaga as listas lidas (o namespace mudou): as abas voltam
+// sem número e a ativa mostra "lendo …" até a próxima leitura.
+func (m *Model) esquecerListas() {
+	m.pods, m.deployments, m.services, m.nodes, m.statefulsets = nil, nil, nil, nil, nil
+	m.jobs, m.ingresses, m.configmaps, m.events = nil, nil, nil, nil
+	m.carregadas = 0
+	m.scrollY, m.selectedIndex = 0, 0
+}
+
+// irParaAba troca a aba ativa, volta ao topo e lê a lista nova.
+func (m Model) irParaAba(tab ResourceTab) (tea.Model, tea.Cmd) {
+	m.activeTab = tab
+	m.scrollY = 0
+	m.selectedIndex = 0
+	return m, m.ler(false, tab)
+}
 
 // detailMsg carrega conteúdo para exibir no modo detalhe
 type detailMsg struct {
@@ -362,66 +355,47 @@ type detailMsg struct {
 
 // actionResultMsg carrega o resultado de uma ação executada
 type actionResultMsg struct {
-	feedback string
-	err      error
+	feedback  string
+	err       error
+	cancelada bool // a confirmação não bateu: nada foi feito
 }
 
 // maxRetries é o número máximo de tentativas de reconexão antes de exibir erro fatal
 const maxRetries = 3
 
 // selectedResourceInfo retorna nome, namespace e kind do recurso selecionado
-// na aba ativa, contado na lista como aparece na tela (filtros e busca aplicados)
+// na aba ativa, contado na lista como aparece na tela (filtros, busca e ordem)
 func (m Model) selectedResourceInfo() (name, namespace, kind string) {
-	idx := m.selectedIndex
-	switch m.activeTab {
-	case TabPods:
-		if l := m.visiblePods(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "pod"
-		}
-	case TabDeployments:
-		if l := m.filteredDeployments(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "deployment"
-		}
-	case TabServices:
-		if l := m.filteredServices(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "service"
-		}
-	case TabNodes:
-		if l := m.filteredNodes(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, "", "node"
-		}
-	case TabStatefulSets:
-		if l := m.filteredStatefulSets(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "statefulset"
-		}
-	case TabJobs:
-		if l := m.filteredJobs(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "job"
-		}
-	case TabIngresses:
-		if l := m.filteredIngresses(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "ingress"
-		}
-	case TabConfigMaps:
-		if l := m.filteredConfigMaps(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "configmap"
-		}
-	case TabEvents:
-		if l := m.filteredEvents(); idx >= 0 && idx < len(l) {
-			return l[idx].Name, l[idx].Namespace, "event"
-		}
+	itens := m.itensDaAba(m.activeTab)
+	if m.selectedIndex < 0 || m.selectedIndex >= len(itens) {
+		return "", "", ""
 	}
-	return "", "", ""
+	it := itens[m.selectedIndex]
+	return it.nome, it.namespace, abas[m.activeTab].kind
+}
+
+// chaveSelecionada é a identidade do recurso selecionado (vazia sem seleção).
+func (m Model) chaveSelecionada() string {
+	itens := m.itensDaAba(m.activeTab)
+	if m.selectedIndex < 0 || m.selectedIndex >= len(itens) {
+		return ""
+	}
+	return itens[m.selectedIndex].chave
 }
 
 // Update processa mensagens e atualiza o estado do modelo
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Limpar feedback após qualquer tecla
-	if _, ok := msg.(tea.KeyMsg); ok && m.actionFeedback != "" {
+	if k, ok := msg.(tea.KeyMsg); ok {
+		// ctrl+c sai de qualquer lugar: campo, confirmação, detalhe ou lista.
+		if k.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		// Limpar feedback após qualquer tecla
 		m.actionFeedback = ""
 	}
 
-	// No modo de ação, capturar teclas para confirmação/input
+	// No modo de ação, capturar teclas para confirmação/input; as listas que
+	// chegam seguem o caminho normal (o alvo já foi guardado)
 	if m.actionMode != ActionNone {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			switch keyMsg.String() {
@@ -449,10 +423,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		return m, nil
 	}
 
-	// No modo de detalhe, scroll independente e Esc para voltar
+	// No modo de detalhe, scroll independente e Esc para voltar; o relógio e
+	// as listas seguem para o caminho normal (a lista volta atualizada)
 	if m.viewMode == ModeDetail {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			switch keyMsg.String() {
@@ -471,31 +445,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "pgdown":
-				m.detailScrollY += m.visibleHeight()
+				m.detailScrollY += m.alturaCorpo()
 				return m, nil
 			case "pgup":
-				m.detailScrollY -= m.visibleHeight()
+				m.detailScrollY -= m.alturaCorpo()
 				if m.detailScrollY < 0 {
 					m.detailScrollY = 0
 				}
 				return m, nil
 			case "home":
 				m.detailScrollY = 0
-				return m, nil
 			}
+			return m, nil
 		}
-		// Tratar mensagens de dados mesmo no detail mode (para não bloquear o ticker)
-		switch msg := msg.(type) {
-		case tea.WindowSizeMsg:
-			m.width = msg.Width
-			m.height = msg.Height
-		case detailMsg:
-			m.detailTitle = msg.title
-			m.detailContent = msg.content
-			m.detailScrollY = 0
-			m.viewMode = ModeDetail
-		}
-		return m, nil
 	}
 
 	// No modo de input de filtro, capturar teclas para o buffer
@@ -503,21 +465,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			switch keyMsg.String() {
 			case "enter":
+				campo, valor := m.filter.InputField, strings.TrimSpace(m.filter.InputBuffer)
 				m.filter.InputMode = false
-				switch m.filter.InputField {
-				case "namespace":
-					m.filter.Namespace = m.filter.InputBuffer
-				case "label":
-					m.filter.LabelSelector = m.filter.InputBuffer
-				case "status":
-					m.filter.StatusFilter = m.filter.InputBuffer
-				case "search":
-					m.filter.SearchQuery = m.filter.InputBuffer
-				}
 				m.filter.InputBuffer = ""
 				m.filter.InputField = ""
+				var cmd tea.Cmd
+				switch campo {
+				case "namespace":
+					if valor != m.filter.Namespace {
+						// As listas lidas são do namespace anterior.
+						m.filter.Namespace = valor
+						m.esquecerListas()
+						cmd = m.ler(false, m.activeTab)
+					}
+				case "label":
+					if _, err := labels.Parse(valor); err != nil {
+						m.actionFeedback = frase(yui.StatusAlerta, "label inválido: "+valor)
+						return m, nil
+					}
+					m.filter.LabelSelector = valor
+				case "status":
+					m.filter.StatusFilter = valor
+				case "search":
+					m.filter.SearchQuery = valor
+				}
 				m.scrollY = 0
-				return m, m.fetchResources
+				m.selectedIndex = 0
+				return m, cmd
 			case "esc":
 				m.filter.InputMode = false
 				m.filter.InputBuffer = ""
@@ -535,108 +509,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		return m, nil
 	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		totalLines := len(m.contentLines())
-		visibleH := m.visibleHeight()
-		maxScroll := totalLines - visibleH
-		if maxScroll < 0 {
-			maxScroll = 0
-		}
+		visibleH := m.linhasDeDados()
 		count := m.itemCount()
+		maxScroll := max(0, count-visibleH)
 
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q":
 			return m, tea.Quit
+		case "?":
+			// Até a tela de ajuda da T020: a lista inteira das teclas no detalhe.
+			m.viewMode = ModeDetail
+			m.detailTitle = "Teclas"
+			m.detailContent = m.textoDasTeclas()
+			m.detailScrollY = 0
+			return m, nil
 		case "tab":
-			m.activeTab = (m.activeTab + 1) % tabCount
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
+			return m.irParaAba((m.activeTab + 1) % tabCount)
 		case "shift+tab":
-			m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "1":
-			m.activeTab = TabPods
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "2":
-			m.activeTab = TabDeployments
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "3":
-			m.activeTab = TabServices
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "4":
-			m.activeTab = TabNodes
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "5":
-			m.activeTab = TabStatefulSets
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "6":
-			m.activeTab = TabJobs
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "7":
-			m.activeTab = TabIngresses
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "8":
-			m.activeTab = TabConfigMaps
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
-		case "9":
-			m.activeTab = TabEvents
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, m.fetchResources
+			return m.irParaAba((m.activeTab - 1 + tabCount) % tabCount)
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			return m.irParaAba(ResourceTab(msg.String()[0] - '1'))
 		case "j", "down":
 			if count > 0 && m.selectedIndex < count-1 {
 				m.selectedIndex++
-				// Scroll automático: header com borda = 2 linhas, dados a partir da linha 2
-				itemLine := m.selectedIndex + 2
-				if itemLine >= m.scrollY+visibleH {
-					m.scrollY = itemLine - visibleH + 1
-				}
+				m.seguirSelecao()
 			}
 			return m, nil
 		case "k", "up":
 			if m.selectedIndex > 0 {
 				m.selectedIndex--
-				// Scroll automático: garantir que o item selecionado está visível
-				itemLine := m.selectedIndex + 2
-				if itemLine < m.scrollY {
-					m.scrollY = itemLine
-				}
+				m.seguirSelecao()
 			}
 			return m, nil
 		case "pgdown":
-			m.scrollY += visibleH
-			if m.scrollY > maxScroll {
-				m.scrollY = maxScroll
+			// A seleção desce junto: a ação atinge sempre uma linha da tela.
+			if count > 0 {
+				m.selectedIndex = min(count-1, m.selectedIndex+visibleH)
+				m.scrollY = min(maxScroll, m.scrollY+visibleH)
+				m.seguirSelecao()
 			}
 			return m, nil
 		case "pgup":
-			m.scrollY -= visibleH
-			if m.scrollY < 0 {
-				m.scrollY = 0
-			}
+			m.selectedIndex = max(0, m.selectedIndex-visibleH)
+			m.scrollY = max(0, m.scrollY-visibleH)
+			m.seguirSelecao()
 			return m, nil
 		case "home":
 			m.scrollY = 0
@@ -676,7 +596,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if kind != "pod" {
-				m.actionFeedback = "Logs disponível apenas para Pods"
+				m.actionFeedback = frase(yui.StatusAlerta, "logs só existem para pods")
 				return m, nil
 			}
 			return m, m.fetchPodLogs(name, ns)
@@ -701,7 +621,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if kind == "node" || kind == "event" {
-				m.actionFeedback = "Não é possível deletar " + kind
+				m.actionFeedback = frase(yui.StatusAlerta, "não dá para excluir "+abas[m.activeTab].plural)
 				return m, nil
 			}
 			m.actionMode = ActionConfirmDelete
@@ -715,7 +635,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if kind != "deployment" && kind != "statefulset" {
-				m.actionFeedback = "Scale disponível apenas para Deployments e StatefulSets"
+				m.actionFeedback = frase(yui.StatusAlerta, "escalar só vale para Deployments e StatefulSets")
 				return m, nil
 			}
 			m.actionMode = ActionInputScale
@@ -729,7 +649,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if kind != "deployment" && kind != "statefulset" {
-				m.actionFeedback = "Restart disponível apenas para Deployments e StatefulSets"
+				m.actionFeedback = frase(yui.StatusAlerta, "reiniciar só vale para Deployments e StatefulSets")
 				return m, nil
 			}
 			m.actionMode = ActionConfirmRestart
@@ -737,23 +657,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.actionBuffer = ""
 			return m, nil
 		case "esc":
-			// Limpar todos os filtros
-			m.filter = FilterState{}
+			// Limpa label, status e busca; o namespace é o contexto e troca por /.
+			if !m.algumFiltro() {
+				return m, nil
+			}
+			m.filter.LabelSelector, m.filter.StatusFilter, m.filter.SearchQuery = "", "", ""
 			m.scrollY = 0
 			m.selectedIndex = 0
-			return m, m.fetchResources
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.seguirSelecao()
 		return m, nil
 
 	case tickMsg:
-		return m, m.fetchResources
+		tabs := []ResourceTab{m.activeTab}
+		if t, ok := m.abaDeFundo(); ok {
+			m.rodizio = t
+			tabs = append(tabs, t)
+		}
+		return m, m.ler(true, tabs...)
 
-	case reconnectMsg:
-		return m, m.fetchResources
+	case leituraMsg:
+		// Uma leitura de outro namespace chegou atrasada: os dados não valem.
+		if msg.namespace == m.filter.Namespace {
+			for i, r := range msg.respostas {
+				if err, ok := r.(error); ok {
+					if i == 0 { // a falha de uma aba de fundo (RBAC) não derruba a tela
+						m.falhar(err)
+					}
+					continue
+				}
+				m.receber(r)
+			}
+		}
+		if msg.relogio {
+			return m, m.proximoTique()
+		}
+		return m, nil
 
 	case detailMsg:
 		m.detailTitle = msg.title
@@ -763,107 +707,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case actionResultMsg:
-		if msg.err != nil {
-			m.actionFeedback = fmt.Sprintf("Erro: %v", msg.err)
-		} else {
-			m.actionFeedback = msg.feedback
+		switch {
+		case msg.err != nil:
+			m.actionFeedback = frase(yui.StatusFalha, fmt.Sprintf("erro: %v", msg.err))
+		case msg.cancelada:
+			m.actionFeedback = frase(yui.StatusParado, msg.feedback)
+		default:
+			m.actionFeedback = frase(yui.StatusRodando, msg.feedback)
 		}
-		return m, m.fetchResources
-
-	// Mensagens de dados por tipo de recurso
-	case []monitor.Pod:
-		m.pods = msg
-		m.carregadas |= 1 << uint(TabPods)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.Deployment:
-		m.deployments = msg
-		m.carregadas |= 1 << uint(TabDeployments)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.Service:
-		m.services = msg
-		m.carregadas |= 1 << uint(TabServices)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.Node:
-		m.nodes = msg
-		m.carregadas |= 1 << uint(TabNodes)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.StatefulSet:
-		m.statefulsets = msg
-		m.carregadas |= 1 << uint(TabStatefulSets)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.Job:
-		m.jobs = msg
-		m.carregadas |= 1 << uint(TabJobs)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.Ingress:
-		m.ingresses = msg
-		m.carregadas |= 1 << uint(TabIngresses)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.ConfigMap:
-		m.configmaps = msg
-		m.carregadas |= 1 << uint(TabConfigMaps)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
-	case []monitor.Event:
-		m.events = msg
-		m.carregadas |= 1 << uint(TabEvents)
-		m.reconnecting = false
-		m.retryCount = 0
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
+		return m, m.ler(false, m.activeTab)
 
 	case error:
-		hasData := len(m.pods) > 0 || len(m.deployments) > 0 || len(m.services) > 0 || len(m.nodes) > 0 ||
-			len(m.statefulsets) > 0 || len(m.jobs) > 0 || len(m.ingresses) > 0 || len(m.configmaps) > 0 || len(m.events) > 0
-		if !hasData {
-			// Sem dados prévios: exibir erro imediatamente
-			m.err = msg
-		} else {
-			// Com dados prévios: tentar reconectar preservando o último estado
-			m.retryCount++
-			if m.retryCount >= maxRetries {
-				m.err = msg
-				m.reconnecting = false
-			} else {
-				m.reconnecting = true
-				delay := time.Duration(1<<uint(m.retryCount-1)) * time.Second
-				return m, tea.Tick(delay, func(t time.Time) tea.Msg {
-					return reconnectMsg{}
-				})
-			}
-		}
+		m.falhar(msg)
+
+	default:
+		m.receber(msg) // lista avulsa (testes)
 	}
 
 	return m, nil
@@ -887,6 +745,20 @@ func resolveK8sClient(c monitor.Client) acessoDireto {
 		}
 	}
 	return nil
+}
+
+// comContexto é o client que conhece o contexto atual do kubeconfig (o
+// K8sClient e o RetryClient); o nome vai para o masthead.
+type comContexto interface {
+	Contexto() string
+}
+
+// contextoDoCluster devolve o contexto do kubeconfig, ou vazio se o client não o conhece.
+func (m Model) contextoDoCluster() string {
+	if c, ok := m.client.(comContexto); ok {
+		return c.Contexto()
+	}
+	return ""
 }
 
 // fetchPodLogs busca logs do pod selecionado de forma assíncrona
@@ -961,13 +833,13 @@ func (m Model) executeAction(mode ActionMode, alvo alvoDaAcao, input string) tea
 		switch mode {
 		case ActionConfirmDelete:
 			if input != "yes" {
-				return actionResultMsg{feedback: "Ação cancelada."}
+				return actionResultMsg{feedback: "exclusão cancelada", cancelada: true}
 			}
 			err := monitor.DeleteResource(clientset, kind, target, ns)
 			if err != nil {
 				return actionResultMsg{err: err}
 			}
-			return actionResultMsg{feedback: fmt.Sprintf("%s '%s' deletado.", kind, target)}
+			return actionResultMsg{feedback: fmt.Sprintf("%s %s excluído", nomeDoTipo(kind), target)}
 
 		case ActionInputScale:
 			var replicas int32
@@ -985,7 +857,7 @@ func (m Model) executeAction(mode ActionMode, alvo alvoDaAcao, input string) tea
 
 		case ActionConfirmRestart:
 			if input != "yes" {
-				return actionResultMsg{feedback: "Ação cancelada."}
+				return actionResultMsg{feedback: "reinício cancelado", cancelada: true}
 			}
 			reiniciar, rotulo := monitor.RestartDeployment, "Deployment"
 			if kind == "statefulset" {
@@ -997,125 +869,6 @@ func (m Model) executeAction(mode ActionMode, alvo alvoDaAcao, input string) tea
 			return actionResultMsg{feedback: fmt.Sprintf("%s '%s' reiniciado.", rotulo, target)}
 		}
 
-		return actionResultMsg{feedback: "Ação desconhecida."}
+		return actionResultMsg{err: fmt.Errorf("ação desconhecida")}
 	}
-}
-
-// View renderiza a interface do Viz
-func (m Model) View() string {
-	// Modo detalhe: renderizar view dedicada
-	if m.viewMode == ModeDetail {
-		return renderDetailView(m.detailTitle, m.detailContent, m.detailScrollY, m.visibleHeight())
-	}
-
-	var sb strings.Builder
-
-	sb.WriteString(titleStyle.Render("🌿 Yby Viz") + "  " + subtitleStyle.Render("Cluster Monitor") + "\n")
-	sb.WriteString(separatorStyle.Render(strings.Repeat("─", 80)) + "\n")
-	sb.WriteString(renderTabBar(m.activeTab))
-
-	if m.err != nil {
-		sb.WriteString(errorStyle.Render(fmt.Sprintf(
-			"\n❌ Erro de conexão K8s: %v\nVerifique se o cluster está rodando e ~/.kube/config existe.",
-			m.err)))
-		sb.WriteString("\n\nPressione 'q' para sair.")
-		return sb.String()
-	}
-
-	// Modo de ação: exibir prompt sobre o conteúdo
-	if m.actionMode != ActionNone {
-		// Renderizar tabela normalmente
-		lines := m.contentLines()
-		totalLines := len(lines)
-		m.clampScroll(totalLines)
-		visibleLines := lines[m.scrollY:]
-		maxVisible := m.visibleHeight()
-		if maxVisible > 0 && len(visibleLines) > maxVisible {
-			visibleLines = visibleLines[:maxVisible]
-		}
-		sb.WriteString(strings.Join(visibleLines, "\n"))
-		sb.WriteString("\n\n")
-		sb.WriteString(renderActionPrompt(m.actionMode, m.actionTarget, m.actionBuffer))
-		return sb.String()
-	}
-
-	// Renderizar tabela do recurso ativo
-	lines := m.contentLines()
-	totalLines := len(lines)
-
-	// Clampar scroll
-	m.clampScroll(totalLines)
-	scrollY := m.scrollY
-
-	visibleLines := lines[scrollY:]
-	maxVisible := m.visibleHeight()
-	if maxVisible > 0 && len(visibleLines) > maxVisible {
-		visibleLines = visibleLines[:maxVisible]
-	}
-	sb.WriteString(strings.Join(visibleLines, "\n"))
-
-	// Montar status bar
-	var statusParts []string
-
-	// Indicador de posição
-	if totalLines > 0 {
-		statusParts = append(statusParts, fmt.Sprintf("Linha %d/%d", scrollY+1, totalLines))
-	}
-
-	// Filtros ativos
-	if m.filter.Namespace != "" {
-		statusParts = append(statusParts, filterStyle.Render(fmt.Sprintf("[ns:%s]", m.filter.Namespace)))
-	}
-	if m.filter.LabelSelector != "" {
-		statusParts = append(statusParts, filterStyle.Render(fmt.Sprintf("[label:%s]", m.filter.LabelSelector)))
-	}
-	if m.filter.StatusFilter != "" {
-		statusParts = append(statusParts, filterStyle.Render(fmt.Sprintf("[status:%s]", m.filter.StatusFilter)))
-	}
-	if m.filter.SearchQuery != "" {
-		statusParts = append(statusParts, filterStyle.Render(fmt.Sprintf("[busca:%s]", m.filter.SearchQuery)))
-	}
-
-	// Feedback de ação
-	if m.actionFeedback != "" {
-		statusParts = append(statusParts, renderFeedback(m.actionFeedback))
-	}
-
-	// Indicador de reconexão
-	if m.reconnecting {
-		statusParts = append(statusParts, reconnectingStyle.Render("Reconectando..."))
-	}
-
-	// Modo de input de filtro
-	if m.filter.InputMode {
-		statusParts = append(statusParts, filterStyle.Render(fmt.Sprintf("Filtro %s: %s_", m.filter.InputField, m.filter.InputBuffer)))
-	}
-
-	// Atalhos base (disponíveis em todas as abas)
-	statusLine := " " +
-		keyStyle.Render("Tab/1-9") + descStyle.Render(" navegar") + "  " +
-		keyStyle.Render("j/k") + descStyle.Render(" selecionar") + "  " +
-		keyStyle.Render("f") + descStyle.Render(" buscar") + "  " +
-		keyStyle.Render("y") + descStyle.Render(" yaml") + "  " +
-		keyStyle.Render("e") + descStyle.Render(" eventos")
-
-	// Atalhos contextuais por aba
-	switch m.activeTab {
-	case TabPods:
-		statusLine += "  " + keyStyle.Render("l") + descStyle.Render(" logs") +
-			"  " + keyStyle.Render("d") + descStyle.Render(" deletar")
-	case TabDeployments, TabStatefulSets:
-		statusLine += "  " + keyStyle.Render("d") + descStyle.Render(" deletar") +
-			"  " + keyStyle.Render("s") + descStyle.Render(" escalar") +
-			"  " + keyStyle.Render("r") + descStyle.Render(" restart")
-	case TabJobs:
-		statusLine += "  " + keyStyle.Render("d") + descStyle.Render(" deletar")
-	}
-
-	statusLine += "  " + keyStyle.Render("q") + descStyle.Render(" sair")
-	if len(statusParts) > 0 {
-		statusLine = strings.Join(statusParts, " ") + " | " + statusLine
-	}
-	sb.WriteString(statusBarStyle.Render("\n" + statusLine))
-	return sb.String()
 }
