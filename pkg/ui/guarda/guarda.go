@@ -66,10 +66,9 @@ type permitido struct {
 }
 
 // permitidos é a lista curta de exceções pontuais. Cada entrada vale só para aquele emoji
-// naquele arquivo; qualquer outro emoji no mesmo arquivo continua acusado.
-var permitidos = []permitido{
-	{"cmd/gen_docs.go", "📖", "título do CLI-Reference.md da wiki (docs/wiki), que o gen-docs gera; trocar exigiria regenerar a wiki"},
-}
+// naquele arquivo; qualquer outro emoji no mesmo arquivo continua acusado. Hoje vazia: o
+// único caso, o título do CLI-Reference.md da wiki, saiu na T035.
+var permitidos []permitido
 
 // Achado é um ponto do código que a guarda recusa.
 type Achado struct {

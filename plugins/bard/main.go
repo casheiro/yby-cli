@@ -94,7 +94,7 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		respond(plugin.PluginManifest{
 			Name:        "bard",
 			Version:     "1.0.0",
-			Description: "Assistente IA interativo com tool calling, TUI e integracao cross-plugin",
+			Description: "Assistente de IA do cluster: conversa, ferramentas e diagnóstico",
 			Hooks:       []string{"command"},
 		})
 		return nil

@@ -253,6 +253,9 @@ func tom(c lipgloss.TerminalColor) (lipgloss.Color, bool) {
 }
 
 func TestGuarda_PermitidoValeSoParaAqueleEmoji(t *testing.T) {
+	antes := permitidos
+	t.Cleanup(func() { permitidos = antes })
+	permitidos = []permitido{{"cmd/gen_docs.go", "📖", "exemplo do teste"}}
 	raiz := t.TempDir()
 	escrever(t, raiz, "cmd/gen_docs.go", "package cmd\n\nvar titulo = \"# \\U0001F4D6 CLI Reference\"\nvar fim = \"✅ gerado\"\n")
 	escrever(t, raiz, "cmd/outro.go", "package cmd\n\nvar titulo2 = \"# 📖 Outro\"\n")

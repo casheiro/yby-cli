@@ -10,7 +10,7 @@ import (
 // generateCmd represents the generate command
 var generateCmd = &cobra.Command{
 	Use:     "generate",
-	Short:   "Gerar recursos e manifestos (alias: gen)",
+	Short:   "Gera recursos e manifestos",
 	Aliases: []string{"gen"},
 	Long:    `Utilitário para gerar manifestos Kubernetes e outros recursos.`,
 	Run: func(cmd *cobra.Command, args []string) {

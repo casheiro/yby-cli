@@ -106,5 +106,26 @@ func TestGenDocsCmd_ConteudoGerado(t *testing.T) {
 
 	data, err := os.ReadFile(filepath.Join(dir, "CLI-Reference.md"))
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "CLI Reference")
+	assert.Contains(t, string(data), "# Referência da CLI")
+}
+
+// TestSecaoDeReferencia_EmPortugues confere que a seção sai da ajuda da carta: uso,
+// exemplos sem o recuo, flags em tabela, nota de beta herdada e nada do texto do cobra.
+func TestSecaoDeReferencia_EmPortugues(t *testing.T) {
+	raiz, grupo, sub := arvoreDeAjuda()
+	grupo.Annotations = map[string]string{anotacaoBeta: "Beta: ainda sem teste real."}
+
+	secao := secaoDeReferencia(sub)
+	for _, esperado := range []string{
+		"## yby generate keda\n", "**Uso**\n\n```\nyby generate keda [nome] [flags]\n```",
+		"```bash\nyby generate keda api\n# Cria o ScaledObject\n```",
+		"| `-n, --namespace texto` | Namespace do recurso |", "| `--replicas n` | Réplicas mínimas (padrão 2) |",
+		"**Flags globais**", "Beta: ainda sem teste real.",
+	} {
+		assert.Contains(t, secao, esperado)
+	}
+	for _, ingles := range []string{"Synopsis", "Options", "SEE ALSO", "help for", "default"} {
+		assert.NotContains(t, secao, ingles)
+	}
+	assert.Contains(t, secaoDeReferencia(raiz), "* [yby generate](#yby-generate) — Gera recursos (beta)")
 }
