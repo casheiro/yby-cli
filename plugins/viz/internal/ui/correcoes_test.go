@@ -133,11 +133,11 @@ type clientComNamespace struct {
 	ns string
 }
 
-func (c *clientComNamespace) NamespaceDoContexto() string { return c.ns }
+func (c *clientComNamespace) NamespaceInicial() string { return c.ns }
 
-// TestNamespaceDoContexto: o Viz começa no namespace do contexto do kubeconfig,
+// TestNamespaceInicial: o Viz começa no namespace do contexto do kubeconfig,
 // como o kubectl, e o esc (limpar filtros) não o tira.
-func TestNamespaceDoContexto(t *testing.T) {
+func TestNamespaceInicial(t *testing.T) {
 	m := NewModel(&clientComNamespace{MockClient: &MockClient{}, ns: "payments"})
 	if m.filter.Namespace != "payments" {
 		t.Fatalf("namespace inicial = %q, esperado payments", m.filter.Namespace)

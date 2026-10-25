@@ -56,6 +56,12 @@ type fontesPainel struct {
 	ler func(ctx gocontext.Context) leituraPainel
 	// renovar renova o token do cluster.
 	renovar func(ctx gocontext.Context, c clusterPainel) error
+	// contextos lê os nomes dos contextos do kubeconfig dado (vazio: o padrão).
+	contextos func(kubeconfig string) (map[string]bool, error)
+	// abrirViz roda o Viz com os args dados e espera ele fechar.
+	abrirViz func(args []string) error
+	// executar solta o terminal para o comando (nil: tea.Exec); os testes rodam o comando.
+	executar func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
 }
 
 // leituraPainel é o resultado de uma leitura das clouds.
@@ -76,8 +82,12 @@ type clusterPainel struct {
 	papel       string
 	metodo      string // já no texto da tela ("SSO · Identity Center")
 	sso         bool
-	ambiente    string    // nome em .yby/environments.yaml, quando houver
-	expiraEm    time.Time // zero: validade desconhecida
+	ambiente    string // nome em .yby/environments.yaml, quando houver
+	// kubeconfig, kubeContexto e namespace são os do ambiente, por onde o ↵ abre o Viz.
+	kubeconfig   string
+	kubeContexto string
+	namespace    string
+	expiraEm     time.Time // zero: validade desconhecida
 	// desatualizado: o provider não respondeu nesta leitura e a linha é da anterior.
 	desatualizado bool
 }
@@ -102,6 +112,8 @@ func fontesReais(runner shared.Runner) fontesPainel {
 			registrarRenovacao(cloud.NewAuditLogger(), c, time.Now(), err)
 			return err
 		},
+		contextos: contextosDoKubeconfig,
+		abrirViz:  abrirVizPeloManager,
 	}
 }
 
@@ -171,8 +183,11 @@ func lerClouds(ctx gocontext.Context, runner shared.Runner, ambientes map[string
 
 // ambienteCloud é um ambiente de .yby/environments.yaml ligado a um cluster cloud.
 type ambienteCloud struct {
-	nome string
-	cfg  *ybycontext.CloudConfig
+	nome         string
+	cfg          *ybycontext.CloudConfig
+	kubeconfig   string // kube_config do ambiente (vazio: o kubeconfig padrão)
+	kubeContexto string // kube_context do ambiente
+	namespace    string
 }
 
 // ambientesCloud lê os ambientes cloud do projeto, indexados por provider/cluster. Fora
@@ -193,13 +208,14 @@ func ambientesCloud() map[string]ambienteCloud {
 	}
 	sort.Strings(nomes) // dois ambientes no mesmo cluster: vale o primeiro em ordem alfabética
 	for _, nome := range nomes {
-		cfg := manifesto.Environments[nome].Cloud
+		amb := manifesto.Environments[nome]
+		cfg := amb.Cloud
 		if cfg == nil || cfg.Cluster == "" {
 			continue
 		}
 		k := strings.ToLower(cfg.Provider) + "/" + cfg.Cluster
 		if _, existe := saida[k]; !existe {
-			saida[k] = ambienteCloud{nome: nome, cfg: cfg}
+			saida[k] = ambienteCloud{nome: nome, cfg: cfg, kubeconfig: amb.KubeConfig, kubeContexto: amb.KubeContext, namespace: amb.Namespace}
 		}
 	}
 	return saida
@@ -218,7 +234,7 @@ func novoClusterPainel(provider string, info cloud.ClusterInfo, cred *cloud.Cred
 	}
 	amb, temAmbiente := ambientes[provider+"/"+info.Name]
 	if temAmbiente {
-		c.ambiente = amb.nome
+		c.ambiente, c.kubeconfig, c.kubeContexto, c.namespace = amb.nome, amb.kubeconfig, amb.kubeContexto, amb.namespace
 	}
 	c.conta, c.papel = contaEPapel(provider, c.identidade, info, amb.cfg)
 	metodoCred := ""

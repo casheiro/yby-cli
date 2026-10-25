@@ -70,6 +70,13 @@ type fontesFalsas struct {
 	leitura    leituraPainel
 	renovados  []string
 	erroRenova error
+	// contextos do kubeconfig padrão falso e, por arquivo, os dos kube_config dos ambientes;
+	// abertos guarda os args de cada Viz aberto.
+	contextos    map[string]bool
+	porArquivo   map[string]map[string]bool
+	erroKubeconf error
+	abertos      [][]string
+	erroViz      error
 }
 
 func (f *fontesFalsas) fontes() fontesPainel {
@@ -78,6 +85,20 @@ func (f *fontesFalsas) fontes() fontesPainel {
 		renovar: func(_ gocontext.Context, c clusterPainel) error {
 			f.renovados = append(f.renovados, c.info.Name)
 			return f.erroRenova
+		},
+		contextos: func(arquivo string) (map[string]bool, error) {
+			if arquivo != "" {
+				return f.porArquivo[arquivo], nil
+			}
+			return f.contextos, f.erroKubeconf
+		},
+		abrirViz: func(args []string) error {
+			f.abertos = append(f.abertos, args)
+			return f.erroViz
+		},
+		// sem terminal para soltar: o comando roda na hora e a volta chega como mensagem
+		executar: func(c tea.ExecCommand, fim tea.ExecCallback) tea.Cmd {
+			return func() tea.Msg { return fim(c.Run()) }
 		},
 	}
 }
@@ -399,7 +420,7 @@ func TestPainelCloud_CtrlCSaiDeQualquerLugar(t *testing.T) {
 func TestPainelCloud_EnterNaoAbreDetalheAoLado(t *testing.T) {
 	usarSaidaTexto(t, false)
 	m := teclar(t, painelCarregado(t, novasFontesDeExemplo(), 140, 30), enter)
-	assert.False(t, m.detalheAberto)
+	assert.False(t, m.detalheAberto, "ao lado, o ↵ abre no Viz")
 	assert.Equal(t, layoutAbaixo, m.layout())
 }
 
@@ -598,12 +619,15 @@ func TestMascararConta(t *testing.T) {
 func TestNovoClusterPainel_JuntaCredencialEAmbiente(t *testing.T) {
 	expira := agoraPainel.Add(time.Hour)
 	cred := &cloud.CredentialStatus{Authenticated: true, Identity: "arn:aws:sts::482100009310:assumed-role/yby-staging-admin/neto", Method: "iam", ExpiresAt: &expira}
-	amb := map[string]ambienteCloud{"aws/staging": {nome: "staging", cfg: &ybycontext.CloudConfig{Provider: "aws", Cluster: "staging", Auth: &ybycontext.AuthConfig{Method: "sso"}}}}
+	amb := map[string]ambienteCloud{"aws/staging": {nome: "staging", kubeContexto: "yby-staging", namespace: "payments",
+		cfg: &ybycontext.CloudConfig{Provider: "aws", Cluster: "staging", Auth: &ybycontext.AuthConfig{Method: "sso"}}}}
 	c := novoClusterPainel("aws", cloud.ClusterInfo{Name: "staging", Region: "us-east-1"}, cred, amb)
 	assert.Equal(t, "aws", c.info.Provider)
 	assert.True(t, c.autenticado)
 	assert.Equal(t, expira, c.expiraEm)
 	assert.Equal(t, "staging", c.ambiente)
+	assert.Equal(t, "yby-staging", c.kubeContexto)
+	assert.Equal(t, "payments", c.namespace)
 	assert.Equal(t, "yby-staging-admin", c.papel)
 	assert.Equal(t, "SSO · Identity Center", c.metodo)
 

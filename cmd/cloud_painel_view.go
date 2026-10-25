@@ -150,6 +150,10 @@ func (m painelCloud) View() string {
 		}
 	}
 	p.Mensagem = m.mensagem()
+	if !m.campo && m.aviso != "" && lipgloss.Width(m.aviso)+1+len("atualizado 15:04:05") > m.largura {
+		// a frase da última tecla (ex.: o yby cloud connect a copiar) vale mais que a hora
+		p.Hora = time.Time{}
+	}
 	p.Teclas, p.Sair = m.teclas(lay)
 	p.SemAjuda = m.campo // no campo, o ? é letra
 	return ui.Moldura(m.largura, m.altura, p)
@@ -737,13 +741,18 @@ func (m painelCloud) teclas(lay layoutPainel) ([]key.Binding, key.Binding) {
 	case lay == layoutPorCima:
 		voltar := atalhoPainel("esc", "voltar", "esc")
 		if m.largura < ui.LarguraColuna {
-			return []key.Binding{voltar, mover, teclaRenovar()}, g.SairForcado
+			// no compacto cabem três: as ações do cluster valem mais que mover
+			return []key.Binding{voltar, teclaViz(), teclaRenovar()}, g.SairForcado
 		}
-		return []key.Binding{mover, teclaRenovar(), g.Recarregar, voltar, g.Ajuda}, g.SairForcado
+		// o esc vem logo depois do mover: é a única saída da camada e tem de sobreviver ao
+		// corte da legenda em 80 colunas, também no ASCII ("up/down", "enter")
+		return []key.Binding{mover, voltar, teclaViz(), teclaRenovar(), g.Recarregar, g.Ajuda}, g.SairForcado
 	}
 	t := []key.Binding{mover}
 	if lay == layoutSemDetalhe {
 		t = append(t, atalhoPainel("↵", "detalhe", "enter"))
+	} else {
+		t = append(t, teclaViz())
 	}
 	t = append(t, teclaRenovar(), g.Recarregar, l.Buscar)
 	if m.busca != "" {
@@ -776,8 +785,10 @@ func (m painelCloud) gruposDaAjuda() []grupoAjuda {
 		{"/", "buscar por nome do cluster"},
 		{"t", "renovar o token do cluster"},
 	}}
-	if ui.ModoPara(m.largura, m.altura) != ui.ModoLadoALado {
-		lista.linhas = append(lista.linhas, [2]string{ui.RotuloTecla("↵"), "abrir o detalhe"})
+	if ui.ModoPara(m.largura, m.altura) == ui.ModoLadoALado {
+		lista.linhas = append(lista.linhas, [2]string{ui.RotuloTecla("↵"), "abrir o cluster no Viz"})
+	} else {
+		lista.linhas = append(lista.linhas, [2]string{ui.RotuloTecla("↵"), "abrir o detalhe; nele, abre no Viz"})
 	}
 	return []grupoAjuda{todas, lista}
 }

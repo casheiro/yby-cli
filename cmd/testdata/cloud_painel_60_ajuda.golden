@@ -2,15 +2,15 @@
 ────────────────────────────────────────────────────────────
 ✓ 2 prontos   ▲ 1 token expira em breve   ✕ 1 token expirado
                                                             
-┌ TECLAS · CLOUD ──────────────────────────────┐            
-│ EM TODA TUI                                  │            
-│ ?          ajuda com todas as teclas da tela │            
-│ esc        fecha o detalhe ou limpa a busca  │            
-│ q          sai (só no nível de cima)         │            
-│ ctrl+c     sai de qualquer lugar             │            
-│ r          recarrega os clusters             │            
-│ mouse      a roda move, o clique seleciona   │            
-└──────────────────────────────────────────────┘            
+┌ TECLAS · CLOUD ───────────────────────────────┐           
+│ EM TODA TUI                                   │           
+│ ?          ajuda com todas as teclas da tela  │           
+│ esc        fecha o detalhe ou limpa a busca   │           
+│ q          sai (só no nível de cima)          │           
+│ ctrl+c     sai de qualquer lugar              │           
+│ r          recarrega os clusters              │           
+│ mouse      a roda move, o clique seleciona    │           
+└───────────────────────────────────────────────┘           
 ────────────────────────────────────────────────────────────
                                          atualizado 12:07:00
 esc fechar  ↑↓ rolar                             ctrl+c sair

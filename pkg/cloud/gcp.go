@@ -81,6 +81,18 @@ type gcpCluster struct {
 	Location             string `json:"location"`
 	CurrentMasterVersion string `json:"currentMasterVersion"`
 	Status               string `json:"status"`
+	// SelfLink é https://container.googleapis.com/v1/projects/<projeto>/locations/<local>/clusters/<nome>.
+	SelfLink string `json:"selfLink"`
+}
+
+// projetoDoSelfLink tira o projeto do selfLink do cluster; vazio se não houver.
+func projetoDoSelfLink(link string) string {
+	_, depois, ok := strings.Cut(link, "/projects/")
+	if !ok {
+		return ""
+	}
+	projeto, _, _ := strings.Cut(depois, "/")
+	return projeto
 }
 
 // ListClusters lista clusters GKE via `gcloud container clusters list`.
@@ -106,13 +118,18 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 
 	clusters := make([]ClusterInfo, 0, len(gcpClusters))
 	for _, c := range gcpClusters {
+		projeto := opts.Project
+		if projeto == "" {
+			// sem --project, o gcloud lista o projeto padrão, que está no selfLink
+			projeto = projetoDoSelfLink(c.SelfLink)
+		}
 		clusters = append(clusters, ClusterInfo{
 			Name:      c.Name,
 			Region:    c.Location,
 			Provider:  "gcp",
 			Version:   c.CurrentMasterVersion,
 			Status:    c.Status,
-			ProjectID: opts.Project,
+			ProjectID: projeto,
 		})
 	}
 	return clusters, nil

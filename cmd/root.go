@@ -205,6 +205,7 @@ func Execute() {
 	pm := newRootPluginManager()
 	pm.EnableTrustCheck()
 	discoverPlugins(rootCmd, pm)
+	pluginsDescobertos = pm // o ↵ do yby cloud dashboard abre o Viz por ele
 
 	start := time.Now()
 	cmd, err := rootCmd.ExecuteC()

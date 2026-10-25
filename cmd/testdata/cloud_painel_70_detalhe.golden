@@ -27,4 +27,4 @@ gcp    gke-ml     us-central1  1.31  ✓ pronto   ━━━━━━━┄  52 m
                                                                       
 ──────────────────────────────────────────────────────────────────────
 ✕ staging sem token: t renova (com o SSO vencido,… atualizado 12:07:00
-esc voltar  ↑↓ mover  t renovar token  ? mais              ctrl+c sair
+esc voltar  ↵ abrir no Viz  t renovar token  ? mais        ctrl+c sair

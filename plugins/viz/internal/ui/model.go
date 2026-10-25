@@ -16,6 +16,8 @@ type tickMsg time.Time
 
 // Model é o modelo principal do Bubbletea para o Viz
 type Model struct {
+	// interrompido: a TUI fechou com ctrl+c, que sai de qualquer lugar (o q sai só da lista).
+	interrompido   bool
 	client         monitor.Client
 	activeTab      ResourceTab
 	pods           []monitor.Pod
@@ -87,9 +89,10 @@ func NewModel(client monitor.Client) Model {
 		toast:  yui.NovoToast(),
 		copiar: yui.CopiarOSC52,
 	}
-	// Começa no namespace do contexto do kubeconfig, como o kubectl; n troca.
-	if c, ok := client.(interface{ NamespaceDoContexto() string }); ok {
-		m.filter.Namespace = c.NamespaceDoContexto()
+	// Começa no namespace pedido (--namespace) ou no do contexto do kubeconfig,
+	// como o kubectl; n troca.
+	if c, ok := client.(interface{ NamespaceInicial() string }); ok {
+		m.filter.Namespace = c.NamespaceInicial()
 	}
 	return m
 }
@@ -457,6 +460,7 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// ctrl+c sai de qualquer lugar: campo, menu, confirmação, ajuda, quadro, detalhe ou lista.
 		if key.Matches(msg, mapa().Global.SairForcado) {
+			m.interrompido = true
 			return m.sair()
 		}
 		if m.janelaPequena() {
@@ -593,6 +597,9 @@ func resolveK8sClient(c monitor.Client) acessoDireto {
 type comContexto interface {
 	Contexto() string
 }
+
+// Interrompido informa se a TUI fechou com ctrl+c.
+func (m Model) Interrompido() bool { return m.interrompido }
 
 // contextoDoCluster devolve o contexto do kubeconfig, ou vazio se o client não o conhece.
 func (m Model) contextoDoCluster() string {

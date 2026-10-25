@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -51,14 +49,15 @@ type K8sClient struct {
 	intervaloLote time.Duration
 }
 
-// Contexto devolve o nome do contexto atual do kubeconfig (vazio se não há).
+// Contexto devolve o nome do contexto do kubeconfig em uso (vazio se não há).
 func (c *K8sClient) Contexto() string {
 	return c.contexto
 }
 
-// NamespaceDoContexto devolve o namespace do contexto atual do kubeconfig
-// (vazio se o contexto não fixa um), por onde a TUI começa, como o kubectl.
-func (c *K8sClient) NamespaceDoContexto() string {
+// NamespaceInicial devolve o namespace por onde a TUI começa: o pedido no
+// --namespace ou, sem ele, o do contexto (vazio se o contexto não fixa um), como
+// o kubectl.
+func (c *K8sClient) NamespaceInicial() string {
 	return c.namespace
 }
 
@@ -72,15 +71,52 @@ func (c *K8sClient) RESTConfig() *rest.Config {
 	return c.restConfig
 }
 
-// NewK8sClient cria um novo client Kubernetes a partir do kubeconfig
+// Conexao escolhe o kubeconfig, o contexto e o namespace inicial do client; vazios,
+// valem o kubeconfig padrão, o contexto atual e o namespace dele.
+type Conexao struct {
+	Kubeconfig string // um arquivo só, no lugar do KUBECONFIG (como o --kubeconfig do kubectl)
+	Contexto   string
+	Namespace  string
+}
+
+// ContextoInexistenteError é o contexto pedido que o kubeconfig não tem.
+type ContextoInexistenteError struct {
+	Nome        string
+	Disponiveis []string // os contextos do kubeconfig, em ordem
+}
+
+func (e *ContextoInexistenteError) Error() string {
+	return fmt.Sprintf("o contexto %q não existe no kubeconfig", e.Nome)
+}
+
+// NewK8sClient cria um client do contexto atual do kubeconfig.
 func NewK8sClient() (*K8sClient, error) {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig == "" {
-		home, _ := os.UserHomeDir()
-		kubeconfig = filepath.Join(home, ".kube", "config")
+	return NovoK8sClient(Conexao{})
+}
+
+// NovoK8sClient cria um client a partir do kubeconfig (KUBECONFIG, que pode ter
+// vários arquivos, ou ~/.kube/config), no contexto e no namespace pedidos. Um
+// contexto pedido que não existe devolve *ContextoInexistenteError.
+func NovoK8sClient(c Conexao) (*K8sClient, error) {
+	regras := clientcmd.NewDefaultClientConfigLoadingRules()
+	regras.ExplicitPath = c.Kubeconfig
+	raw, err := regras.Load()
+	if err != nil {
+		return nil, fmt.Errorf("falha ao carregar kubeconfig: %w", err)
+	}
+	contexto := c.Contexto
+	if contexto == "" {
+		contexto = raw.CurrentContext
+	} else if _, ok := raw.Contexts[contexto]; !ok {
+		nomes := make([]string, 0, len(raw.Contexts))
+		for nome := range raw.Contexts {
+			nomes = append(nomes, nome)
+		}
+		sort.Strings(nomes)
+		return nil, &ContextoInexistenteError{Nome: contexto, Disponiveis: nomes}
 	}
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	config, err := clientcmd.NewNonInteractiveClientConfig(*raw, contexto, &clientcmd.ConfigOverrides{}, regras).ClientConfig()
 	if err != nil {
 		return nil, fmt.Errorf("falha ao carregar kubeconfig: %w", err)
 	}
@@ -90,15 +126,11 @@ func NewK8sClient() (*K8sClient, error) {
 		return nil, fmt.Errorf("falha ao criar clientset: %w", err)
 	}
 
-	// O nome do contexto só aparece na tela: sem ele, a TUI mostra só o namespace.
-	contexto, namespace := "", ""
-	if raw, err := clientcmd.LoadFromFile(kubeconfig); err == nil {
-		contexto = raw.CurrentContext
-		if ctx, ok := raw.Contexts[contexto]; ok && ctx != nil {
-			namespace = ctx.Namespace
-		}
+	namespace := c.Namespace
+	if ctx, ok := raw.Contexts[contexto]; ok && ctx != nil && namespace == "" {
+		namespace = ctx.Namespace
 	}
-	slog.Debug("viz: conectando ao cluster", "kubeconfig", kubeconfig, "contexto", contexto, "servidor", config.Host)
+	slog.Debug("viz: conectando ao cluster", "kubeconfig", regras.GetLoadingPrecedence(), "contexto", contexto, "namespace", namespace, "servidor", config.Host)
 
 	return &K8sClient{clientset: clientset, restConfig: config, contexto: contexto, namespace: namespace}, nil
 }

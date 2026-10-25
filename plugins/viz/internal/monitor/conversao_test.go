@@ -250,7 +250,7 @@ users:
 	if r := NewRetryClient(&FakeClient{}); r.Contexto() != "" {
 		t.Fatalf("client sem contexto: %q", r.Contexto())
 	}
-	if r := NewRetryClient(c); r.NamespaceDoContexto() != "payments" {
-		t.Fatalf("namespace do contexto = %q, esperado payments", r.NamespaceDoContexto())
+	if r := NewRetryClient(c); r.NamespaceInicial() != "payments" {
+		t.Fatalf("namespace do contexto = %q, esperado payments", r.NamespaceInicial())
 	}
 }

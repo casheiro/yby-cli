@@ -17,4 +17,4 @@ aws    staging    us-east-1    1.31  ✕ token    expirou há 12 min
 ↑ 1 cluster acima   ↓ 2 clusters abaixo                                 
 ────────────────────────────────────────────────────────────────────────
 ✕ staging sem token: t renova (com o SSO vencido, r… atualizado 12:07:00
-esc voltar  ↑↓ mover  t renovar token  ? mais                ctrl+c sair
+esc voltar  ↵ abrir no Viz  t renovar token  ? mais          ctrl+c sair

@@ -241,6 +241,9 @@ func TestTeclado_Niveis(t *testing.T) {
 		if m.algumFiltro() || m.filter.Namespace != "payments" {
 			t.Fatalf("o esc deveria limpar busca e status e manter o namespace: %+v", m.filter)
 		}
+		if m.Interrompido() {
+			t.Fatal("o q não é ctrl+c: quem abriu o Viz continua")
+		}
 	})
 
 	// A camada tem de estar aberta (na tela e no modelo) quando o ctrl+c chega.
@@ -264,8 +267,12 @@ func TestTeclado_Niveis(t *testing.T) {
 				esperarTela(t, tm, c.marca)
 			}
 			// Sem o ctrl+c, o FinalModel passaria do tempo.
-			if m := fecharViz(t, tm); !c.aberta(m) {
+			m := fecharViz(t, tm)
+			if !c.aberta(m) {
 				t.Fatalf("a camada %s não estava aberta no ctrl+c", nome)
+			}
+			if !m.Interrompido() {
+				t.Fatal("o ctrl+c tem de marcar a saída (o main sai com 130)")
 			}
 		})
 	}

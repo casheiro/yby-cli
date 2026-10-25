@@ -27,4 +27,4 @@ gcp    gke-ml     us-central1  1.31  ✓ pronto   ━━━━━━━━━━
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ✕ staging sem token: t renova (com o SSO vencido, rode aws sso login antes)                          atualizado 12:07:00
-↑↓ mover  t renovar token  r recarregar  / buscar  ? ajuda                                                        q sair
+↑↓ mover  ↵ abrir no Viz  t renovar token  r recarregar  / buscar  ? ajuda                                        q sair

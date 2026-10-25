@@ -150,6 +150,9 @@ func (m painelCloud) processar(msg tea.Msg) (painelCloud, tea.Cmd) {
 	case renovadoMsg:
 		return m.renovado(msg)
 
+	case vizFechadoMsg:
+		return m.vizFechado(msg)
+
 	case ui.ToastSomeMsg:
 		t, _ := m.toast.Update(msg)
 		m.toast = t.(ui.Toast)
@@ -328,6 +331,9 @@ func setasPainel() string {
 	return "↑↓"
 }
 
+// teclaViz é o ↵ que abre o cluster selecionado no Viz.
+func teclaViz() key.Binding { return atalhoPainel("↵", "abrir no Viz", "enter") }
+
 // teclaRenovar é o t, que renova o token do cluster selecionado.
 func teclaRenovar() key.Binding { return atalhoPainel("t", "renovar token", "t") }
 
@@ -385,11 +391,13 @@ func (m painelCloud) teclaLista(k tea.KeyMsg) (painelCloud, tea.Cmd) {
 		m.cursor = n - 1
 	case key.Matches(k, l.Buscar):
 		m.campo, m.textoCampo, m.buscaAnterior = true, m.busca, m.busca
-	case key.Matches(k, l.Abrir):
-		// Abaixo de 120 colunas o ↵ abre o detalhe por cima; ao lado, ele já está na tela.
-		if n > 0 && ui.ModoPara(m.largura, m.altura) != ui.ModoLadoALado {
-			m.detalheAberto = true
+	case key.Matches(k, l.Abrir) && n > 0:
+		// Com o detalhe na tela (a partir de 120 colunas, ou aberto por cima), o ↵ abre o
+		// cluster no Viz; abaixo de 120 colunas, o primeiro ↵ abre o detalhe.
+		if ui.ModoPara(m.largura, m.altura) == ui.ModoLadoALado || m.porCima() {
+			return m.abrirNoViz()
 		}
+		m.detalheAberto = true
 	}
 	return m, nil
 }
