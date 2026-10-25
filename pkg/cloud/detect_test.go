@@ -87,6 +87,7 @@ func TestDetectFromKubeconfig_NoFile(t *testing.T) {
 	// sem subdiretório .kube/, evitando que máquinas com kubeconfig real tornem o teste flaky.
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("KUBECONFIG", "/nao/existe/config")
 	got := detectFromKubeconfig()
 	if len(got) != 0 {

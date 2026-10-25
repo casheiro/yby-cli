@@ -1,0 +1,5 @@
+
+x erro ao remover plugin                              ERR_PLUGIN
+  causa     plugin 'bard' não encontrado
+  faça      confira o nome com yby plugin list
+  detalhes  rode de novo com --log-level=debug

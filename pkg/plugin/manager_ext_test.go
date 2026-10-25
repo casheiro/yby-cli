@@ -77,6 +77,7 @@ func TestManagerDiscover(t *testing.T) {
 
 	t.Setenv("USERPROFILE", tmpDir)
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	pluginDir := filepath.Join(tmpDir, ".yby", "plugins")
 	assert.NoError(t, os.MkdirAll(pluginDir, 0755))

@@ -1,0 +1,9 @@
+* [1mYBY  DOCTOR[0m                                        23/10 12:10
+
+FERRAMENTAS
+  v docker      27.3
+  ! helm        3.12      recomendado 3.14 ou mais · yby setup atualiza
+  x kubectl     ausente   winget install Kubernetes.kubectl
+  o az          ausente   opcional
+
+RESUMO  4 ok · 1 aviso · 1 erro  · o erro impede yby up

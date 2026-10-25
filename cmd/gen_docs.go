@@ -4,11 +4,11 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
@@ -26,34 +26,40 @@ var genDocsCmd = &cobra.Command{
 		}
 
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar diretório de saída")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar diretório de saída").
+				WithHint("confira o caminho e a permissão de escrita em " + outputDir)
 		}
 
 		outputFile := outputDir + "/CLI-Reference.md"
-		fmt.Printf("📝 Gerando referência consolidada em '%s'...\n", outputFile)
 
 		f, err := os.Create(outputFile)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar arquivo de documentação")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao criar arquivo de documentação").
+				WithHint("confira o caminho e a permissão de escrita em " + outputDir)
 		}
 		defer f.Close()
 
-		// Write Header
-		if _, err := f.WriteString("# 📖 CLI Reference\n\n"); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao escrever no arquivo")
+		// Write Header (o conteúdo do arquivo gerado não muda; o emoji vai por escape)
+		if _, err := f.WriteString("# \U0001F4D6 CLI Reference\n\n"); err != nil {
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao gravar a documentação").
+				WithHint("confira se a pasta de destino pode ser gravada")
 		}
 		if _, err := f.WriteString("Referência completa de todos os comandos do Yby CLI.\n\n"); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao escrever no arquivo")
+			return errors.Wrap(err, errors.ErrCodeIO, "falha ao gravar a documentação").
+				WithHint("confira se a pasta de destino pode ser gravada")
 		}
 
 		// Disable AutoGen tag globally
 		rootCmd.DisableAutoGenTag = true
 
 		if err := writeCommandDocs(f, rootCmd); err != nil {
-			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar documentação")
+			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar a documentação").
+				WithHint("confira se a pasta de destino pode ser gravada")
 		}
 
-		fmt.Println("✅ Documentação consolidada gerada com sucesso!")
+		w := cmd.OutOrStdout()
+		tituloComando(w, "gen-docs", "referência da CLI")
+		checksAlinhados(w, linhaCheck{ui.CheckOk, "CLI-Reference.md", "gerado", outputFile})
 		return nil
 	},
 }

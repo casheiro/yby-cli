@@ -1,0 +1,5 @@
+* YBY  PLUGIN                                list · 2 instalados
+
+  PLUGIN    VERSÃO  HOOKS
+  atlas     v1.2.0  manifest, context, command
+  sentinel  v1.0.0  manifest, command

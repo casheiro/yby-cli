@@ -12,13 +12,18 @@ type ComponentStatus struct {
 	Message   string // mensagem de erro ou aviso quando não disponível
 }
 
+// MensagemKeplerAtivo é a mensagem do Kepler com o sensor rodando.
+const MensagemKeplerAtivo = "sensor Kepler ativo e monitorando o cluster"
+
 // StatusReport agrupa o resultado de todas as verificações do cluster.
 type StatusReport struct {
-	Nodes   ComponentStatus
-	ArgoCD  ComponentStatus
-	Ingress ComponentStatus
-	KEDA    ComponentStatus
-	Kepler  ComponentStatus
+	// SemCluster indica que a leitura dos nodes falhou: as demais verificações não rodam.
+	SemCluster bool
+	Nodes      ComponentStatus
+	ArgoCD     ComponentStatus
+	Ingress    ComponentStatus
+	KEDA       ComponentStatus
+	Kepler     ComponentStatus
 }
 
 // Service define o contrato para verificação de status do cluster.
@@ -39,12 +44,17 @@ func NewService(inspector ClusterInspector) Service {
 }
 
 // Check executa todas as verificações de status do cluster de forma resiliente.
-// Nenhum erro individual interrompe a verificação; erros são registrados no campo Message.
+// Erros são registrados no campo Message; só a falha nos nodes interrompe a verificação,
+// porque sem acesso ao cluster as demais consultas falhariam pelo mesmo motivo.
 func (s *statusService) Check(ctx context.Context) *StatusReport {
 	report := &StatusReport{}
 
 	// Nodes
 	report.Nodes = s.checkNodes(ctx)
+	if !report.Nodes.Available {
+		report.SemCluster = true
+		return report
+	}
 
 	// Argo CD
 	report.ArgoCD = s.checkArgoCD(ctx)
@@ -67,7 +77,7 @@ func (s *statusService) checkNodes(ctx context.Context) ComponentStatus {
 		return ComponentStatus{
 			Available: false,
 			Output:    out,
-			Message:   "Erro ao obter nodes (Cluster rodando?)",
+			Message:   "sem acesso ao cluster",
 		}
 	}
 	return ComponentStatus{
@@ -81,7 +91,7 @@ func (s *statusService) checkArgoCD(ctx context.Context) ComponentStatus {
 	if err != nil {
 		return ComponentStatus{
 			Available: false,
-			Message:   "Namespace argocd não encontrado ou vazio.",
+			Message:   "namespace argocd não encontrado ou vazio",
 		}
 	}
 	return ComponentStatus{
@@ -95,14 +105,14 @@ func (s *statusService) checkIngresses(ctx context.Context) ComponentStatus {
 	if err != nil {
 		return ComponentStatus{
 			Available: false,
-			Message:   "Erro ao obter ingresses.",
+			Message:   "erro ao obter os ingresses",
 		}
 	}
 	if out == "" {
 		return ComponentStatus{
 			Available: true,
 			Output:    "",
-			Message:   "Nenhum ingress encontrado.",
+			Message:   "nenhum ingress encontrado",
 		}
 	}
 	return ComponentStatus{
@@ -116,14 +126,14 @@ func (s *statusService) checkKEDA(ctx context.Context) ComponentStatus {
 	if err != nil {
 		return ComponentStatus{
 			Available: false,
-			Message:   "KEDA não detectado (CRDs ausentes?)",
+			Message:   "KEDA não detectado · CRDs ausentes?",
 		}
 	}
 	if out == "" {
 		return ComponentStatus{
 			Available: true,
 			Output:    "",
-			Message:   "Nenhum ScaledObject encontrado (KEDA ativo mas sem regras).",
+			Message:   "nenhum ScaledObject · KEDA ativo, sem regras",
 		}
 	}
 	return ComponentStatus{
@@ -137,19 +147,19 @@ func (s *statusService) checkKepler(ctx context.Context) ComponentStatus {
 	if err != nil || out == "" {
 		return ComponentStatus{
 			Available: false,
-			Message:   "Sensor Kepler não encontrado no namespace 'kepler'.",
+			Message:   "sensor Kepler não encontrado no namespace kepler",
 		}
 	}
 	if strings.Contains(out, "Running") {
 		return ComponentStatus{
 			Available: true,
 			Output:    out,
-			Message:   "Sensor Kepler ATIVO e monitorando o cluster.",
+			Message:   MensagemKeplerAtivo,
 		}
 	}
 	return ComponentStatus{
 		Available: true,
 		Output:    out,
-		Message:   "Sensor Kepler instalado mas não está 'Running'.",
+		Message:   "sensor Kepler instalado, mas fora do estado Running",
 	}
 }

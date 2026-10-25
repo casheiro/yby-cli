@@ -1,0 +1,5 @@
+◆ YBY  CLOUD                                   audit · 2 eventos
+
+  DATA E HORA          PROVIDER  AÇÃO          IDENTIDADE                      STATUS
+  2026-10-20 08:15:00  aws       authenticate  arn:aws:iam::123456789012:use…  ✓ ok
+  2026-10-21 14:40:05  gcp       refresh       ana@empresa.com.br              ✕ token expirado, rode gcloud…

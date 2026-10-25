@@ -1,0 +1,6 @@
+* YBY  ENV                                           ativo local
+
+AMBIENTE
+  nome    local
+  tipo    local
+  values  config/values-local.yaml

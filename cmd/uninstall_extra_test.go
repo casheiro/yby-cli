@@ -3,23 +3,32 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/casheiro/yby-cli/pkg/errors"
 )
 
-// saveUninstallMocks salva e restaura as variáveis mockáveis do uninstall.
+// saveUninstallMocks salva e restaura as variáveis mockáveis do uninstall (incluindo o
+// prompter e a flag --yes).
 func saveUninstallMocks(t *testing.T) {
 	t.Helper()
 	origExec := osExecutable
 	origRemove := osRemove
-	origStdin := stdinReader
+	origPrompter := prompter
 	t.Cleanup(func() {
 		osExecutable = origExec
 		osRemove = origRemove
-		stdinReader = origStdin
+		prompter = origPrompter
+		_ = uninstallCmd.Flags().Set("yes", "false")
 	})
+}
+
+// responderUninstall faz o Confirm do uninstall devolver resposta e err.
+func responderUninstall(resposta bool, err error) {
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) { return resposta, err }}
 }
 
 func TestUninstallCmd_ExecutableError(t *testing.T) {
@@ -32,12 +41,9 @@ func TestUninstallCmd_ExecutableError(t *testing.T) {
 		t.Fatal("não deveria chamar Remove quando Executable falha")
 		return nil
 	}
-	stdinReader = strings.NewReader("")
+	responderUninstall(true, nil)
 
-	// Não deve entrar em pânico; apenas imprime o erro e retorna
-	assert.NotPanics(t, func() {
-		_ = uninstallCmd.RunE(uninstallCmd, []string{})
-	})
+	assert.Error(t, uninstallCmd.RunE(uninstallCmd, []string{}))
 }
 
 func TestUninstallCmd_UserCancels(t *testing.T) {
@@ -48,11 +54,9 @@ func TestUninstallCmd_UserCancels(t *testing.T) {
 		t.Fatal("não deveria chamar Remove quando o usuário cancela")
 		return nil
 	}
-	stdinReader = strings.NewReader("n\n")
+	responderUninstall(false, nil)
 
-	assert.NotPanics(t, func() {
-		_ = uninstallCmd.RunE(uninstallCmd, []string{})
-	})
+	assert.NoError(t, uninstallCmd.RunE(uninstallCmd, []string{}))
 }
 
 func TestUninstallCmd_UserConfirmsYes(t *testing.T) {
@@ -72,14 +76,36 @@ func TestUninstallCmd_UserConfirmsYes(t *testing.T) {
 		removeCalled = true
 		return nil
 	}
-	stdinReader = strings.NewReader("y\n")
+	var perguntaPadrao *bool
+	prompter = &mockPrompter{confirmFunc: func(_ string, padrao bool) (bool, error) {
+		perguntaPadrao = &padrao
+		return true, nil
+	}}
 
-	_ = uninstallCmd.RunE(uninstallCmd, []string{})
+	assert.NoError(t, uninstallCmd.RunE(uninstallCmd, []string{}))
 
 	assert.True(t, removeCalled, "osRemove deveria ter sido chamado")
+	require.NotNil(t, perguntaPadrao)
+	assert.False(t, *perguntaPadrao, "a resposta padrão da pergunta é não")
 }
 
-func TestUninstallCmd_UserConfirmsSim(t *testing.T) {
+func TestUninstallCmd_SemTerminal(t *testing.T) {
+	saveUninstallMocks(t)
+
+	osExecutable = func() (string, error) { return "/usr/local/bin/yby", nil }
+	osRemove = func(name string) error {
+		t.Fatal("sem terminal e sem --yes, nada deveria ser removido")
+		return nil
+	}
+	responderUninstall(false, erroSemTerminal())
+
+	err := uninstallCmd.RunE(uninstallCmd, []string{})
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Contains(t, yerr.Hint, "--yes")
+}
+
+func TestUninstallCmd_FlagYes_NaoPergunta(t *testing.T) {
 	saveUninstallMocks(t)
 
 	removeCalled := false
@@ -88,11 +114,14 @@ func TestUninstallCmd_UserConfirmsSim(t *testing.T) {
 		removeCalled = true
 		return nil
 	}
-	stdinReader = strings.NewReader("sim\n")
+	prompter = &mockPrompter{confirmFunc: func(string, bool) (bool, error) {
+		t.Fatal("com --yes não deveria perguntar")
+		return false, nil
+	}}
+	require.NoError(t, uninstallCmd.Flags().Set("yes", "true"))
 
-	_ = uninstallCmd.RunE(uninstallCmd, []string{})
-
-	assert.True(t, removeCalled, "osRemove deveria aceitar 'sim' como confirmação PT-BR")
+	assert.NoError(t, uninstallCmd.RunE(uninstallCmd, []string{}))
+	assert.True(t, removeCalled)
 }
 
 func TestUninstallCmd_RemovePermissionDenied(t *testing.T) {
@@ -102,12 +131,10 @@ func TestUninstallCmd_RemovePermissionDenied(t *testing.T) {
 	osRemove = func(name string) error {
 		return fmt.Errorf("remove %s: permission denied", name)
 	}
-	stdinReader = strings.NewReader("y\n")
+	responderUninstall(true, nil)
 
-	// Não deve entrar em pânico; imprime dica sobre sudo
-	assert.NotPanics(t, func() {
-		_ = uninstallCmd.RunE(uninstallCmd, []string{})
-	})
+	// Deve retornar erro (e imprimir a dica de sudo)
+	assert.Error(t, uninstallCmd.RunE(uninstallCmd, []string{}))
 }
 
 func TestUninstallCmd_RemoveOtherError(t *testing.T) {
@@ -117,44 +144,8 @@ func TestUninstallCmd_RemoveOtherError(t *testing.T) {
 	osRemove = func(name string) error {
 		return fmt.Errorf("erro desconhecido ao remover arquivo")
 	}
-	stdinReader = strings.NewReader("y\n")
+	responderUninstall(true, nil)
 
-	// Não deve entrar em pânico; imprime o erro sem dica de sudo
-	assert.NotPanics(t, func() {
-		_ = uninstallCmd.RunE(uninstallCmd, []string{})
-	})
-}
-
-func TestUninstallCmd_UserConfirmsS(t *testing.T) {
-	saveUninstallMocks(t)
-
-	removeCalled := false
-	osExecutable = func() (string, error) { return "/usr/local/bin/yby", nil }
-	osRemove = func(name string) error {
-		removeCalled = true
-		return nil
-	}
-	// Testa a resposta "s" (atalho PT-BR)
-	stdinReader = strings.NewReader("s\n")
-
-	_ = uninstallCmd.RunE(uninstallCmd, []string{})
-
-	assert.True(t, removeCalled, "osRemove deveria aceitar 's' como confirmação")
-}
-
-func TestUninstallCmd_UserConfirmsYES_CaseInsensitive(t *testing.T) {
-	saveUninstallMocks(t)
-
-	removeCalled := false
-	osExecutable = func() (string, error) { return "/usr/local/bin/yby", nil }
-	osRemove = func(name string) error {
-		removeCalled = true
-		return nil
-	}
-	// Testa maiúsculo — o código faz ToLower
-	stdinReader = strings.NewReader("YES\n")
-
-	_ = uninstallCmd.RunE(uninstallCmd, []string{})
-
-	assert.True(t, removeCalled, "osRemove deveria aceitar 'YES' (case insensitive)")
+	// imprime o erro sem dica de sudo
+	assert.Error(t, uninstallCmd.RunE(uninstallCmd, []string{}))
 }

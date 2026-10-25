@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -255,4 +256,59 @@ func TestEnvCheckCmd_SemManifesto(t *testing.T) {
 
 	err := envCheckCmd.RunE(envCheckCmd, []string{})
 	assert.Error(t, err)
+}
+
+func TestEnvCreateCmd_SemNome_PerguntaPeloPrompter(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "config"), 0755))
+
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	prompter = &mockPrompter{inputFunc: func(string, string) (string, error) { return " uat ", nil }}
+
+	assert.NoError(t, envCreateCmd.RunE(envCreateCmd, []string{}))
+	assert.FileExists(t, filepath.Join(dir, "config", "values-uat.yaml"))
+}
+
+func TestEnvCreateCmd_SemNome_SemTerminal(t *testing.T) {
+	dir := setupEnvTestDir(t)
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	prompter = &mockPrompter{inputFunc: func(string, string) (string, error) { return "", erroSemTerminal() }}
+
+	err := envCreateCmd.RunE(envCreateCmd, []string{})
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "informe o nome: yby env create <nome>", yerr.Hint)
+
+	prompter = &mockPrompter{inputFunc: func(string, string) (string, error) { return "  ", nil }}
+	err = envCreateCmd.RunE(envCreateCmd, []string{})
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, "nome do ambiente vazio", yerr.Message)
+}
+
+func TestEnvCreateCmd_SemProjeto_NaoPergunta(t *testing.T) {
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(t.TempDir())
+
+	oldPrompter := prompter
+	defer func() { prompter = oldPrompter }()
+	prompter = &mockPrompter{inputFunc: func(string, string) (string, error) {
+		t.Fatal("sem projeto não deveria perguntar o nome")
+		return "", nil
+	}}
+
+	err := envCreateCmd.RunE(envCreateCmd, []string{})
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, errors.ErrCodeConfig, yerr.Code)
+	assert.Equal(t, "entre na pasta do projeto ou crie um com yby init", yerr.Hint)
 }

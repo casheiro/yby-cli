@@ -1,0 +1,3 @@
+
+✕ plugin 'bard' não encontrado              ERR_PLUGIN_NOT_FOUND
+  faça      instale-o primeiro com yby plugin install bard

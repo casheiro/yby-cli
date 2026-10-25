@@ -35,4 +35,7 @@ type UpOptions struct {
 	ClusterName  string
 	Namespace    string
 	PlainSecrets bool
+	// SyncPeloChamador deixa o auto-sync (Mirror.StartSyncLoop) por conta de quem chama,
+	// para ele começar depois do que o comando ainda escreve na tela.
+	SyncPeloChamador bool
 }

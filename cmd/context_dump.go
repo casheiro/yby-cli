@@ -4,11 +4,12 @@ Copyright © 2025 Yby Team
 package cmd
 
 import (
-	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -19,40 +20,44 @@ var contextDumpCmd = &cobra.Command{
 	Long: `Mostra as variáveis de ambiente que foram injetadas pelo Motor de Contextos.
 Útil para debugar se o .env correto está sendo carregado.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		env := os.Getenv("YBY_ENV")
-		if env == "" {
-			env = "padrão (local se configurado ou simples)"
-		}
-
-		fmt.Println(headerStyle.Render(fmt.Sprintf("🔍 Contexto Atual: %s", env)))
-		fmt.Println("------------------------------------------------")
-
-		// List interesting vars (YBY_*)
-		vars := os.Environ()
-		sort.Strings(vars)
-
-		found := false
-		for _, v := range vars {
-			if strings.HasPrefix(v, "YBY_") {
-				parts := strings.SplitN(v, "=", 2)
-				key := parts[0]
-				val := parts[1]
-				// Obfuscate potential secrets if needed, but for now show raw
-				fmt.Printf("%s: %s\n", key, val)
-				found = true
-			}
-		}
-
-		if !found {
-			fmt.Println("ℹ️  Nenhuma variável YBY_* encontrada no ambiente.")
-		}
-
-		fmt.Println("------------------------------------------------")
-		fmt.Println("Legenda:")
-		fmt.Println("  YBY_ENV          -> Define o modo (local, staging, prod)")
-		fmt.Println("  YBY_GIT_REPOURL  -> Injetado em git.repoURL")
-		fmt.Println("  YBY_K3D_AGENTS   -> Configura cluster local")
+		renderContextDump(cmd.OutOrStdout(), os.Environ())
 	},
+}
+
+// renderContextDump escreve o contexto atual (YBY_ENV) e as variáveis YBY_* de environ,
+// em ordem alfabética, seguidas da legenda das principais.
+func renderContextDump(w io.Writer, environ []string) {
+	vars := append([]string(nil), environ...)
+	sort.Strings(vars)
+
+	env := "padrão"
+	var campos []ui.Campo
+	for _, v := range vars {
+		if !strings.HasPrefix(v, "YBY_") {
+			continue
+		}
+		key, val, _ := strings.Cut(v, "=")
+		if key == "YBY_ENV" && val != "" {
+			env = val
+		}
+		// Obfuscate potential secrets if needed, but for now show raw
+		campos = append(campos, ui.Campo{Rotulo: key, Valor: val})
+	}
+
+	ui.Title(w, "env", "dump · "+env)
+	ui.Section(w, "variáveis YBY_*")
+	if len(campos) == 0 {
+		ui.Check(w, ui.CheckNeutro, "nenhuma variável YBY_* no ambiente", "", "")
+	} else {
+		ui.Campos(w, campos...)
+	}
+
+	ui.Section(w, "legenda")
+	ui.Campos(w,
+		ui.Campo{Rotulo: "YBY_ENV", Valor: "define o modo (local, staging, prod); sem ele, local se configurado"},
+		ui.Campo{Rotulo: "YBY_GIT_REPOURL", Valor: "injetado em git.repoURL"},
+		ui.Campo{Rotulo: "YBY_K3D_AGENTS", Valor: "configura o cluster local"},
+	)
 }
 
 func init() {

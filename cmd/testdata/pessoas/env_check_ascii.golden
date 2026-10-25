@@ -1,0 +1,4 @@
+* YBY  ENV                                                 check
+
+  ! ambiente 'prod': arquivo de values 'config/values-prod.yaml' não encontrado
+  ! ambiente 'staging': arquivo de values 'config/values-staging.yaml' não encontrado

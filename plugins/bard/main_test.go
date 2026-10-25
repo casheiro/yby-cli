@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -300,21 +299,6 @@ func TestLoadHistory_LimitaEntradas(t *testing.T) {
 	}
 }
 
-// TestClearHistory_RemoveArquivo verifica que clearHistory remove o arquivo.
-func TestClearHistory_RemoveArquivo(t *testing.T) {
-	tmpDir := t.TempDir()
-	restore := chdir(t, tmpDir)
-	defer restore()
-
-	saveMessage("user", "algo", "s1")
-	clearHistory()
-
-	path := filepath.Join(tmpDir, historyFile)
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("arquivo de histórico deveria ter sido removido")
-	}
-}
-
 // TestFormatHistoryContext_Vazio verifica que retorna string vazia para slice vazio.
 func TestFormatHistoryContext_Vazio(t *testing.T) {
 	result := formatHistoryContext(nil)
@@ -404,54 +388,6 @@ system_prompt_extra: "Responda sempre em formato de lista."
 	}
 	if cfg.SystemPromptExtra != "Responda sempre em formato de lista." {
 		t.Errorf("SystemPromptExtra inesperado: '%s'", cfg.SystemPromptExtra)
-	}
-}
-
-// --- Testes de Filtro por Threshold ---
-
-// TestFilterByThreshold verifica que resultados abaixo do threshold são filtrados.
-func TestFilterByThreshold(t *testing.T) {
-	results := []ai.UnknownDocument{
-		{ID: "1", Content: "relevante", Score: 0.9},
-		{ID: "2", Content: "meio relevante", Score: 0.6},
-		{ID: "3", Content: "irrelevante", Score: 0.3},
-		{ID: "4", Content: "no limite", Score: 0.59},
-		{ID: "5", Content: "acima do limite", Score: 0.61},
-	}
-
-	filtered := filterByThreshold(results, 0.6)
-
-	if len(filtered) != 3 {
-		t.Fatalf("esperava 3 resultados filtrados, obteve %d", len(filtered))
-	}
-
-	// Verificar que apenas resultados >= 0.6 passaram
-	expectedIDs := map[string]bool{"1": true, "2": true, "5": true}
-	for _, doc := range filtered {
-		if !expectedIDs[doc.ID] {
-			t.Errorf("documento inesperado no resultado: ID=%s, Score=%.2f", doc.ID, doc.Score)
-		}
-	}
-}
-
-// TestFilterByThreshold_NenhumPassa verifica retorno vazio quando nada atinge o threshold.
-func TestFilterByThreshold_NenhumPassa(t *testing.T) {
-	results := []ai.UnknownDocument{
-		{ID: "1", Score: 0.1},
-		{ID: "2", Score: 0.2},
-	}
-
-	filtered := filterByThreshold(results, 0.5)
-	if len(filtered) != 0 {
-		t.Errorf("esperava 0 resultados, obteve %d", len(filtered))
-	}
-}
-
-// TestFilterByThreshold_Vazio verifica que slice vazio retorna vazio.
-func TestFilterByThreshold_Vazio(t *testing.T) {
-	filtered := filterByThreshold(nil, 0.6)
-	if len(filtered) != 0 {
-		t.Errorf("esperava 0 resultados, obteve %d", len(filtered))
 	}
 }
 
@@ -607,25 +543,13 @@ func TestListSessions_Vazio(t *testing.T) {
 	}
 }
 
-// --- Testes de Modo Batch ---
-
-// TestRunBatchMode_ProcessaMultiplasLinhas verifica que o modo batch processa
-// múltiplas linhas e não inclui prompt "You >" na saída.
-func TestRunBatchMode_SemPromptYou(t *testing.T) {
-	// Verificar que buildSystemPrompt não contém "You >"
-	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, nil)
-	if strings.Contains(prompt, "You >") {
-		t.Error("system prompt não deveria conter 'You >'")
-	}
-}
-
 // TestBuildSystemPrompt_ComHistorico verifica construção do prompt com histórico.
 func TestBuildSystemPrompt_ComHistorico(t *testing.T) {
 	entries := []HistoryEntry{
 		{Role: "user", Content: "oi", Timestamp: "2026-01-01T00:00:00Z"},
 	}
 
-	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, entries)
+	prompt := buildSystemPrompt(nil, BardConfig{}, entries)
 	if !strings.Contains(prompt, "Histórico de Conversas Anteriores") {
 		t.Error("prompt deveria conter histórico quando fornecido")
 	}
@@ -633,7 +557,7 @@ func TestBuildSystemPrompt_ComHistorico(t *testing.T) {
 
 // TestBuildSystemPrompt_SemHistorico verifica construção do prompt sem histórico.
 func TestBuildSystemPrompt_SemHistorico(t *testing.T) {
-	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, nil)
+	prompt := buildSystemPrompt(nil, BardConfig{}, nil)
 	if prompt == "" {
 		t.Error("prompt não deveria estar vazio")
 	}

@@ -72,6 +72,7 @@ func TestInstallFromURL_BinarioRaw(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	// Servidor que retorna binário cru
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +100,7 @@ func TestInstallFromURL_BinarioRawSemPrefixoPlugin(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	// Binário sem prefixo yby-plugin- (deve instalar com aviso)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +122,7 @@ func TestInstallFromURL_TarGzComBinario(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	tarData := makeTarGzWithBinary(t, "yby-plugin-fromtar", "#!/bin/sh\necho tar")
 
@@ -143,6 +146,7 @@ func TestInstallFromURL_TarGzSemBinarioPluginPrefix(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	// tar.gz contendo arquivo sem prefixo yby-plugin-
 	tarData := makeTarGzWithBinary(t, "outro-binario", "content")
@@ -163,6 +167,7 @@ func TestInstallFromURL_TarGzVazio(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	tarData := makeTarGzEmpty(t)
 
@@ -214,6 +219,7 @@ func TestInstallFromURL_TarGzCorrempido(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -231,6 +237,7 @@ func TestInstallFromURL_URLComQueryParams(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -256,6 +263,7 @@ func TestInstallNative_Sucesso(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	pluginName := "testplugin"
 	binaryName := fmt.Sprintf("yby-plugin-%s", pluginName)
@@ -296,6 +304,7 @@ func TestInstallNative_VersaoSemPrefixoV(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-atlas"
 	tarData := makeTarGzWithBinary(t, binaryName, "bin content")
@@ -323,6 +332,7 @@ func TestInstallNative_VersaoJaComPrefixoV(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-bard"
 	tarData := makeTarGzWithBinary(t, binaryName, "bin content")
@@ -368,6 +378,7 @@ func TestInstallNative_BinarioNaoEncontradoNoTar(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	// tar.gz com binário de nome diferente do esperado
 	tarData := makeTarGzWithBinary(t, "outro-nome-binario", "content")
@@ -390,6 +401,7 @@ func TestInstallNative_TarGzCorrompido(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -409,6 +421,7 @@ func TestInstallNative_FormatoFilename(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
@@ -470,6 +483,9 @@ func TestExecuteCommandHook_PluginEncontrado_ComScript(t *testing.T) {
 }
 
 func TestExecuteCommandHook_PluginFalha(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("o plugin falso é um script sh, que o Windows não executa")
+	}
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 
@@ -486,8 +502,11 @@ func TestExecuteCommandHook_PluginFalha(t *testing.T) {
 	}
 
 	err := m.ExecuteCommandHook("falha", []string{})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "execução interativa do plugin falhou")
+	// o plugin já mostrou o próprio erro: o core só repassa o código de saída
+	var saida *SaidaDoPlugin
+	require.ErrorAs(t, err, &saida)
+	assert.Equal(t, 1, saida.Codigo)
+	assert.Contains(t, err.Error(), "o plugin saiu com o código 1")
 }
 
 func TestExecuteCommandHook_ComContextoDeAmbiente(t *testing.T) {
@@ -536,6 +555,7 @@ func TestInstall_HTTPURL_ChegaEmInstallFromURL(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -568,6 +588,7 @@ func TestInstall_HTTPSURL_ChegaEmInstallFromURL(t *testing.T) {
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	m := NewManager()
 	err := m.Install(srv.URL+"/yby-plugin-https", "", true)
@@ -581,6 +602,7 @@ func TestInstall_HTTPSURL_ChegaEmInstallFromURL(t *testing.T) {
 func TestInstall_FileProtocol_Sucesso_ComForce(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srcPath := filepath.Join(tmp, "yby-plugin-filetest")
 	os.WriteFile(srcPath, []byte("#!/bin/sh\necho file"), 0755)
@@ -598,6 +620,7 @@ func TestInstall_FileProtocol_Sucesso_ComForce(t *testing.T) {
 func TestInstall_LocalFile_ComPluginDuplicadoSemForce(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	srcPath := filepath.Join(tmp, "yby-plugin-dup2")
 	os.WriteFile(srcPath, []byte("binary"), 0755)
@@ -620,6 +643,7 @@ func TestInstall_PluginNativoLatest_JaInstalado_SemForce(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-atlas"
 	tarData := makeTarGzWithBinary(t, binaryName, "binary")
@@ -647,6 +671,7 @@ func TestInstall_PluginNativoVersaoDiferente_SemForce(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	binaryName := "yby-plugin-bard"
 	tarData := makeTarGzWithBinary(t, binaryName, "binary")
@@ -733,6 +758,7 @@ func TestExecuteContextHook_DataNaoMap(t *testing.T) {
 func TestRemove_SucessoComDiscover(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	pluginDir := filepath.Join(tmp, ".yby", "plugins")
 	os.MkdirAll(pluginDir, 0755)

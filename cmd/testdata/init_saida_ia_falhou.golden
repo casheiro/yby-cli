@@ -1,0 +1,20 @@
+◆ YBY  INIT                                          24/10 09:30
+
+PROJETO
+  ✓ nome          loja
+  ✓ destino       infra
+  ✓ topologia     standard       local · prod
+  ✓ workflow      gitflow
+  ✓ ambiente      local          a topologia standard não tem dev
+
+ARQUIVOS
+  ✓ scaffold      gerado
+  ▲ ia            gemini         falhou, ficam os templates: cota esgotada
+  ✓ local         values         infra/config/values-local.yaml
+  ✓ prod          values         infra/config/values-prod.yaml
+  ✓ manifest      salvo          infra/.yby/project.yaml
+
+VALIDAÇÃO
+  ✓ charts        2 válidos
+
+RESUMO  10 ok · 1 aviso · 0 erros  · próximo passo: yby env list

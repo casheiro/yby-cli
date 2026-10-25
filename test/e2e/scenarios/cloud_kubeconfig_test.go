@@ -216,6 +216,7 @@ users:
 	t.Setenv("KUBECONFIG", kubeconfigPath)
 	// Neutraliza fallback para ~/.kube/config
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	// MockRunner que simula AWS CLI instalado
 	runner := &testutil.MockRunner{

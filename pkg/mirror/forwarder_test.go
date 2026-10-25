@@ -71,7 +71,7 @@ func TestSetupTunnel_FalhaCriarPortForwarder(t *testing.T) {
 
 	err := m.SetupTunnel(ctx)
 	assert.Error(t, err, "deve falhar quando kubeconfig não está disponível")
-	assert.Contains(t, err.Error(), "port forwarder")
+	assert.Contains(t, err.Error(), "túnel até o git server")
 }
 
 func TestSync_VerificaURLRemota(t *testing.T) {
@@ -101,7 +101,7 @@ func TestSync_PropagaErroGitPush(t *testing.T) {
 
 	err := m.Sync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "git push failed")
+	assert.Contains(t, err.Error(), "o git push para o git server falhou")
 }
 
 func TestStartSyncLoop_CancelaAposSyncInicial(t *testing.T) {

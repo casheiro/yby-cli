@@ -9,6 +9,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/casheiro/yby-cli/pkg/templates"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +24,6 @@ var chartCreateCmd = &cobra.Command{
 		if len(args) > 1 {
 			targetDir = args[1] // generic support
 		}
-
-		fmt.Printf("📦 Criando chart '%s'...\n", name)
 
 		// Tenta carregar contexto do ProjectManifest; usa defaults se não encontrar
 		domain := "yby.local"
@@ -50,7 +49,8 @@ var chartCreateCmd = &cobra.Command{
 
 		dest := filepath.Join(targetDir, "charts", name)
 		if _, err := os.Stat(dest); !os.IsNotExist(err) {
-			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("❌ Diretório %s já existe", dest))
+			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("diretório %s já existe", filepath.ToSlash(dest))).
+				WithHint("escolha outro nome ou apague o diretório antes")
 		}
 
 		// Ensure charts dir
@@ -59,10 +59,13 @@ var chartCreateCmd = &cobra.Command{
 		// Manual Walk and Render
 		err := scaffold.RenderEmbedDir(templates.Assets, "assets/charts/app-template", dest, ctx)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeScaffold, "Erro ao criar chart")
+			return errors.Wrap(err, errors.ErrCodeScaffold, "falha ao criar o chart").
+				WithHint("confira se a pasta de destino pode ser gravada")
 		}
 
-		fmt.Printf("✅ Chart '%s' criado em ./charts/%s\n", name, name)
+		w := cmd.OutOrStdout()
+		tituloComando(w, "chart", "create")
+		checksAlinhados(w, linhaCheck{ui.CheckOk, name, "criado", filepath.ToSlash(dest)})
 		return nil
 	},
 }

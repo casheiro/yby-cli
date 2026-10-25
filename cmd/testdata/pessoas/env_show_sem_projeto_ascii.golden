@@ -1,0 +1,5 @@
+
+x falha ao obter detalhes do ambiente ativo   ERR_CONFIG_INVALID
+  causa     arquivo de ambientes não encontrado (<manifesto>). Execute 'yby init' primeiro
+  faça      entre na pasta do projeto ou escolha um ambiente com yby env use <nome>
+  detalhes  rode de novo com --log-level=debug

@@ -1,0 +1,5 @@
+
+✕ falha ao criar diretório de saída              ERR_EXEC_FAILED
+  causa     <erro do sistema>
+  faça      confira o caminho e a permissão de escrita em <raiz>/wiki
+  detalhes  rode de novo com --log-level=debug

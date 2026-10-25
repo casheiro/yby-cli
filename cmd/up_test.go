@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,7 +12,7 @@ func TestRunRemoteUp_Success(t *testing.T) {
 	teardown := mockLookPath()
 	defer teardown()
 
-	err := runRemoteUp(context.Background(), "prod")
+	err := runRemoteUp(context.Background(), io.Discard, "prod")
 	assert.NoError(t, err)
 }
 
@@ -19,7 +20,7 @@ func TestRunRemoteUp_DevEnv(t *testing.T) {
 	teardown := mockLookPath()
 	defer teardown()
 
-	err := runRemoteUp(context.Background(), "staging")
+	err := runRemoteUp(context.Background(), io.Discard, "staging")
 	assert.NoError(t, err)
 }
 

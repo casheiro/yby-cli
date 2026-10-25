@@ -1,0 +1,5 @@
+
+[38;2;217;131;97m✕[0m [1;38;2;221;208;181mfalha ao definir ambiente ativo[0m             [38;2;161;147;121mERR_CONFIG_INVALID[0m
+  [38;2;161;147;121mcausa     [0m[38;2;221;208;181mambiente 'qa' não existe[0m
+  [38;2;161;147;121mfaça      [0m[1;38;2;221;208;181mveja os ambientes com yby env list[0m
+  [38;2;161;147;121mdetalhes  [0m[38;2;161;147;121mrode de novo com --log-level=debug[0m

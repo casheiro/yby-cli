@@ -15,17 +15,17 @@ tasks:
   build:
     desc: Build all binaries
     cmds:
-      - go build -o bin/yby ./cmd/yby
-      - go build -o bin/yby-plugin-atlas ./plugins/atlas
-      - go build -o bin/yby-plugin-bard ./plugins/bard
-      - go build -tags k8s -o bin/yby-plugin-sentinel ./plugins/sentinel/cli
-      - go build -C ./plugins/synapstor -o ../../bin/yby-plugin-synapstor .
-      - go build -C ./plugins/viz -o ../../bin/yby-plugin-viz .
+      - go build -o bin/yby{{exeExt}} ./cmd/yby
+      - go build -o bin/yby-plugin-atlas{{exeExt}} ./plugins/atlas
+      - go build -o bin/yby-plugin-bard{{exeExt}} ./plugins/bard
+      - go build -tags k8s -o bin/yby-plugin-sentinel{{exeExt}} ./plugins/sentinel/cli
+      - go build -C ./plugins/synapstor -o ../../bin/yby-plugin-synapstor{{exeExt}} .
+      - go build -C ./plugins/viz -o ../../bin/yby-plugin-viz{{exeExt}} .
 
   build:cloud:
     desc: Build cloud variant with AWS/Azure/GCP SDK support
     cmds:
-      - go build -tags "aws,azure,gcp" -o bin/yby-cloud ./cmd/yby
+      - go build -tags "aws,azure,gcp" -o bin/yby-cloud{{exeExt}} ./cmd/yby
 
   test:
     desc: Run unit tests (default)

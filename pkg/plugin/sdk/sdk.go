@@ -3,6 +3,7 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -67,7 +68,8 @@ func Init() error {
 		// Note: Full reload would require importing pkg/context which could create
 		// circular dependencies. For now, we log a warning.
 		// A full implementation would reload the context from .yby/environments.yaml
-		fmt.Fprintf(os.Stderr, "⚠️  SDK: Context override detected (-c %s) but full reload not implemented. Using context from CLI.\n", requestedEnv)
+		slog.Warn("SDK: troca de contexto pedida, mas o recarregamento não está implementado; usando o contexto vindo da CLI",
+			"pedido", requestedEnv, "atual", currentContext.Environment)
 	}
 
 	return nil

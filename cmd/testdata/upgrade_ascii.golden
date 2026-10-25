@@ -1,0 +1,9 @@
+* YBY  UPGRADE                                       linux/amd64
+  o instalada   v5.6.0
+  ! disponível  v5.6.1
+
+  v download   yby_v5.6.1_linux_amd64.tar.gz               2,4 s
+  v checksum   sha256 confere
+  v instalação   /usr/local/bin/yby                        0,2 s
+
+  v atualizado para v5.6.1

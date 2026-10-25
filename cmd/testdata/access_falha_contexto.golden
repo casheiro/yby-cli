@@ -1,0 +1,6 @@
+◆ YBY  ACCESS                                        24/10 09:30
+
+✕ falha ao abrir os túneis                       ERR_EXEC_FAILED
+  causa     falha ao detectar o contexto atual: current-context is not set
+  faça      confira o contexto do kubeconfig com yby doctor ou escolha um com --context
+  detalhes  rode de novo com --log-level=debug

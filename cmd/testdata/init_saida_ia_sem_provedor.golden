@@ -1,0 +1,22 @@
+◆ YBY  INIT                                          24/10 09:30
+
+PROJETO
+  ✓ nome          loja
+  ✓ destino       infra
+  ✓ topologia     standard       local · prod
+  ✓ workflow      gitflow
+  ✓ ambiente      local          a topologia standard não tem dev
+  ▲ plugins       não lidos      diretório de plugins ilegível
+
+ARQUIVOS
+  ✓ scaffold      gerado
+  ▲ ia            sem provedor   suba o Ollama ou defina GEMINI_API_KEY ou OPENAI_API_KEY
+  ✓ local         values         infra/config/values-local.yaml
+  ✓ prod          values         infra/config/values-prod.yaml
+  ✓ manifest      salvo          infra/.yby/project.yaml
+
+VALIDAÇÃO
+  ▲ charts        não validados  helm não encontrado
+  ○ yby validate mostra os detalhes
+
+RESUMO  9 ok · 3 avisos · 0 erros  · próximo passo: yby env list

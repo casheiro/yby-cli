@@ -1,0 +1,7 @@
+* YBY  CLOUD                                   list · 2 clusters
+
+  NOME      PROVIDER  REGIÃO     VERSÃO K8S  STATUS
+  prod-eks  aws       us-east-1  1.29        ACTIVE
+  dev-eks   aws       us-east-1  -           CREATING
+
+  ! gcp         falhou    gcloud: projeto não configurado

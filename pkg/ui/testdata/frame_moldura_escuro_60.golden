@@ -1,0 +1,24 @@
+[1;38;2;221;208;181m◆ YBY  VIZ[0m              [38;2;161;147;121mstaging[0m[38;2;161;147;121m ▸ [0m[38;2;221;208;181mpayments[0m   [38;2;167;188;113m● ao vivo · 2 s[0m
+[38;2;73;65;50m────────────────────────────────────────────────────────────[0m
+1 Pods · 2 Deploy… · 3 Stateful… · 4 Svc                    
+[38;2;221;208;181mPod payments-api-03[0m                                         
+[38;2;221;208;181mNamespace: payments[0m                                         
+[38;2;221;208;181mNode: ip-10-0-1-23[0m                                          
+[38;2;221;208;181mStatus: Running[0m                                             
+[38;2;221;208;181mReinícios: 0[0m                                                
+[38;2;73;65;50m────────────────────────────────────────────────────────────[0m
+payments-api-01  Running  1/1  3m                           
+payments-api-02  Running  1/1  6m                           
+payments-api-03  Running  1/1  9m                           
+payments-api-04  Running  1/1  12m                          
+payments-api-05  Running  1/1  15m                          
+payments-api-06  Running  1/1  18m                          
+payments-api-07  Running  1/1  21m                          
+payments-api-08  Running  1/1  24m                          
+payments-api-09  Running  1/1  27m                          
+payments-api-10  Running  1/1  30m                          
+payments-api-11  Running  1/1  33m                          
+payments-api-12  Running  1/1  36m                          
+[38;2;73;65;50m────────────────────────────────────────────────────────────[0m
+[38;2;167;188;113m✓[0m 30 pods carregados                     [38;2;161;147;121matualizado 14:07:09[0m
+[1;38;2;221;208;181m↑/k[0m [38;2;161;147;121msubir[0m  [1;38;2;221;208;181m↵[0m [38;2;161;147;121mabrir[0m  [1;38;2;221;208;181m/[0m [38;2;161;147;121mbuscar[0m  [1;38;2;221;208;181m?[0m [38;2;161;147;121mmais[0m                  [1;38;2;221;208;181mq[0m [38;2;161;147;121msair[0m

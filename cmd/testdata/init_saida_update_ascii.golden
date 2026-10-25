@@ -1,0 +1,16 @@
+* YBY  INIT                                          24/10 09:30
+
+PROJETO
+  v nome          loja
+  v destino       .
+  v topologia     single         local
+  v workflow      essential
+  v ambiente      local          a topologia single não tem dev
+  v manifest      anterior       configurações carregadas como base
+
+PLANO DE MERGE
+  o sem mudança   2 arquivos
+  v novos         1 arquivo
+  v manifest      salvo          .yby/project.yaml
+
+RESUMO  8 ok · 0 avisos · 0 erros  · scaffold atualizado

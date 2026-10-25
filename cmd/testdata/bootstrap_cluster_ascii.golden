@@ -1,0 +1,7 @@
+* YBY  BOOTSTRAP CLUSTER                             24/10 09:30
+  v argo cd   argo-cd 5.51.6                          1 min 24 s
+  v secrets   sealed-secrets
+  v root-app   aplicada                                    1,1 s
+
+  v stack GitOps instalada
+  o yby access abre os dashboards

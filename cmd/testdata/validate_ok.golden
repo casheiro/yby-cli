@@ -1,0 +1,12 @@
+
+DEPENDÊNCIAS
+  ✓ charts/system
+  ✓ charts/bootstrap
+
+HELM LINT
+  ✓ charts/system
+  ✓ charts/bootstrap
+
+TEMPLATE · SIMULAÇÃO
+  ✓ charts/system
+  ✓ charts/bootstrap
