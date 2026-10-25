@@ -20,7 +20,8 @@ import (
 // provedorFalso responde a classificação com intencao e escreve trechos no
 // StreamCompletion. As primeiras chamadas podem falhar com falhas[i], depois
 // de escrever parcialPorFalha. Com travar, escreve o primeiro trecho e espera
-// o cancelamento (ou, com ignorarCtx, espera para sempre).
+// o cancelamento (ou, com ignorarCtx, espera para sempre); cancelado, se dado,
+// fecha quando o cancelamento chega.
 type provedorFalso struct {
 	intencao        string
 	trechos         []string
@@ -29,10 +30,11 @@ type provedorFalso struct {
 	travar          bool
 	ignorarCtx      bool
 
-	mu       sync.Mutex
-	chamadas int
-	entradas []string
-	liberar  chan struct{}
+	mu        sync.Mutex
+	chamadas  int
+	entradas  []string
+	liberar   chan struct{}
+	cancelado chan struct{}
 }
 
 func (p *provedorFalso) Name() string                       { return "falso" }
@@ -76,6 +78,9 @@ func (p *provedorFalso) StreamCompletion(ctx context.Context, _, userPrompt stri
 				return nil
 			}
 			<-ctx.Done()
+			if p.cancelado != nil {
+				close(p.cancelado)
+			}
 			return ctx.Err()
 		}
 	}

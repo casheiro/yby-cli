@@ -149,9 +149,15 @@ func TestCampo(t *testing.T) {
 	if len(linhas) != alturaCampo || !strings.HasPrefix(linhas[0], "› qual pod reinicia?") || strings.HasPrefix(linhas[1], "›") {
 		t.Errorf("campo com texto: o prompt só na primeira linha: %q", linhas)
 	}
+	// Durante a resposta o campo guarda a próxima pergunta; vazio, mostra a dica da
+	// prancha "trabalhando".
 	m.state = stateStreaming
-	if got := strings.Split(m.campo(), "\n")[0]; got != "›" {
-		t.Errorf("campo durante a resposta: %q", got)
+	if got := strings.Split(m.campo(), "\n")[0]; !strings.HasPrefix(got, "› qual pod reinicia?") {
+		t.Errorf("campo com texto durante a resposta: %q", got)
+	}
+	m.textarea.Reset()
+	if got := strings.Split(m.campo(), "\n")[0]; got != "› a próxima pergunta pode ser escrita enquanto o Bard responde" {
+		t.Errorf("campo vazio durante a resposta: %q", got)
 	}
 }
 
@@ -161,20 +167,30 @@ func TestTeclas(t *testing.T) {
 	legenda := func() string {
 		return ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
 	}
-	// Só as teclas que já funcionam: ⇧↵ e ↑ (T013), / e ? (T015) ficam de fora.
+	// Só as teclas que já funcionam: / e ? (T015) ficam de fora.
 	semPendentes := func(got string) bool {
-		for _, k := range []string{"⇧↵", "/ comandos", "↑", "? ajuda"} {
+		for _, k := range []string{"/ comandos", "? ajuda"} {
 			if strings.Contains(got, k) {
 				return false
 			}
 		}
 		return true
 	}
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar   ") || !semPendentes(got) {
+	// Sem pergunta feita, ↑ não tem o que editar.
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha   ") || strings.Contains(got, "↑") || !semPendentes(got) {
 		t.Errorf("legenda ociosa: %q", got)
 	}
+	m.messages = append(m.messages, chatMessage{role: "user", content: "oi"})
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  ↑ editar última   ") {
+		t.Errorf("legenda com pergunta para editar: %q", got)
+	}
+	m.textarea.SetValue("rascunho")
+	if got := legenda(); strings.Contains(got, "↑") {
+		t.Errorf("com texto no campo, ↑ move o cursor: %q", got)
+	}
+	m.textarea.Reset()
 	m.state = stateStreaming
-	if got := legenda(); !strings.HasPrefix(got, "esc interromper   ") || !semPendentes(got) {
+	if got := legenda(); !strings.HasPrefix(got, "esc interromper   ") || strings.Contains(got, "↑") || !semPendentes(got) {
 		t.Errorf("legenda durante a resposta: %q", got)
 	}
 	// Com a conversa maior que a tela, pgup aparece.

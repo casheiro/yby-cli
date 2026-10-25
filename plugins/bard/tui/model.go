@@ -12,6 +12,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,8 +21,12 @@ import (
 // maxToolIterations limita o número de iterações de tool calling.
 const maxToolIterations = 5
 
-// alturaCampo é a altura do campo de texto: a linha do prompt e uma para a quebra.
-const alturaCampo = 2
+// alturaCampo é a altura mínima do campo de texto: a linha do prompt e uma para a
+// quebra. A cada nova linha (ctrl+j) o campo cresce uma linha, até alturaMaxCampo.
+const (
+	alturaCampo    = 2
+	alturaMaxCampo = 6
+)
 
 // state representa o estado atual da TUI.
 type state int
@@ -69,6 +74,15 @@ type Model struct {
 	historico        string
 	historicoN       int
 	historicoLargura int
+	historicoLinhas  int   // linhas do histórico renderizado
+	inicios          []int // linha em que começa cada mensagem do histórico
+
+	// lidas conta as mensagens que já passaram pela tela: todas as da última vez que
+	// a conversa esteve no fim. As de depois que ainda começam abaixo da janela são
+	// as mensagens novas. parcialVisto é o tamanho da resposta em andamento naquela
+	// vez: ela só é nova se chegou texto depois.
+	lidas        int
+	parcialVisto int
 
 	// Rodada em andamento: eventos do fluxo, cancelamento (esc) e o que já chegou.
 	fluxo         *Fluxo
@@ -121,7 +135,9 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 	ta.SetHeight(alturaCampo)
 	ta.Focus()
 
+	// O histórico rola só com pgup/pgdn e a roda do mouse: as letras são do campo.
 	vp := viewport.New(80, 20)
+	vp.KeyMap = viewport.KeyMap{PageUp: ui.DefaultKeys().Texto.RolarCima, PageDown: ui.DefaultKeys().Texto.RolarBaixo}
 	vp.SetContent("")
 
 	md := &markdownCache{}
@@ -145,62 +161,29 @@ func (m Model) Init() tea.Cmd {
 
 // Update processa mensagens do Bubbletea.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC:
-			if m.cancelar != nil {
-				m.cancelar()
-			}
-			return m, tea.Quit
+		return m.teclar(msg)
 
-		case tea.KeyEsc:
-			// esc interrompe a resposta em andamento sem fechar o Bard; o
-			// FimMsg da rodada é que devolve o estado ocioso.
-			if m.state == stateStreaming && m.cancelar != nil && !m.interrompendo {
-				m.interrompendo = true
-				m.cancelar()
-				m.updateViewport()
-				return m, nil
-			}
-
-		case tea.KeyEnter:
-			if m.state == stateStreaming {
-				return m, nil
-			}
-			input := strings.TrimSpace(m.textarea.Value())
-			if input == "" {
-				return m, nil
-			}
-
-			// Processar comandos
-			if input == "exit" || input == "quit" {
-				return m, tea.Quit
-			}
-
-			// Adicionar mensagem do usuário
-			m.messages = append(m.messages, chatMessage{role: "user", content: input, hora: m.agora()})
-			m.textarea.Reset()
-			m.state = stateStreaming
-			m.updateViewport()
-
-			// Salvar mensagem do usuário
-			if m.config.SaveMessage != nil {
-				m.config.SaveMessage("user", input, m.config.SessionID)
-			}
-
-			return m, m.iniciarRodada(input)
-		}
+	case tea.MouseMsg:
+		// A roda do mouse rola o histórico; o campo não usa o mouse.
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		m.marcarLidas()
+		return m, cmd
 
 	case tea.WindowSizeMsg:
+		noFim := m.viewport.AtBottom()
 		m.width = msg.Width
 		m.height = msg.Height
 		m.viewport.Width = m.width
-		m.viewport.Height = ui.AlturaCorpoTexto(m.height, alturaCampo)
 		m.textarea.SetWidth(m.width)
+		m.viewport.Height = ui.AlturaCorpoTexto(m.height, m.textarea.Height())
 		m.updateViewport()
+		if noFim {
+			m.viewport.GotoBottom()
+			m.marcarLidas()
+		}
 		return m, nil
 
 	case EtapaMsg:
@@ -209,7 +192,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Etapa == EtapaResposta && msg.Tentativa > 1 {
 			// A resposta recomeçou: o texto da tentativa anterior não vale.
-			m.parcial = ""
+			m.parcial, m.parcialVisto = "", 0
 		}
 		m.registrarEtapa(msg)
 		m.updateViewport()
@@ -232,18 +215,156 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Atualizar componentes
+	// O resto (o piscar do cursor) é do campo.
 	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return m, cmd
+}
 
-	if m.state == stateIdle {
-		m.textarea, cmd = m.textarea.Update(msg)
-		cmds = append(cmds, cmd)
+// teclar trata as teclas como na coluna "Texto" dos atalhos: o teclado é do campo e
+// só pgup e pgdn rolam o histórico. Durante a resposta o campo aceita a próxima
+// pergunta, mas ↵ só envia quando a rodada termina.
+func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := ui.DefaultKeys()
+	switch {
+	case msg.Type == tea.KeyCtrlC:
+		if m.cancelar != nil {
+			m.cancelar()
+		}
+		return m, tea.Quit
+
+	case msg.Type == tea.KeyEsc:
+		// esc interrompe a resposta em andamento sem fechar o Bard; o
+		// FimMsg da rodada é que devolve o estado ocioso.
+		if m.state == stateStreaming && m.cancelar != nil && !m.interrompendo {
+			m.interrompendo = true
+			m.cancelar()
+			m.updateViewport()
+		}
+		return m, nil
+
+	case key.Matches(msg, k.Texto.RolarBaixo) && m.mensagensNovas() > 0:
+		// Com o aviso no pé, a página anda só as linhas que apareceram: as que o
+		// aviso cobria abrem a página seguinte.
+		m.viewport.ScrollDown(max(m.viewport.Height-m.linhasAviso(), 1))
+		m.marcarLidas()
+		return m, nil
+
+	case key.Matches(msg, k.Texto.RolarCima, k.Texto.RolarBaixo):
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		m.marcarLidas()
+		return m, cmd
+
+	case novaLinha(msg):
+		// A quebra vai pelo próprio textarea (o ↵ dele é "nova linha"), que leva a
+		// vista do campo até a linha do cursor.
+		var cmd tea.Cmd
+		m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m.ajustarCampo()
+		return m, cmd
+
+	case msg.Type == tea.KeyEnter:
+		return m.enviar()
+
+	case key.Matches(msg, k.Texto.EditarUltima) && m.podeEditarUltima():
+		// ↑ no campo vazio traz a última pergunta para editar e enviar de novo.
+		m.textarea.SetValue(m.ultimaPergunta())
+		m.ajustarCampo()
+		return m, nil
 	}
 
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	m.ajustarCampo()
+	return m, cmd
+}
 
-	return m, tea.Batch(cmds...)
+// novaLinha diz se a tecla quebra a linha do campo: ctrl+j, que chega igual em todo
+// terminal (no Windows também), ou alt+↵ (ESC + CR). O ⇧↵ da prancha não chega: o
+// Bubble Tea v1 não tem shift+enter e recebe a combinação como ↵ (no Windows o
+// VK_RETURN ignora o shift; xterm, GNOME Terminal, Terminal.app e o Windows Terminal
+// mandam CR puro). Por isso a legenda mostra ctrl+j.
+func novaLinha(msg tea.KeyMsg) bool {
+	return key.Matches(msg, ui.DefaultKeys().Texto.NovaLinha) || (msg.Type == tea.KeyEnter && msg.Alt)
+}
+
+// enviar manda o texto do campo como pergunta e abre a rodada.
+func (m Model) enviar() (tea.Model, tea.Cmd) {
+	if m.state == stateStreaming {
+		return m, nil
+	}
+	input := strings.TrimSpace(m.textarea.Value())
+	if input == "" {
+		return m, nil
+	}
+
+	// Processar comandos
+	if input == "exit" || input == "quit" {
+		return m, tea.Quit
+	}
+
+	// Adicionar mensagem do usuário
+	m.messages = append(m.messages, chatMessage{role: "user", content: input, hora: m.agora()})
+	m.textarea.Reset()
+	m.state = stateStreaming
+	m.ajustarCampo()
+	m.updateViewport()
+	// Quem pergunta quer ver a resposta: a conversa volta para o fim.
+	m.viewport.GotoBottom()
+	m.marcarLidas()
+
+	// Salvar mensagem do usuário
+	if m.config.SaveMessage != nil {
+		m.config.SaveMessage("user", input, m.config.SessionID)
+	}
+
+	return m, m.iniciarRodada(input)
+}
+
+// podeEditarUltima diz se ↑ traz a última pergunta: fora da resposta, com o campo
+// vazio e alguma pergunta feita. Com texto no campo, ↑ move o cursor.
+func (m Model) podeEditarUltima() bool {
+	return m.state == stateIdle && m.textarea.Value() == "" && m.ultimaPergunta() != ""
+}
+
+// ultimaPergunta devolve o texto da última mensagem do usuário.
+func (m Model) ultimaPergunta() string {
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		if m.messages[i].role == "user" {
+			return m.messages[i].content
+		}
+	}
+	return ""
+}
+
+// ajustarCampo dá ao campo uma linha por linha do texto, entre alturaCampo e
+// alturaMaxCampo, e devolve o resto ao histórico, que segue no fim se já estava.
+func (m *Model) ajustarCampo() {
+	altura := min(max(m.textarea.LineCount(), alturaCampo), alturaMaxCampo)
+	if altura == m.textarea.Height() {
+		m.reposicionarCampo()
+		return
+	}
+	defer m.reposicionarCampo()
+	noFim := m.viewport.AtBottom()
+	m.textarea.SetHeight(altura)
+	if m.height > 0 {
+		m.viewport.Height = ui.AlturaCorpoTexto(m.height, altura)
+	}
+	if noFim {
+		m.viewport.GotoBottom()
+	}
+	m.marcarLidas()
+}
+
+// reposicionarCampo leva a vista do campo até a linha do cursor. O textarea só faz
+// isso no fim do próprio Update e com as linhas do último View: sem este passo, a
+// linha nova (ou o fim de uma pergunta trazida pelo ↑) ficaria fora do campo até a
+// tecla seguinte.
+func (m *Model) reposicionarCampo() {
+	_ = m.textarea.View()
+	m.textarea, _ = m.textarea.Update(nil)
 }
 
 // iniciarRodada dispara o fluxo da pergunta e devolve o comando que lê o
@@ -254,7 +375,7 @@ func (m *Model) iniciarRodada(input string) tea.Cmd {
 	m.cancelar = cancel
 	m.interrompendo = false
 	m.etapas = nil
-	m.parcial = ""
+	m.parcial, m.parcialVisto = "", 0
 	m.eventos = m.fluxo.Iniciar(ctx, m.rodada, input)
 	return ProximoEvento(m.eventos)
 }
@@ -355,7 +476,7 @@ func (m Model) etapaAtual() string {
 // renderizarHistorico acrescenta ao cache as mensagens ainda não renderizadas.
 func (m *Model) renderizarHistorico() {
 	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) {
-		m.historico, m.historicoN = "", 0
+		m.historico, m.historicoN, m.historicoLinhas, m.inicios = "", 0, 0, nil
 		m.historicoLargura = m.viewport.Width
 	}
 	if m.historicoN == len(m.messages) {
@@ -364,28 +485,89 @@ func (m *Model) renderizarHistorico() {
 	var content strings.Builder
 	content.WriteString(m.historico)
 	for _, msg := range m.messages[m.historicoN:] {
-		content.WriteString(m.renderizarMensagem(msg))
+		bloco := m.renderizarMensagem(msg)
+		m.inicios = append(m.inicios, m.historicoLinhas)
+		m.historicoLinhas += strings.Count(bloco, "\n")
+		content.WriteString(bloco)
 	}
 	m.historico = content.String()
 	m.historicoN = len(m.messages)
 }
 
 // updateViewport atualiza o conteúdo do viewport com as mensagens. Durante a
-// resposta, só o parcial muda a cada trecho.
+// resposta, só o parcial muda a cada trecho. A conversa segue o fim só se já
+// estava nele: quem rolou para cima fica onde está e vê o aviso das mensagens novas.
 func (m *Model) updateViewport() {
+	noFim := m.viewport.AtBottom()
 	m.renderizarHistorico()
 	content := m.historico
 	if m.state == stateStreaming {
 		content += m.renderizarParcial()
 	}
 	m.viewport.SetContent(strings.TrimRight(content, "\n"))
-	m.viewport.GotoBottom()
+	if noFim {
+		m.viewport.GotoBottom()
+	}
+	m.marcarLidas()
+}
+
+// blocos conta os blocos da conversa: as mensagens e, durante a resposta, o parcial.
+func (m Model) blocos() int {
+	if m.state == stateStreaming {
+		return len(m.messages) + 1
+	}
+	return len(m.messages)
+}
+
+// marcarLidas dá por lidas as mensagens quando a conversa está no fim. Da resposta em
+// andamento fica lido o texto que já chegou: o que vier depois que a conversa sair do
+// fim ainda é novo.
+func (m *Model) marcarLidas() {
+	if m.viewport.AtBottom() {
+		m.lidas = len(m.messages)
+		m.parcialVisto = len(m.parcial)
+	}
+}
+
+// linhasAviso são as linhas do pé da janela que o aviso de mensagens novas ocupa: uma
+// em branco e a do aviso (só a do aviso numa janela de até 2 linhas).
+func (m Model) linhasAviso() int {
+	if m.viewport.Height > 2 {
+		return 2
+	}
+	return 1
+}
+
+// mensagensNovas conta as mensagens que chegaram depois que a conversa saiu do fim e
+// ainda começam fora da vista: abaixo da janela ou nas linhas que o aviso cobre. As
+// notas (como "resposta interrompida") não contam; a resposta em andamento conta só
+// se chegou texto depois da última vez que a conversa esteve no fim.
+func (m Model) mensagensNovas() int {
+	fim := m.viewport.YOffset + m.viewport.Height - m.linhasAviso()
+	n := 0
+	for i := m.lidas; i < m.blocos(); i++ {
+		inicio := m.historicoLinhas // o parcial começa depois do histórico
+		if i < len(m.messages) {
+			if m.messages[i].role == "nota" || i >= len(m.inicios) {
+				continue
+			}
+			inicio = m.inicios[i]
+		} else if len(m.parcial) <= m.parcialVisto {
+			continue
+		}
+		if inicio >= fim {
+			n++
+		}
+	}
+	return n
 }
 
 // Run inicia a TUI do Bard.
 func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error {
 	model := New(provider, vectorStore, config)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// O mouse vem para o Bard por causa da roda; com isso o arraste simples deixa de
+	// selecionar texto, e copiar um trecho pede shift+arraste (Windows Terminal, xterm).
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
