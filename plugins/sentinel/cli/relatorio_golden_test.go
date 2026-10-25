@@ -53,7 +53,9 @@ func achadosDeExemplo() []checks.SecurityFinding {
 var dataDoRelatorio = regexp.MustCompile(`\*\*Data:\*\* [0-9: -]+`)
 
 // TestRelatorioMarkdown_NaoMuda prende o formato dos relatórios markdown (o do scan, salvo
-// em ~/.yby/reports, e o do investigate): a migração da saída para o pkg/ui não os toca.
+// em ~/.yby/reports, e o do investigate): a migração da saída para o pkg/ui não os toca,
+// salvo os emojis de severidade do scan, trocados pelos glifos ▲, ✕ e ○, e o resumo, que
+// passou a contar por severidade como o terminal (T034).
 func TestRelatorioMarkdown_NaoMuda(t *testing.T) {
 	scan := exportScanMarkdown(ScanReport{
 		Namespace:       "payments",

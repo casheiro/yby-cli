@@ -298,17 +298,7 @@ func exportScanMarkdown(report ScanReport) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("# Relatório de Segurança Sentinel — %s\n\n", report.Namespace))
 
-	criticals := 0
-	warnings := 0
-	for _, f := range report.Findings {
-		if f.Type == "critical" {
-			criticals++
-		} else {
-			warnings++
-		}
-	}
-
-	sb.WriteString(fmt.Sprintf("**Resumo:** %d criticos, %d avisos\n", criticals, warnings))
+	sb.WriteString("**Resumo:** " + resumoDoRelatorio(report.Findings) + "\n")
 	if len(report.Sources) > 0 {
 		sb.WriteString(fmt.Sprintf("**Backends:** %s\n", strings.Join(report.Sources, ", ")))
 	}
@@ -316,10 +306,7 @@ func exportScanMarkdown(report ScanReport) string {
 	sb.WriteString("## Vulnerabilidades\n\n")
 
 	for _, f := range report.Findings {
-		icon := "⚠️"
-		if f.Type == "critical" {
-			icon = "🚨"
-		}
+		icon := glifoDoRelatorio(severidades[severidadeDe(f)].tipo)
 		sb.WriteString(fmt.Sprintf("- %s **[%s]** `%s`: %s\n", icon, f.Category, f.Resource, f.Description))
 	}
 
@@ -329,4 +316,39 @@ func exportScanMarkdown(report ScanReport) string {
 	}
 
 	return sb.String()
+}
+
+// resumoDoRelatorio conta os achados por severidade com o mesmo mapa do terminal
+// (severidadeDe), para o relatório e a tela do mesmo scan dizerem a mesma coisa.
+func resumoDoRelatorio(findings []checks.SecurityFinding) string {
+	contagem := map[string]int{}
+	for _, f := range findings {
+		contagem[severidadeDe(f)]++
+	}
+	var partes []string
+	for _, s := range ordemSeveridades {
+		if n := contagem[s]; n > 0 {
+			partes = append(partes, contar(n, severidades[s].singular, severidades[s].plural))
+		}
+	}
+	if len(partes) == 0 {
+		return "nenhum achado"
+	}
+	return strings.Join(partes, ", ")
+}
+
+// glifoDoRelatorio dá o glifo de cada tipo de linha, o mesmo do ui.CheckCom no terminal. O
+// relatório é um arquivo: usa sempre os glifos Unicode, sem depender do modo ASCII do
+// terminal que rodou o scan.
+func glifoDoRelatorio(tipo ui.TipoCheck) string {
+	switch tipo {
+	case ui.CheckErro:
+		return ui.Unicode.Falha
+	case ui.CheckAviso:
+		return ui.Unicode.Alerta
+	case ui.CheckOk:
+		return ui.Unicode.Feito
+	default:
+		return ui.Unicode.Parado
+	}
 }

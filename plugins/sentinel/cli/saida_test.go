@@ -195,7 +195,7 @@ func TestScan_Golden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("relatório não foi salvo: %v", err)
 	}
-	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 criticos, 3 avisos\n") {
+	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 críticos, 1 alto, 1 médio, 1 baixo\n") {
 		t.Errorf("relatório fora do formato:\n%s", md)
 	}
 }
