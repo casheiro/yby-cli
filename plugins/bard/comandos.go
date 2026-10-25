@@ -45,7 +45,7 @@ func sessoesSalvas() ([]tui.Sessao, error) {
 }
 
 // retomador devolve a função do /sessões que carrega uma conversa do histórico e refaz
-// o system prompt com as últimas mensagens dela, como o /session do REPL antigo.
+// o system prompt com as últimas mensagens dela.
 func retomador(ctxData map[string]interface{}, bardCfg BardConfig, clusterCtx *ClusterContext) func(string) (tui.Retomada, error) {
 	return func(id string) (tui.Retomada, error) {
 		entries, err := loadAllEntries()

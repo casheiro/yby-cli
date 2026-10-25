@@ -112,7 +112,7 @@ func (b buscadorFalso) Search(_ context.Context, _ string, _ int) ([]ai.UnknownD
 	return b.docs, b.err
 }
 
-// retryRapido mantém a forma da política do REPL com intervalos de teste.
+// retryRapido mantém a forma da política padrão com intervalos de teste.
 var retryRapido = retry.Options{
 	InitialInterval:     time.Millisecond,
 	MaxInterval:         2 * time.Millisecond,
@@ -130,7 +130,7 @@ func isolarHome(t *testing.T) {
 
 func fluxoDeTeste(p *provedorFalso) *Fluxo {
 	// O limiar é o padrão do loadBardConfig, como chega pelo main.go.
-	f := novoFluxo(p, nil, Config{SystemPrompt: "sistema", LimiarRelevancia: 0.6})
+	f := NovoFluxo(p, nil, Config{SystemPrompt: "sistema", LimiarRelevancia: 0.6})
 	f.Retry = retryRapido
 	f.BuscarFerramenta = func(string) *tools.Tool { return nil }
 	return f
@@ -557,23 +557,23 @@ func TestFluxo_ContextoDoSynapstor(t *testing.T) {
 }
 
 func TestNovoFluxo_Padroes(t *testing.T) {
-	f := novoFluxo(nil, nil, Config{SystemPrompt: "s"})
+	f := NovoFluxo(nil, nil, Config{SystemPrompt: "s"})
 	if f.Buscador != nil {
 		t.Error("sem vector store o buscador deveria ser nil")
 	}
-	// O limiar 0 vale como veio (aceita todas as notas, como no REPL); o
+	// O limiar 0 vale como veio (aceita todas as notas); o
 	// padrão 0,6 é do loadBardConfig.
 	if f.TopK != 5 || f.Limiar != 0 {
 		t.Errorf("padrões inesperados: topK=%d limiar=%v", f.TopK, f.Limiar)
 	}
 	if f.Retry != retryPadrao {
-		t.Error("o retry padrão deveria ser o do REPL antigo")
+		t.Error("o retry padrão deveria ser retryPadrao")
 	}
-	f = novoFluxo(nil, nil, Config{TopK: 3, LimiarRelevancia: 0.8, Namespace: "payments"})
+	f = NovoFluxo(nil, nil, Config{TopK: 3, LimiarRelevancia: 0.8, Namespace: "payments"})
 	if f.TopK != 3 || f.Limiar != 0.8 || f.Namespace != "payments" {
 		t.Errorf("config ignorada: topK=%d limiar=%v ns=%q", f.TopK, f.Limiar, f.Namespace)
 	}
-	if f = novoFluxo(nil, nil, Config{LimiarRelevancia: -1}); f.Limiar != 0.6 {
+	if f = NovoFluxo(nil, nil, Config{LimiarRelevancia: -1}); f.Limiar != 0.6 {
 		t.Errorf("limiar negativo deveria virar 0,6: %v", f.Limiar)
 	}
 }
@@ -581,7 +581,7 @@ func TestNovoFluxo_Padroes(t *testing.T) {
 func TestFluxo_LimiarZeroAceitaTodas(t *testing.T) {
 	isolarHome(t)
 	p := &provedorFalso{trechos: []string{"ok"}}
-	f := novoFluxo(p, nil, Config{SystemPrompt: "sistema", LimiarRelevancia: 0})
+	f := NovoFluxo(p, nil, Config{SystemPrompt: "sistema", LimiarRelevancia: 0})
 	f.Retry = retryRapido
 	f.BuscarFerramenta = func(string) *tools.Tool { return nil }
 	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{{Content: "pouco relevante", Score: 0.1, Metadata: map[string]string{"title": "X"}}}}

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
+	"time"
 
 	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/testutil"
@@ -59,6 +61,14 @@ func TestHelperProcess(t *testing.T) {
 		return
 	case "/path/to/interactive-crash-plugin":
 		os.Exit(1)
+	case "/path/to/interactive-interrupted-plugin":
+		os.Exit(130)
+	case "/path/to/interactive-signaled-plugin":
+		// Plugin que não trata o ctrl+c: o SIGINT o mata pelo tratamento padrão.
+		p, _ := os.FindProcess(os.Getpid())
+		_ = p.Signal(os.Interrupt)
+		time.Sleep(10 * time.Second)
+		os.Exit(3)
 	}
 }
 
@@ -125,8 +135,46 @@ func TestExecutor_RunInteractive(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("Plugin crashes", func(t *testing.T) {
+	t.Run("Plugin sai com código próprio", func(t *testing.T) {
 		err := executor.RunInteractive(ctx, "/path/to/interactive-crash-plugin", req)
+		var saida *SaidaDoPlugin
+		if assert.ErrorAs(t, err, &saida) {
+			assert.Equal(t, 1, saida.Codigo)
+		}
+		var exitErr *exec.ExitError
+		assert.ErrorAs(t, err, &exitErr, "a causa continua acessível")
+		assert.Contains(t, err.Error(), "código 1")
+	})
+
+	t.Run("Plugin interrompido sai com 130", func(t *testing.T) {
+		err := executor.RunInteractive(ctx, "/path/to/interactive-interrupted-plugin", req)
+		var saida *SaidaDoPlugin
+		if assert.ErrorAs(t, err, &saida) {
+			assert.Equal(t, 130, saida.Codigo)
+		}
+	})
+
+	t.Run("Plugin morto pelo SIGINT sai com 130", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("o Windows não entrega SIGINT a um processo")
+		}
+		err := executor.RunInteractive(ctx, "/path/to/interactive-signaled-plugin", req)
+		var saida *SaidaDoPlugin
+		if assert.ErrorAs(t, err, &saida, "sem o bloco ERR_PLUGIN no ctrl+c") {
+			assert.Equal(t, 130, saida.Codigo)
+		}
+		var exitErr *exec.ExitError
+		assert.ErrorAs(t, err, &exitErr, "a causa continua acessível")
+	})
+
+	t.Run("Plugin não executa", func(t *testing.T) {
+		execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+			return exec.CommandContext(ctx, "binario-que-nao-existe-yby")
+		}
+		defer func() { execCommandContext = mockExecCommandContext }()
+		err := executor.RunInteractive(ctx, "/path/to/interactive-plugin", req)
+		var saida *SaidaDoPlugin
+		assert.False(t, errors.As(err, &saida))
 		assert.ErrorContains(t, err, "execução interativa do plugin falhou")
 	})
 

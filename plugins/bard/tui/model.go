@@ -19,9 +19,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// maxToolIterations limita o número de iterações de tool calling.
-const maxToolIterations = 5
-
 // alturaCampo é a altura mínima do campo de texto: a linha do prompt e uma para a
 // quebra. A cada nova linha (ctrl+j) o campo cresce uma linha, até alturaMaxCampo.
 const (
@@ -215,7 +212,7 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 		state:       stateIdle,
 		markdown:    md.renderizar,
 		agora:       time.Now,
-		fluxo:       novoFluxo(provider, vectorStore, config),
+		fluxo:       NovoFluxo(provider, vectorStore, config),
 		dicaEm:      -1,
 		copiaEm:     -1,
 		copiar:      copiarOSC52,

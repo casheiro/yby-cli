@@ -93,6 +93,11 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 					DisableFlagParsing: true, // Passa flags diretamente ao plugin
 					RunE: func(c *cobra.Command, args []string) error {
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {
+							var saida *plugin.SaidaDoPlugin
+							if stdErr.As(err, &saida) {
+								// o plugin já mostrou o erro: só o código segue
+								return saida
+							}
 							return errors.Wrap(err, errors.ErrCodePlugin, fmt.Sprintf("o plugin %s falhou", pluginName))
 						}
 						return nil
@@ -213,10 +218,25 @@ func Execute() {
 		slog.Debug("Falha ao persistir telemetria", "erro", flushErr)
 	}
 
-	if err != nil {
-		handleExecutionError(err)
-		os.Exit(1)
+	if codigo := codigoDeSaida(err); codigo != 0 {
+		os.Exit(codigo)
 	}
+}
+
+// codigoDeSaida devolve o código com que o yby sai depois de err e escreve o erro com
+// handleExecutionError. Um plugin que saiu com código próprio já escreveu o erro dele:
+// o código segue (ex.: 130 do ctrl+c) e nada mais sai.
+func codigoDeSaida(err error) int {
+	if err == nil {
+		return 0
+	}
+	var saida *plugin.SaidaDoPlugin
+	if stdErr.As(err, &saida) {
+		slog.Debug("o plugin saiu com erro", "codigo", saida.Codigo)
+		return saida.Codigo
+	}
+	handleExecutionError(err)
+	return 1
 }
 
 func init() {

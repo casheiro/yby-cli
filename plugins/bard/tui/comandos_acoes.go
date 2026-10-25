@@ -35,7 +35,7 @@ type MensagemSalva struct {
 }
 
 // Retomada é o que o /sessões precisa para continuar uma conversa: as mensagens e o
-// system prompt refeito com elas, como o /session do REPL antigo.
+// system prompt refeito com elas.
 type Retomada struct {
 	Mensagens    []MensagemSalva
 	SystemPrompt string          // vazio mantém o atual

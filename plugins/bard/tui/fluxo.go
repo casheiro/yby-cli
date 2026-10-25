@@ -51,10 +51,15 @@ type EtapaMsg struct {
 	Saida   string        // saída completa da ferramenta, para "↵ ver"
 	// Tentativa, na etapa de resposta, conta as chamadas ao provider. Acima
 	// de 1 indica que a resposta recomeçou: os trechos anteriores valem nada.
-	// A falha de uma tentativa já anuncia a seguinte (nota "tentando de novo")
-	// antes da espera entre as duas.
+	// A falha de uma tentativa já anuncia a seguinte (NotaNovaTentativa)
+	// antes da espera entre as duas; a seguinte pode nem começar, se as
+	// novas tentativas acabaram.
 	Tentativa int
 }
+
+// NotaNovaTentativa é a nota da etapa de resposta logo depois de uma falha do
+// provider, enquanto a próxima tentativa espera.
+const NotaNovaTentativa = "tentando de novo"
 
 // TrechoMsg traz um pedaço da resposta enquanto ela é gerada.
 type TrechoMsg struct {
@@ -77,7 +82,7 @@ type Buscador interface {
 	Search(ctx context.Context, query string, topK int) ([]ai.UnknownDocument, error)
 }
 
-// retryPadrao repete a política do REPL antigo para a resposta final.
+// retryPadrao é a política de novas tentativas da resposta final.
 var retryPadrao = retry.Options{
 	InitialInterval:     2 * time.Second,
 	MaxInterval:         10 * time.Second,
@@ -100,8 +105,8 @@ type Fluxo struct {
 	Retry            retry.Options
 }
 
-// novoFluxo monta o fluxo a partir da configuração da TUI.
-func novoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config) *Fluxo {
+// NovoFluxo monta o fluxo a partir da configuração da TUI; o -p e o batch usam o mesmo.
+func NovoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config) *Fluxo {
 	f := &Fluxo{
 		Provider:     provider,
 		SystemPrompt: config.SystemPrompt,
@@ -118,8 +123,7 @@ func novoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config)
 		f.TopK = 5
 	}
 	// O padrão 0,6 já vem do loadBardConfig; aqui só se corrige um valor
-	// inválido, porque 0 explícito no bard.yaml aceita todas as notas, como
-	// no REPL e no modo batch.
+	// inválido, porque 0 explícito no bard.yaml aceita todas as notas.
 	if f.Limiar < 0 {
 		f.Limiar = 0.6
 	}
@@ -228,7 +232,7 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		entradaFinal = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", entrada, ferramenta.Name, saida)
 	}
 
-	// 4. Resposta, em pedaços, com novas tentativas como no REPL antigo
+	// 4. Resposta, em pedaços, com novas tentativas
 	t0 = time.Now()
 	tentativa := 0
 	err, ok := esperar(ctx, func() error {
@@ -251,7 +255,7 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 				// O texto da tentativa falha some já, e não só quando a
 				// próxima começa: um esc durante a espera não o leva ao fim.
 				e.recomecar()
-				e.etapa(EtapaMsg{Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual, Tentativa: tentativa + 1, Nota: "tentando de novo"})
+				e.etapa(EtapaMsg{Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual, Tentativa: tentativa + 1, Nota: NotaNovaTentativa})
 			}
 			return errStream
 		})

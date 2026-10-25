@@ -19,7 +19,7 @@ import (
 type comando struct {
 	nome      string   // sem a barra, como aparece na lista
 	descricao string   // em minúsculas e sem ponto
-	apelidos  []string // nomes aceitos só por extenso (os do REPL antigo e em inglês)
+	apelidos  []string // nomes aceitos só por extenso (os antigos e em inglês)
 }
 
 // listaComandos está na ordem da prancha.

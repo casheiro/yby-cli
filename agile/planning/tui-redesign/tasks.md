@@ -139,7 +139,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 - [x] T015 Implementar os comandos `/` com lista filtrável.
   - `/sessões`, `/limpar`, `/contexto`, `/ferramentas`, `/modelo`, `/copiar`, `/exportar`, `/ajuda`, reaproveitando `history.go`.
   - Verificar: `teatest` para filtrar, ⇥ completar, ↵ executar e esc fechar; golden da tela "comandos".
-- [ ] T016 Migrar one-shot e batch e fazer a limpeza.
+- [x] T016 Migrar one-shot e batch e fazer a limpeza.
   - `-p` e batch passam a usar `pkg/ui/msg.go`.
   - Remover o REPL antigo (`YBY_BARD_LEGACY_UI`), `maxToolIterations` e `promptStyle`.
   - Verificar: `echo "..." | yby bard` e `yby bard -p` funcionam sem TTY; nada interativo trava.
@@ -289,3 +289,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T013 | Teclado e rolagem: letras vão só para o campo (bug "digitar rola a tela"), histórico rola com pgup/pgdn e a roda do mouse, "↓ N mensagens novas" (`ui.AvisoRolagem`), ↑ no campo vazio edita a última pergunta, esc interrompe, campo aceita a próxima pergunta durante a resposta. Nova linha com ctrl+j (e alt+enter): o Bubble Tea v1 não distingue ⇧↵ de ↵ no console do Windows, então a legenda mostra ctrl+j. teatest com "jkdufb " | este commit |
 | 24/10/2026 | T014 | Etapas e ferramentas: bloco "◈ BARD · trabalhando · N s" com `ui.Etapas`, linha de estado "◈ gerando resposta · N s", ↵ no campo vazio abre a saída da ferramenta (camada com rolagem e "SAÍDA · c copia"), ctrl+y copia o último comando de shell por OSC 52 (o c no campo comia a primeira letra da pergunta). Relógio injetado para os goldens; golden "trabalhando" | este commit |
 | 24/10/2026 | T015 | Comandos `/` com lista filtrável (prancha BardComandos): /sessões (retoma a conversa), /limpar, /contexto (quadro CONTEXTO DESTA SESSÃO), /ferramentas, /modelo (troca o provider da sessão), /copiar, /exportar e /ajuda; filtro sem acento, ⇥ completa, apelidos antigos digitados por inteiro, barra que não é comando vai como pergunta. teatest e golden "comandos" | este commit |
+| 24/10/2026 | T016 | `-p` e batch pelo mesmo `tui.Fluxo` (`plugins/bard/direto.go`): só a resposta no stdout, etapas no stderr por `ui.Progresso` quando é terminal, erros por `ui.WriteError`, nada espera entrada sem TTY. Removidos o REPL antigo (`YBY_BARD_LEGACY_UI`), `maxToolIterations`, `promptStyle` e os estilos à mão. No core, o erro do plugin não sai mais duplicado e o código de saída do plugin (inclusive 128+sinal) é repassado (`plugin.SaidaDoPlugin`) | este commit |
