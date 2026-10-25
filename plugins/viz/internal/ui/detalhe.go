@@ -425,8 +425,18 @@ func linhaDeEvento(e monitor.Event, agora time.Time) string {
 		glifo = s.Aviso.Render(g.Alerta)
 	}
 	idade := idadeDoEvento(e, agora)
-	texto := juntar(strings.TrimSpace(e.Reason+" "+umaLinha(e.Message)), vezesDoEvento(e))
+	texto := juntar(textoDoEvento(e), vezesDoEvento(e))
 	return s.TintaSuave.Render(idade+strings.Repeat(" ", max(1, 5-lipgloss.Width(idade)))) + glifo + " " + s.Tinta.Render(texto)
+}
+
+// textoDoEvento junta a razão e a mensagem numa linha, sem repetir a razão
+// quando a mensagem já começa por ela ("Created container: worker").
+func textoDoEvento(e monitor.Event) string {
+	msg := umaLinha(e.Message)
+	if e.Reason != "" && strings.HasPrefix(strings.ToLower(msg), strings.ToLower(e.Reason)) {
+		return msg
+	}
+	return strings.TrimSpace(e.Reason + " " + msg)
 }
 
 // vezesDoEvento é "14 vezes" para o evento repetido.

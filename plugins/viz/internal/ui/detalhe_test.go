@@ -626,3 +626,18 @@ func TestUltimaLinhaDeLog(t *testing.T) {
 		t.Errorf("a linha longa fica em duas, com reticências: %q", partes)
 	}
 }
+
+// TestTextoDoEvento: a razão não se repete quando a mensagem já começa por ela.
+func TestTextoDoEvento(t *testing.T) {
+	casos := []struct{ razao, msg, quer string }{
+		{"Created", "Created container: worker", "Created container: worker"},
+		{"BackOff", "Back-off restarting failed container", "BackOff Back-off restarting failed container"},
+		{"Pulled", "worker:1.8.2", "Pulled worker:1.8.2"},
+		{"", "sem razão", "sem razão"},
+	}
+	for _, c := range casos {
+		if got := textoDoEvento(monitor.Event{Reason: c.razao, Message: c.msg}); got != c.quer {
+			t.Errorf("textoDoEvento(%q, %q) = %q, quer %q", c.razao, c.msg, got, c.quer)
+		}
+	}
+}

@@ -77,7 +77,7 @@ func NewModel(client monitor.Client) Model {
 	if client == nil {
 		err = fmt.Errorf("client K8s não disponível")
 	}
-	return Model{
+	m := Model{
 		client: client,
 		err:    err,
 		agora:  time.Now,
@@ -85,6 +85,11 @@ func NewModel(client monitor.Client) Model {
 		toast:  yui.NovoToast(),
 		copiar: yui.CopiarOSC52,
 	}
+	// Começa no namespace do contexto do kubeconfig, como o kubectl; n troca.
+	if c, ok := client.(interface{ NamespaceDoContexto() string }); ok {
+		m.filter.Namespace = c.NamespaceDoContexto()
+	}
+	return m
 }
 
 // NewModelComErro cria o modelo sem client, para mostrar na TUI por que a
@@ -404,6 +409,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		msg, fica := yui.TeclaAltGr(msg)
+		if !fica {
+			return m, nil
+		}
 		// ctrl+c sai de qualquer lugar: campo, menu, confirmação, ajuda, quadro, detalhe ou lista.
 		if key.Matches(msg, mapa().Global.SairForcado) {
 			return m, tea.Quit

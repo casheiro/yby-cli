@@ -126,3 +126,27 @@ func TestListaVazia_PorFiltroNaoMostraCarregando(t *testing.T) {
 		t.Fatalf("com a lista vazia no cluster:\n%s", v)
 	}
 }
+
+// clientComNamespace é o MockClient cujo kubeconfig fixa um namespace no contexto.
+type clientComNamespace struct {
+	*MockClient
+	ns string
+}
+
+func (c *clientComNamespace) NamespaceDoContexto() string { return c.ns }
+
+// TestNamespaceDoContexto: o Viz começa no namespace do contexto do kubeconfig,
+// como o kubectl, e o esc (limpar filtros) não o tira.
+func TestNamespaceDoContexto(t *testing.T) {
+	m := NewModel(&clientComNamespace{MockClient: &MockClient{}, ns: "payments"})
+	if m.filter.Namespace != "payments" {
+		t.Fatalf("namespace inicial = %q, esperado payments", m.filter.Namespace)
+	}
+	m, _ = teclas(t, m, "esc")
+	if m.filter.Namespace != "payments" {
+		t.Fatalf("o esc tirou o namespace: %q", m.filter.Namespace)
+	}
+	if m := NewModel(&MockClient{}); m.filter.Namespace != "" {
+		t.Fatalf("sem namespace no contexto deveria ver todos: %q", m.filter.Namespace)
+	}
+}

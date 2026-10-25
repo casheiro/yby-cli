@@ -187,6 +187,25 @@ func TestTeclado_TelaDeAjuda(t *testing.T) {
 	}
 }
 
+// TestTeclado_AltGr: no console do Windows com teclado ABNT2, / e ? chegam
+// como AltGr (alt+NUL e depois alt+símbolo) e abrem a ajuda e a busca do mesmo jeito.
+func TestTeclado_AltGr(t *testing.T) {
+	semCor(t)
+	tm := abrirViz(t, vizDeTeste(t))
+	esperarTela(t, tm, "8 pods")
+	altgr := func(r rune) {
+		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0}, Alt: true})
+		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: true})
+	}
+	altgr('?')
+	esperarTela(t, tm, "TECLAS · PODS")
+	enviar(tm, "esc")
+	altgr('/')
+	enviar(tm, "api")
+	esperarTela(t, tm, "[busca: api ✕]", "2 de 8")
+	fecharViz(t, tm)
+}
+
 // TestTeclado_Niveis: esc fecha a camada de cima e, sem camada, limpa os
 // filtros; q é letra no campo e não sai das camadas; q sai da lista; ctrl+c
 // sai de qualquer lugar.

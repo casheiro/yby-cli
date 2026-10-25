@@ -226,6 +226,7 @@ contexts:
   context:
     cluster: staging
     user: eu
+    namespace: payments
 users:
 - name: eu
   user:
@@ -248,5 +249,8 @@ users:
 	}
 	if r := NewRetryClient(&FakeClient{}); r.Contexto() != "" {
 		t.Fatalf("client sem contexto: %q", r.Contexto())
+	}
+	if r := NewRetryClient(c); r.NamespaceDoContexto() != "payments" {
+		t.Fatalf("namespace do contexto = %q, esperado payments", r.NamespaceDoContexto())
 	}
 }

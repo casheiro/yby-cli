@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 )
 
@@ -135,5 +136,29 @@ func TestRotuloTecla_Unicode(t *testing.T) {
 	usarTema(t, true, termenv.TrueColor, false)
 	if obtido := RotuloTecla("⇧⇥"); obtido != "⇧⇥" {
 		t.Errorf("RotuloTecla em Unicode alterou o rótulo: %q", obtido)
+	}
+}
+
+// TestTeclaAltGr: o símbolo digitado com AltGr vira a tecla simples, o alt+NUL do
+// próprio AltGr é descartado e alt com letra ou dígito continua atalho.
+func TestTeclaAltGr(t *testing.T) {
+	casos := []struct {
+		entrada tea.KeyMsg
+		quer    string
+		fica    bool
+	}{
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}, Alt: true}, "/", true},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}, Alt: true}, "?", true},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0}, Alt: true}, "", false},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true}, "alt+b", true},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}, Alt: true}, "alt+1", true},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}, "/", true},
+		{tea.KeyMsg{Type: tea.KeyEnter, Alt: true}, "alt+enter", true},
+	}
+	for _, c := range casos {
+		k, fica := TeclaAltGr(c.entrada)
+		if fica != c.fica || (fica && k.String() != c.quer) {
+			t.Errorf("TeclaAltGr(%q) = %q, %v; quer %q, %v", c.entrada.String(), k.String(), fica, c.quer, c.fica)
+		}
 	}
 }

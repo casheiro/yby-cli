@@ -43,12 +43,19 @@ type K8sClient struct {
 	clientset  kubernetes.Interface
 	restConfig *rest.Config
 	contexto   string // contexto atual do kubeconfig
+	namespace  string // namespace do contexto atual (vazio: todos)
 	lerLog     lerLog // lê o log de um contêiner; nil usa lerLogs (os testes trocam)
 }
 
 // Contexto devolve o nome do contexto atual do kubeconfig (vazio se não há).
 func (c *K8sClient) Contexto() string {
 	return c.contexto
+}
+
+// NamespaceDoContexto devolve o namespace do contexto atual do kubeconfig
+// (vazio se o contexto não fixa um), por onde a TUI começa, como o kubectl.
+func (c *K8sClient) NamespaceDoContexto() string {
+	return c.namespace
 }
 
 // Clientset retorna o clientset Kubernetes para uso em operações avançadas
@@ -80,13 +87,16 @@ func NewK8sClient() (*K8sClient, error) {
 	}
 
 	// O nome do contexto só aparece na tela: sem ele, a TUI mostra só o namespace.
-	contexto := ""
+	contexto, namespace := "", ""
 	if raw, err := clientcmd.LoadFromFile(kubeconfig); err == nil {
 		contexto = raw.CurrentContext
+		if ctx, ok := raw.Contexts[contexto]; ok && ctx != nil {
+			namespace = ctx.Namespace
+		}
 	}
 	slog.Debug("viz: conectando ao cluster", "kubeconfig", kubeconfig, "contexto", contexto, "servidor", config.Host)
 
-	return &K8sClient{clientset: clientset, restConfig: config, contexto: contexto}, nil
+	return &K8sClient{clientset: clientset, restConfig: config, contexto: contexto, namespace: namespace}, nil
 }
 
 // podMetricsResult representa a resposta da API de métricas de pods.
