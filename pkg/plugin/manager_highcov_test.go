@@ -483,6 +483,9 @@ func TestExecuteCommandHook_PluginEncontrado_ComScript(t *testing.T) {
 }
 
 func TestExecuteCommandHook_PluginFalha(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("o plugin falso é um script sh, que o Windows não executa")
+	}
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 
