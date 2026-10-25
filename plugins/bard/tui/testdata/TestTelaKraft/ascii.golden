@@ -1,0 +1,29 @@
+* YBY  BARD  INSTR. 03 · ORIENTAÇÃO                                             staging > default   claude-cli
+--------------------------------------------------------------------------------------------------------------
+VOCÊ · 12:15                                                                                                  
+  /contexto                                                                                                   
+                                                                                                              
+  + CONTEXTO DESTA SESSÃO -----------------------------------------------------------------------------------+
+  |  cluster       staging · eks · us-east-1                                                                 |
+  |  namespace     default                                                                                   |
+  |  provider      claude-cli · embeddings locais                                                            |
+  |  projeto       yby-cli · topologia standard                                                              |
+  |  notas         12 UKIs indexadas · atualizado há 2 dias                                                  |
+  |  ferramentas   v kubectl  v sentinel  v atlas  ! 1 externa inválida                                      |
+  |  histórico     últimas 20 mensagens de 3 sessões                                                         |
+  +----------------------------------------------------------------------------------------------------------+
+                                                                                                              
+VOCÊ · 12:16                                                                                                  
+  quais ferramentas externas estão com problema?                                                              
+                                                                                                              
+* BARD · 12:16 · 2,4 s                                                                                        
+  ~/.yby/tools/backup.yaml não carregou: falta o campo command.                                               
+  As outras 2 ferramentas externas estão disponíveis.                                                         
+                                                                                                              
+                                                                                                              
+--------------------------------------------------------------------------------------------------------------
+>  Pergunte sobre o cluster, ou / para comandos                                                               
+                                                                                                              
+--------------------------------------------------------------------------------------------------------------
+v resposta em 2,4 s                                                               sessão de hoje · 4 mensagens
+enter enviar  ctrl+j nova linha  / comandos  up editar última  ? ajuda                             ctrl+c sair

@@ -134,6 +134,7 @@ func TestDiscoverPlugins_EmptyDir(t *testing.T) {
 	// Usa diretório temporário vazio como HOME para que o Manager não encontre plugins
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	cmd := &cobra.Command{Use: "test-root"}
 	pm := newRootPluginManager()
@@ -147,6 +148,7 @@ func TestDiscoverPlugins_EmptyDir(t *testing.T) {
 func TestDiscoverPlugins_WithPlugins(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	// Cria plugin fake com hook "command"
 	createFakePlugin(t, dir, "meu-plugin", "Plugin de teste", []string{"command"})
@@ -171,6 +173,7 @@ func TestDiscoverPlugins_WithPlugins(t *testing.T) {
 func TestDiscoverPlugins_PluginWithDescription(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	createFakePlugin(t, dir, "desc-plugin", "Descrição customizada do plugin", []string{"command"})
 
@@ -193,6 +196,7 @@ func TestDiscoverPlugins_PluginWithDescription(t *testing.T) {
 func TestDiscoverPlugins_PluginSemDescricao(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	createFakePlugin(t, dir, "nodesc-plugin", "", []string{"command"})
 
@@ -213,6 +217,7 @@ func TestDiscoverPlugins_PluginSemDescricao(t *testing.T) {
 func TestDiscoverPlugins_PluginCollision(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	// Cria plugin com nome que colide com comando existente
 	createFakePlugin(t, dir, "existente", "Plugin colidindo", []string{"command"})
@@ -239,6 +244,7 @@ func TestDiscoverPlugins_PluginCollision(t *testing.T) {
 func TestDiscoverPlugins_PluginNoCommandHook(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	// Plugin que só suporta hook "context", não "command"
 	createFakePlugin(t, dir, "context-only", "Plugin sem command", []string{"context"})
@@ -259,6 +265,7 @@ func TestDiscoverPlugins_DiscoverError(t *testing.T) {
 	// não deve registrar nenhum comando e não deve entrar em pânico
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	// HOME/.yby/plugins não existe — Discover retorna nil mas ListPlugins fica vazia
 
 	cmd := &cobra.Command{Use: "test-root"}

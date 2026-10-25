@@ -1,0 +1,56 @@
+VOLUMES DO STAGING
+
+O staging tem 6 volumes. Quatro estão em uso e dois sobraram de apps
+removidos.
+Os nomes vêm do kubectl get pvc,pv -A.
+
+VOLUME           NAMESPACE     TAMANHO  STATUS
+data-postgres-0  payments         20Gi  * Bound
+pvc-3f1a9c2e     sem dono          8Gi  ! Released
+worker           jobs | batch      1Gi  x CrashLoopBackOff
+
+Se não precisar dos dados:
+
++ COMANDO · c copia ---------------------------------------------------+
+| kubectl delete pv pvc-3f1a9c2e pvc-91cd04b7                          |
++----------------------------------------------------------------------+
+
++ COMANDO · c copia ---------------------------------------------------+
+| kubectl -n monitoring patch deployment grafana --type=json           |
+| -p='[{"op":"replace","path":"/spec/replicas","value":3}]'            |
++----------------------------------------------------------------------+
+
++ YAML ----------------------------------------------------------------+
+| kind: PersistentVolume                                               |
+|     spec: {}                                                         |
++----------------------------------------------------------------------+
+
++ CÓDIGO --------------------------------------------------------------+
+| sem linguagem                                                        |
++----------------------------------------------------------------------+
+
+RECURSO       Deployment/api
+PROBLEMA      O container roda como root e não define securityContext no
+              values.yaml do chart
+RECOMENDAÇÃO  Defina securityContext.runAsNonRoot e resources.limits no
+              values.yaml antes do próximo deploy
+
+RECURSO       Service/web
+RECOMENDAÇÃO  ! Pending
+
+PRÓXIMOS PASSOS
+
+ANTES DE APAGAR
+
+- confira o dono de cada volume
+v backup feito
+o apagar
+
+1. rode o comando
+2. veja a doc https://kubernetes.io
+
+| volumes Released não voltam sozinhos
+
+------------------------------------------------------------------------
+
+fim velho

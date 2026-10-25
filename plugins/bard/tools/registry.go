@@ -89,4 +89,5 @@ func Reset() {
 	mu.Lock()
 	defer mu.Unlock()
 	registry = make(map[string]*Tool)
+	invalidas = nil
 }

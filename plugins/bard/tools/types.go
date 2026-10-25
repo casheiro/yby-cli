@@ -9,6 +9,8 @@ type Tool struct {
 	Intents     []string // palavras-chave/padrões que ativam esta ferramenta
 	Parameters  []ToolParam
 	Execute     func(ctx context.Context, params map[string]string) (string, error)
+	// Externa marca a ferramenta carregada de YAML (~/.yby/tools ou .yby/tools).
+	Externa bool
 }
 
 // IntentResult é o resultado da classificação de intenção pela IA.

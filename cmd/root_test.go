@@ -51,3 +51,20 @@ func TestExecuteRootHelp(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, "Plataforma de Engenharia")
 }
+
+func TestExecuteRootSemArgumentos(t *testing.T) {
+	usarHomeTemporaria(t)
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	t.Cleanup(func() { rootCmd.SetOut(nil) })
+
+	rootCmd.SetArgs([]string{})
+
+	err := rootCmd.Execute()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Plataforma de Engenharia")
+	// fora de um terminal a logo não sai, para não sujar a saída
+	assert.NotContains(t, output, "█")
+}

@@ -41,6 +41,7 @@ func TestAtlasBlueprint_SemBinario(t *testing.T) {
 	// Isolar HOME e diretório de trabalho para que discoverPluginBinary não encontre binários reais
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 	origDir, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(origDir)

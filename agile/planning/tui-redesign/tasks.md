@@ -117,32 +117,42 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 
 ### Fase 2 · Bard (`plugins/bard`)
 
-- [ ] T011 Refatorar o fluxo de resposta em eventos.
+- [x] T011 Refatorar o fluxo de resposta em eventos.
   - O `sendMessage` atual (`tui/model.go`) vira um pipeline que emite `EtapaMsg` (contexto, intenção, ferramenta, resposta), `TrechoMsg` (pedaços da resposta) e `FimMsg` por canal.
   - Cancelamento por contexto; retry igual ao do REPL antigo (`main.go`).
   - Verificar: testes com provider falso que emite pedaços e erro 429.
-- [ ] T012 Implementar a moldura e as mensagens novas.
+- [x] T012 Implementar a moldura e as mensagens novas.
   - Cabeçalho com o provider (preencher `Config.AIModel` em `main.go`).
   - Mensagens em blocos (VOCÊ · hora / ◆ BARD · hora · ferramentas · tempo).
   - Glamour com largura do terminal e estilo derivado dos tokens; tabelas em largura total.
   - Verificar: golden das telas "conversa" e "tema kraft".
-- [ ] T013 Corrigir teclado e rolagem.
+- [x] T013 Corrigir teclado e rolagem.
   - O histórico só rola com pgup/pgdn e a roda do mouse; digitar não rola mais.
   - `↑` edita a última mensagem; `⇧↵` faz nova linha; `esc` interrompe a resposta.
   - Indicador "↓ N mensagens novas" quando a tela está rolada para cima.
   - Verificar: `teatest` digitando "jkdufb " sem mudar a rolagem.
-- [ ] T014 Mostrar etapas e ferramentas.
+- [x] T014 Mostrar etapas e ferramentas.
   - `ui.Etapas` durante o trabalho, com ↵ para ver a saída de uma ferramenta.
   - Bloco "COMANDO · c copia" (copiar via OSC 52).
   - Linha de estado "◈ gerando resposta · N s".
   - Verificar: golden da tela "trabalhando".
-- [ ] T015 Implementar os comandos `/` com lista filtrável.
+- [x] T015 Implementar os comandos `/` com lista filtrável.
   - `/sessões`, `/limpar`, `/contexto`, `/ferramentas`, `/modelo`, `/copiar`, `/exportar`, `/ajuda`, reaproveitando `history.go`.
   - Verificar: `teatest` para filtrar, ⇥ completar, ↵ executar e esc fechar; golden da tela "comandos".
-- [ ] T016 Migrar one-shot e batch e fazer a limpeza.
+- [x] T016 Migrar one-shot e batch e fazer a limpeza.
   - `-p` e batch passam a usar `pkg/ui/msg.go`.
   - Remover o REPL antigo (`YBY_BARD_LEGACY_UI`), `maxToolIterations` e `promptStyle`.
   - Verificar: `echo "..." | yby bard` e `yby bard -p` funcionam sem TTY; nada interativo trava.
+- [x] T036 Desenhar a logo para o terminal e mostrá-la no `yby` sem argumentos.
+  - `ui.Marca(largura, altura)` escolhe o desenho que cabe: grande (64×12) ou compacta (42×8) em meio-blocos, traço ASCII (60×12) com `YBY_ASCII=1`, e `◆ YBY` sem espaço. `ui.Logo(w)` só escreve num terminal.
+  - Desenhos feitos à mão a partir de `docs/assets/brand/yby-logo.svg` e conferidos contra ele (decisão do usuário de 24/10/2026; antes o briefing dizia que a logo não ia para o terminal).
+  - Verificar: goldens de `pkg/ui`, catálogo com a folha "marca" e `yby` sem argumentos capturado num ConPTY (larguras 100 e 56, ASCII e tema claro).
+- [x] T038 Passar a ajuda dos comandos para o formato da carta e para o português.
+  - `ui.EscreverAjuda` (título, descrição, USO, COMANDOS, EXEMPLOS, FLAGS, FLAGS GLOBAIS) e `cmd/ajuda.go` ligando ao cobra; `yby` sem argumentos com a logo no lugar do título.
+  - Verificar: goldens de `pkg/ui`, testes de `cmd/ajuda_test.go` sem "Usage:", "Flags:" nem "help for", e capturas num ConPTY (raiz, `env create --help` em 56 colunas, tema claro e ASCII).
+- [x] T037 Mostrar a logo nas boas-vindas do Bard.
+  - Conversa vazia, antes da primeira pergunta: `ui.Marca` com a largura e a altura livres do histórico; some quando a conversa começa.
+  - Verificar: golden da conversa vazia em 120×40 (grande), 64×20 (compacta) e 60×16 (sem logo: o cabeçalho já traz `◆ YBY  BARD`).
 
 **Checkpoint fase 2:** as 4 telas do Bard batem com a prancha no terminal real → PR "feat(bard): nova TUI da carta do terminal".
 
@@ -215,6 +225,9 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Changelog com as mudanças de teclas do Viz e do Cloud.
   - Prancha marcada como implementada.
   - Verificar: links e capturas conferidos.
+- [ ] T039 Fazer o `/modelo` do Bard trocar também o modelo dentro do provider.
+  - Hoje troca só o provider (claude-cli, gemini...): a factory de `pkg/ai` lê o modelo só de `YBY_AI_MODEL` e do config. Precisa de uma forma de criar o provider com um modelo escolhido e de listar os modelos de cada provider.
+  - Verificar: `/modelo` lista provider e modelos, a troca vale para a sessão e aparece no cabeçalho.
 
 **Checkpoint final:** todas as caixas `[x]`; verificação geral passando; revisão das telas reais contra a prancha.
 
@@ -272,3 +285,14 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T026 · T027 · T028 | Checkpoint da fase 1 rodado pelo agente num ConPTY com capturas (xterm.js + Playwright), home e KUBECONFIG isolados. Ajustes: `status` sem cluster tira as linhas de log do client-go do detalhe (`shared.SemLogDoKlog`); `logs` e `access` mostram a mensagem do kubectl em vez de "exit status 1" (`shared.ComSaida`); secret e seal mostram o caminho relativo à pasta atual; `upgrade` consultava `casheiro-org/yby-cli` (404 sempre) e agora usa `casheiro/yby-cli`, com 404 como `ERR_VALIDATION`; descrição padrão dos ambientes em português ("ambiente local") | este commit |
 | 24/10/2026 | T027 · T028 | Decisões do checkpoint, aprovado pelo usuário pelas capturas: no terminal, `Progresso.Falhar` tira as pendentes da tela (voltam se outra etapa começar); `destroy` de ambiente não local sem `YBY_CLUSTER_NAME` recusa em vez de apagar o cluster local `yby-local` (bug antigo); a causa dos erros resume a saída do comando externo (`errors.ResumirSaida`, usado por `ui.RenderError` e `shared.CausaCurta`: sem "exit status N", sem `error:` e sem o rodapé do kubectl); mensagens do `pkg/mirror` em português | este commit |
 | 24/10/2026 | T025 | CI no Linux mostrou que, no Windows, o scaffold não achatava `.github/workflows/<padrão>/` (usava `filepath.Rel`, com `\`, num caminho de `fs.FS`): os goldens da árvore tinham sido gravados com esse defeito. Corrigido trabalhando com `/` e convertendo só no fim; os 7 goldens agora são iguais nos dois sistemas | este commit |
+| 24/10/2026 | T036 | Logo oficial no terminal: `pkg/ui/marca.go` com `Marca` e `Logo` e os três desenhos em `pkg/ui/marca/` (feitos à mão pixel a pixel, julgados e lapidados contra o SVG; as trilhas não encostam no caule, como no original). `yby` sem argumentos mostra a logo antes da ajuda, só num terminal; `--help` continua sem. Folha "marca" no catálogo. O README já usa o SVG novo (commit do PR #199, trazido para esta branch) | este commit |
+| 24/10/2026 | T038 | Ajuda de todos os comandos do core no formato da carta e em português (`ui.EscreverAjuda` + `cmd/ajuda.go`): USO, COMANDOS, EXEMPLOS, FLAGS e FLAGS GLOBAIS, tipos das flags e padrões traduzidos, `help` padrão do cobra traduzido, grupos sem linha de uso própria e exemplos que quebram com recuo. O `--help` resolve o modo visual sozinho (o cobra pula o `PersistentPreRun`), senão ignorava `YBY_THEME` e `YBY_ASCII`. `Title` sem texto à direita não deixa mais espaços no fim da linha. Os textos dos comandos (Short, Long, descrição das flags) continuam como estavam | este commit |
+| 24/10/2026 | T011 | Fluxo de resposta em eventos (`plugins/bard/tui/fluxo.go`): `EtapaMsg` (contexto do projeto, entender o pedido, ferramenta, gerar resposta), `TrechoMsg` e `FimMsg` por canal; retry com o backoff do REPL antigo (2 s, 10 s, até 30 s) descartando o parcial; esc cancela por contexto sem fechar o Bard, mesmo com provider que ignora o contexto. Revisão: o histórico renderizado fica em cache e cada trecho só redesenha o parcial; panic no fluxo vira `FimMsg` com erro. Provider falso nos testes, inclusive 429 | este commit |
+| 24/10/2026 | T012 | Moldura e mensagens da carta no Bard: cabeçalho com cluster ▸ namespace e provider (`Config.AIModel`), blocos VOCÊ / ◆ BARD com ferramentas e tempo, linha de estado e legenda da prancha. Novo `pkg/ui/uimarkdown` (glamour na largura do terminal com estilo dos tokens, tabelas em `ui.Tabela`, status do Kubernetes com glifo, shell em quadro), `ui.MolduraTexto` e `ui.QuadroComTecla`. Goldens "conversa" e "tema kraft". Revisão: blocos de código quebram dentro do quadro em vez de cortar | este commit |
+| 24/10/2026 | T013 | Teclado e rolagem: letras vão só para o campo (bug "digitar rola a tela"), histórico rola com pgup/pgdn e a roda do mouse, "↓ N mensagens novas" (`ui.AvisoRolagem`), ↑ no campo vazio edita a última pergunta, esc interrompe, campo aceita a próxima pergunta durante a resposta. Nova linha com ctrl+j (e alt+enter): o Bubble Tea v1 não distingue ⇧↵ de ↵ no console do Windows, então a legenda mostra ctrl+j. teatest com "jkdufb " | este commit |
+| 24/10/2026 | T014 | Etapas e ferramentas: bloco "◈ BARD · trabalhando · N s" com `ui.Etapas`, linha de estado "◈ gerando resposta · N s", ↵ no campo vazio abre a saída da ferramenta (camada com rolagem e "SAÍDA · c copia"), ctrl+y copia o último comando de shell por OSC 52 (o c no campo comia a primeira letra da pergunta). Relógio injetado para os goldens; golden "trabalhando" | este commit |
+| 24/10/2026 | T015 | Comandos `/` com lista filtrável (prancha BardComandos): /sessões (retoma a conversa), /limpar, /contexto (quadro CONTEXTO DESTA SESSÃO), /ferramentas, /modelo (troca o provider da sessão), /copiar, /exportar e /ajuda; filtro sem acento, ⇥ completa, apelidos antigos digitados por inteiro, barra que não é comando vai como pergunta. teatest e golden "comandos" | este commit |
+| 24/10/2026 | T016 | `-p` e batch pelo mesmo `tui.Fluxo` (`plugins/bard/direto.go`): só a resposta no stdout, etapas no stderr por `ui.Progresso` quando é terminal, erros por `ui.WriteError`, nada espera entrada sem TTY. Removidos o REPL antigo (`YBY_BARD_LEGACY_UI`), `maxToolIterations`, `promptStyle` e os estilos à mão. No core, o erro do plugin não sai mais duplicado e o código de saída do plugin (inclusive 128+sinal) é repassado (`plugin.SaidaDoPlugin`) | este commit |
+| 24/10/2026 | T037 | Logo nas boas-vindas do Bard: na conversa vazia, a grande ou a compacta conforme a janela, alinhada ao topo como o corpo da moldura; sem espaço, o corpo fica vazio (a marca já está no cabeçalho). Some com a primeira pergunta. Goldens 120×40, 64×20 e 60×16 | este commit |
+| 24/10/2026 | T016 | Checkpoint da fase 2 rodado pelo agente num ConPTY, com claude e kubectl falsos: uma linha de log no terminal durante a conversa (o download do modelo de embeddings) empurrava a moldura e deixava restos na tela. Agora o log vai para `~/.yby/logs/bard.log` enquanto a TUI está aberta, e a TUI só abre o índice do Synapstor se o projeto tiver um, como o `-p` (antes criava `.synapstor/` no projeto e baixava o modelo de 90 MB na primeira pergunta) | este commit |
+| 24/10/2026 | T013 · T014 · T015 | Decisões do checkpoint da fase 2, aprovado pelo usuário pelas capturas: nova linha fica `ctrl+j` (e alt+enter), porque o Bubble Tea v1 não separa ⇧↵ de ↵ no Windows; copiar o comando fica `ctrl+y` em vez do `c` da prancha; a resposta interrompida com esc passa a ir para o histórico salvo com a marca *resposta interrompida*; a troca de modelo dentro do provider vira a T039 | este commit |

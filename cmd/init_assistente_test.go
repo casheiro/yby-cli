@@ -63,6 +63,7 @@ func isolarInit(t *testing.T) *pluginsFalsos {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("YBY_AI_PROVIDER", "nenhum")
 
 	plugins := &pluginsFalsos{}

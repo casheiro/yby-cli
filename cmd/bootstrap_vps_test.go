@@ -58,6 +58,7 @@ func TestCopyFile_SourceNotFound(t *testing.T) {
 func TestFetchKubeconfig_Success(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("CLUSTER_NAME", "test-cluster")
 
 	runner := &testutil.MockRunner{

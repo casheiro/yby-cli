@@ -420,6 +420,7 @@ func TestNewPortForwarder_TableDriven(t *testing.T) {
 				// Forçar ausência de kubeconfig configurando caminho inexistente
 				t.Setenv("KUBECONFIG", "/tmp/kubeconfig-vazio-coverage-test")
 				t.Setenv("HOME", "/tmp/home-inexistente-coverage-test")
+				t.Setenv("USERPROFILE", "/tmp/home-inexistente-coverage-test")
 			}
 
 			_, err := NewPortForwarder("ns", "svc", 8080)

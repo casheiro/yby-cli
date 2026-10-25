@@ -28,13 +28,18 @@ type ExternalToolDef struct {
 // Tools do projeto (.yby/tools/) têm precedência sobre globais.
 func LoadExternalTools() {
 	home, _ := os.UserHomeDir()
-	dirs := []string{
-		filepath.Join(home, ".yby", "tools"),
-		filepath.Join(".yby", "tools"),
+	// rotulo é como o diretório aparece no /ferramentas do Bard.
+	dirs := []struct{ dir, rotulo string }{
+		{filepath.Join(home, ".yby", "tools"), "~/.yby/tools/"},
+		{filepath.Join(".yby", "tools"), ".yby/tools/"},
 	}
 
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
+	mu.Lock()
+	invalidas = nil
+	mu.Unlock()
+
+	for _, d := range dirs {
+		entries, err := os.ReadDir(d.dir)
 		if err != nil {
 			continue
 		}
@@ -44,30 +49,50 @@ func LoadExternalTools() {
 				continue
 			}
 
-			filePath := filepath.Join(dir, entry.Name())
+			filePath := filepath.Join(d.dir, entry.Name())
 			data, err := os.ReadFile(filePath)
 			if err != nil {
 				continue
 			}
+			arquivo := d.rotulo + entry.Name()
 
 			var def ExternalToolDef
 			if err := yaml.Unmarshal(data, &def); err != nil {
 				fmt.Fprintf(os.Stderr, "aviso: tool %s invalida: %v\n", entry.Name(), err)
+				registrarInvalida(arquivo, "o YAML não é válido")
 				continue
 			}
 
-			if def.Name == "" || def.Command == "" {
+			if motivo := camposFaltando(def); motivo != "" {
+				registrarInvalida(arquivo, motivo)
 				continue
 			}
 
 			// Não sobrescrever tools built-in
-			if Get(def.Name) != nil {
+			if t := Get(def.Name); t != nil {
+				if !t.Externa {
+					registrarInvalida(arquivo, "o nome "+def.Name+" já é de uma ferramenta nativa")
+				}
 				continue
 			}
 
 			registerExternalTool(def)
 		}
 	}
+}
+
+// camposFaltando diz quais campos obrigatórios faltam na definição ("falta o campo
+// command"); vazio se nenhum.
+func camposFaltando(def ExternalToolDef) string {
+	switch {
+	case def.Name == "" && def.Command == "":
+		return "faltam os campos name e command"
+	case def.Name == "":
+		return "falta o campo name"
+	case def.Command == "":
+		return "falta o campo command"
+	}
+	return ""
 }
 
 // registerExternalTool converte uma definição YAML em Tool registrada.
@@ -88,6 +113,7 @@ func registerExternalTool(def ExternalToolDef) {
 		Execute: func(ctx context.Context, toolParams map[string]string) (string, error) {
 			return executeExternalCommand(def.Command, toolParams)
 		},
+		Externa: true,
 	}
 
 	Register(tool)

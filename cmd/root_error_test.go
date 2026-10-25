@@ -12,6 +12,7 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/logger"
+	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -235,4 +236,51 @@ func TestAskTelemetryOptIn_Aceita(t *testing.T) {
 	conteudo, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	assert.Equal(t, "telemetry:\n  enabled: true\n", string(conteudo))
+}
+
+// ========================================================
+// codigoDeSaida — o código de saída e o erro na tela
+// ========================================================
+
+// rodarCodigoDeSaida roda codigoDeSaida com o stderr capturado e devolve o código e o
+// que saiu.
+func rodarCodigoDeSaida(t *testing.T, err error) (int, string) {
+	t.Helper()
+	origFormato, origSaida, origUI := logFormatEfetivo, saidaErro, ui.Atual()
+	t.Cleanup(func() {
+		logFormatEfetivo, saidaErro = origFormato, origSaida
+		ui.Configurar(origUI)
+	})
+	var out bytes.Buffer
+	logFormatEfetivo, saidaErro = "text", &out
+	ui.Configurar(ui.Opcoes{SemCor: true})
+	codigo := codigoDeSaida(err)
+	return codigo, out.String()
+}
+
+func TestCodigoDeSaida_SemErro(t *testing.T) {
+	codigo, saida := rodarCodigoDeSaida(t, nil)
+	assert.Equal(t, 0, codigo)
+	assert.Empty(t, saida)
+}
+
+func TestCodigoDeSaida_ErroComum(t *testing.T) {
+	codigo, saida := rodarCodigoDeSaida(t, errors.New(errors.ErrCodeValidation, "algo errado"))
+	assert.Equal(t, 1, codigo)
+	assert.Contains(t, saida, "algo errado")
+	assert.Equal(t, 1, strings.Count(saida, "ERR_VALIDATION"))
+}
+
+// O plugin que saiu com código próprio já escreveu o erro: o core repassa o código
+// (inclusive o 130 do ctrl+c) e não escreve um segundo bloco.
+func TestCodigoDeSaida_PluginJaRelatou(t *testing.T) {
+	for _, c := range []int{1, 2, 130} {
+		codigo, saida := rodarCodigoDeSaida(t, &plugin.SaidaDoPlugin{Codigo: c})
+		assert.Equal(t, c, codigo)
+		assert.Empty(t, saida, "nenhum bloco ERR_PLUGIN depois do erro do plugin")
+	}
+	// embrulhado por outra camada, continua reconhecido
+	codigo, saida := rodarCodigoDeSaida(t, fmt.Errorf("camada: %w", &plugin.SaidaDoPlugin{Codigo: 7}))
+	assert.Equal(t, 7, codigo)
+	assert.Empty(t, saida)
 }

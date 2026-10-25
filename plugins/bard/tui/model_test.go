@@ -31,37 +31,6 @@ func TestNew(t *testing.T) {
 	}
 }
 
-// TestRenderStatusBar verifica que a status bar contém as informações corretas.
-func TestRenderStatusBar(t *testing.T) {
-	config := Config{
-		SessionID: "test-session",
-		Namespace: "production",
-		Cluster:   "k3d-local",
-		AIModel:   "gpt-4",
-	}
-
-	model := New(nil, nil, config)
-	model.width = 120
-
-	bar := model.renderStatusBar()
-
-	if !strings.Contains(bar, "k3d-local") {
-		t.Error("status bar deveria conter o cluster")
-	}
-	if !strings.Contains(bar, "production") {
-		t.Error("status bar deveria conter o namespace")
-	}
-	if !strings.Contains(bar, "test-session") {
-		t.Error("status bar deveria conter a sessão")
-	}
-	if !strings.Contains(bar, "gpt-4") {
-		t.Errorf("status bar deveria conter o modelo, obteve: %q", bar)
-	}
-	if !strings.Contains(bar, "idle") {
-		t.Errorf("status bar deveria conter o status idle, obteve: %q", bar)
-	}
-}
-
 // TestUpdateWindowSize verifica que o modelo responde a mudanças de tamanho.
 func TestUpdateWindowSize(t *testing.T) {
 	model := New(nil, nil, Config{})
@@ -87,12 +56,12 @@ func TestUpdateCtrlC(t *testing.T) {
 	}
 }
 
-// TestResponseMsg verifica processamento de resposta da IA.
-func TestResponseMsg(t *testing.T) {
+// TestFimMsg verifica processamento do fim de uma rodada com resposta.
+func TestFimMsg(t *testing.T) {
 	model := New(nil, nil, Config{})
 	model.state = stateStreaming
 
-	updated, _ := model.Update(responseMsg{content: "resposta da IA"})
+	updated, _ := model.Update(FimMsg{Resposta: "resposta da IA"})
 	m := updated.(Model)
 
 	if m.state != stateIdle {
@@ -109,12 +78,12 @@ func TestResponseMsg(t *testing.T) {
 	}
 }
 
-// TestResponseMsg_ComErro verifica processamento de erro da IA.
-func TestResponseMsg_ComErro(t *testing.T) {
+// TestFimMsg_ComErro verifica processamento de erro da IA.
+func TestFimMsg_ComErro(t *testing.T) {
 	model := New(nil, nil, Config{})
 	model.state = stateStreaming
 
-	updated, _ := model.Update(responseMsg{err: fmt.Errorf("falha na IA")})
+	updated, _ := model.Update(FimMsg{Err: fmt.Errorf("falha na IA")})
 	m := updated.(Model)
 
 	if m.state != stateIdle {

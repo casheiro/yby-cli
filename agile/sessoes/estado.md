@@ -7,10 +7,10 @@
 
 - **Projeto ativo:** `Carta do terminal (redesign das TUIs e saídas)`
 - **Plano:** `agile/planning/tui-redesign/tasks.md`
-- **Branch:** `feat/tui-carta`
-- **Próxima ação:** com o aval do usuário, fazer a T023 (`cmd/root.go`, `handleExecutionError` → `ui.RenderError`) e a T026 (saídas de `cmd/doctor.go`, `status.go`, `setup.go`, `validate.go`), as primeiras migrações testáveis no binário real (`task build` → `yby doctor`).
-- **Aguardando o usuário:** aprovar a mudança no plano: não abrir PR só com a lib; `pkg/ui` sobe junto com a primeira migração real; começar pela fase 1 (T023 + T026) antes do Bard. Sem push até ele testar o CLI real localmente.
-- **Atenção:** fase 0 completa (T001–T010) e só local: 25 commits à frente de `origin/main`, nenhum push. Nenhum comando usa `pkg/ui` ainda. Push em `feat/**` faz o CI abrir sozinho um PR para `develop`. Antes da fase 2 (Bard), atualizar esta branch com a `main` (correções para Windows).
+- **Branch:** `feat/tui-bard`
+- **Próxima ação:** fase 3 (Viz), começando pela T017 (atualizar dependências do Viz, commit isolado), numa branch nova a partir da `feat/tui-bard`.
+- **Aguardando o usuário:** revisão e merge do PR da fase 2 (`feat/tui-bard` → `develop`).
+- **Atenção:** fases 0 e 1 na `develop` (PR #201 mergeado); PRs #199 e #200 fechados (a logo e as correções para Windows vêm nesta branch). Fase 2 completa (T011–T016) e mais T036 (logo), T037 (logo no Bard) e T038 (ajuda em português), no PR da fase 2. O yby fica só em português (decisão de 24/10/2026, sem i18n). O secret `GH_PAT` foi apagado pelo usuário: o job "Create PR to Develop" passa com o `GITHUB_TOKEN`, mas no release a tag empurrada pelo `GITHUB_TOKEN` não dispara o `release.yaml` (GoReleaser) nem o PR da `release/**` dispara o `release-pipeline.yaml`; o release vai precisar de um PAT novo ou de disparo manual. `~/.yby/plugins` do usuário tem plugins falsos de testes antigos (`yby-plugin-dup`, `-fake`, `-http`…), não apagados. Teste real: o usuário aceita as capturas do agente (ConPTY + xterm.js + Playwright) publicadas numa galeria; o Bard é capturado com claude e kubectl falsos (`scratchpad/captura/shims_bard`).
 
 ## Ambiente
 

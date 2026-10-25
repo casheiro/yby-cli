@@ -1,0 +1,298 @@
+package tui
+
+import (
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/casheiro/yby-cli/pkg/ui"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+)
+
+// semCores deixa a saída sem ANSI, para comparar texto.
+func semCores(t *testing.T) {
+	t.Helper()
+	usarModo(t, modo{tema: ui.TemaEscuro, perfil: termenv.Ascii})
+}
+
+func TestContexto(t *testing.T) {
+	semCores(t)
+	casos := []struct {
+		cfg  Config
+		want string
+	}{
+		{Config{Cluster: "staging", Namespace: "default", AIModel: "claude-cli"}, "staging ▸ default   claude-cli"},
+		{Config{Namespace: "payments", AIModel: "ollama"}, "payments   ollama"},
+		{Config{Cluster: "k3d-local"}, "k3d-local"},
+		{Config{AIModel: "gemini"}, "gemini"},
+		{Config{}, ""},
+	}
+	for _, c := range casos {
+		m := New(nil, nil, c.cfg)
+		if got := m.contexto(); got != c.want {
+			t.Errorf("contexto(%+v) = %q, esperado %q", c.cfg, got, c.want)
+		}
+	}
+}
+
+func TestResumoSessao(t *testing.T) {
+	semCores(t)
+	m := New(nil, nil, Config{SessionID: "20261024-090000"})
+	m.agora = relogio("18:00")
+	if got := m.resumoSessao(); got != "sessão de hoje · nenhuma mensagem" {
+		t.Errorf("sessão vazia: %q", got)
+	}
+	m.messages = []chatMessage{{role: "user"}, {role: "nota"}, {role: "error"}}
+	if got := m.resumoSessao(); got != "sessão de hoje · 1 mensagem" {
+		t.Errorf("notas e erros não contam: %q", got)
+	}
+	m.config.SessionID = "20261020-090000"
+	m.messages = append(m.messages, chatMessage{role: "assistant"})
+	if got := m.resumoSessao(); got != "sessão de 20/10 · 2 mensagens" {
+		t.Errorf("sessão de outro dia: %q", got)
+	}
+	m.config.SessionID = ""
+	if got := m.resumoSessao(); got != "2 mensagens" {
+		t.Errorf("sem sessão: %q", got)
+	}
+}
+
+func TestMensagemEstado(t *testing.T) {
+	semCores(t)
+	m := New(nil, nil, Config{})
+	if got := m.mensagemEstado(); got != "" {
+		t.Errorf("antes da primeira pergunta: %q", got)
+	}
+	m.state = stateStreaming
+	if got := m.mensagemEstado(); got != "◈ trabalhando" {
+		t.Errorf("trabalhando: %q", got)
+	}
+	m.etapas = []EtapaMsg{{Etapa: EtapaContexto, Rotulo: rotuloContexto, Estado: ui.EtapaFeita}, {Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual}}
+	if got := m.mensagemEstado(); got != "◈ gerando resposta" {
+		t.Errorf("etapa atual: %q", got)
+	}
+	for _, c := range []struct {
+		etapa Etapa
+		want  string
+	}{
+		{EtapaContexto, "◈ buscando contexto"},
+		{EtapaIntencao, "◈ entendendo o pedido"},
+		{EtapaFerramenta, "◈ rodando kubectl get"},
+	} {
+		m.etapas[1] = EtapaMsg{Etapa: c.etapa, Rotulo: "kubectl get", Estado: ui.EtapaAtual}
+		if got := m.mensagemEstado(); got != c.want {
+			t.Errorf("etapa %d: %q, esperado %q", c.etapa, got, c.want)
+		}
+	}
+	// Com a rodada aberta, o tempo corrido vem depois da etapa.
+	inicio := time.Date(2026, 10, 24, 12, 7, 0, 0, time.Local)
+	m.inicioRodada, m.instante = inicio, inicio.Add(9500*time.Millisecond)
+	m.etapas[1] = EtapaMsg{Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual}
+	if got := m.mensagemEstado(); got != "◈ gerando resposta · 9 s" {
+		t.Errorf("com o tempo: %q", got)
+	}
+	m.interrompendo = true
+	if got := m.mensagemEstado(); got != "◈ interrompendo · 9 s" {
+		t.Errorf("interrompendo: %q", got)
+	}
+	m.aviso = &avisoEstado{ok: true, texto: "comando enviado à área de transferência"}
+	if got := m.mensagemEstado(); got != "✓ comando enviado à área de transferência" {
+		t.Errorf("o aviso da cópia passa na frente: %q", got)
+	}
+	m.aviso = &avisoEstado{texto: "não deu para copiar o comando"}
+	if got := m.mensagemEstado(); got != "✕ não deu para copiar o comando" {
+		t.Errorf("falha da cópia: %q", got)
+	}
+	m.aviso = nil
+	m.state = stateIdle
+	for _, c := range []struct {
+		fim  FimMsg
+		want string
+	}{
+		{FimMsg{Duracao: 21 * time.Second}, "✓ resposta em 21 s"},
+		{FimMsg{Err: errors.New("429")}, "✕ a resposta falhou"},
+		{FimMsg{Interrompida: true}, "▲ resposta interrompida"},
+	} {
+		m.ultimoFim = &c.fim
+		if got := m.mensagemEstado(); got != c.want {
+			t.Errorf("fim %+v: %q, esperado %q", c.fim, got, c.want)
+		}
+	}
+}
+
+func TestLinhaFerramenta(t *testing.T) {
+	semCores(t)
+	casos := []struct {
+		f    ferramentaUsada
+		want string
+	}{
+		{ferramentaUsada{rotulo: "kubectl get", alvo: "pvc,pv -A", linhas: 14}, "✓ kubectl get pvc,pv -A · 14 linhas"},
+		{ferramentaUsada{rotulo: "atlas blueprint", linhas: 1}, "✓ atlas blueprint · 1 linha"},
+		{ferramentaUsada{rotulo: "kubectl logs", alvo: "worker"}, "✓ kubectl logs worker"},
+		{ferramentaUsada{rotulo: "kubectl get", falhou: true, nota: "sem acesso ao cluster"}, "✕ kubectl get · sem acesso ao cluster"},
+		{ferramentaUsada{rotulo: "kubectl get", falhou: true}, "✕ kubectl get"},
+	}
+	for _, c := range casos {
+		if got := linhaFerramenta(c.f); got != c.want {
+			t.Errorf("linhaFerramenta(%+v) = %q, esperado %q", c.f, got, c.want)
+		}
+	}
+}
+
+func TestFerramentasDaRodada(t *testing.T) {
+	m := New(nil, nil, Config{})
+	m.etapas = []EtapaMsg{
+		{Etapa: EtapaContexto, Rotulo: rotuloContexto, Estado: ui.EtapaFeita},
+		{Etapa: EtapaFerramenta, Rotulo: "kubectl get", Nota: "pods", Estado: ui.EtapaFeita, Saida: "a\nb\n"},
+		{Etapa: EtapaFerramenta, Rotulo: "kubectl logs", Nota: "sem permissão", Estado: ui.EtapaFalha, Saida: "Erro: x"},
+		{Etapa: EtapaFerramenta, Rotulo: "sentinel scan", Estado: ui.EtapaAtual},
+	}
+	got := m.ferramentasDaRodada()
+	if len(got) != 2 {
+		t.Fatalf("só as ferramentas que terminaram: %+v", got)
+	}
+	if got[0].alvo != "pods" || got[0].linhas != 2 || got[0].falhou {
+		t.Errorf("ferramenta feita: %+v", got[0])
+	}
+	if !got[1].falhou || got[1].nota != "sem permissão" || got[1].alvo != "" || got[1].linhas != 0 {
+		t.Errorf("ferramenta com falha: %+v", got[1])
+	}
+	if contarLinhas("  \n") != 0 || contarLinhas("um") != 1 {
+		t.Error("contarLinhas")
+	}
+}
+
+func TestCampo(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	linhas := strings.Split(m.campo(), "\n")
+	if len(linhas) != alturaCampo || !strings.HasPrefix(linhas[0], "›  Pergunte sobre o cluster") {
+		t.Errorf("campo vazio: %q", linhas)
+	}
+	m.textarea.SetValue("qual pod reinicia?")
+	linhas = strings.Split(m.campo(), "\n")
+	if len(linhas) != alturaCampo || !strings.HasPrefix(linhas[0], "› qual pod reinicia?") || strings.HasPrefix(linhas[1], "›") {
+		t.Errorf("campo com texto: o prompt só na primeira linha: %q", linhas)
+	}
+	// Durante a resposta o campo guarda a próxima pergunta; vazio, mostra a dica da
+	// prancha "trabalhando".
+	m.state = stateStreaming
+	if got := strings.Split(m.campo(), "\n")[0]; !strings.HasPrefix(got, "› qual pod reinicia?") {
+		t.Errorf("campo com texto durante a resposta: %q", got)
+	}
+	m.textarea.Reset()
+	if got := strings.Split(m.campo(), "\n")[0]; got != "› a próxima pergunta pode ser escrita enquanto o Bard responde" {
+		t.Errorf("campo vazio durante a resposta: %q", got)
+	}
+}
+
+func TestTeclas(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	legenda := func() string {
+		return ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
+	}
+	// Sem pergunta feita, ↑ não tem o que editar; / e ? abrem os comandos e a ajuda.
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ? ajuda   ") || strings.Contains(got, "↑") {
+		t.Errorf("legenda ociosa: %q", got)
+	}
+	m.messages = append(m.messages, chatMessage{role: "user", content: "oi"})
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ↑ editar última  ? ajuda   ") {
+		t.Errorf("legenda com pergunta para editar: %q", got)
+	}
+	m.textarea.SetValue("rascunho")
+	// Com texto no campo, ↑ move o cursor, o ? é letra e a / no meio não abre a lista.
+	if got := legenda(); strings.Contains(got, "↑") || strings.Contains(got, "? ajuda") || strings.Contains(got, "/ comandos") {
+		t.Errorf("com texto no campo só ficam as teclas que funcionam: %q", got)
+	}
+	m.textarea.Reset()
+	m.state = stateStreaming
+	// Durante a resposta, a / é texto e o ? abre a ajuda numa camada, como na prancha.
+	if got := legenda(); !strings.HasPrefix(got, "esc interromper  ? ajuda   ") || strings.Contains(got, "↑") || strings.Contains(got, "/ comandos") {
+		t.Errorf("legenda durante a resposta: %q", got)
+	}
+	m.textarea.SetValue("próxima")
+	if got := legenda(); strings.Contains(got, "? ajuda") {
+		t.Errorf("durante a resposta, com texto no campo, o ? é letra: %q", got)
+	}
+	m.textarea.Reset()
+	// Com a conversa maior que a tela, pgup aparece.
+	m.state = stateIdle
+	m.messages = append(m.messages, chatMessage{role: "assistant", content: strings.Repeat("linha\n", 40)})
+	m.markdown = nil
+	m.updateViewport()
+	if got := legenda(); !strings.Contains(got, "pgup rolar") {
+		t.Errorf("legenda com rolagem: %q", got)
+	}
+}
+
+func TestRenderizarMensagem_ErroENota(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	erro := m.renderizarMensagem(chatMessage{role: "error", content: "o provider recusou\nsegunda linha", hora: m.agora(), duracao: 3 * time.Second,
+		ferramentas: []ferramentaUsada{{rotulo: "kubectl get", alvo: "pods", linhas: 3}}}, false, false)
+	want := "✕ BARD · 10:00 · 1 ferramenta · 3,0 s\n  ✓ kubectl get pods · 3 linhas\n\n  o provider recusou\n  segunda linha\n\n"
+	if erro != want {
+		t.Errorf("bloco de erro:\n%q\nesperado\n%q", erro, want)
+	}
+	if got := m.renderizarMensagem(chatMessage{role: "nota", content: "resposta interrompida"}, false, false); got != "  resposta interrompida\n\n" {
+		t.Errorf("nota: %q", got)
+	}
+}
+
+func TestCorpoResposta_MarkdownFalhaMostraTextoCru(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	m.markdown = func(string, int, int) (string, error) { return "", errors.New("quebrou") }
+	if got := m.corpoResposta("**oi**\n\ntchau", 40, -1); got != "  **oi**\n\n  tchau\n" {
+		t.Errorf("texto cru: %q", got)
+	}
+}
+
+func TestParcialAparecePorBaixo(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	m.state = stateStreaming
+	m.parcial = "Primeira parte da resposta"
+	m.updateViewport()
+	vista := m.viewport.View()
+	if !strings.Contains(vista, "◈ BARD · trabalhando") || !strings.Contains(vista, "  Primeira parte da resposta") {
+		t.Errorf("parcial: %q", vista)
+	}
+}
+
+func TestMarkdownCache(t *testing.T) {
+	semCores(t)
+	c := &markdownCache{}
+	a, err := c.renderizar("**oi**", 40, -1)
+	if err != nil || a != "oi" {
+		t.Fatalf("render: %q %v", a, err)
+	}
+	r := c.r
+	if _, _ = c.renderizar("x", 40, -1); c.r != r {
+		t.Error("a mesma largura reaproveita o renderizador")
+	}
+	if _, _ = c.renderizar("x", 60, -1); c.r == r || c.largura != 60 {
+		t.Error("largura nova pede outro renderizador")
+	}
+}
+
+// TestTelaJanelaPequena garante que o Bard pede uma janela maior abaixo de 60x16.
+func TestTelaJanelaPequena(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	atualizado, _ := m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
+	tela := atualizado.(Model).View()
+	if !strings.Contains(tela, "Aumente a janela") {
+		t.Errorf("janela pequena:\n%s", tela)
+	}
+	for _, l := range strings.Split(tela, "\n") {
+		if lipgloss.Width(ansi.Strip(l)) > 50 {
+			t.Errorf("linha passa da janela: %q", l)
+		}
+	}
+}

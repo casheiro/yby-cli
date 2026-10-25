@@ -269,11 +269,6 @@ func loadAllEntriesRaw() ([]HistoryEntry, error) {
 	return entries, nil
 }
 
-// clearHistory remove o arquivo de histórico.
-func clearHistory() {
-	os.Remove(historyFile)
-}
-
 // formatHistoryContext formata as entradas de histórico como texto
 // para injeção no system prompt.
 func formatHistoryContext(entries []HistoryEntry) string {

@@ -1,0 +1,25 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  ENV CREATE[0m                                          [38;2;161;147;121majuda[0m
+
+  [38;2;221;208;181mCria um novo ambiente e gera o values correspondente.[0m
+
+  [38;2;221;208;181mO ambiente entra em .yby/environments.yaml.[0m
+
+[38;2;161;147;121mUSO[0m
+  [38;2;221;208;181myby env create [nome] [flags][0m
+  [38;2;161;147;121mtambém yby env novo[0m
+
+[38;2;161;147;121mEXEMPLOS[0m
+  [38;2;221;208;181myby env create qa --type remote[0m
+  [38;2;161;147;121m# Cria config/values-qa.yaml[0m
+
+[38;2;161;147;121mFLAGS[0m
+  [38;2;221;208;181m    --description texto  [0m[38;2;161;147;121mDescrição do ambiente[0m
+  [38;2;221;208;181m    --uma-flag-com-nome-muito-comprido texto[0m
+                           [38;2;161;147;121mdesce para a linha de baixo[0m
+  [38;2;221;208;181m-h, --help               [0m[38;2;161;147;121mmostra esta ajuda[0m
+
+[38;2;161;147;121mFLAGS GLOBAIS[0m
+  [38;2;221;208;181m    --log-level texto  [0m[38;2;161;147;121mNível de log (debug, info, warn, error)[0m
+                         [38;2;161;147;121m(padrão info)[0m
+
+  [38;2;161;147;121myby env create --help mostra os detalhes[0m

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -28,7 +30,7 @@ func NewOllamaProvider() *OllamaProvider {
 
 	// 1. Env Var (User Override)
 	if env := os.Getenv("OLLAMA_HOST"); env != "" {
-		candidates = append(candidates, env)
+		candidates = append(candidates, normalizeOllamaHost(env))
 	}
 
 	// 2. Standard Localhost
@@ -83,13 +85,50 @@ func (p *OllamaProvider) IsAvailable(ctx context.Context) bool {
 
 func (p *OllamaProvider) ping(ctx context.Context, url string) bool {
 	client := http.Client{Timeout: 500 * time.Millisecond} // Fast fail
-	req, _ := http.NewRequestWithContext(ctx, "GET", url+"/api/tags", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url+"/api/tags", nil)
+	if err != nil {
+		slog.Debug("Endpoint do Ollama inválido", "url", url, "erro", err)
+		return false
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode == 200
+}
+
+// normalizeOllamaHost converte OLLAMA_HOST em URL de cliente, seguindo as
+// regras do próprio Ollama: sem esquema assume http e porta 11434. Hosts
+// curinga como 0.0.0.0 (endereço de bind do servidor) viram localhost,
+// pois não servem para conectar.
+func normalizeOllamaHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	hasScheme := strings.Contains(raw, "://")
+	if !hasScheme {
+		raw = "http://" + raw
+	}
+
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		return raw
+	}
+
+	host := u.Hostname()
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "localhost"
+	}
+	port := u.Port()
+	if port == "" && !hasScheme {
+		port = "11434"
+	}
+
+	if port != "" {
+		u.Host = net.JoinHostPort(host, port)
+	} else if host == "localhost" {
+		u.Host = host
+	}
+	return strings.TrimRight(u.String(), "/")
 }
 
 func detectWSLHost() (string, error) {
