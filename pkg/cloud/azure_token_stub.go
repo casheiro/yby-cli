@@ -32,7 +32,7 @@ func (g *AzureTokenGenerator) GenerateToken(ctx context.Context) (*Token, error)
 // tokenAKSPeloCLI pede ao az um token para o servidor de API do AKS (sem --resource, o
 // token sai para o Azure Resource Manager e o AKS com Entra ID o recusa).
 func tokenAKSPeloCLI(ctx context.Context, runner shared.Runner) (*Token, error) {
-	out, err := runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--resource", aksServidor, "--output", "json")
+	out, err := saidaDoCLI(ctx, runner, "az", "account", "get-access-token", "--resource", aksServidor, "--output", "json")
 	if err != nil {
 		return nil, erroDoCLI("az account get-access-token", out, err)
 	}

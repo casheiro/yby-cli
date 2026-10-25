@@ -48,7 +48,7 @@ func (g *AWSAdvancedTokenGenerator) GenerateToken(ctx context.Context) (*Token, 
 		args = append(args, "--role-arn", g.RoleARN)
 	}
 
-	out, err := g.Runner.RunCombinedOutput(ctx, "aws", args...)
+	out, err := saidaDoCLI(ctx, g.Runner, "aws", args...)
 	if err != nil {
 		return nil, fmt.Errorf("aws eks get-token: %w", err)
 	}

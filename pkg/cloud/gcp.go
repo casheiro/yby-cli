@@ -51,7 +51,7 @@ type gcpAuthAccount struct {
 // ValidateCredentials verifica credenciais via `gcloud auth list`.
 // Retorna a conta com status ACTIVE quando autenticado.
 func (g *gcpProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
-	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "list", "--format", "json")
+	out, err := saidaDoCLI(ctx, g.runner, "gcloud", "auth", "list", "--format", "json")
 	if err != nil {
 		return &CredentialStatus{Authenticated: false}, erroDoCLI("gcloud auth list", out, err)
 	}
@@ -105,7 +105,7 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 		args = append(args, "--project", opts.Project)
 	}
 
-	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", args...)
+	out, err := saidaDoCLI(ctx, g.runner, "gcloud", args...)
 	if err != nil {
 		return nil, erroDoCLI("gcloud container clusters list", out, err)
 	}
@@ -155,7 +155,7 @@ func (g *gcpProvider) ConfigureKubeconfig(ctx context.Context, cluster ClusterIn
 
 // RefreshToken renova o token de autenticação via `gcloud auth print-access-token`.
 func (g *gcpProvider) RefreshToken(ctx context.Context, _ ClusterInfo) error {
-	if out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token"); err != nil {
+	if out, err := saidaDoCLI(ctx, g.runner, "gcloud", "auth", "print-access-token"); err != nil {
 		return erroDoCLI("gcloud auth print-access-token", out, err)
 	}
 	return nil

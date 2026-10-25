@@ -1,16 +1,34 @@
 package cloud
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
 // Os CLIs das clouds (aws, az, gcloud) dizem o motivo da falha na saída, e o código de
 // saída sozinho ("exit status 255") não ajuda ninguém. erroDoCLI junta ao erro a última
 // linha útil da saída, para a frase da linha de estado, o toast e o audit log contarem o
 // motivo (ex.: o SSO vencido da AWS).
+
+// saidaDoCLI roda o CLI e devolve só o stdout: os avisos que ele escreve no stderr
+// ("WARNING: …" do az, o aviso de atualização do gcloud) não entram no JSON nem no token.
+// Na falha, devolve também o stderr (o runner real o guarda no ExitError), para o
+// erroDoCLI achar a linha de erro.
+func saidaDoCLI(ctx context.Context, runner shared.Runner, nome string, args ...string) ([]byte, error) {
+	out, err := runner.RunStdinOutput(ctx, "", nome, args...)
+	var ee *exec.ExitError
+	if err != nil && errors.As(err, &ee) && len(ee.Stderr) > 0 {
+		out = append(append(out, '\n'), ee.Stderr...)
+	}
+	return out, err
+}
 
 // maxSaidaNoErro é o tamanho máximo, em caracteres, da linha da saída levada ao erro.
 const maxSaidaNoErro = 240

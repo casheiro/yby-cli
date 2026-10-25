@@ -16,7 +16,7 @@ import (
 func TestTokenAKSPeloCLI_PublicoEEpoch(t *testing.T) {
 	var argumentos []string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			argumentos = args
 			return []byte(`{"accessToken":"tok","expiresOn":"2026-10-25 09:18:00.000000","expires_on":1792930680}`), nil
 		},
@@ -36,7 +36,7 @@ func TestTokenAKSPeloCLI_PublicoEEpoch(t *testing.T) {
 // Sem expires_on (az antigo), o expiresOn é a hora local, não UTC.
 func TestTokenAKSPeloCLI_ExpiresOnNaHoraLocal(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(context.Context, string, ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(context.Context, string, string, ...string) ([]byte, error) {
 			return []byte(`{"accessToken":"tok","expiresOn":"2026-10-25 09:18:00.000000"}`), nil
 		},
 	}
@@ -52,7 +52,7 @@ func TestTokenAKSPeloCLI_ExpiresOnNaHoraLocal(t *testing.T) {
 
 func TestTokenAKSPeloCLI_Erros(t *testing.T) {
 	semLogin := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(context.Context, string, ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(context.Context, string, string, ...string) ([]byte, error) {
 			return []byte("ERROR: Please run 'az login' to setup account.\n"), errors.New("exit status 1")
 		},
 	}
@@ -60,7 +60,7 @@ func TestTokenAKSPeloCLI_Erros(t *testing.T) {
 		t.Errorf("erro sem a saída do az: %v", err)
 	}
 	semValidade := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(context.Context, string, ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(context.Context, string, string, ...string) ([]byte, error) {
 			return []byte(`{"accessToken":"tok","expiresOn":"amanhã"}`), nil
 		},
 	}

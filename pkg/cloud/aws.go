@@ -48,7 +48,7 @@ type awsCallerIdentity struct {
 
 // ValidateCredentials verifica credenciais via `aws sts get-caller-identity`.
 func (a *awsProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
-	out, err := a.runner.RunCombinedOutput(ctx, "aws", "sts", "get-caller-identity", "--output", "json")
+	out, err := saidaDoCLI(ctx, a.runner, "aws", "sts", "get-caller-identity", "--output", "json")
 	if err != nil {
 		return &CredentialStatus{Authenticated: false}, erroDoCLI("aws sts get-caller-identity", out, err)
 	}
@@ -90,7 +90,7 @@ func (a *awsProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 		args = append(args, "--region", opts.Region)
 	}
 
-	out, err := a.runner.RunCombinedOutput(ctx, "aws", args...)
+	out, err := saidaDoCLI(ctx, a.runner, "aws", args...)
 	if err != nil {
 		return nil, erroDoCLI("aws eks list-clusters", out, err)
 	}
@@ -136,7 +136,7 @@ func (a *awsProvider) describeCluster(ctx context.Context, name, region string) 
 		args = append(args, "--region", region)
 	}
 
-	out, err := a.runner.RunCombinedOutput(ctx, "aws", args...)
+	out, err := saidaDoCLI(ctx, a.runner, "aws", args...)
 	if err != nil {
 		return nil, erroDoCLI("aws eks describe-cluster "+name, out, err)
 	}
@@ -170,7 +170,7 @@ func (a *awsProvider) regiaoConfigurada(ctx context.Context) string {
 			return r
 		}
 	}
-	out, err := a.runner.RunCombinedOutput(ctx, "aws", "configure", "get", "region")
+	out, err := saidaDoCLI(ctx, a.runner, "aws", "configure", "get", "region")
 	if err != nil {
 		return ""
 	}
@@ -195,7 +195,7 @@ func (a *awsProvider) RefreshToken(ctx context.Context, cluster ClusterInfo) err
 	if cluster.Region != "" {
 		args = append(args, "--region", cluster.Region)
 	}
-	if out, err := a.runner.RunCombinedOutput(ctx, "aws", args...); err != nil {
+	if out, err := saidaDoCLI(ctx, a.runner, "aws", args...); err != nil {
 		return erroDoCLI("aws eks get-token", out, err)
 	}
 	return nil

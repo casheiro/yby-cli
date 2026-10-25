@@ -136,7 +136,7 @@ func TestPainelCloud_AzureComAssinaturaEUsuario(t *testing.T) {
 func TestPainelCloud_SSOVencidoDoCLIAteAFraseOToastEAAuditoria(t *testing.T) {
 	usarSaidaTexto(t, false)
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(gocontext.Context, string, ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(gocontext.Context, string, string, ...string) ([]byte, error) {
 			return []byte(saidaSSOVencidoAWS), stderrors.New("exit status 255")
 		},
 	}

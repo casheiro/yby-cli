@@ -74,7 +74,7 @@ func TestAzureProvider_CLIVersion_Error(t *testing.T) {
 func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
 	const accountJSON = `{"id":"00000000-0000-0000-0000-000000000001","user":{"name":"alice@example.com","type":"user"},"state":"Enabled"}`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(accountJSON), nil
 		},
 	}
@@ -99,7 +99,7 @@ func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
 
 func TestAzureProvider_ValidateCredentials_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("não autenticado")
 		},
 	}
@@ -118,7 +118,7 @@ func TestAzureProvider_ValidateCredentials_CLIError(t *testing.T) {
 
 func TestAzureProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -142,7 +142,7 @@ func TestAzureProvider_ListClusters(t *testing.T) {
 		{"name":"staging-aks","location":"westus2","resourceGroup":"rg-staging","kubernetesVersion":"1.28.5","powerState":{"code":"Running"}}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -180,7 +180,7 @@ func TestAzureProvider_ListClusters_RegionFilter(t *testing.T) {
 		{"name":"staging-aks","location":"westus2","resourceGroup":"rg-staging","kubernetesVersion":"1.28.5","powerState":{"code":"Running"}}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -199,7 +199,7 @@ func TestAzureProvider_ListClusters_RegionFilter(t *testing.T) {
 
 func TestAzureProvider_ListClusters_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`[]`), nil
 		},
 	}
@@ -215,7 +215,7 @@ func TestAzureProvider_ListClusters_Empty(t *testing.T) {
 
 func TestAzureProvider_ListClusters_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("erro de rede")
 		},
 	}
@@ -228,7 +228,7 @@ func TestAzureProvider_ListClusters_CLIError(t *testing.T) {
 
 func TestAzureProvider_ListClusters_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -293,7 +293,7 @@ func TestAzureProvider_ConfigureKubeconfig_Error(t *testing.T) {
 func TestAzureProvider_RefreshToken(t *testing.T) {
 	var capturedCmd string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, cmd string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, cmd string, _ ...string) ([]byte, error) {
 			capturedCmd = cmd
 			return []byte(`{"accessToken":"eyJ...","expiresOn":"2026-04-08 12:00:00.000000"}`), nil
 		},
@@ -310,7 +310,7 @@ func TestAzureProvider_RefreshToken(t *testing.T) {
 
 func TestAzureProvider_RefreshToken_Error(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("token expirado")
 		},
 	}

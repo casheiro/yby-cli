@@ -59,7 +59,7 @@ type azAccountShow struct {
 
 // ValidateCredentials verifica credenciais via `az account show`.
 func (a *azureProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
-	out, err := a.runner.RunCombinedOutput(ctx, "az", "account", "show", "--output", "json")
+	out, err := saidaDoCLI(ctx, a.runner, "az", "account", "show", "--output", "json")
 	if err != nil {
 		return &CredentialStatus{Authenticated: false}, erroDoCLI("az account show", out, err)
 	}
@@ -95,7 +95,7 @@ type azAKSCluster struct {
 // ListClusters lista clusters AKS via `az aks list`.
 // Quando opts.Region não está vazio, filtra por localização (case-insensitive).
 func (a *azureProvider) ListClusters(ctx context.Context, opts ListOptions) ([]ClusterInfo, error) {
-	out, err := a.runner.RunCombinedOutput(ctx, "az", "aks", "list", "--output", "json")
+	out, err := saidaDoCLI(ctx, a.runner, "az", "aks", "list", "--output", "json")
 	if err != nil {
 		return nil, erroDoCLI("az aks list", out, err)
 	}
@@ -137,7 +137,7 @@ func (a *azureProvider) ConfigureKubeconfig(ctx context.Context, cluster Cluster
 
 // RefreshToken renova o token de autenticação via `az account get-access-token`.
 func (a *azureProvider) RefreshToken(ctx context.Context, _ ClusterInfo) error {
-	if out, err := a.runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--output", "json"); err != nil {
+	if out, err := saidaDoCLI(ctx, a.runner, "az", "account", "get-access-token", "--output", "json"); err != nil {
 		return erroDoCLI("az account get-access-token", out, err)
 	}
 	return nil

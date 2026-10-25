@@ -14,7 +14,7 @@ import (
 // validadeAWS lê a expiração das credenciais temporárias (SSO, assume-role) via
 // `aws configure export-credentials` (AWS CLI v2.9+). Chave de IAM fixa não expira: nil.
 func validadeAWS(ctx context.Context, a *awsProvider) *time.Time {
-	out, err := a.runner.RunCombinedOutput(ctx, "aws", "configure", "export-credentials", "--format", "process")
+	out, err := saidaDoCLI(ctx, a.runner, "aws", "configure", "export-credentials", "--format", "process")
 	if err != nil {
 		slog.Debug("cloud.aws.validade", "erro", err)
 		return nil
@@ -31,7 +31,7 @@ func validadeAWS(ctx context.Context, a *awsProvider) *time.Time {
 // validadeAzure lê a expiração do token de acesso do az. O `expires_on` (segundos desde a
 // época) vem nas versões novas; o `expiresOn` antigo é a hora local, sem fuso.
 func validadeAzure(ctx context.Context, a *azureProvider) *time.Time {
-	out, err := a.runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--output", "json")
+	out, err := saidaDoCLI(ctx, a.runner, "az", "account", "get-access-token", "--output", "json")
 	if err != nil {
 		slog.Debug("cloud.azure.validade", "erro", err)
 		return nil
@@ -53,7 +53,7 @@ func validadeAzure(ctx context.Context, a *azureProvider) *time.Time {
 // validadeGCP lê a expiração do token de acesso do gcloud via `gcloud config
 // config-helper`, que traz o token_expiry da credencial ativa.
 func validadeGCP(ctx context.Context, g *gcpProvider) *time.Time {
-	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "config", "config-helper", "--format", "json")
+	out, err := saidaDoCLI(ctx, g.runner, "gcloud", "config", "config-helper", "--format", "json")
 	if err != nil {
 		slog.Debug("cloud.gcp.validade", "erro", err)
 		return nil

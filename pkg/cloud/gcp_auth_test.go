@@ -78,7 +78,7 @@ func TestGCPAdvancedTokenGenerator_SAImpersonation(t *testing.T) {
 	sa := "my-sa@my-project.iam.gserviceaccount.com"
 
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(ctx context.Context, _ string, name string, args ...string) ([]byte, error) {
 			if name != "gcloud" {
 				t.Errorf("esperava gcloud, recebeu %s", name)
 			}
@@ -118,7 +118,7 @@ func TestGCPAdvancedTokenGenerator_SAImpersonation(t *testing.T) {
 
 func TestGCPAdvancedTokenGenerator_SAImpersonation_EmptyToken(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("  \n"), nil
 		},
 	}

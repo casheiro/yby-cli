@@ -2,10 +2,14 @@ package cloud
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/pkg/testutil"
 )
 
@@ -114,7 +118,7 @@ func TestErroDoCLI_PreservaACausa(t *testing.T) {
 // motivo, e não só o código de saída.
 func TestProviders_ErroComASaidaDoCLI(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(saidaSSOVencido), errors.New("exit status 255")
 		},
 	}
@@ -154,7 +158,7 @@ func TestRegiaoDoARN(t *testing.T) {
 // Sem --region, o CLI usa a região configurada; ela vem no ARN do describe-cluster.
 func TestAWSProvider_ListClusters_RegiaoDoARN(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			if args[1] == "list-clusters" {
 				return []byte(`{"clusters":["prod-core"]}`), nil
 			}
@@ -175,7 +179,7 @@ func TestAWSProvider_ListClusters_RegiaoDoARN(t *testing.T) {
 func TestAWSProvider_RegiaoConfigurada_VariaveisDeAmbiente(t *testing.T) {
 	chamouOCLI := false
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			chamouOCLI = true
 			return []byte("sa-east-1\n"), nil
 		},
@@ -206,7 +210,7 @@ func TestAWSProvider_ListClusters_SemDescribeUsaARegiaoDoCLI(t *testing.T) {
 	t.Setenv("AWS_DEFAULT_REGION", "")
 	leiturasDaRegiao := 0
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			switch strings.Join(args[:2], " ") {
 			case "eks list-clusters":
 				return []byte(`{"clusters":["a","b"]}`), nil
@@ -233,7 +237,7 @@ func TestAWSProvider_ListClusters_SemDescribeUsaARegiaoDoCLI(t *testing.T) {
 
 func TestAzureProvider_ContaEAAssinatura(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			if args[1] == "show" {
 				return []byte(`{"id":"7f3c2a91-4b6e-4d1a-9c55-2e8f0b6d4a13","user":{"name":"neto@casheiro.onmicrosoft.com","type":"user"}}`), nil
 			}
@@ -246,5 +250,44 @@ func TestAzureProvider_ContaEAAssinatura(t *testing.T) {
 	}
 	if cred.Account != "7f3c2a91-4b6e-4d1a-9c55-2e8f0b6d4a13" || cred.Identity != "neto@casheiro.onmicrosoft.com" {
 		t.Errorf("credencial = %+v", cred)
+	}
+}
+
+// TestMain_CLIFalso é o CLI falso do TestSaidaDoCLI: o próprio binário de teste, com
+// YBY_CLI_FALSO dizendo o que imitar.
+func TestMain_CLIFalso(t *testing.T) {
+	switch os.Getenv("YBY_CLI_FALSO") {
+	case "aviso":
+		fmt.Fprintln(os.Stderr, "WARNING: Updates are available for some Google Cloud CLI components.")
+		fmt.Println(`[{"account":"ana@example.com","status":"ACTIVE"}]`)
+		os.Exit(0)
+	case "erro":
+		fmt.Fprint(os.Stderr, saidaGcloudSemLogin)
+		os.Exit(1)
+	}
+}
+
+// O aviso no stderr não entra no JSON; na falha, o stderr chega ao erroDoCLI.
+func TestSaidaDoCLI(t *testing.T) {
+	rodar := func(modo string) ([]byte, error) {
+		t.Setenv("YBY_CLI_FALSO", modo)
+		return saidaDoCLI(context.Background(), &shared.RealRunner{}, os.Args[0], "-test.run=^TestMain_CLIFalso$")
+	}
+
+	out, err := rodar("aviso")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contas []gcpAuthAccount
+	if err := json.Unmarshal(out, &contas); err != nil || len(contas) != 1 {
+		t.Errorf("o aviso do stderr entrou no JSON: %q (%v)", out, err)
+	}
+
+	out, err = rodar("erro")
+	if err == nil {
+		t.Fatal("o CLI falhou e o erro sumiu")
+	}
+	if got := erroDoCLI("gcloud auth list", out, err).Error(); !strings.HasSuffix(got, "You do not currently have an active account selected.") {
+		t.Errorf("erro sem a linha do stderr: %q", got)
 	}
 }

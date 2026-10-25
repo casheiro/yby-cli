@@ -75,7 +75,7 @@ func TestGCPProvider_CLIVersion_Error(t *testing.T) {
 func TestGCPProvider_ValidateCredentials_Active(t *testing.T) {
 	const authJSON = `[{"account":"alice@example.com","status":"ACTIVE"},{"account":"bob@example.com","status":""}]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(authJSON), nil
 		},
 	}
@@ -98,7 +98,7 @@ func TestGCPProvider_ValidateCredentials_Active(t *testing.T) {
 func TestGCPProvider_ValidateCredentials_NoActive(t *testing.T) {
 	const authJSON = `[{"account":"alice@example.com","status":""}]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(authJSON), nil
 		},
 	}
@@ -114,7 +114,7 @@ func TestGCPProvider_ValidateCredentials_NoActive(t *testing.T) {
 
 func TestGCPProvider_ValidateCredentials_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`[]`), nil
 		},
 	}
@@ -130,7 +130,7 @@ func TestGCPProvider_ValidateCredentials_Empty(t *testing.T) {
 
 func TestGCPProvider_ValidateCredentials_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("não autenticado")
 		},
 	}
@@ -149,7 +149,7 @@ func TestGCPProvider_ValidateCredentials_CLIError(t *testing.T) {
 
 func TestGCPProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -172,7 +172,7 @@ func TestGCPProvider_ListClusters(t *testing.T) {
 		{"name":"staging-gke","location":"us-east1","currentMasterVersion":"1.28.5-gke.1000","status":"RUNNING"}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -209,7 +209,7 @@ func TestGCPProvider_ListClusters_ProjetoDoSelfLink(t *testing.T) {
 		{"name":"sem-link","location":"us-east1","status":"RUNNING"}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -231,7 +231,7 @@ func TestGCPProvider_ListClusters_ProjetoDoSelfLink(t *testing.T) {
 func TestGCPProvider_ListClusters_WithRegion(t *testing.T) {
 	var capturedArgs []string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			capturedArgs = args
 			return []byte(`[{"name":"regional","location":"us-central1"},{"name":"zonal","location":"us-central1-a"},
 				{"name":"outra","location":"us-east1-b"},{"name":"parecida","location":"us-central10"}]`), nil
@@ -268,7 +268,7 @@ func TestGCPProvider_ListClusters_WithRegion(t *testing.T) {
 
 func TestGCPProvider_ListClusters_NoProjectNoRegion(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			// Verifica que --project e --region não estão presentes
 			for _, arg := range args {
 				if arg == "--project" || arg == "--region" {
@@ -287,7 +287,7 @@ func TestGCPProvider_ListClusters_NoProjectNoRegion(t *testing.T) {
 
 func TestGCPProvider_ListClusters_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`[]`), nil
 		},
 	}
@@ -303,7 +303,7 @@ func TestGCPProvider_ListClusters_Empty(t *testing.T) {
 
 func TestGCPProvider_ListClusters_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("erro de rede")
 		},
 	}
@@ -379,7 +379,7 @@ func TestGCPProvider_ConfigureKubeconfig_Error(t *testing.T) {
 func TestGCPProvider_RefreshToken(t *testing.T) {
 	var capturedCmd string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, cmd string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, cmd string, _ ...string) ([]byte, error) {
 			capturedCmd = cmd
 			return []byte("ya29.a0...token"), nil
 		},
@@ -396,7 +396,7 @@ func TestGCPProvider_RefreshToken(t *testing.T) {
 
 func TestGCPProvider_RefreshToken_Error(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("token expirado")
 		},
 	}
