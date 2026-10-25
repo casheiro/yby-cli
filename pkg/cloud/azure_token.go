@@ -13,7 +13,7 @@ import (
 )
 
 // aksScope é o scope de autenticação para o AKS.
-const aksScope = "6dae42f8-4368-4678-94ff-3960e28e3630/.default"
+const aksScope = aksServidor + "/.default"
 
 // AzureTokenGenerator gera tokens AKS via Azure SDK (azidentity).
 type AzureTokenGenerator struct {

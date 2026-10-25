@@ -9,6 +9,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
+// aksServidor é o id da aplicação do servidor de API do AKS no Entra ID, o público dos
+// tokens que o kubectl manda ao cluster.
+const aksServidor = "6dae42f8-4368-4678-94ff-3960e28e3630"
+
 func init() {
 	RegisterProvider(func(runner shared.Runner) CloudProvider {
 		return &azureProvider{runner: runner}
