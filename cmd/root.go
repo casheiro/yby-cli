@@ -44,6 +44,11 @@ Atua no bootstrap, governança e operação assistida, complementando o uso do k
 	SilenceErrors:    true,
 	SilenceUsage:     true,
 	PersistentPreRun: initConfig,
+	// só "yby", sem subcomando: a logo antes da ajuda (o --help não passa por aqui)
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		ui.Logo(cmd.OutOrStdout())
+		return cmd.Help()
+	},
 }
 
 // newRootPluginManager é uma factory mockável para testes

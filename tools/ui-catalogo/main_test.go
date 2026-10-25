@@ -20,7 +20,7 @@ func TestGerar_NaoPassaDaLargura(t *testing.T) {
 			var b bytes.Buffer
 			Gerar(&b, largura)
 			saida := b.String()
-			for _, secao := range []string{"PALETA", "GLIFOS", "TABELA COM STATUS", "QUADRO", "ETAPAS", "COTA", "ROTA", "TOAST", "CONFIRMAR", "ESTADOS", "DOCTOR", "UP", "ERRO"} {
+			for _, secao := range []string{"PALETA", "GLIFOS", "MARCA", "TABELA COM STATUS", "QUADRO", "ETAPAS", "COTA", "ROTA", "TOAST", "CONFIRMAR", "ESTADOS", "DOCTOR", "UP", "ERRO"} {
 				if !strings.Contains(strings.ToUpper(saida), secao) {
 					t.Errorf("largura %d: seção %q ausente", largura, secao)
 				}

@@ -82,6 +82,7 @@ func Gerar(w io.Writer, largura int) {
 	}{
 		{"paleta", paleta},
 		{"glifos", glifos},
+		{"marca", marca},
 		{"masthead e moldura", moldura},
 		{"abas", abas},
 		{"filtros", filtros},
@@ -167,6 +168,10 @@ func glifos(w io.Writer, _ int) {
 	fmt.Fprintln(w, "  "+strings.Join(itens[:7], "   "))
 	fmt.Fprintln(w, "  "+strings.Join(itens[7:], "   "))
 	fmt.Fprintln(w, "  "+s.TintaSuave.Render("spinner")+" "+strings.Join(g.Spinner, " "))
+}
+
+func marca(w io.Writer, largura int) {
+	fmt.Fprintln(w, ui.Marca(largura, 0))
 }
 
 func moldura(w io.Writer, largura int) {

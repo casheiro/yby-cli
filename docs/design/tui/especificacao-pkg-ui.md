@@ -43,6 +43,13 @@ Seis papéis, cada um um `lipgloss.CompleteAdaptiveColor` (`Dark` = mapa noturno
 Teclas exibidas: `↵ ⇥ ⇧ esc ␣ ↑↓`; em ASCII: `enter tab shift esc space up/down`.
 Spinner: `◇ ◈ ◆ ◈` (ASCII `o + * +`).
 
+### Marca (`marca.go`, folha "marca")
+
+- `Marca(largura, altura)` devolve a logo que cabe em largura×altura células (`altura <= 0` não limita), na cor `Tinta`: a grande (64×12) ou a compacta (42×8), em meio-blocos (` ▀▄█`, que todo terminal desenha). Com `YBY_ASCII=1`, o desenho a traço (60×12). Sem espaço para nenhum, a marca em texto `◆ YBY`.
+- `Logo(w)` escreve a logo que cabe na largura do terminal, com recuo de 2 e uma linha em branco depois. Fora de um terminal não escreve nada.
+- Os desenhos ficam em `pkg/ui/marca/*.txt` e foram feitos à mão, pixel a pixel, a partir de `docs/assets/brand/yby-logo.svg`: folha com fenda, caule até o nó da base, de cada lado a trilha em S (nó de cima ao nó da borda) e a diagonal solta com o nó de baixo, nenhuma encostando no caule; o B do YBY aberto em cima. Ao mudar a logo oficial, redesenhe e confira contra o SVG; não converta por limiar, que desmancha os traços finos.
+- Uso: só nos momentos de apresentação (`yby` sem argumentos, boas-vindas do Bard). Nas telas de trabalho o cabeçalho continua `◆ YBY`.
+
 ## 3. Tema e modo (`theme.go`)
 
 - `YBY_THEME=auto|dark|light` (padrão `auto`, que usa a detecção do lipgloss; na dúvida, escuro).

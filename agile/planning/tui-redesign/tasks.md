@@ -143,6 +143,13 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - `-p` e batch passam a usar `pkg/ui/msg.go`.
   - Remover o REPL antigo (`YBY_BARD_LEGACY_UI`), `maxToolIterations` e `promptStyle`.
   - Verificar: `echo "..." | yby bard` e `yby bard -p` funcionam sem TTY; nada interativo trava.
+- [x] T036 Desenhar a logo para o terminal e mostrá-la no `yby` sem argumentos.
+  - `ui.Marca(largura, altura)` escolhe o desenho que cabe: grande (64×12) ou compacta (42×8) em meio-blocos, traço ASCII (60×12) com `YBY_ASCII=1`, e `◆ YBY` sem espaço. `ui.Logo(w)` só escreve num terminal.
+  - Desenhos feitos à mão a partir de `docs/assets/brand/yby-logo.svg` e conferidos contra ele (decisão do usuário de 24/10/2026; antes o briefing dizia que a logo não ia para o terminal).
+  - Verificar: goldens de `pkg/ui`, catálogo com a folha "marca" e `yby` sem argumentos capturado num ConPTY (larguras 100 e 56, ASCII e tema claro).
+- [ ] T037 Mostrar a logo nas boas-vindas do Bard.
+  - Conversa vazia, antes da primeira pergunta: `ui.Marca` com a largura e a altura livres do histórico; some quando a conversa começa.
+  - Verificar: golden da conversa vazia em 120×40 (grande), 80×24 (compacta) e 60×16 (`◆ YBY`).
 
 **Checkpoint fase 2:** as 4 telas do Bard batem com a prancha no terminal real → PR "feat(bard): nova TUI da carta do terminal".
 
@@ -272,3 +279,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T026 · T027 · T028 | Checkpoint da fase 1 rodado pelo agente num ConPTY com capturas (xterm.js + Playwright), home e KUBECONFIG isolados. Ajustes: `status` sem cluster tira as linhas de log do client-go do detalhe (`shared.SemLogDoKlog`); `logs` e `access` mostram a mensagem do kubectl em vez de "exit status 1" (`shared.ComSaida`); secret e seal mostram o caminho relativo à pasta atual; `upgrade` consultava `casheiro-org/yby-cli` (404 sempre) e agora usa `casheiro/yby-cli`, com 404 como `ERR_VALIDATION`; descrição padrão dos ambientes em português ("ambiente local") | este commit |
 | 24/10/2026 | T027 · T028 | Decisões do checkpoint, aprovado pelo usuário pelas capturas: no terminal, `Progresso.Falhar` tira as pendentes da tela (voltam se outra etapa começar); `destroy` de ambiente não local sem `YBY_CLUSTER_NAME` recusa em vez de apagar o cluster local `yby-local` (bug antigo); a causa dos erros resume a saída do comando externo (`errors.ResumirSaida`, usado por `ui.RenderError` e `shared.CausaCurta`: sem "exit status N", sem `error:` e sem o rodapé do kubectl); mensagens do `pkg/mirror` em português | este commit |
 | 24/10/2026 | T025 | CI no Linux mostrou que, no Windows, o scaffold não achatava `.github/workflows/<padrão>/` (usava `filepath.Rel`, com `\`, num caminho de `fs.FS`): os goldens da árvore tinham sido gravados com esse defeito. Corrigido trabalhando com `/` e convertendo só no fim; os 7 goldens agora são iguais nos dois sistemas | este commit |
+| 24/10/2026 | T036 | Logo oficial no terminal: `pkg/ui/marca.go` com `Marca` e `Logo` e os três desenhos em `pkg/ui/marca/` (feitos à mão pixel a pixel, julgados e lapidados contra o SVG; as trilhas não encostam no caule, como no original). `yby` sem argumentos mostra a logo antes da ajuda, só num terminal; `--help` continua sem. Folha "marca" no catálogo. O README já usa o SVG novo (commit do PR #199, trazido para esta branch) | este commit |
