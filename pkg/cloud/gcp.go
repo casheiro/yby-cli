@@ -33,7 +33,7 @@ func (g *gcpProvider) IsAvailable(_ context.Context) bool {
 func (g *gcpProvider) CLIVersion(ctx context.Context) (string, error) {
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "--version")
 	if err != nil {
-		return "", fmt.Errorf("gcloud --version: %w", err)
+		return "", erroDoCLI("gcloud --version", out, err)
 	}
 	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
 	if len(lines) > 0 {
@@ -53,7 +53,7 @@ type gcpAuthAccount struct {
 func (g *gcpProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "list", "--format", "json")
 	if err != nil {
-		return &CredentialStatus{Authenticated: false}, fmt.Errorf("gcloud auth list: %w", err)
+		return &CredentialStatus{Authenticated: false}, erroDoCLI("gcloud auth list", out, err)
 	}
 
 	var accounts []gcpAuthAccount
@@ -108,7 +108,7 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", args...)
 	if err != nil {
-		return nil, fmt.Errorf("gcloud container clusters list: %w", err)
+		return nil, erroDoCLI("gcloud container clusters list", out, err)
 	}
 
 	var gcpClusters []gcpCluster
@@ -152,8 +152,8 @@ func (g *gcpProvider) ConfigureKubeconfig(ctx context.Context, cluster ClusterIn
 
 // RefreshToken renova o token de autenticação via `gcloud auth print-access-token`.
 func (g *gcpProvider) RefreshToken(ctx context.Context, _ ClusterInfo) error {
-	if _, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token"); err != nil {
-		return fmt.Errorf("gcloud auth print-access-token: %w", err)
+	if out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token"); err != nil {
+		return erroDoCLI("gcloud auth print-access-token", out, err)
 	}
 	return nil
 }

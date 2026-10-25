@@ -44,6 +44,17 @@ func QuadroNomeado(rotulo, nome, corpo string, largura int, v VarianteQuadro) st
 	return quadro(texto, corpo, largura, v)
 }
 
+// QuadroComNome é o QuadroNomeado com o separador do modo visual (o glifo Ponto: "·", ou
+// "/" no ASCII), para as telas novas: ┌ AKS · aks-dados ───┐. O QuadroNomeado guarda o
+// "·" também no ASCII, como as telas do Viz já o desenham.
+func QuadroComNome(rotulo, nome, corpo string, largura int, v VarianteQuadro) string {
+	texto := strings.ToUpper(rotulo)
+	if nome != "" {
+		texto += " " + G().Ponto + " " + nome
+	}
+	return quadro(texto, corpo, largura, v)
+}
+
 // quadro desenha o Quadro com o texto do fio de cima já pronto.
 func quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
 	largura = max(largura, larguraMinQuadro)

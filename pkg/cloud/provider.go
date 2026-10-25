@@ -76,6 +76,10 @@ type CredentialStatus struct {
 	// Identity é a identidade autenticada (ex: ARN da AWS, email do GCP).
 	Identity string
 
+	// Account é a conta da credencial: o número da conta AWS ou o id da assinatura Azure
+	// (vazio quando o provider não informa).
+	Account string
+
 	// ExpiresAt é o timestamp de expiração do token, nil se não aplicável ou desconhecido.
 	ExpiresAt *time.Time
 

@@ -76,6 +76,11 @@ type renovadoMsg struct {
 	err         error
 }
 
+// auditoriaMsg traz o audit log relido depois de um t.
+type auditoriaMsg struct {
+	eventos []cloud.CloudAuditEvent
+}
+
 // novoPainelCloud cria o painel; a primeira leitura sai no Init.
 func novoPainelCloud(f fontesPainel, agora func() time.Time) painelCloud {
 	return painelCloud{
@@ -150,6 +155,10 @@ func (m painelCloud) processar(msg tea.Msg) (painelCloud, tea.Cmd) {
 	case renovadoMsg:
 		return m.renovado(msg)
 
+	case auditoriaMsg:
+		m.auditoria = msg.eventos
+		return m, nil
+
 	case vizFechadoMsg:
 		return m.vizFechado(msg)
 
@@ -191,7 +200,12 @@ func (m painelCloud) guardar(msg leituraPainelMsg) (painelCloud, tea.Cmd) {
 	m.err = nil
 	m.atualizado = agora
 	m.provedores = l.provedores
-	m.clusters = comAnteriores(l.clusters, m.clusters, l.falhas)
+	lidos := make([]clusterPainel, len(l.clusters))
+	for i, c := range l.clusters {
+		c.lidoEm = agora
+		lidos[i] = c
+	}
+	m.clusters = comAnteriores(lidos, m.clusters, l.falhas)
 	m.falhas = l.falhas
 	sort.SliceStable(m.clusters, func(a, b int) bool {
 		ca, cb := m.clusters[a].info, m.clusters[b].info
@@ -205,6 +219,15 @@ func (m painelCloud) guardar(msg leituraPainelMsg) (painelCloud, tea.Cmd) {
 	if msg.recarga {
 		var cmd tea.Cmd
 		m.aviso = ""
+		if nomes := m.providersSemResposta(); len(nomes) > 0 {
+			// recarga parcial: o aviso diz quem ficou de fora, e não um ✓ por cima da falha
+			verbo := " não respondeu"
+			if len(nomes) > 1 {
+				verbo = " não responderam"
+			}
+			m.toast, cmd = m.toast.Mostrar(ui.ToastAviso, strings.Join(nomes, ", ")+verbo+"; os outros clusters foram recarregados")
+			return m, cmd
+		}
 		m.toast, cmd = m.toast.Mostrar(ui.ToastOk, "clusters recarregados")
 		return m, cmd
 	}
@@ -212,14 +235,14 @@ func (m painelCloud) guardar(msg leituraPainelMsg) (painelCloud, tea.Cmd) {
 }
 
 // renovado mostra o resultado do RefreshToken e, se deu certo, lê de novo para trazer a
-// validade nova.
+// validade nova; se falhou, relê só a auditoria, para o registro da falha aparecer já.
 func (m painelCloud) renovado(msg renovadoMsg) (painelCloud, tea.Cmd) {
 	delete(m.renovando, msg.chave)
 	m.aviso = "" // o resultado vale mais que a frase da última tecla
 	var cmd tea.Cmd
 	if msg.err != nil {
 		m.toast, cmd = m.toast.MostrarComNota(ui.ToastErro, "não deu para renovar o token de "+msg.nome, resumoDoErro(msg.err))
-		return m, cmd
+		return m, tea.Batch(cmd, m.auditoriaCmd())
 	}
 	m.toast, cmd = m.toast.Mostrar(ui.ToastOk, "token de "+msg.nome+" renovado")
 	if m.lendo {
@@ -228,6 +251,15 @@ func (m painelCloud) renovado(msg renovadoMsg) (painelCloud, tea.Cmd) {
 	}
 	m.lendo = true
 	return m, tea.Batch(cmd, m.lerCmd(false))
+}
+
+// auditoriaCmd relê o audit log em segundo plano; sem a fonte, nada.
+func (m painelCloud) auditoriaCmd() tea.Cmd {
+	ler := m.fontes.auditoria
+	if ler == nil {
+		return nil
+	}
+	return func() tea.Msg { return auditoriaMsg{eventos: ler()} }
 }
 
 // comAnteriores junta aos clusters lidos os da leitura anterior dos providers que não
@@ -251,13 +283,20 @@ func comAnteriores(lidos, anteriores []clusterPainel, falhas map[string]error) [
 }
 
 // prefixoDoCLI é o "aws eks get-token: exit status 255: " que os providers põem antes da
-// saída do CLI.
-var prefixoDoCLI = regexp.MustCompile(`^[^:]+: exit status \d+: `)
+// saída do CLI (sem saída, o erro termina no código).
+var prefixoDoCLI = regexp.MustCompile(`^[^:]+: exit status (\d+)(?:: |$)`)
 
 // resumoDoErro é a nota curta de um erro do CLI do provider, sem o comando nem o código
-// de saída.
+// de saída; quando o CLI não disse nada, só o código.
 func resumoDoErro(err error) string {
-	return errors.ResumirSaida(prefixoDoCLI.ReplaceAllString(err.Error(), ""))
+	msg := err.Error()
+	if m := prefixoDoCLI.FindStringSubmatch(msg); m != nil {
+		if resto := strings.TrimSpace(msg[len(m[0]):]); resto != "" {
+			return errors.ResumirSaida(resto)
+		}
+		return "o CLI saiu com o código " + m[1]
+	}
+	return errors.ResumirSaida(msg)
 }
 
 // visiveis são os clusters que passam na busca (por nome, sem diferenciar maiúsculas).
@@ -265,11 +304,20 @@ func (m painelCloud) visiveis() []clusterPainel {
 	if m.busca == "" {
 		return m.clusters
 	}
-	termo := strings.ToLower(m.busca)
 	var saida []clusterPainel
-	for _, c := range m.clusters {
-		if strings.Contains(strings.ToLower(c.info.Name), termo) {
-			saida = append(saida, c)
+	for _, i := range m.indicesVisiveis() {
+		saida = append(saida, m.clusters[i])
+	}
+	return saida
+}
+
+// indicesVisiveis são as posições, em m.clusters, dos clusters que passam na busca.
+func (m painelCloud) indicesVisiveis() []int {
+	termo := strings.ToLower(m.busca)
+	saida := make([]int, 0, len(m.clusters))
+	for i, c := range m.clusters {
+		if termo == "" || strings.Contains(strings.ToLower(c.info.Name), termo) {
+			saida = append(saida, i)
 		}
 	}
 	return saida
@@ -355,7 +403,7 @@ func (m painelCloud) teclaLista(k tea.KeyMsg) (painelCloud, tea.Cmd) {
 	pagina := max(1, m.linhasDeDados())
 	switch {
 	case key.Matches(k, g.Sair) && m.porCima():
-		m.aviso = fraseNeutra("q sai só da lista; esc volta")
+		m.aviso = fraseComTeclas("`q` sai só da lista; `esc` volta")
 	case key.Matches(k, g.Sair):
 		return m, tea.Quit
 	case key.Matches(k, g.Ajuda):
@@ -374,7 +422,7 @@ func (m painelCloud) teclaLista(k tea.KeyMsg) (painelCloud, tea.Cmd) {
 		return m, m.lerCmd(true)
 	case k.String() == "R":
 		// R recarregava e r renovava o token; agora r recarrega e t renova.
-		m.aviso = fraseNeutra("recarregar agora é r; t renova o token")
+		m.aviso = fraseComTeclas("recarregar agora é `r`; `t` renova o token")
 	case key.Matches(k, teclaRenovar()):
 		return m.renovar()
 	case key.Matches(k, l.Baixo):
@@ -456,7 +504,7 @@ func (m painelCloud) teclaAjuda(k tea.KeyMsg) painelCloud {
 	case key.Matches(k, g.Voltar), key.Matches(k, g.Ajuda):
 		m.ajuda = false
 	case key.Matches(k, g.Sair):
-		m.aviso = fraseNeutra("q sai só da lista; esc volta")
+		m.aviso = fraseComTeclas("`q` sai só da lista; `esc` volta")
 	case key.Matches(k, l.Baixo):
 		m.rolagemAjuda++
 	case key.Matches(k, l.Cima):

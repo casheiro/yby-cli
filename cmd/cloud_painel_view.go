@@ -110,7 +110,7 @@ func (m painelCloud) linhasDeDados() int {
 		if h < 6 {
 			return 1 // o corpo mostra só o detalhe
 		}
-		linhas = h - len(strings.Split(m.detalhePorCima(), "\n")) - 1 - 1 // detalhe, fio e cabeçalho
+		linhas = h - m.brancoPorCima() - len(strings.Split(m.detalhePorCima(), "\n")) - 1 - 1 // branco, detalhe, fio e cabeçalho
 	default:
 		linhas = h - 2
 	}
@@ -139,19 +139,19 @@ func (m painelCloud) View() string {
 	p.Lista = m.corpo(lay)
 	switch lay {
 	case layoutAoLado:
-		_, w := ui.LargurasLadoALado(m.largura)
-		p.Detalhe = m.detalhe(w, m.alturaCorpo())
+		p.Detalhe = m.detalheAoLado()
 	case layoutPorCima:
 		// O detalhe por cima é montado aqui (e não na moldura, que o limita a meia altura):
 		// ele fica com o que precisa e a tabela com o resto.
-		p.Lista = m.detalhePorCima()
+		p.Lista = strings.Repeat("\n", m.brancoPorCima()) + m.detalhePorCima()
 		if m.alturaCorpo() >= 6 {
 			p.Lista += "\n" + ui.Rule(m.largura) + "\n" + m.corpo(lay)
 		}
 	}
 	p.Mensagem = m.mensagem()
-	if !m.campo && m.aviso != "" && lipgloss.Width(m.aviso)+1+len("atualizado 15:04:05") > m.largura {
-		// a frase da última tecla (ex.: o yby cloud connect a copiar) vale mais que a hora
+	if !m.campo && (m.aviso != "" || m.falhaCurta(p.Mensagem)) && lipgloss.Width(p.Mensagem)+1+len("atualizado 15:04:05") > m.largura {
+		// a frase da última tecla (ex.: o yby cloud connect a copiar) e a do provider sem
+		// resposta (com a dica do que fazer) valem mais que a hora
 		p.Hora = time.Time{}
 	}
 	p.Teclas, p.Sair = m.teclas(lay)
@@ -167,7 +167,7 @@ func (m painelCloud) contexto() string {
 	if m.carregado && len(m.clusters) > 0 && m.largura >= ui.LarguraColuna {
 		txt := plural(len(m.clusters), "cluster", "clusters")
 		if n := m.contas(); n > 0 {
-			txt += " · " + plural(n, "conta", "contas")
+			txt += " " + g.Ponto + " " + plural(n, "conta", "contas")
 		}
 		partes = append(partes, s.TintaSuave.Render(txt))
 	}
@@ -206,9 +206,20 @@ func plural(n int, um, varios string) string {
 	return strconv.Itoa(n) + " " + varios
 }
 
+// grupoResumo é um grupo da linha de resumo: o glifo, o texto inteiro e o curto.
+type grupoResumo struct {
+	glifo          string
+	estilo         lipgloss.Style
+	texto, curto   string
+	descartarAntes int // na falta de espaço, sai primeiro o de menor valor
+}
+
 // linhaResumo é a linha antes da tabela: "✓ 2 prontos   ▲ 1 token expira em breve   ✕ 1
 // token expirado", só com os grupos que têm contagem; com busca, "busca: x · N de M" à
 // direita. Sem nada para contar, a linha fica em branco (a tabela não muda de lugar).
+// Quando não cabe, os grupos passam à forma curta ("1 expira logo") e, se ainda faltar,
+// saem inteiros, dos menos urgentes aos mais: nunca um grupo cortado no meio, que pode
+// mudar o sentido ("1 token expira" no lugar de "expirado").
 func (m painelCloud) linhaResumo() string {
 	s, g := ui.S(), ui.G()
 	agora := m.agora()
@@ -216,31 +227,57 @@ func (m painelCloud) linhaResumo() string {
 	for _, c := range m.clusters {
 		conta[c.estadoEm(agora)]++
 	}
-	grupos := []struct {
-		estado     estadoCluster
-		glifo      string
-		estilo     lipgloss.Style
-		um, varios string
-	}{
-		{estadoPronto, g.Feito, s.Ok, "pronto", "prontos"},
-		{estadoExpiraLogo, g.Alerta, s.Aviso, "token expira em breve", "tokens expiram em breve"},
-		{estadoExpirado, g.Falha, s.Erro, "token expirado", "tokens expirados"},
-		{estadoSemLogin, g.Falha, s.Erro, "sem login", "sem login"},
-		{estadoNaoAtivo, g.Alerta, s.Aviso, "cluster não ativo", "clusters não ativos"},
-	}
-	var partes []string
+	var grupos []grupoResumo
 	if len(m.falhas) > 0 {
 		// Os clusters desses providers (da leitura anterior) não entram nos outros grupos.
-		partes = append(partes, s.Erro.Render(g.Falha)+" "+s.Tinta.Render(strings.Join(m.providersSemResposta(), ", ")+" sem resposta"))
+		t := strings.Join(m.providersSemResposta(), ", ") + " sem resposta"
+		grupos = append(grupos, grupoResumo{g.Falha, s.Erro, t, t, 5})
 	}
-	for _, gr := range grupos {
-		if n := conta[gr.estado]; n > 0 {
-			partes = append(partes, gr.estilo.Render(gr.glifo)+" "+s.Tinta.Render(plural(n, gr.um, gr.varios)))
+	tipos := []struct {
+		estado                    estadoCluster
+		glifo                     string
+		estilo                    lipgloss.Style
+		um, varios, curto, curtos string
+		descartarAntes            int
+	}{
+		{estadoPronto, g.Feito, s.Ok, "pronto", "prontos", "pronto", "prontos", 0},
+		{estadoExpiraLogo, g.Alerta, s.Aviso, "token expira em breve", "tokens expiram em breve", "expira logo", "expiram logo", 2},
+		{estadoExpirado, g.Falha, s.Erro, "token expirado", "tokens expirados", "expirado", "expirados", 3},
+		{estadoSemLogin, g.Falha, s.Erro, "sem login", "sem login", "sem login", "sem login", 4},
+		{estadoNaoAtivo, g.Alerta, s.Aviso, "cluster não ativo", "clusters não ativos", "não ativo", "não ativos", 1},
+	}
+	for _, tp := range tipos {
+		if n := conta[tp.estado]; n > 0 {
+			grupos = append(grupos, grupoResumo{tp.glifo, tp.estilo, plural(n, tp.um, tp.varios), plural(n, tp.curto, tp.curtos), tp.descartarAntes})
 		}
 	}
-	esq := strings.Join(partes, "   ")
+	desenhar := func(gs []grupoResumo, curto bool) string {
+		partes := make([]string, len(gs))
+		for i, gr := range gs {
+			t := gr.texto
+			if curto {
+				t = gr.curto
+			}
+			partes[i] = gr.estilo.Render(gr.glifo) + " " + s.Tinta.Render(t)
+		}
+		return strings.Join(partes, "   ")
+	}
+	esq := desenhar(grupos, false)
+	if lipgloss.Width(esq) > m.largura {
+		esq = desenhar(grupos, true)
+	}
+	for lipgloss.Width(esq) > m.largura && len(grupos) > 1 {
+		menor := 0
+		for i, gr := range grupos {
+			if gr.descartarAntes < grupos[menor].descartarAntes {
+				menor = i
+			}
+		}
+		grupos = append(grupos[:menor:menor], grupos[menor+1:]...)
+		esq = desenhar(grupos, true)
+	}
 	if m.busca != "" {
-		dir := s.TintaSuave.Render("busca: " + m.busca + " · " + strconv.Itoa(len(m.visiveis())) + " de " + strconv.Itoa(len(m.clusters)))
+		dir := s.TintaSuave.Render("busca: " + m.busca + " " + g.Ponto + " " + strconv.Itoa(len(m.visiveis())) + " de " + strconv.Itoa(len(m.clusters)))
 		if lipgloss.Width(esq)+3+lipgloss.Width(dir) <= m.largura {
 			esq += strings.Repeat(" ", m.largura-lipgloss.Width(esq)-lipgloss.Width(dir)) + dir
 		}
@@ -257,15 +294,22 @@ func (m painelCloud) corpo(lay layoutPainel) string {
 	if !m.temTabela() {
 		return "\n" + m.semTabela()
 	}
-	v := m.visiveis()
+	v := m.indicesVisiveis()
 	largura := m.larguraDaTabela()
-	colunas, linhas := m.tabela(v, largura)
-	// A tabela inteira mede as colunas (a largura não muda ao rolar); a janela mostra o
-	// cabeçalho e as linhas a partir da rolagem.
-	tabela := strings.Split(ui.Tabela(colunas, linhas, m.cursor, largura), "\n")
+	// A tabela de todos os clusters mede as colunas: a largura não muda ao rolar nem com a
+	// busca. A janela mostra o cabeçalho e as linhas visíveis a partir da rolagem.
+	colunas, linhas := m.tabela(m.clusters, largura)
+	selecionada := -1
+	if m.cursor >= 0 && m.cursor < len(v) {
+		selecionada = v[m.cursor]
+	}
+	tabela := strings.Split(ui.Tabela(colunas, linhas, selecionada, largura), "\n")
 	ini := m.rolagem
 	fim := min(len(v), ini+m.linhasDeDados())
-	saida := append([]string{tabela[0]}, tabela[1+ini:1+fim]...)
+	saida := []string{tabela[0]}
+	for _, i := range v[ini:fim] {
+		saida = append(saida, tabela[1+i])
+	}
 	if ini > 0 || fim < len(v) {
 		var avisos []string
 		if ini > 0 {
@@ -286,20 +330,51 @@ func (m painelCloud) corpo(lay layoutPainel) string {
 	return "\n" + corpo
 }
 
-// colunaToken é o índice da coluna TOKEN.
-const colunaToken = 5
+// Índices das colunas da tabela.
+const (
+	colunaRegiao = 2
+	colunaK8S    = 3
+	colunaToken  = 5
+)
 
-// tabela monta as colunas e as linhas da tabela na largura dada. A coluna TOKEN nunca corta
-// o tempo, que é o dado principal: a barra ideal encolhe para o que sobra na coluna e, com
-// menos de 4 células, sai (fica só o tempo).
+// versaoQueCabe é a versão do Kubernetes em até w células: inteira quando cabe; senão sem
+// o sufixo do provider (1.30.5-gke.1014001 vira 1.30.5) e, se ainda não couber, só
+// major.minor (1.30). Nunca "1.30.…", que não diz nada.
+func versaoQueCabe(versao string, w int) string {
+	if lipgloss.Width(versao) <= w {
+		return versao
+	}
+	curta := versao
+	if i := strings.IndexAny(versao, "-+"); i > 0 {
+		curta = versao[:i]
+	}
+	if lipgloss.Width(curta) <= w {
+		return curta
+	}
+	if partes := strings.SplitN(curta, ".", 3); len(partes) >= 2 {
+		return partes[0] + "." + partes[1]
+	}
+	return curta
+}
+
+// tabela monta as colunas e as linhas da tabela na largura dada. REGIÃO e K8S crescem até
+// o conteúdo quando há espaço; sem espaço, a REGIÃO corta e a versão encurta
+// (versaoQueCabe). A coluna TOKEN nunca corta o tempo, que é o dado principal: a barra
+// ideal encolhe para o que sobra na coluna e, com menos de 4 células, sai (fica só o
+// tempo). As linhas da leitura anterior (provider sem resposta) saem apagadas.
 func (m painelCloud) tabela(v []clusterPainel, largura int) ([]ui.Coluna, []ui.Linha) {
+	s := ui.S()
 	agora := m.agora()
-	textoMaior, textoComBarra, nomeMaior := 0, 0, 0
-	for _, c := range v {
+	textoMaior, textoComBarra, nomeMaior, statusMaior, regiaoMaior := 0, 0, 0, 0, lipgloss.Width("REGIÃO")
+	versoes := make([]string, len(v))
+	for i, c := range v {
+		versoes[i] = c.info.Version
 		nomeMaior = max(nomeMaior, lipgloss.Width(c.info.Name))
+		statusMaior = max(statusMaior, lipgloss.Width(c.celulaStatus(agora)))
+		regiaoMaior = max(regiaoMaior, lipgloss.Width(c.info.Region))
 		w := lipgloss.Width(c.celulaToken(agora, 0))
 		textoMaior = max(textoMaior, w)
-		if val := validadeEm(c.expiraEm, agora); c.autenticado && val.conhecida && !val.expirado {
+		if val := validadeEm(c.expiraEm, agora); c.autenticado && !c.desatualizado && val.conhecida && !val.expirado {
 			textoComBarra = max(textoComBarra, w)
 		}
 	}
@@ -307,23 +382,51 @@ func (m painelCloud) tabela(v []clusterPainel, largura int) ([]ui.Coluna, []ui.L
 		{Titulo: "CLOUD", Min: 5, Max: 6, Prioridade: 3, Nome: true},
 		// O nome do cluster não é cortado enquanto couber (até 24): somem antes REGIÃO e K8S.
 		{Titulo: "CLUSTER", Min: max(8, min(24, nomeMaior)), Max: 24, Prioridade: 0, Nome: true},
-		{Titulo: "REGIÃO", Min: 6, Max: 16, Prioridade: 4},
-		{Titulo: "K8S", Min: 4, Max: 6, Prioridade: 5},
-		{Titulo: "STATUS", Min: 9, Max: 16, Prioridade: 1},
+		{Titulo: "REGIÃO", Min: 6, Prioridade: 4},
+		{Titulo: "K8S", Min: 4, Prioridade: 5},
+		// O STATUS não corta ("✕ sem re…" muda o sentido): sai antes a REGIÃO.
+		{Titulo: "STATUS", Min: max(9, min(16, statusMaior)), Max: 16, Prioridade: 1},
 		{Titulo: "TOKEN", Min: max(8, textoMaior), Prioridade: 2},
 	}
 	montar := func(barra int) []ui.Linha {
 		linhas := make([]ui.Linha, len(v))
 		for i, c := range v {
-			linhas[i] = ui.Linha{Celulas: []string{
-				c.info.Provider, c.info.Name, c.info.Region, c.info.Version,
-				c.celulaStatus(agora), c.celulaToken(agora, barra),
-			}}
+			cel := []string{c.info.Provider, c.info.Name, c.info.Region, versoes[i]}
+			if c.desatualizado {
+				for j := range cel {
+					cel[j] = s.TintaSuave.Render(cel[j])
+				}
+			}
+			linhas[i] = ui.Linha{Celulas: append(cel, c.celulaStatus(agora), c.celulaToken(agora, barra))}
 		}
 		return linhas
 	}
 	barra := min(16, max(6, largura/8))
 	linhas := montar(barra)
+	// encurtar põe as versões na forma que f dá; a encurtada não pode ser cortada de novo
+	// pela tabela, por isso o mínimo da K8S passa a ser ela.
+	encurtar := func(f func(string) string, wk int) {
+		maior, encurtou := 0, false
+		for i, c := range v {
+			if versoes[i] = f(c.info.Version); versoes[i] != c.info.Version {
+				encurtou = true
+			}
+			maior = max(maior, lipgloss.Width(versoes[i]))
+		}
+		if encurtou {
+			colunas[colunaK8S].Min = max(4, min(maior, wk))
+			linhas = montar(barra)
+		}
+	}
+	if wk := ui.LargurasDasColunas(colunas, linhas, largura)[colunaK8S]; wk > 0 {
+		encurtar(func(ver string) string { return versaoQueCabe(ver, wk) }, wk)
+		// Com a REGIÃO ainda cortada, a versão vai a major.minor (1.30, como na prancha):
+		// o patch só fica quando a região cabe inteira.
+		ws := ui.LargurasDasColunas(colunas, linhas, largura)
+		if ws[colunaRegiao] > 0 && ws[colunaRegiao] < regiaoMaior {
+			encurtar(func(ver string) string { return versaoQueCabe(ver, 0) }, ws[colunaK8S])
+		}
+	}
 	w := ui.LargurasDasColunas(colunas, linhas, largura)[colunaToken]
 	if textoComBarra == 0 || w == 0 || barra+2+textoComBarra <= w {
 		return colunas, linhas
@@ -377,19 +480,23 @@ type opcaoDetalhe struct {
 	rodape        bool // "a auditoria completa ▸ yby cloud audit"
 	ambiente      bool // a linha do .yby/environments
 	tokenPrimeiro bool // o token logo abaixo de IDENTIDADE, antes de conta e papel
+	semStatus     bool // sem a linha status quando ela só repete a coluna STATUS (cluster ativo)
 }
 
 // opcoesDetalhe é a ordem em que o detalhe encolhe quando a altura não comporta: sai o
-// rodapé, depois os registros da auditoria (3, 2, 1), a linha do ambiente e, por fim, a
-// auditoria inteira, com o token subindo para o alto. Se nem assim couber, o quadro corta
-// as linhas de baixo e fecha a borda (com … no lugar da última).
+// rodapé, depois os registros da auditoria (3, 2, 1), a linha status que só repete a
+// tabela, a linha do ambiente e, por fim, a auditoria inteira, com o token subindo para o
+// alto (e o ambiente, enquanto couber). Se nem assim couber, o quadro corta as linhas de
+// baixo e fecha a borda (com … no lugar da última).
 var opcoesDetalhe = []opcaoDetalhe{
 	{eventos: auditoriaNoDetalhe, rodape: true, ambiente: true},
 	{eventos: auditoriaNoDetalhe, ambiente: true},
 	{eventos: 2, ambiente: true},
 	{eventos: 1, ambiente: true},
-	{eventos: 1},
-	{tokenPrimeiro: true},
+	{eventos: 1, ambiente: true, semStatus: true},
+	{eventos: 1, semStatus: true},
+	{tokenPrimeiro: true, ambiente: true, semStatus: true},
+	{tokenPrimeiro: true, semStatus: true},
 }
 
 // alturaDetalheMaior é a altura do detalhe completo mais alto entre os clusters visíveis.
@@ -414,8 +521,8 @@ func (m painelCloud) detalhe(largura, limite int) string {
 // deixando para a tabela, embaixo do fio, ao menos o cabeçalho e a linha selecionada (e o
 // aviso de rolagem). Num corpo de menos de 6 linhas, só o detalhe.
 func (m painelCloud) detalhePorCima() string {
-	h := m.alturaCorpo()
-	if h < 6 {
+	h := m.alturaCorpo() - m.brancoPorCima()
+	if m.alturaCorpo() < 6 {
 		return m.detalhe(m.largura, h)
 	}
 	tabela := 2
@@ -425,16 +532,41 @@ func (m painelCloud) detalhePorCima() string {
 	return m.detalhe(m.largura, h-1-tabela)
 }
 
+// detalheAoLado é o detalhe à direita da tabela (a partir de 120 colunas, com pouca altura):
+// uma linha abaixo do resumo, como a tabela e o detalhe por cima, quando a linha em branco
+// não custa conteúdo ao quadro (a linha status que só repete a tabela pode sair); se
+// custar, o quadro sobe e fica com ela.
+func (m painelCloud) detalheAoLado() string {
+	c, ok := m.selecionado()
+	if !ok {
+		return ""
+	}
+	_, w := ui.LargurasLadoALado(m.largura)
+	h := m.alturaCorpo()
+	conteudo := func(i int) opcaoDetalhe {
+		op := opcoesDetalhe[i]
+		op.semStatus = false
+		return op
+	}
+	if h >= 4 && conteudo(m.opcaoQueCabe(c, w, h-1)) == conteudo(m.opcaoQueCabe(c, w, h)) {
+		return "\n" + m.detalheDe(c, w, h-1)
+	}
+	return m.detalheDe(c, w, h)
+}
+
+// brancoPorCima é a linha em branco entre o resumo e o detalhe por cima (como entre o resumo
+// e a tabela); num corpo de menos de 4 linhas, o detalhe fica com ela.
+func (m painelCloud) brancoPorCima() int {
+	if m.alturaCorpo() < 4 {
+		return 0
+	}
+	return 1
+}
+
 // detalheDe é o quadro do cluster: IDENTIDADE e AUDITORIA RECENTE, lado a lado quando
 // cabem, uma embaixo da outra quando não; encolhido (opcoesDetalhe) até caber no limite.
 func (m painelCloud) detalheDe(c clusterPainel, largura, limite int) string {
-	var corpo []string
-	for _, op := range opcoesDetalhe {
-		corpo = m.corpoDoDetalhe(c, largura, op)
-		if limite <= 0 || len(corpo)+2 <= limite {
-			break
-		}
-	}
+	corpo := m.corpoDoDetalhe(c, largura, opcoesDetalhe[m.opcaoQueCabe(c, largura, limite)])
 	if n := limite - 2; limite > 0 && len(corpo) > n {
 		if n >= 2 {
 			corpo = append(corpo[:n-1], ui.S().TintaSuave.Render(ui.G().Reticencias))
@@ -442,14 +574,30 @@ func (m painelCloud) detalheDe(c clusterPainel, largura, limite int) string {
 			corpo = corpo[:max(1, n)]
 		}
 	}
-	return ui.QuadroNomeado(tipoDoCluster(c.info.Provider), c.info.Name, strings.Join(corpo, "\n"), largura, ui.QuadroFoco)
+	return ui.QuadroComNome(tipoDoCluster(c.info.Provider), c.info.Name, strings.Join(corpo, "\n"), largura, ui.QuadroFoco)
+}
+
+// opcaoQueCabe é o índice, em opcoesDetalhe, da primeira versão do detalhe que cabe em
+// limite linhas com as bordas (0: sem limite); nenhuma cabendo, a última.
+func (m painelCloud) opcaoQueCabe(c clusterPainel, largura, limite int) int {
+	for i, op := range opcoesDetalhe {
+		if limite <= 0 || len(m.corpoDoDetalhe(c, largura, op))+2 <= limite {
+			return i
+		}
+	}
+	return len(opcoesDetalhe) - 1
 }
 
 // corpoDoDetalhe são as linhas de dentro do quadro na versão op.
 func (m painelCloud) corpoDoDetalhe(c clusterPainel, largura int, op opcaoDetalhe) []string {
 	interno := largura - 4
 	duas := interno >= internoDuasColunas
-	ident := m.linhasIdentidade(c, op)
+	wCol := (interno - 3) / 2
+	wIdent := interno
+	if duas && op.eventos > 0 {
+		wIdent = wCol
+	}
+	ident := m.linhasIdentidade(c, op, wIdent)
 	if op.eventos == 0 {
 		return ident
 	}
@@ -457,7 +605,6 @@ func (m painelCloud) corpoDoDetalhe(c clusterPainel, largura int, op opcaoDetalh
 	if !duas {
 		return append(append(ident, ""), audit...)
 	}
-	wCol := (interno - 3) / 2
 	var corpo []string
 	for i := 0; i < max(len(ident), len(audit)); i++ {
 		esq, dir := "", ""
@@ -496,23 +643,40 @@ func mascararConta(conta string) string {
 			return conta
 		}
 	}
+	if ui.Atual().ASCII {
+		return conta[:4] + "..." + conta[len(conta)-4:]
+	}
 	return conta[:4] + "·" + ui.G().Reticencias + "·" + conta[len(conta)-4:]
 }
 
-func (m painelCloud) linhasIdentidade(c clusterPainel, op opcaoDetalhe) []string {
+// linhasIdentidade são as linhas de IDENTIDADE em largura células (a linha do token passa
+// à forma curta quando a inteira cortaria).
+func (m painelCloud) linhasIdentidade(c clusterPainel, op opcaoDetalhe, largura int) []string {
 	s := ui.S()
-	token := linhaChave("token", c.tokenNoDetalhe(m.agora()))
+	agora := m.agora()
+	token := linhaChave("token", c.tokenQueCabe(agora, largura))
+	estado := []string{linhaChave("status", c.statusNoDetalhe(agora)), token}
+	if op.semStatus && !c.desatualizado && clusterAtivo(c.info.Status) {
+		estado = []string{token}
+	}
 	linhas := []string{s.Rotulo.Render("IDENTIDADE")}
 	if op.tokenPrimeiro {
+		// no aperto o token vem antes de tudo: é o dado que a pessoa age sobre (t renova)
 		linhas = append(linhas, token)
+		linhas = append(linhas, estado[:len(estado)-1]...)
+	}
+	// No Azure a credencial é de um usuário, sem papel: a linha diz "usuário".
+	quem := linhaChave("papel", ouTraco(c.papel))
+	if c.papel == "" && c.usuario != "" {
+		quem = linhaChave("usuário", c.usuario)
 	}
 	linhas = append(linhas,
 		linhaChave("conta", ouTraco(mascararConta(c.conta))),
-		linhaChave("papel", ouTraco(c.papel)),
+		quem,
 		linhaChave("método", ouTraco(c.metodo)),
 	)
 	if !op.tokenPrimeiro {
-		linhas = append(linhas, token)
+		linhas = append(linhas, estado...)
 	}
 	if c.ambiente != "" && op.ambiente {
 		linhas = append(linhas, linhaChave("ambiente", c.ambiente+" "+s.TintaSuave.Render("(.yby/environments)")))
@@ -591,7 +755,7 @@ func descricaoEvento(e cloud.CloudAuditEvent) string {
 		return e.Identity
 	case "refresh":
 		if e.Method != "" {
-			return "token · " + e.Method
+			return "token " + ui.G().Ponto + " " + e.Method
 		}
 		return "token"
 	case "assume-role":
@@ -600,9 +764,10 @@ func descricaoEvento(e cloud.CloudAuditEvent) string {
 	return e.Cluster
 }
 
-// causaDaFalha é a descrição curta de um registro que falhou.
-func causaDaFalha(e cloud.CloudAuditEvent) string {
-	erro := strings.ToLower(e.Error)
+// causaConhecida resume em poucas palavras o erro de um CLI de cloud ("SSO vencido",
+// "acesso negado"); vazio quando a causa não é uma das conhecidas.
+func causaConhecida(erro string) string {
+	erro = strings.ToLower(erro)
 	switch {
 	case strings.Contains(erro, "sso") && strings.Contains(erro, "expired"):
 		return "SSO vencido"
@@ -610,6 +775,14 @@ func causaDaFalha(e cloud.CloudAuditEvent) string {
 		return "credencial vencida"
 	case strings.Contains(erro, "denied") || strings.Contains(erro, "unauthorized") || strings.Contains(erro, "forbidden"):
 		return "acesso negado"
+	}
+	return ""
+}
+
+// causaDaFalha é a descrição curta de um registro que falhou.
+func causaDaFalha(e cloud.CloudAuditEvent) string {
+	if c := causaConhecida(e.Error); c != "" {
+		return c
 	}
 	switch e.Action {
 	case "refresh":
@@ -664,18 +837,40 @@ func (m painelCloud) providersSemResposta() []string {
 	return nomes
 }
 
-// fraseDasFalhas: "✕ aws sem resposta: Token has expired… · r tenta de novo". Um provider
-// que não responde esconde clusters inteiros, por isso vem antes dos problemas de cluster.
+// fraseDasFalhas: "✕ aws sem resposta: SSO vencido (rode aws sso login) · r tenta de novo".
+// Uma causa conhecida sai em poucas palavras, como na auditoria; uma desconhecida vem
+// depois da tecla, com a linha do CLI, para o corte da linha de estado levar só o fim
+// dela. Um provider que não responde esconde clusters inteiros, por isso vem antes dos
+// problemas de cluster.
 func (m painelCloud) fraseDasFalhas() string {
 	s, g := ui.S(), ui.G()
 	nomes := m.providersSemResposta()
 	err := m.falhas[nomes[0]]
-	frase := s.Erro.Render(g.Falha) + " " + s.Tinta.Render(strings.Join(nomes, ", ")+" sem resposta: ") +
-		s.TintaSuave.Render(resumoDoErro(err))
+	sep := s.TintaSuave.Render(" " + g.Ponto + " ")
+	r := s.Negrito.Render("r") + s.Tinta.Render(" tenta de novo")
+	frase := s.Erro.Render(g.Falha) + " " + s.Tinta.Render(strings.Join(nomes, ", ")+" sem resposta")
+	causa := causaConhecida(err.Error())
+	if causa == "" {
+		return frase + sep + r + sep + s.TintaSuave.Render(resumoDoErro(err))
+	}
+	frase += s.Tinta.Render(": " + causa)
 	if nomes[0] == "aws" && strings.Contains(strings.ToLower(err.Error()), "sso") {
 		frase += s.TintaSuave.Render(" (rode aws sso login)")
 	}
-	return frase + s.TintaSuave.Render(" · ") + s.Negrito.Render("r") + s.Tinta.Render(" tenta de novo")
+	if lipgloss.Width(frase+sep+r) > m.largura {
+		// sem espaço, a dica fica e o r sai: sem o login, tentar de novo não adianta
+		return frase
+	}
+	return frase + sep + r
+}
+
+// falhaCurta diz se a frase da linha de estado é a de um provider sem resposta com causa
+// conhecida: curta, ela vale mais que a hora quando as duas não cabem.
+func (m painelCloud) falhaCurta(frase string) bool {
+	if len(m.falhas) == 0 || frase != m.fraseDasFalhas() {
+		return false
+	}
+	return causaConhecida(m.falhas[m.providersSemResposta()[0]].Error()) != ""
 }
 
 // fraseDoMaisUrgente fala do cluster no estado mais grave (o primeiro da lista, no empate).
@@ -720,6 +915,24 @@ func fraseErro(texto string) string {
 
 func fraseNeutra(texto string) string {
 	return ui.S().TintaSuave.Render(ui.G().Parado) + " " + ui.S().Tinta.Render(texto)
+}
+
+// fraseComTeclas é a fraseNeutra com as teclas em negrito, como nas outras frases da linha
+// de estado; no texto, a tecla vem entre crases ("`q` sai só da lista; `esc` volta").
+func fraseComTeclas(texto string) string {
+	s := ui.S()
+	var b strings.Builder
+	b.WriteString(s.TintaSuave.Render(ui.G().Parado) + " ")
+	for i, parte := range strings.Split(texto, "`") {
+		switch {
+		case parte == "":
+		case i%2 == 1:
+			b.WriteString(s.Negrito.Render(parte))
+		default:
+			b.WriteString(s.Tinta.Render(parte))
+		}
+	}
+	return b.String()
 }
 
 // teclas é a legenda da tela, só com as teclas que funcionam nela, e a tecla de saída
@@ -778,7 +991,7 @@ func (m painelCloud) gruposDaAjuda() []grupoAjuda {
 		{"r", "recarrega os clusters"},
 		{"mouse", "a roda move, o clique seleciona"},
 	}}
-	lista := grupoAjuda{"lista · clusters", [][2]string{
+	lista := grupoAjuda{"lista " + ui.G().Ponto + " clusters", [][2]string{
 		{setasPainel() + " j k", "mover"},
 		{"pgup pgdn", "página"},
 		{"g G", "início e fim"},
@@ -858,7 +1071,7 @@ func (m painelCloud) viewAjuda(p ui.Partes) string {
 	for _, l := range linhas {
 		w = max(w, lipgloss.Width(l))
 	}
-	p.Lista = "\n" + ui.Quadro("teclas · cloud", strings.Join(linhas[ini:fim], "\n"), min(m.largura, w+4), ui.QuadroFoco)
+	p.Lista = "\n" + ui.Quadro("teclas "+ui.G().Ponto+" cloud", strings.Join(linhas[ini:fim], "\n"), min(m.largura, w+4), ui.QuadroFoco)
 	p.Mensagem = m.aviso
 	p.Teclas = []key.Binding{atalhoPainel("esc", "fechar", "esc")}
 	if m.maxRolagemAjuda() > 0 {

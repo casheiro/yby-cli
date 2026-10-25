@@ -13,10 +13,10 @@ gcp    gke-ml     us-central1  1.31  ✓ pronto   ━━━━━━━━━━
 │ conta     4821·…·9310                                                11:55  ✕ renova  SSO vencido                                        │
 │ papel     yby-staging-admin                                          10:55  ✓ renova  token · SSO                                        │
 │ método    SSO · Identity Center                                      09:12  ✓ login   SSO · Identity Center                              │
-│ token     ✕ expirou às 11:55                                                          a auditoria completa                               │
-│ ambiente  staging (.yby/environments)                                                 ▸ yby cloud audit                                  │
+│ status    ✓ ativo                                                                     a auditoria completa                               │
+│ token     ✕ expirou às 11:55                                                          ▸ yby cloud audit                                  │
+│ ambiente  staging (.yby/environments)                                                                                                    │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                                                                                                            
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             

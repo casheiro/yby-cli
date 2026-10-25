@@ -127,6 +127,9 @@ var statusDoProvider = map[string]string{
 	"RECONCILING":  "ajustando",
 	"ERROR":        "erro",
 	"DEGRADED":     "degradado",
+	"ACTIVE":       "ativo",
+	"RUNNING":      "ativo",
+	"SUCCEEDED":    "ativo",
 }
 
 // statusLegivel é o status do provider em português; um status desconhecido sai como
@@ -148,7 +151,10 @@ func clusterAtivo(status string) bool {
 	return false
 }
 
-// estadoEm é o estado da linha no instante agora.
+// estadoEm é o estado da linha no instante agora. O token vencido vem antes do estado do
+// cluster: sem token não se faz nada, parado ou não. Já o estado do cluster (parado,
+// criando…) vem antes do aviso: a coluna TOKEN já mostra a validade, e um cluster parado
+// com o token perto de vencer não pode aparecer só como "atenção".
 func (c clusterPainel) estadoEm(agora time.Time) estadoCluster {
 	if c.desatualizado {
 		return estadoSemResposta
@@ -160,10 +166,10 @@ func (c clusterPainel) estadoEm(agora time.Time) estadoCluster {
 	switch {
 	case v.expirado:
 		return estadoExpirado
-	case v.aviso:
-		return estadoExpiraLogo
 	case !clusterAtivo(c.info.Status):
 		return estadoNaoAtivo
+	case v.aviso:
+		return estadoExpiraLogo
 	}
 	return estadoPronto
 }
@@ -186,29 +192,83 @@ func (c clusterPainel) celulaStatus(agora time.Time) string {
 	return s.Ok.Render(g.Feito) + " pronto"
 }
 
-// celulaToken é a coluna TOKEN; sem login, não há token para medir.
+// celulaToken é a coluna TOKEN; sem login, não há token para medir. Na linha da leitura
+// anterior (o provider não respondeu), só o tempo, apagado: a cota não é de agora.
 func (c clusterPainel) celulaToken(agora time.Time, barra int) string {
 	if !c.autenticado {
 		return ui.S().TintaSuave.Render(ui.G().Vazio)
 	}
-	return validadeEm(c.expiraEm, agora).celula(barra)
+	v := validadeEm(c.expiraEm, agora)
+	if c.desatualizado {
+		return ui.S().TintaSuave.Render(v.texto())
+	}
+	return v.celula(barra)
 }
 
-// tokenNoDetalhe é a linha "token" do detalhe: "✓ válido até 12:18 · faltam 11 min".
+// tokenNoDetalhe é a linha "token" do detalhe: "✓ válido até 12:18 · faltam 11 min". Na
+// leitura anterior, o mesmo texto apagado e sem o glifo, que diria que está tudo bem.
 func (c clusterPainel) tokenNoDetalhe(agora time.Time) string {
+	return c.textoDoToken(agora, false)
+}
+
+// tokenQueCabe é a linha "token" em até w células: a inteira ou, quando ela corta, a curta
+// ("✓ até 12:18 · 11 min"), que guarda a hora e o tempo que falta.
+func (c clusterPainel) tokenQueCabe(agora time.Time, w int) string {
+	inteira := c.textoDoToken(agora, false)
+	if larguraChaveDetalhe+lipgloss.Width(inteira) <= w {
+		return inteira
+	}
+	return c.textoDoToken(agora, true)
+}
+
+func (c clusterPainel) textoDoToken(agora time.Time, curto bool) string {
 	s, g := ui.S(), ui.G()
 	if !c.autenticado {
 		return s.Erro.Render(g.Falha) + " sem login no CLI do provider"
 	}
 	v := validadeEm(c.expiraEm, agora)
 	hora := c.expiraEm.In(agora.Location()).Format("15:04")
+	sep := " " + g.Ponto + " "
+	ate, falta, expira := "válido até ", "faltam ", " expira às "
+	if curto {
+		ate, falta, expira = "até ", "", " expira "
+	}
+	if c.desatualizado {
+		switch {
+		case !v.conhecida:
+			return s.TintaSuave.Render("desconhecido")
+		case v.expirado:
+			return s.TintaSuave.Render("expirou às " + hora)
+		}
+		return s.TintaSuave.Render(ate + hora + sep + falta + v.texto())
+	}
 	switch {
 	case !v.conhecida:
 		return s.TintaSuave.Render("desconhecido")
 	case v.expirado:
 		return s.Erro.Render(g.Falha) + " expirou às " + hora
 	case v.aviso:
-		return s.Aviso.Render(g.Alerta) + " expira às " + hora + " · faltam " + s.Aviso.Render(v.texto())
+		return s.Aviso.Render(g.Alerta) + expira + hora + sep + falta + s.Aviso.Render(v.texto())
 	}
-	return s.Ok.Render(g.Feito) + " válido até " + hora + " · faltam " + v.texto()
+	return s.Ok.Render(g.Feito) + " " + ate + hora + sep + falta + v.texto()
+}
+
+// statusNoDetalhe é a linha "status" do detalhe: o estado do cluster no provider ("✓ ativo",
+// "▲ parado") ou, quando o provider não respondeu, de quando são os dados.
+func (c clusterPainel) statusNoDetalhe(agora time.Time) string {
+	s, g := ui.S(), ui.G()
+	switch {
+	case c.desatualizado:
+		// curta, com a hora logo no começo: o provider já está no título e na tabela
+		frase := s.Erro.Render(g.Falha) + " sem resposta"
+		if !c.lidoEm.IsZero() {
+			frase += s.TintaSuave.Render(" " + g.Ponto + " dados de " + c.lidoEm.In(agora.Location()).Format("15:04"))
+		}
+		return frase
+	case c.info.Status == "":
+		return s.TintaSuave.Render(g.Vazio)
+	case !clusterAtivo(c.info.Status):
+		return s.Aviso.Render(g.Alerta) + " " + statusLegivel(c.info.Status)
+	}
+	return s.Ok.Render(g.Feito) + " " + statusLegivel(c.info.Status)
 }

@@ -15,6 +15,7 @@ import (
 	ybycontext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -56,6 +57,8 @@ type fontesPainel struct {
 	ler func(ctx gocontext.Context) leituraPainel
 	// renovar renova o token do cluster.
 	renovar func(ctx gocontext.Context, c clusterPainel) error
+	// auditoria relê só o audit log (depois de um t, deu certo ou não); nil: não relê.
+	auditoria func() []cloud.CloudAuditEvent
 	// contextos lê os nomes dos contextos do kubeconfig dado (vazio: o padrão).
 	contextos func(kubeconfig string) (map[string]bool, error)
 	// abrirViz roda o Viz com os args dados e espera ele fechar.
@@ -80,7 +83,8 @@ type clusterPainel struct {
 	identidade  string
 	conta       string // conta AWS, assinatura Azure ou projeto GCP (sem máscara)
 	papel       string
-	metodo      string // já no texto da tela ("SSO · Identity Center")
+	usuario     string // a identidade quando ela é um usuário e não um papel (o e-mail no Azure)
+	metodo      string // já no texto da tela ("SSO" + sep + "Identity Center")
 	sso         bool
 	ambiente    string // nome em .yby/environments.yaml, quando houver
 	// kubeconfig, kubeContexto e namespace são os do ambiente, por onde o ↵ abre o Viz.
@@ -90,6 +94,7 @@ type clusterPainel struct {
 	expiraEm     time.Time // zero: validade desconhecida
 	// desatualizado: o provider não respondeu nesta leitura e a linha é da anterior.
 	desatualizado bool
+	lidoEm        time.Time // a leitura de onde vêm os dados da linha
 }
 
 // chave identifica o cluster entre leituras.
@@ -111,6 +116,9 @@ func fontesReais(runner shared.Runner) fontesPainel {
 			err := p.RefreshToken(ctx, c.info)
 			registrarRenovacao(cloud.NewAuditLogger(), c, time.Now(), err)
 			return err
+		},
+		auditoria: func() []cloud.CloudAuditEvent {
+			return lerAuditoria(cloud.NewAuditLogger(), time.Now())
 		},
 		contextos: contextosDoKubeconfig,
 		abrirViz:  abrirVizPeloManager,
@@ -142,7 +150,7 @@ func metodoCurto(c clusterPainel) string {
 	if c.sso {
 		return "SSO"
 	}
-	return strings.SplitN(c.metodo, " · ", 2)[0]
+	return strings.SplitN(c.metodo, " "+ui.G().Ponto+" ", 2)[0]
 }
 
 // lerClouds lista os clusters de cada provider detectado e lê a auditoria recente. O
@@ -173,12 +181,17 @@ func lerClouds(ctx gocontext.Context, runner shared.Runner, ambientes map[string
 	if len(providers) > 0 && len(l.falhas) == len(providers) {
 		l.err = falha
 	}
+	l.auditoria = lerAuditoria(auditoria, agora)
+	return l
+}
+
+// lerAuditoria lê os registros dos últimos 30 dias do audit log.
+func lerAuditoria(auditoria *cloud.AuditLogger, agora time.Time) []cloud.CloudAuditEvent {
 	eventos, err := auditoria.ReadEvents(agora.Add(-janelaAuditoria))
 	if err != nil {
 		slog.Debug("cloud.dashboard.auditoria", "erro", err)
 	}
-	l.auditoria = eventos
-	return l
+	return eventos
 }
 
 // ambienteCloud é um ambiente de .yby/environments.yaml ligado a um cluster cloud.
@@ -225,9 +238,11 @@ func ambientesCloud() map[string]ambienteCloud {
 func novoClusterPainel(provider string, info cloud.ClusterInfo, cred *cloud.CredentialStatus, ambientes map[string]ambienteCloud) clusterPainel {
 	info.Provider = provider
 	c := clusterPainel{info: info}
+	contaDaCred := ""
 	if cred != nil {
 		c.autenticado = cred.Authenticated
 		c.identidade = cred.Identity
+		contaDaCred = cred.Account
 		if cred.ExpiresAt != nil {
 			c.expiraEm = *cred.ExpiresAt
 		}
@@ -236,7 +251,7 @@ func novoClusterPainel(provider string, info cloud.ClusterInfo, cred *cloud.Cred
 	if temAmbiente {
 		c.ambiente, c.kubeconfig, c.kubeContexto, c.namespace = amb.nome, amb.kubeconfig, amb.kubeContexto, amb.namespace
 	}
-	c.conta, c.papel = contaEPapel(provider, c.identidade, info, amb.cfg)
+	c.conta, c.papel, c.usuario = contaEPapel(provider, c.identidade, contaDaCred, info, amb.cfg)
 	metodoCred := ""
 	if cred != nil {
 		metodoCred = cred.Method
@@ -245,9 +260,10 @@ func novoClusterPainel(provider string, info cloud.ClusterInfo, cred *cloud.Cred
 	return c
 }
 
-// contaEPapel tira a conta e o papel da identidade: o ARN na AWS, o usuário no Azure e
-// a conta de serviço no GCP; o ambiente do projeto completa o que a identidade não diz.
-func contaEPapel(provider, identidade string, info cloud.ClusterInfo, cfg *ybycontext.CloudConfig) (conta, papel string) {
+// contaEPapel tira a conta, o papel e o usuário da credencial: o ARN na AWS; no Azure, a
+// assinatura ativa e o usuário (o az não diz o papel); no GCP, o projeto e a conta de
+// serviço. O ambiente do projeto completa o que a credencial não diz.
+func contaEPapel(provider, identidade, contaDaCred string, info cloud.ClusterInfo, cfg *ybycontext.CloudConfig) (conta, papel, usuario string) {
 	switch provider {
 	case "aws":
 		// arn:aws:sts::482100009310:assumed-role/yby-staging-admin/sessao
@@ -257,12 +273,16 @@ func contaEPapel(provider, identidade string, info cloud.ClusterInfo, cfg *ybyco
 				papel = recurso[1]
 			}
 		}
+		if conta == "" {
+			conta = contaDaCred
+		}
 		if cfg != nil && cfg.RoleARN != "" {
 			papel = cfg.RoleARN[strings.LastIndex(cfg.RoleARN, "/")+1:]
 		}
 	case "azure":
-		papel = identidade
-		if cfg != nil {
+		// o az lista os clusters da assinatura ativa, que é a da credencial
+		usuario, conta = identidade, contaDaCred
+		if cfg != nil && conta == "" {
 			conta = cfg.Subscription
 		}
 	case "gcp":
@@ -276,27 +296,28 @@ func contaEPapel(provider, identidade string, info cloud.ClusterInfo, cfg *ybyco
 	default:
 		papel = identidade
 	}
-	return conta, papel
+	return conta, papel, usuario
 }
 
 // metodoDeAcesso põe o método de autenticação no texto da tela e diz se é SSO.
 func metodoDeAcesso(provider, metodoCred, papel string, cfg *ybycontext.CloudConfig) (string, bool) {
+	sep := " " + ui.G().Ponto + " "
 	if cfg != nil && cfg.Auth != nil && cfg.Auth.Method != "" {
 		switch cfg.Auth.Method {
 		case "sso":
-			return "SSO · Identity Center", true
+			return "SSO" + sep + "Identity Center", true
 		case "web-identity":
-			return "IRSA · web identity", false
+			return "IRSA" + sep + "web identity", false
 		case "mfa":
-			return "MFA · assume-role", false
+			return "MFA" + sep + "assume-role", false
 		}
 		return cfg.Auth.Method, false
 	}
 	switch {
 	case provider == "aws" && strings.HasPrefix(papel, "AWSReservedSSO_"):
-		return "SSO · Identity Center", true
+		return "SSO" + sep + "Identity Center", true
 	case metodoCred == "iam" && cfg != nil && cfg.Profile != "":
-		return "IAM · perfil " + cfg.Profile, false
+		return "IAM" + sep + "perfil " + cfg.Profile, false
 	case metodoCred == "iam":
 		return "IAM", false
 	case metodoCred == "az-cli":

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/services/shared"
@@ -33,7 +34,7 @@ func (a *awsProvider) IsAvailable(_ context.Context) bool {
 func (a *awsProvider) CLIVersion(ctx context.Context) (string, error) {
 	out, err := a.runner.RunCombinedOutput(ctx, "aws", "--version")
 	if err != nil {
-		return "", fmt.Errorf("aws --version: %w", err)
+		return "", erroDoCLI("aws --version", out, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -49,7 +50,7 @@ type awsCallerIdentity struct {
 func (a *awsProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
 	out, err := a.runner.RunCombinedOutput(ctx, "aws", "sts", "get-caller-identity", "--output", "json")
 	if err != nil {
-		return &CredentialStatus{Authenticated: false}, fmt.Errorf("aws sts get-caller-identity: %w", err)
+		return &CredentialStatus{Authenticated: false}, erroDoCLI("aws sts get-caller-identity", out, err)
 	}
 
 	var identity awsCallerIdentity
@@ -60,6 +61,7 @@ func (a *awsProvider) ValidateCredentials(ctx context.Context) (*CredentialStatu
 	return &CredentialStatus{
 		Authenticated: true,
 		Identity:      identity.Arn,
+		Account:       identity.Account,
 		Method:        "iam",
 		ExpiresAt:     validadeAWS(ctx, a),
 	}, nil
@@ -90,7 +92,7 @@ func (a *awsProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 
 	out, err := a.runner.RunCombinedOutput(ctx, "aws", args...)
 	if err != nil {
-		return nil, fmt.Errorf("aws eks list-clusters: %w", err)
+		return nil, erroDoCLI("aws eks list-clusters", out, err)
 	}
 
 	var list awsClusterList
@@ -99,16 +101,25 @@ func (a *awsProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 	}
 
 	clusters := make([]ClusterInfo, 0, len(list.Clusters))
+	regiaoDoCLI, regiaoLida := "", false
 	for _, name := range list.Clusters {
 		if name == "" {
 			continue
 		}
 		info, descErr := a.describeCluster(ctx, name, opts.Region)
 		if descErr != nil {
-			// Fallback com dados mínimos para não bloquear listagem parcial
+			// Fallback com dados mínimos para não bloquear listagem parcial. Sem a região
+			// pedida, vale a configurada no CLI (lida uma vez por listagem, sem rede).
+			regiao := opts.Region
+			if regiao == "" {
+				if !regiaoLida {
+					regiaoDoCLI, regiaoLida = a.regiaoConfigurada(ctx), true
+				}
+				regiao = regiaoDoCLI
+			}
 			clusters = append(clusters, ClusterInfo{
 				Name:     name,
-				Region:   opts.Region,
+				Region:   regiao,
 				Provider: "aws",
 			})
 			continue
@@ -127,7 +138,7 @@ func (a *awsProvider) describeCluster(ctx context.Context, name, region string) 
 
 	out, err := a.runner.RunCombinedOutput(ctx, "aws", args...)
 	if err != nil {
-		return nil, fmt.Errorf("aws eks describe-cluster %s: %w", name, err)
+		return nil, erroDoCLI("aws eks describe-cluster "+name, out, err)
 	}
 
 	var desc awsClusterDetail
@@ -135,6 +146,10 @@ func (a *awsProvider) describeCluster(ctx context.Context, name, region string) 
 		return nil, fmt.Errorf("parse describe-cluster %s: %w", name, err)
 	}
 
+	if region == "" {
+		// Sem --region, o CLI usou a região configurada, que vem no ARN do cluster.
+		region = regiaoDoARN(desc.Cluster.Arn)
+	}
 	return &ClusterInfo{
 		Name:     desc.Cluster.Name,
 		Region:   region,
@@ -144,6 +159,22 @@ func (a *awsProvider) describeCluster(ctx context.Context, name, region string) 
 		Endpoint: desc.Cluster.Endpoint,
 		ARN:      desc.Cluster.Arn,
 	}, nil
+}
+
+// regiaoConfigurada é a região que o CLI usa sem --region: a das variáveis AWS_REGION e
+// AWS_DEFAULT_REGION, que o `aws configure get region` não lê, ou a do perfil no
+// ~/.aws/config (sem rede); vazia se não houver.
+func (a *awsProvider) regiaoConfigurada(ctx context.Context) string {
+	for _, v := range []string{"AWS_REGION", "AWS_DEFAULT_REGION"} {
+		if r := strings.TrimSpace(os.Getenv(v)); r != "" {
+			return r
+		}
+	}
+	out, err := a.runner.RunCombinedOutput(ctx, "aws", "configure", "get", "region")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // ConfigureKubeconfig configura o kubeconfig via `aws eks update-kubeconfig`.
@@ -164,8 +195,8 @@ func (a *awsProvider) RefreshToken(ctx context.Context, cluster ClusterInfo) err
 	if cluster.Region != "" {
 		args = append(args, "--region", cluster.Region)
 	}
-	if _, err := a.runner.RunCombinedOutput(ctx, "aws", args...); err != nil {
-		return fmt.Errorf("aws eks get-token: %w", err)
+	if out, err := a.runner.RunCombinedOutput(ctx, "aws", args...); err != nil {
+		return erroDoCLI("aws eks get-token", out, err)
 	}
 	return nil
 }

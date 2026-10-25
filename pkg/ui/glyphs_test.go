@@ -26,6 +26,14 @@ func TestGlifos_LarguraASCIIIgualUnicode(t *testing.T) {
 	}
 }
 
+// O Ponto separa itens numa linha; no ASCII vira "/", sem o ponto médio do Unicode e sem
+// repetir o "|" da borda do Quadro, que o faria parecer divisa de célula.
+func TestGlifos_Ponto(t *testing.T) {
+	if Unicode.Ponto != "·" || ASCII.Ponto != "/" {
+		t.Errorf("Ponto: Unicode %q, ASCII %q", Unicode.Ponto, ASCII.Ponto)
+	}
+}
+
 func TestGlifos_Spinner(t *testing.T) {
 	if len(Unicode.Spinner) != 4 || len(ASCII.Spinner) != 4 {
 		t.Fatalf("spinner deve ter 4 quadros: %d e %d", len(Unicode.Spinner), len(ASCII.Spinner))

@@ -17,6 +17,7 @@ type Glifos struct {
 	Prompt      string // prompt de campo de texto
 	Reticencias string // truncamento (sempre 1 célula)
 	Vazio       string // campo sem valor numa tabela ou num detalhe
+	Ponto       string // separador leve entre itens de uma linha ("5 clusters · 2 contas")
 	Spinner     []string
 }
 
@@ -24,6 +25,7 @@ type Glifos struct {
 var Unicode = Glifos{
 	Ativo: "◆", Pendente: "◇", Andamento: "◈", Feito: "✓", Falha: "✕", Alerta: "▲",
 	Rodando: "●", Parado: "○", Cheio: "━", Tracejado: "┄", Caminho: "▸", Linha: "─", Prompt: "›", Reticencias: "…", Vazio: "—",
+	Ponto:   "·",
 	Spinner: []string{"◇", "◈", "◆", "◈"},
 }
 
@@ -31,6 +33,7 @@ var Unicode = Glifos{
 var ASCII = Glifos{
 	Ativo: "*", Pendente: "o", Andamento: "+", Feito: "v", Falha: "x", Alerta: "!",
 	Rodando: "*", Parado: "o", Cheio: "=", Tracejado: "-", Caminho: ">", Linha: "-", Prompt: ">", Reticencias: "~", Vazio: "-",
+	Ponto:   "/",
 	Spinner: []string{"o", "+", "*", "+"},
 }
 

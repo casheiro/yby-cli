@@ -32,6 +32,27 @@ func TestQuadroGeometria(t *testing.T) {
 	}
 }
 
+// QuadroComNome usa o separador do modo: "·" no Unicode (igual ao QuadroNomeado) e "/" no
+// ASCII; o QuadroNomeado guarda o "·" no ASCII, como as telas do Viz.
+func TestQuadroComNome(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	unicode := QuadroComNome("aks", "aks-dados", "conta  x", 40, QuadroFoco)
+	if unicode != QuadroNomeado("aks", "aks-dados", "conta  x", 40, QuadroFoco) {
+		t.Errorf("no Unicode deveria ser igual ao QuadroNomeado:\n%s", unicode)
+	}
+	Configurar(Opcoes{Tema: TemaEscuro, ASCII: true})
+	topo := strings.Split(QuadroComNome("aks", "aks-dados", "conta  x", 40, QuadroFoco), "\n")[0]
+	if !strings.HasPrefix(topo, "+ AKS / aks-dados -") {
+		t.Errorf("fio de cima no ASCII: %q", topo)
+	}
+	if antigo := strings.Split(QuadroNomeado("pod", "api", "x", 30, QuadroFoco), "\n")[0]; !strings.Contains(antigo, "POD · api") {
+		t.Errorf("o QuadroNomeado mudou no ASCII: %q", antigo)
+	}
+	if sem, comum := QuadroComNome("logs", "", "a", 30, QuadroNormal), Quadro("logs", "a", 30, QuadroNormal); sem != comum {
+		t.Errorf("sem nome deveria ser o Quadro comum:\n%s\n%s", sem, comum)
+	}
+}
+
 // TestQuadroNomeado: o rótulo vai em caixa-alta e o nome fica como veio; sem
 // nome, é o Quadro comum; a borda continua reta com nome comprido.
 func TestQuadroNomeado(t *testing.T) {

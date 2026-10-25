@@ -17,7 +17,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/telemetry"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -130,7 +133,24 @@ func handleExecutionError(err error) {
 	slog.Debug("Falha na execução", "code", yerr.Code, "details", fmt.Sprintf("%+v", yerr))
 	// a linha em branco separa o erro do que o comando já escreveu
 	fmt.Fprintln(saidaErro)
+	corDoErroPeloStderr()
 	ui.WriteError(saidaErro, yerr)
+}
+
+// stderrTerminal informa se a saída de erro é um terminal. Variável para os testes.
+var stderrTerminal = func() bool { return term.IsTerminal(int(os.Stderr.Fd())) }
+
+// perfilDoStderr é o perfil de cor do terminal da saída de erro. Variável para os testes.
+var perfilDoStderr = func() termenv.Profile { return termenv.NewOutput(os.Stderr).EnvColorProfile() }
+
+// corDoErroPeloStderr decide a cor do erro pelo stderr, que é para onde ele vai: o lipgloss
+// decide pelo stdout, e com a saída num pipe (yby cloud dashboard | more) o erro sairia sem
+// cor num terminal. Com NO_COLOR, nada muda.
+func corDoErroPeloStderr() {
+	if ui.Atual().SemCor || saidaErro != io.Writer(os.Stderr) || stdoutTerminal() || !stderrTerminal() {
+		return
+	}
+	lipgloss.SetColorProfile(perfilDoStderr())
 }
 
 var (

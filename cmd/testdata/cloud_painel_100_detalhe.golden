@@ -1,13 +1,15 @@
 ◆ YBY  CLOUD  PAINEL DE CLUSTERS                   4 clusters · 3 contas   ◈ próxima leitura em 18 s
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ✓ 2 prontos   ▲ 1 token expira em breve   ✕ 1 token expirado                                        
+                                                                                                    
 ┌ EKS · staging ───────────────────────────────────────────────────────────────────────────────────┐
 │ IDENTIDADE                                       AUDITORIA RECENTE                               │
 │ conta     4821·…·9310                            11:55  ✕ renova  SSO vencido                    │
 │ papel     yby-staging-admin                      10:55  ✓ renova  token · SSO                    │
 │ método    SSO · Identity Center                  09:12  ✓ login   SSO · Identity Center          │
-│ token     ✕ expirou às 11:55                                      a auditoria completa           │
-│ ambiente  staging (.yby/environments)                             ▸ yby cloud audit              │
+│ status    ✓ ativo                                                 a auditoria completa           │
+│ token     ✕ expirou às 11:55                                      ▸ yby cloud audit              │
+│ ambiente  staging (.yby/environments)                                                            │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 CLOUD  CLUSTER    REGIÃO       K8S   STATUS     TOKEN                                               
@@ -15,8 +17,6 @@ aws    prod-core  us-east-1    1.31  ✓ pronto   ━━┄┄┄┄┄┄┄┄
 aws    staging    us-east-1    1.31  ✕ token    expirou há 12 min                                   
 azure  aks-dados  brazilsouth  1.30  ▲ atenção  ━┄┄┄┄┄┄┄┄┄┄┄  3 min                                 
 gcp    gke-ml     us-central1  1.31  ✓ pronto   ━━━━━━━━━━┄┄  52 min                                
-                                                                                                    
-                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     

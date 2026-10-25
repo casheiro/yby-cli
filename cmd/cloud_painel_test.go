@@ -580,14 +580,14 @@ func TestPainelCloud_ComandoSemTerminal(t *testing.T) {
 }
 
 func TestContaEPapelEMetodo(t *testing.T) {
-	conta, papel := contaEPapel("aws", "arn:aws:sts::482100009310:assumed-role/AWSReservedSSO_Admin_abc/neto", cloud.ClusterInfo{}, nil)
+	conta, papel, _ := contaEPapel("aws", "arn:aws:sts::482100009310:assumed-role/AWSReservedSSO_Admin_abc/neto", "", cloud.ClusterInfo{}, nil)
 	assert.Equal(t, "482100009310", conta)
 	assert.Equal(t, "AWSReservedSSO_Admin_abc", papel)
 	metodo, sso := metodoDeAcesso("aws", "iam", papel, nil)
 	assert.Equal(t, "SSO · Identity Center", metodo)
 	assert.True(t, sso)
 
-	_, papel = contaEPapel("aws", "arn:aws:iam::482100009310:user/neto", cloud.ClusterInfo{},
+	_, papel, _ = contaEPapel("aws", "arn:aws:iam::482100009310:user/neto", "", cloud.ClusterInfo{},
 		&ybycontext.CloudConfig{RoleARN: "arn:aws:iam::482100009310:role/yby-staging-admin"})
 	assert.Equal(t, "yby-staging-admin", papel)
 	metodo, _ = metodoDeAcesso("aws", "iam", papel, &ybycontext.CloudConfig{Profile: "dev"})
@@ -596,15 +596,25 @@ func TestContaEPapelEMetodo(t *testing.T) {
 	assert.Equal(t, "SSO · Identity Center", metodo)
 	assert.True(t, sso)
 
-	conta, papel = contaEPapel("gcp", "yby@proj.iam.gserviceaccount.com", cloud.ClusterInfo{ProjectID: "ml-plataforma"}, nil)
+	conta, papel, _ = contaEPapel("gcp", "yby@proj.iam.gserviceaccount.com", "", cloud.ClusterInfo{ProjectID: "ml-plataforma"}, nil)
 	assert.Equal(t, "ml-plataforma", conta)
 	assert.Equal(t, "yby@proj.iam.gserviceaccount.com", papel)
 
-	conta, papel = contaEPapel("azure", "ana@empresa.com.br", cloud.ClusterInfo{}, &ybycontext.CloudConfig{Subscription: "9f3c2a71-5b8e"})
+	// No Azure, a conta é a assinatura ativa (o id do az account show) e a identidade é o
+	// usuário, não um papel; sem a assinatura na credencial, vale a do ambiente.
+	conta, papel, usuario := contaEPapel("azure", "ana@empresa.com.br", "7f3c2a91-4b6e-4d1a-9c55-2e8f0b6d4a13", cloud.ClusterInfo{},
+		&ybycontext.CloudConfig{Subscription: "9f3c2a71-5b8e"})
+	assert.Equal(t, "7f3c2a91-4b6e-4d1a-9c55-2e8f0b6d4a13", conta)
+	assert.Empty(t, papel)
+	assert.Equal(t, "ana@empresa.com.br", usuario)
+	conta, _, _ = contaEPapel("azure", "ana@empresa.com.br", "", cloud.ClusterInfo{}, &ybycontext.CloudConfig{Subscription: "9f3c2a71-5b8e"})
 	assert.Equal(t, "9f3c2a71-5b8e", conta)
-	assert.Equal(t, "ana@empresa.com.br", papel)
 	metodo, _ = metodoDeAcesso("azure", "az-cli", papel, nil)
 	assert.Equal(t, "CLI do Azure", metodo)
+
+	// A conta AWS vem do ARN; sem ARN, da credencial.
+	conta, _, _ = contaEPapel("aws", "", "482100009310", cloud.ClusterInfo{}, nil)
+	assert.Equal(t, "482100009310", conta)
 }
 
 func TestMascararConta(t *testing.T) {
@@ -656,7 +666,7 @@ func TestPainelCloud_ProviderSemResposta(t *testing.T) {
 		assert.Equal(t, c.info.Provider == "aws", c.desatualizado, c.info.Name)
 	}
 	assert.Equal(t, "✕ aws sem resposta   ✓ 1 pronto   ▲ 1 token expira em breve", m.linhaResumo())
-	assert.Equal(t, "✕ aws sem resposta: Error when retrieving token from sso: Token has expired and refresh failed (rode aws sso login) · r tenta de novo",
+	assert.Equal(t, "✕ aws sem resposta: SSO vencido (rode aws sso login) · r tenta de novo",
 		ansi.Strip(m.mensagem()))
 	assert.Equal(t, "✕ sem resposta", ansi.Strip(m.clusters[0].celulaStatus(agoraPainel)))
 
