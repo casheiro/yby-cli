@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -50,6 +51,23 @@ type Config struct {
 	// aceita todas as notas.
 	TopK             int
 	LimiarRelevancia float64
+
+	// Comandos /. Todos opcionais: sem a função, o comando avisa que não está
+	// disponível. Sessoes e RetomarSessao leem o histórico (history.go); Modelos detecta
+	// os providers de IA (pode demorar e roda fora do Update); Contexto e Ferramentas
+	// alimentam o /contexto e o /ferramentas (Ferramentas nil usa tools.Situacoes).
+	Sessoes       func() ([]Sessao, error)
+	RetomarSessao func(id string) (Retomada, error)
+	Modelos       func(ctx context.Context) []Modelo
+	Contexto      func() InfoContexto
+	Ferramentas   func() []tools.Situacao
+	// Diretorio é onde o /exportar grava (vazio, o diretório atual); Sanitizar tira os
+	// segredos do markdown antes de gravar.
+	Diretorio string
+	Sanitizar func(string) string
+	// Historico conta o histórico que o SystemPrompt leva, para o /contexto; o /sessões o
+	// troca pelo da sessão retomada.
+	Historico HistoricoPrompt
 }
 
 // Model é o modelo principal do Bubbletea para o Bard.
@@ -121,11 +139,31 @@ type Model struct {
 	// fim do prazo; avisos numera os avisos.
 	aviso  *avisoEstado
 	avisos int
+
+	// comandoSel é o comando marcado na lista de comandos aberta; seletor é a lista que
+	// /sessões e /modelo abrem (nil fechada); pedidos numera as detecções do /modelo.
+	comandoSel string
+	seletor    *seletor
+	pedidos    int
+	// novoEstado cria o "procurando" do /modelo (trocado nos testes).
+	novoEstado func(texto string) ui.Estado
+	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
+	// da rodada; fora dela o ? põe o quadro na conversa, como o /ajuda.
+	ajuda bool
+	// abertura é o system prompt da abertura, para o /limpar voltar a ele; exportados são
+	// os arquivos que o /exportar gravou nesta execução e pode regravar.
+	abertura struct {
+		prompt    string
+		historico HistoricoPrompt
+	}
+	exportados []os.FileInfo
 }
 
 type chatMessage struct {
-	role        string // "user", "assistant", "error", "nota"
+	role        string // "user", "assistant", "error", "nota", "quadro"
 	content     string
+	comando     bool       // fala do usuário que foi um comando /, que não vai para a IA
+	quadro      *quadroMsg // resultado de um comando (role "quadro")
 	hora        time.Time
 	duracao     time.Duration     // tempo da rodada (respostas e erros)
 	ferramentas []ferramentaUsada // executadas antes da resposta
@@ -168,7 +206,7 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 	vp.SetContent("")
 
 	md := &markdownCache{}
-	return Model{
+	m := Model{
 		viewport:    vp,
 		textarea:    ta,
 		provider:    provider,
@@ -182,7 +220,10 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 		copiaEm:     -1,
 		copiar:      copiarOSC52,
 		novoSpinner: ui.NovoSpinner,
+		novoEstado:  ui.NovoEstadoCarregando,
 	}
+	m.abertura.prompt, m.abertura.historico = config.SystemPrompt, config.Historico
+	return m
 }
 
 // Init inicializa o modelo do Bubbletea.
@@ -261,6 +302,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copiadoMsg:
 		return m, m.mostrarAviso(avisoCopia(msg))
 
+	case modelosMsg:
+		return m, m.receberModelos(msg)
+
 	case limparAvisoMsg:
 		if m.aviso != nil && m.aviso.id == msg.id {
 			m.aviso = nil
@@ -268,13 +312,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ui.SpinnerTickMsg:
-		// O spinner só gira durante a resposta: fora dela o tique morre aqui.
+		// O spinner da rodada só gira durante a resposta e o do /modelo enquanto a
+		// detecção não chega: fora disso o tique morre aqui (cada um só aceita o seu).
+		girar := m.girarEstado(msg)
 		if m.state != stateStreaming {
-			return m, nil
+			return m, girar
 		}
 		atualizado, cmd := m.spinner.Update(msg)
 		m.spinner = atualizado.(ui.Spinner)
-		return m, cmd
+		return m, tea.Batch(cmd, girar)
 
 	case FimMsg:
 		if msg.Rodada != m.rodada {
@@ -306,8 +352,32 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.saida != nil {
 		return m.teclarSaida(msg)
 	}
+	if m.seletor != nil {
+		return m.teclarSeletor(msg)
+	}
+	if m.ajuda {
+		// Com a ajuda aberta só o esc vale: fecha a camada, sem interromper a resposta.
+		if msg.Type == tea.KeyEsc {
+			m.ajuda = false
+		}
+		return m, nil
+	}
+	if lista := m.comandosVisiveis(); len(lista) > 0 {
+		if modelo, cmd, tratou := m.teclarComandos(msg, lista); tratou {
+			return modelo, cmd
+		}
+	}
 	vazio := m.campoVazio()
 	switch {
+	case msg.Type == tea.KeyRunes && !msg.Paste && string(msg.Runes) == "?" && m.textarea.Value() == "":
+		// ? no campo vazio abre a ajuda; no meio do texto é só um ponto de interrogação.
+		// Durante a resposta ela abre numa camada, para não entrar no meio da rodada.
+		if m.state == stateStreaming {
+			m.ajuda = true
+			return m, nil
+		}
+		return m.executarComando("ajuda", "")
+
 	case msg.Type == tea.KeyEsc:
 		// esc interrompe a resposta em andamento sem fechar o Bard; o
 		// FimMsg da rodada é que devolve o estado ocioso.
@@ -358,6 +428,11 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.textarea, cmd = m.textarea.Update(msg)
 	m.ajustarCampo()
 	m.seCampoMudou(vazio)
+	if m.comandosVisiveis() == nil {
+		// A lista fechou (o campo esvaziou ou saiu do filtro): a próxima / reabre com o
+		// primeiro comando marcado, como na prancha.
+		m.comandoSel = ""
+	}
 	return m, cmd
 }
 
@@ -393,7 +468,11 @@ func (m Model) enviar() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Processar comandos
+	// Processar comandos: "/nome argumentos" roda no Bard; uma barra que não é de
+	// comando segue como pergunta.
+	if nome, args, ok := comandoDigitado(input); ok {
+		return m.executarComando(nome, args)
+	}
 	if input == "exit" || input == "quit" {
 		return m, tea.Quit
 	}
@@ -422,10 +501,11 @@ func (m Model) podeEditarUltima() bool {
 	return m.state == stateIdle && m.textarea.Value() == "" && m.ultimaPergunta() != ""
 }
 
-// ultimaPergunta devolve o texto da última mensagem do usuário.
+// ultimaPergunta devolve o texto da última pergunta feita à IA; os comandos / ficam de
+// fora, para o ↑ não trazer "/ajuda" e reabrir a lista.
 func (m Model) ultimaPergunta() string {
 	for i := len(m.messages) - 1; i >= 0; i-- {
-		if m.messages[i].role == "user" {
+		if m.messages[i].role == "user" && !m.messages[i].comando {
 			return m.messages[i].content
 		}
 	}

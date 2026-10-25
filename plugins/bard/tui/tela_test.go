@@ -61,6 +61,7 @@ func telaDeTeste(t *testing.T, cfg Config, horas ...string) Model {
 	m.agora = relogio(horas...)
 	// Sem TTY o spinner fica no quadro fixo da carta, e as telas não dependem do terminal.
 	m.novoSpinner = func(r string) ui.Spinner { return ui.NovoSpinnerCom(r, func() bool { return false }) }
+	m.novoEstado = func(r string) ui.Estado { return ui.NovoEstadoCarregandoCom(r, func() bool { return false }) }
 	atualizado, _ := m.Update(tea.WindowSizeMsg{Width: larguraTela, Height: alturaTela})
 	return atualizado.(Model)
 }
@@ -146,7 +147,7 @@ func TestTelaConversa(t *testing.T) {
 }
 
 // TestTelaKraft reproduz a prancha "tema kraft" no tema claro: a mesma moldura com
-// os tokens do kraft. O quadro de /contexto chega com os comandos / (T015).
+// os tokens do kraft e o quadro do /contexto, digitado e executado pelo campo.
 func TestTelaKraft(t *testing.T) {
 	for _, md := range []modo{
 		{"claro", ui.TemaClaro, false, termenv.TrueColor},
@@ -156,7 +157,9 @@ func TestTelaKraft(t *testing.T) {
 			usarModo(t, md)
 			m := telaDeTeste(t, Config{
 				Cluster: "staging", Namespace: "default", AIModel: "claude-cli", SessionID: "20261024-120000",
-			}, "12:16")
+				Contexto: contextoDeExemplo, Ferramentas: ferramentasDeExemplo, Historico: HistoricoPrompt{Mensagens: 20, Sessoes: 3},
+			}, "12:15", "12:16")
+			m, _ = teclarModelo(t, m, append(teclasDe("/contexto"), teclaEnter)...)
 			m = conversar(t, m, "quais ferramentas externas estão com problema?",
 				"**~/.yby/tools/backup.yaml** não carregou: falta o campo `command`.\n"+
 					"As outras 2 ferramentas externas estão disponíveis.", 2400*time.Millisecond)
@@ -165,8 +168,15 @@ func TestTelaKraft(t *testing.T) {
 			if strings.Contains(tela, "pgup") {
 				t.Error("a conversa cabe na tela: pgup não deveria aparecer")
 			}
-			if limpa := ansi.Strip(tela); !strings.Contains(limpa, "BARD · 12:16 · 2,4 s") || !strings.Contains(limpa, "sessão de hoje · 2 mensagens") {
+			limpa := ansi.Strip(tela)
+			if !strings.Contains(limpa, "BARD · 12:16 · 2,4 s") || !strings.Contains(limpa, "sessão de hoje · 4 mensagens") {
 				t.Errorf("cabeçalho da resposta ou resumo da sessão:\n%s", tela)
+			}
+			for _, trecho := range []string{"VOCÊ · 12:15", "CONTEXTO DESTA SESSÃO", "staging · eks · us-east-1",
+				"12 UKIs indexadas · atualizado há 2 dias", "1 externa inválida", "últimas 20 mensagens de 3 sessões"} {
+				if !strings.Contains(limpa, trecho) {
+					t.Errorf("a tela deveria ter %q:\n%s", trecho, limpa)
+				}
 			}
 		})
 	}

@@ -244,11 +244,19 @@ func startChat(ctxData map[string]interface{}) error {
 
 			TopK:             bardCfg.TopK,
 			LimiarRelevancia: bardCfg.RelevanceThreshold,
+
+			Sessoes:       sessoesSalvas,
+			RetomarSessao: retomador(ctxData, bardCfg, clusterCtx),
+			Modelos:       modelosDetectados,
+			Diretorio:     cwd,
+			Sanitizar:     sanitizeContent,
+			Historico:     contarHistorico(history),
 		}
 		if clusterCtx != nil {
 			tuiConfig.Namespace = clusterCtx.Namespace
 			tuiConfig.Cluster = clusterCtx.Cluster
 		}
+		tuiConfig.Contexto = infoContexto(vectorStore, embProvider, storePath, cwd, tuiConfig.Cluster)
 		resolverTerminal()
 		return tui.Run(provider, vectorStore, tuiConfig)
 	}

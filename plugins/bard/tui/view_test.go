@@ -196,32 +196,30 @@ func TestTeclas(t *testing.T) {
 	legenda := func() string {
 		return ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
 	}
-	// Só as teclas que já funcionam: / e ? (T015) ficam de fora.
-	semPendentes := func(got string) bool {
-		for _, k := range []string{"/ comandos", "? ajuda"} {
-			if strings.Contains(got, k) {
-				return false
-			}
-		}
-		return true
-	}
-	// Sem pergunta feita, ↑ não tem o que editar.
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha   ") || strings.Contains(got, "↑") || !semPendentes(got) {
+	// Sem pergunta feita, ↑ não tem o que editar; / e ? abrem os comandos e a ajuda.
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ? ajuda   ") || strings.Contains(got, "↑") {
 		t.Errorf("legenda ociosa: %q", got)
 	}
 	m.messages = append(m.messages, chatMessage{role: "user", content: "oi"})
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  ↑ editar última   ") {
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ↑ editar última  ? ajuda   ") {
 		t.Errorf("legenda com pergunta para editar: %q", got)
 	}
 	m.textarea.SetValue("rascunho")
-	if got := legenda(); strings.Contains(got, "↑") {
-		t.Errorf("com texto no campo, ↑ move o cursor: %q", got)
+	// Com texto no campo, ↑ move o cursor, o ? é letra e a / no meio não abre a lista.
+	if got := legenda(); strings.Contains(got, "↑") || strings.Contains(got, "? ajuda") || strings.Contains(got, "/ comandos") {
+		t.Errorf("com texto no campo só ficam as teclas que funcionam: %q", got)
 	}
 	m.textarea.Reset()
 	m.state = stateStreaming
-	if got := legenda(); !strings.HasPrefix(got, "esc interromper   ") || strings.Contains(got, "↑") || !semPendentes(got) {
+	// Durante a resposta, a / é texto e o ? abre a ajuda numa camada, como na prancha.
+	if got := legenda(); !strings.HasPrefix(got, "esc interromper  ? ajuda   ") || strings.Contains(got, "↑") || strings.Contains(got, "/ comandos") {
 		t.Errorf("legenda durante a resposta: %q", got)
 	}
+	m.textarea.SetValue("próxima")
+	if got := legenda(); strings.Contains(got, "? ajuda") {
+		t.Errorf("durante a resposta, com texto no campo, o ? é letra: %q", got)
+	}
+	m.textarea.Reset()
 	// Com a conversa maior que a tela, pgup aparece.
 	m.state = stateIdle
 	m.messages = append(m.messages, chatMessage{role: "assistant", content: strings.Repeat("linha\n", 40)})

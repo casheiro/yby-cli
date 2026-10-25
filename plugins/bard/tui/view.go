@@ -33,9 +33,22 @@ func (m Model) View() string {
 		Mensagem:    m.mensagemEstado(),
 		Sair:        ui.DefaultKeys().Global.SairForcado,
 	}
-	switch {
+	switch lista := m.comandosVisiveis(); {
 	case m.saida != nil:
 		partes.Corpo, partes.Direita, partes.Teclas = m.corpoSaida(), m.posicaoSaida(), m.teclasSaida()
+	case m.seletor != nil:
+		partes.Corpo, partes.Direita, partes.Teclas = m.corpoComLista(m.quadroSeletor()), m.resumoSessao(), m.teclasSeletor()
+		partes.Mensagem = m.estadoSeletor()
+	case m.ajuda:
+		// A camada da ajuda fica sobre a conversa; a linha de estado segue a da resposta.
+		partes.Corpo, partes.Teclas = m.corpoComLista(m.camadaAjuda()), []key.Binding{teclaFechar()}
+		partes.Direita = m.resumoSessao()
+		if m.state == stateStreaming {
+			partes.Direita = m.resumoRodada()
+		}
+	case len(lista) > 0:
+		partes.Corpo, partes.Direita, partes.Teclas = m.corpoComLista(m.quadroComandos(lista)), m.resumoSessao(), teclasComandos()
+		partes.Mensagem = ui.S().TintaSuave.Render(textoDicaComandos)
 	case m.state == stateStreaming:
 		partes.Corpo, partes.Direita, partes.Teclas = m.corpo(), m.resumoRodada(), m.teclas()
 	default:
@@ -98,6 +111,9 @@ func (m Model) campo() string {
 	s, g := ui.S(), ui.G()
 	var linhas []string
 	switch {
+	case m.seletor != nil || m.ajuda:
+		// Com o seletor ou a ajuda abertos as letras não vão para o campo, como com a saída.
+		linhas = []string{s.TintaSuave.Render(g.Prompt + " " + textoPlaceholderSaida)}
 	case m.textarea.Value() == "" && m.saida != nil:
 		// Com a saída aberta as letras não vão para o campo: a dica diz como voltar.
 		linhas = []string{s.TintaSuave.Render(g.Prompt + " " + textoPlaceholderSaida)}
@@ -109,6 +125,10 @@ func (m Model) campo() string {
 		linhas = []string{s.Ok.Render(g.Prompt) + " " + cursor.View() + s.TintaSuave.Render(textoPlaceholder)}
 	default:
 		linhas = strings.Split(m.textarea.View(), "\n")
+	}
+	// Com uma lista aberta, a contagem dela vai no canto direito: "8 comandos".
+	if c := m.contagemCampo(); c != "" {
+		linhas[0] = juntarDireita(linhas[0], s.TintaSuave.Render(c), m.width)
 	}
 	// A moldura descarta linhas vazias do fim; um espaço mantém a altura do campo.
 	altura := m.textarea.Height()
@@ -148,7 +168,7 @@ func (m Model) mensagemEstado() string {
 func (m Model) resumoSessao() string {
 	n := 0
 	for _, msg := range m.messages {
-		if msg.role == "user" || msg.role == "assistant" {
+		if msg.role == "user" || msg.role == "assistant" || msg.role == "quadro" {
 			n++
 		}
 	}
@@ -167,10 +187,11 @@ func (m Model) resumoSessao() string {
 	return sessao + " · " + mensagens
 }
 
-// teclas devolve a legenda da tela, na ordem da prancha. Só aparecem as teclas que já
+// teclas devolve a legenda da tela, na ordem da prancha. Só aparecem as teclas que
 // funcionam: pgup quando a conversa passa da altura do histórico, ↑ quando há uma
 // pergunta para editar e o campo está vazio, ↵ ver etapa quando há uma saída de
-// ferramenta para abrir; / e ? esperam a T015 e até lá ficam desligadas.
+// ferramenta para abrir. / e ? só valem no campo vazio (com texto, viram letras); a / só
+// fora da resposta, e o ? também durante ela, quando abre a ajuda numa camada.
 func (m Model) teclas() []key.Binding {
 	k := ui.DefaultKeys()
 	rolar := k.Texto.RolarCima
@@ -180,11 +201,9 @@ func (m Model) teclas() []key.Binding {
 	}
 	editar := k.Texto.EditarUltima
 	editar.SetEnabled(m.podeEditarUltima())
-	pendentes := []key.Binding{k.Texto.Comandos, k.Global.Ajuda}
-	for i := range pendentes {
-		pendentes[i].SetEnabled(false)
-	}
-	comandos, ajuda := pendentes[0], pendentes[1]
+	comandos, ajuda := k.Texto.Comandos, k.Global.Ajuda
+	comandos.SetEnabled(m.textarea.Value() == "")
+	ajuda.SetEnabled(m.textarea.Value() == "")
 	if m.state == stateStreaming {
 		ver := teclaVerEtapa()
 		_, ok := m.saidaDisponivel()
@@ -240,6 +259,10 @@ func (m Model) renderizarMensagem(msg chatMessage, dica, copia bool) string {
 		}
 	case "nota":
 		b.WriteString(recuo + s.TintaSuave.Render(msg.content) + "\n")
+	case "quadro":
+		if msg.quadro != nil {
+			escreverRecuado(&b, strings.Split(renderizarQuadro(*msg.quadro, largura), "\n"), nil)
+		}
 	}
 	b.WriteString("\n")
 	return b.String()

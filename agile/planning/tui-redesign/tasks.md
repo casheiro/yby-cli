@@ -136,7 +136,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - Bloco "COMANDO · c copia" (copiar via OSC 52).
   - Linha de estado "◈ gerando resposta · N s".
   - Verificar: golden da tela "trabalhando".
-- [ ] T015 Implementar os comandos `/` com lista filtrável.
+- [x] T015 Implementar os comandos `/` com lista filtrável.
   - `/sessões`, `/limpar`, `/contexto`, `/ferramentas`, `/modelo`, `/copiar`, `/exportar`, `/ajuda`, reaproveitando `history.go`.
   - Verificar: `teatest` para filtrar, ⇥ completar, ↵ executar e esc fechar; golden da tela "comandos".
 - [ ] T016 Migrar one-shot e batch e fazer a limpeza.
@@ -288,3 +288,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T012 | Moldura e mensagens da carta no Bard: cabeçalho com cluster ▸ namespace e provider (`Config.AIModel`), blocos VOCÊ / ◆ BARD com ferramentas e tempo, linha de estado e legenda da prancha. Novo `pkg/ui/uimarkdown` (glamour na largura do terminal com estilo dos tokens, tabelas em `ui.Tabela`, status do Kubernetes com glifo, shell em quadro), `ui.MolduraTexto` e `ui.QuadroComTecla`. Goldens "conversa" e "tema kraft". Revisão: blocos de código quebram dentro do quadro em vez de cortar | este commit |
 | 24/10/2026 | T013 | Teclado e rolagem: letras vão só para o campo (bug "digitar rola a tela"), histórico rola com pgup/pgdn e a roda do mouse, "↓ N mensagens novas" (`ui.AvisoRolagem`), ↑ no campo vazio edita a última pergunta, esc interrompe, campo aceita a próxima pergunta durante a resposta. Nova linha com ctrl+j (e alt+enter): o Bubble Tea v1 não distingue ⇧↵ de ↵ no console do Windows, então a legenda mostra ctrl+j. teatest com "jkdufb " | este commit |
 | 24/10/2026 | T014 | Etapas e ferramentas: bloco "◈ BARD · trabalhando · N s" com `ui.Etapas`, linha de estado "◈ gerando resposta · N s", ↵ no campo vazio abre a saída da ferramenta (camada com rolagem e "SAÍDA · c copia"), ctrl+y copia o último comando de shell por OSC 52 (o c no campo comia a primeira letra da pergunta). Relógio injetado para os goldens; golden "trabalhando" | este commit |
+| 24/10/2026 | T015 | Comandos `/` com lista filtrável (prancha BardComandos): /sessões (retoma a conversa), /limpar, /contexto (quadro CONTEXTO DESTA SESSÃO), /ferramentas, /modelo (troca o provider da sessão), /copiar, /exportar e /ajuda; filtro sem acento, ⇥ completa, apelidos antigos digitados por inteiro, barra que não é comando vai como pergunta. teatest e golden "comandos" | este commit |
