@@ -80,7 +80,10 @@ type azAKSCluster struct {
 	Location          string `json:"location"`
 	ResourceGroup     string `json:"resourceGroup"`
 	KubernetesVersion string `json:"kubernetesVersion"`
-	PowerState        struct {
+	// CurrentKubernetesVersion é a versão que roda; KubernetesVersion é a pedida, que pode
+	// vir sem o patch ("1.29").
+	CurrentKubernetesVersion string `json:"currentKubernetesVersion"`
+	PowerState               struct {
 		Code string `json:"code"`
 	} `json:"powerState"`
 }
@@ -103,11 +106,15 @@ func (a *azureProvider) ListClusters(ctx context.Context, opts ListOptions) ([]C
 		if opts.Region != "" && !strings.EqualFold(c.Location, opts.Region) {
 			continue
 		}
+		versao := c.CurrentKubernetesVersion
+		if versao == "" {
+			versao = c.KubernetesVersion
+		}
 		clusters = append(clusters, ClusterInfo{
 			Name:          c.Name,
 			Region:        c.Location,
 			Provider:      "azure",
-			Version:       c.KubernetesVersion,
+			Version:       versao,
 			Status:        c.PowerState.Code,
 			ResourceGroup: c.ResourceGroup,
 		})

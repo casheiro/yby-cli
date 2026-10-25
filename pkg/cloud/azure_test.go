@@ -72,7 +72,7 @@ func TestAzureProvider_CLIVersion_Error(t *testing.T) {
 }
 
 func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
-	const accountJSON = `{"user":{"name":"alice@example.com","type":"user"},"state":"Enabled"}`
+	const accountJSON = `{"id":"00000000-0000-0000-0000-000000000001","user":{"name":"alice@example.com","type":"user"},"state":"Enabled"}`
 	runner := &testutil.MockRunner{
 		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
 			return []byte(accountJSON), nil
@@ -88,6 +88,9 @@ func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
 	}
 	if status.Identity != "alice@example.com" {
 		t.Errorf("Identity = %q, want %q", status.Identity, "alice@example.com")
+	}
+	if status.Account != "00000000-0000-0000-0000-000000000001" {
+		t.Errorf("Account = %q, want o id da assinatura", status.Account)
 	}
 	if status.Method != "az-cli" {
 		t.Errorf("Method = %q, want %q", status.Method, "az-cli")
@@ -132,9 +135,10 @@ func TestAzureProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	}
 }
 
+// A versão é a que roda (currentKubernetesVersion); sem ela, a pedida (kubernetesVersion).
 func TestAzureProvider_ListClusters(t *testing.T) {
 	const listJSON = `[
-		{"name":"prod-aks","location":"eastus","resourceGroup":"rg-prod","kubernetesVersion":"1.29.0","powerState":{"code":"Running"}},
+		{"name":"prod-aks","location":"eastus","resourceGroup":"rg-prod","kubernetesVersion":"1.29","currentKubernetesVersion":"1.29.0","powerState":{"code":"Running"}},
 		{"name":"staging-aks","location":"westus2","resourceGroup":"rg-staging","kubernetesVersion":"1.28.5","powerState":{"code":"Running"}}
 	]`
 	runner := &testutil.MockRunner{
@@ -158,6 +162,9 @@ func TestAzureProvider_ListClusters(t *testing.T) {
 	}
 	if clusters[0].Version != "1.29.0" {
 		t.Errorf("clusters[0].Version = %q, want %q", clusters[0].Version, "1.29.0")
+	}
+	if clusters[1].Version != "1.28.5" {
+		t.Errorf("clusters[1].Version = %q, want %q", clusters[1].Version, "1.28.5")
 	}
 	if clusters[0].Status != "Running" {
 		t.Errorf("clusters[0].Status = %q, want %q", clusters[0].Status, "Running")
