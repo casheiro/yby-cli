@@ -27,19 +27,23 @@ func NewGeminiProvider() *GeminiProvider {
 		return nil
 	}
 
-	// Precedência: config global > GEMINI_MODEL env var > default
-	model := "gemini-2.5-flash"
-	if override := getConfiguredModel("gemini"); override != "" {
-		model = override
-	} else if envModel := os.Getenv("GEMINI_MODEL"); envModel != "" {
-		model = envModel
-	}
-
 	return &GeminiProvider{
 		APIKey:  apiKey,
-		Model:   model,
+		Model:   defaultGeminiModel(),
 		BaseURL: "https://generativelanguage.googleapis.com",
 	}
+}
+
+// defaultGeminiModel é o modelo da API do Gemini sem escolha na sessão.
+// Precedência: config global > GEMINI_MODEL env var > default.
+func defaultGeminiModel() string {
+	if override := getConfiguredModel("gemini"); override != "" {
+		return override
+	}
+	if envModel := os.Getenv("GEMINI_MODEL"); envModel != "" {
+		return envModel
+	}
+	return "gemini-2.5-flash"
 }
 
 func (p *GeminiProvider) Name() string {

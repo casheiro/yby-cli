@@ -69,8 +69,8 @@ func (m Model) contexto() string {
 	if len(caminho) > 0 {
 		partes = append(partes, ui.CaminhoContexto(caminho...))
 	}
-	if m.config.AIModel != "" {
-		partes = append(partes, ui.S().TintaSuave.Render(m.config.AIModel))
+	if ia := m.rotuloIA(); ia != "" {
+		partes = append(partes, ui.S().TintaSuave.Render(ia))
 	}
 	return strings.Join(partes, "   ")
 }
@@ -168,6 +168,9 @@ func (m Model) mensagemEstado() string {
 	}
 	if m.state == stateStreaming {
 		return m.estadoTrabalho()
+	}
+	if m.trocando != "" {
+		return s.TintaSuave.Render("trocando para " + m.trocando + g.Reticencias)
 	}
 	f := m.ultimoFim
 	switch {

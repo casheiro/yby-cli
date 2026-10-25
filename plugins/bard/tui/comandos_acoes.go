@@ -49,14 +49,42 @@ type HistoricoPrompt struct {
 	Mensagens, Sessoes int
 }
 
-// Modelo é um provider de IA detectado, para o /modelo.
+// Modelo é um provider de IA detectado, com os modelos dele, para o /modelo.
 type Modelo struct {
-	Rotulo   string // nome curto, como no cabeçalho ("claude-cli")
-	Provider ai.Provider
+	Rotulo   string      // nome curto, como no cabeçalho ("claude-cli")
+	Provider ai.Provider // com o modelo padrão
+	Padrao   string      // o modelo padrão; vazio quando o próprio CLI escolhe
+	Modelos  []string    // os modelos conhecidos (ai.ListModels), com o padrão
+	Aviso    string      // por que a lista ficou curta ("o Ollama não respondeu")
+	// ComModelo cria o provider com o modelo escolhido e devolve o modelo como o provider
+	// o conhece ("llama3" vira "llama3:latest"); a regra de cada provider decide se o
+	// modelo existe, sem chamar a IA. Nil, o provider não troca de modelo.
+	ComModelo func(ctx context.Context, modelo string) (ai.Provider, string, error)
 }
 
-// tempoDetectar limita a detecção dos providers do /modelo.
-const tempoDetectar = 30 * time.Second
+// tempoDetectar limita a detecção dos providers do /modelo; tempoCriar, a criação do
+// provider com o modelo escolhido.
+const (
+	tempoDetectar = 30 * time.Second
+	tempoCriar    = 10 * time.Second
+)
+
+// opcaoModelo é uma linha do /modelo: o provider (índice em seletor.modelos) e o modelo;
+// vazio é o padrão do provider.
+type opcaoModelo struct {
+	mod    int
+	modelo string
+}
+
+// modeloCriadoMsg traz o provider criado com o modelo escolhido, ou o erro da regra dele;
+// troca identifica a escolha, e modelo é o nome que o provider devolveu.
+type modeloCriadoMsg struct {
+	troca    int
+	mod      Modelo
+	modelo   string
+	provider ai.Provider
+	err      error
+}
 
 // tipoSeletor diz o que a lista aberta por um comando escolhe.
 type tipoSeletor int
@@ -75,8 +103,9 @@ type seletor struct {
 	estado  *ui.Estado // vazio ou procurando, no lugar dos itens
 	sessoes []Sessao
 	modelos []Modelo
-	pedido  int    // identifica a detecção dos providers
-	pedir   string // /modelo <nome>: troca assim que a detecção chegar
+	opcoes  []opcaoModelo // uma por item do /modelo
+	pedido  int           // identifica a detecção dos providers
+	pedir   string        // /modelo <nome>: troca assim que a detecção chegar
 }
 
 // modelosMsg traz os providers detectados para o /modelo.
@@ -107,7 +136,7 @@ func (m Model) estadoSeletor() string {
 	if m.seletor.tipo == seletorSessoes {
 		return ui.S().TintaSuave.Render("conversas salvas nos últimos 30 dias")
 	}
-	return ui.S().TintaSuave.Render("providers de IA detectados neste ambiente")
+	return ui.S().TintaSuave.Render(textoDicaModelo)
 }
 
 // teclasSeletor é a legenda com o seletor aberto.
@@ -143,7 +172,8 @@ func (m Model) teclarSeletor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		return m, m.trocarModelo(sel.modelos[sel.marcado])
+		op := sel.opcoes[sel.marcado]
+		return m, m.trocarModelo(sel.modelos[op.mod], op.modelo)
 	}
 	return m, nil
 }
@@ -287,7 +317,7 @@ func (m *Model) retomar(id string) tea.Cmd {
 // a detecção chegar.
 func (m *Model) abrirModelos(nome string) tea.Cmd {
 	if m.config.Modelos == nil {
-		return m.avisoFalha("a troca de provider não está disponível")
+		return m.avisoFalha("a troca de modelo não está disponível")
 	}
 	m.pedidos++
 	// O spinner gira enquanto a detecção não chega (os tiques passam pelo Update).
@@ -312,59 +342,6 @@ func (m *Model) girarEstado(msg ui.SpinnerTickMsg) tea.Cmd {
 	e := novo.(ui.Estado)
 	sel.estado = &e
 	return cmd
-}
-
-// receberModelos preenche a lista do /modelo com os providers detectados, com o atual
-// marcado. Uma detecção de uma lista já fechada é descartada.
-func (m *Model) receberModelos(msg modelosMsg) tea.Cmd {
-	sel := m.seletor
-	if sel == nil || sel.tipo != seletorModelo || sel.pedido != msg.pedido {
-		return nil
-	}
-	sel.estado, sel.modelos, sel.itens = nil, nil, nil
-	for _, mod := range msg.lista {
-		if mod.Provider == nil {
-			continue
-		}
-		descricao := mod.Provider.Name()
-		if mod.Rotulo == m.config.AIModel {
-			descricao += " · em uso"
-			sel.marcado = len(sel.itens)
-		}
-		sel.modelos = append(sel.modelos, mod)
-		sel.itens = append(sel.itens, itemLista{nome: mod.Rotulo, descricao: descricao})
-	}
-	if len(sel.itens) == 0 {
-		e := ui.NovoEstadoVazio("nenhum provider de IA disponível", "")
-		sel.estado = &e
-	}
-	if sel.pedir == "" {
-		return nil
-	}
-	// /modelo <nome> fecha a lista nos dois casos: com ela aberta, a linha de estado
-	// mostraria a frase da lista no lugar do aviso.
-	m.seletor = nil
-	for _, mod := range sel.modelos {
-		if strings.EqualFold(mod.Rotulo, sel.pedir) {
-			return m.trocarModelo(mod)
-		}
-	}
-	return m.avisoFalha("nenhum provider " + sel.pedir + " disponível")
-}
-
-// trocarModelo passa a sessão para o provider escolhido e registra a troca na conversa.
-func (m *Model) trocarModelo(mod Modelo) tea.Cmd {
-	if mod.Rotulo == m.config.AIModel {
-		return m.mostrarAviso(&avisoEstado{ok: true, texto: "a sessão já usa " + mod.Rotulo})
-	}
-	m.provider = mod.Provider
-	m.config.AIModel = mod.Rotulo
-	f := *m.fluxo
-	f.Provider = mod.Provider
-	m.fluxo = &f
-	m.messages = append(m.messages, chatMessage{role: "nota", content: "provider trocado para " + mod.Rotulo})
-	m.irParaOFim()
-	return nil
 }
 
 // copiarResposta manda a última resposta do Bard, em markdown, para a área de
@@ -467,7 +444,7 @@ func (m Model) markdownConversa() (string, int) {
 	}
 	b.WriteString("\n")
 	var onde []string
-	for _, v := range []string{m.config.Cluster, m.config.Namespace, m.config.AIModel} {
+	for _, v := range []string{m.config.Cluster, m.config.Namespace, m.rotuloIA()} {
 		if v != "" {
 			onde = append(onde, v)
 		}

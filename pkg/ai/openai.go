@@ -26,16 +26,19 @@ func NewOpenAIProvider() *OpenAIProvider {
 		return nil
 	}
 
-	model := "gpt-4o-mini" // Default: rápido e econômico
-	if override := getConfiguredModel("openai"); override != "" {
-		model = override
-	}
-
 	return &OpenAIProvider{
 		APIKey:  apiKey,
-		Model:   model,
+		Model:   defaultOpenAIModel(),
 		BaseURL: "https://api.openai.com/v1",
 	}
+}
+
+// defaultOpenAIModel é o modelo da OpenAI sem escolha na sessão: o do config ou o padrão.
+func defaultOpenAIModel() string {
+	if override := getConfiguredModel("openai"); override != "" {
+		return override
+	}
+	return "gpt-4o-mini" // Default: rápido e econômico
 }
 
 func (p *OpenAIProvider) Name() string {

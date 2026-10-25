@@ -42,8 +42,11 @@ type Config struct {
 	SessionID    string
 	Namespace    string
 	Cluster      string
-	// AIModel é o rótulo do provider no cabeçalho (ex.: "claude-cli").
-	AIModel string
+	// AIModel é o rótulo do provider no cabeçalho (ex.: "claude-cli"); ModeloIA é o
+	// modelo escolhido no /modelo, que aparece ao lado ("claude-cli · opus"). Vazio, o
+	// provider usa o modelo padrão dele.
+	AIModel  string
+	ModeloIA string
 	// Rascunho é a pergunta que abre escrita no campo, sem enviar (yby bard --pergunta,
 	// o b do Viz): a pessoa revisa e aperta ↵.
 	Rascunho string
@@ -154,6 +157,12 @@ type Model struct {
 	comandoSel string
 	seletor    *seletor
 	pedidos    int
+	// trocas numera as trocas do /modelo (uma escolha nova invalida a criação anterior);
+	// trocando é o "claude-cli · opus" que está sendo criado, para a linha de estado, e
+	// trocaPronta é a criação que chegou durante a resposta e espera o fim da rodada.
+	trocas      int
+	trocando    string
+	trocaPronta *modeloCriadoMsg
 	// novoEstado cria o "procurando" do /modelo (trocado nos testes).
 	novoEstado func(texto string) ui.Estado
 	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
@@ -338,6 +347,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelosMsg:
 		return m, m.receberModelos(msg)
+	case modeloCriadoMsg:
+		return m, m.receberModeloCriado(msg)
 
 	case limparAvisoMsg:
 		if m.aviso != nil && m.aviso.id == msg.id {
@@ -361,6 +372,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.encerrarRodada(msg)
+		// A troca do /modelo que chegou durante a resposta vale a partir daqui: a resposta
+		// que acabou é do provider antigo e a nota da troca vem depois dela.
+		if t := m.trocaPronta; t != nil {
+			m.trocaPronta, m.trocando = nil, ""
+			m.usarProvider(t.mod.Rotulo, t.modelo, t.provider)
+		}
 		m.updateViewport()
 		return m, nil
 	}

@@ -28,7 +28,7 @@ var listaComandos = []comando{
 	{"limpar", "começa uma conversa nova; a atual fica salva", []string{"clear"}},
 	{"contexto", "mostra o que o Bard sabe: cluster, namespace, notas", []string{"context"}},
 	{"ferramentas", "lista as ferramentas e quais estão disponíveis", []string{"tools"}},
-	{"modelo", "troca o provider de IA nesta sessão", []string{"model", "provider"}},
+	{"modelo", "troca o provider ou o modelo de IA", []string{"model", "provider"}},
 	{"copiar", "copia a última resposta", []string{"copy"}},
 	{"exportar", "salva a conversa em markdown no projeto", []string{"export"}},
 	{"ajuda", "atalhos e exemplos de perguntas", []string{"help"}},
@@ -203,15 +203,21 @@ const larguraNomeLista = 16
 func quadroLista(rotulo string, itens []itemLista, marcado, largura, altura int) string {
 	s, g := ui.S(), ui.G()
 	interno := max(largura-4, 1) // borda e respiro do quadro
+	// A coluna cresce até o nome mais longo ("gemini-cli/gemini-2.5-flash"), mas não passa
+	// de 2/5 da largura: a descrição precisa de lugar, e o nome mais longo que isso corta.
 	coluna := larguraNomeLista
 	for _, it := range itens {
 		coluna = max(coluna, lipgloss.Width(it.nome)+2)
 	}
+	coluna = min(coluna, max(larguraNomeLista, interno*2/5))
 	visiveis := max(min(len(itens), altura-2), 1)
 	inicio := max(marcado-visiveis+1, 0)
 	linhas := make([]string, 0, visiveis)
 	for i := inicio; i < min(inicio+visiveis, len(itens)); i++ {
 		it := itens[i]
+		if lipgloss.Width(it.nome) > coluna-2 {
+			it.nome = ansi.Truncate(it.nome, coluna-2, g.Reticencias)
+		}
 		nome := it.nome + strings.Repeat(" ", coluna-lipgloss.Width(it.nome))
 		if i == marcado {
 			// Na tinta invertida só o nome vai em negrito, como na prancha e na tabela
@@ -282,7 +288,7 @@ func (m Model) contagemCampo() string {
 		if sel.tipo == seletorSessoes {
 			return plural(len(sel.itens), "conversa", "conversas")
 		}
-		return plural(len(sel.itens), "provider", "providers")
+		return plural(len(sel.modelos), "provider", "providers")
 	}
 	if lista := m.comandosVisiveis(); len(lista) > 0 {
 		return plural(len(lista), "comando", "comandos")

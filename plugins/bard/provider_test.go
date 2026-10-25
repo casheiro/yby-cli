@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
@@ -36,5 +39,37 @@ func TestRotuloProvider(t *testing.T) {
 		if got := rotuloProvider(c.p); got != c.want {
 			t.Errorf("rotuloProvider(%T) = %q, esperado %q", c.p, got, c.want)
 		}
+	}
+}
+
+// TestModeloDetectado: o /modelo recebe de cada provider os modelos da factory e a troca
+// de modelo; um provider que a factory não conhece fica só com o próprio nome.
+func TestModeloDetectado(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("YBY_AI_MODEL", "")
+	t.Setenv("GEMINI_MODEL", "")
+
+	claude := modeloDetectado(context.Background(), ai.NewClaudeCLIProvider())
+	if claude.Rotulo != "claude-cli" || claude.Padrao != "" || !reflect.DeepEqual(claude.Modelos, []string{"sonnet", "opus", "haiku"}) {
+		t.Errorf("claude-cli: %+v", claude)
+	}
+	if claude.ComModelo == nil {
+		t.Fatal("o claude-cli troca de modelo")
+	}
+	// A regra é da factory: o modelo que o provider não tem volta como erro, sem IA.
+	if _, _, err := claude.ComModelo(context.Background(), "gpt-4o"); err == nil || !strings.Contains(err.Error(), "o claude-cli não tem o modelo gpt-4o") {
+		t.Errorf("modelo inválido: %v", err)
+	}
+
+	gemini := modeloDetectado(context.Background(), &ai.GeminiProvider{})
+	if gemini.Padrao != "gemini-2.5-flash" || len(gemini.Modelos) != 3 {
+		t.Errorf("gemini: %+v", gemini)
+	}
+
+	outro := modeloDetectado(context.Background(), nomeado{nome: "Meu Provider"})
+	if outro.Rotulo != "meu provider" || outro.ComModelo != nil || len(outro.Modelos) != 0 {
+		t.Errorf("provider desconhecido: %+v", outro)
 	}
 }

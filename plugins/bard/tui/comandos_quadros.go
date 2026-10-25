@@ -85,7 +85,7 @@ func (m Model) quadroContexto(agora time.Time) quadroMsg {
 	if cluster == "" {
 		cluster = m.config.Cluster
 	}
-	provider := ou(m.config.AIModel, "nenhum")
+	provider := ou(m.rotuloIA(), "nenhum")
 	if info.Embeddings != "" {
 		provider += s.TintaSuave.Render(" · " + info.Embeddings)
 	}

@@ -17,6 +17,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 )
 
+// defaultOllamaModel é o modelo do Ollama sem config; sem ele configurado, o provider usa
+// o primeiro modelo baixado (resolveModel).
+const defaultOllamaModel = "llama3"
+
 type OllamaProvider struct {
 	BaseURL         string
 	Model           string
@@ -45,7 +49,7 @@ func NewOllamaProvider() *OllamaProvider {
 		candidates = append(candidates, fmt.Sprintf("http://%s:11434", wslHost))
 	}
 
-	model := "llama3"
+	model := defaultOllamaModel
 	modelConfigured := false
 	if override := getConfiguredModel("ollama"); override != "" {
 		model = override
@@ -165,29 +169,46 @@ type ollamaTagsResponse struct {
 }
 
 func (p *OllamaProvider) resolveModel(ctx context.Context) error {
-	// If user asked strict model, keeps it (not implemented yet, defaults to llama3)
-	// But here we want ease of use.
-
-	client := http.Client{Timeout: 2 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/api/tags", nil)
-	resp, err := client.Do(req)
+	modelos, err := p.localModels(ctx)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-
-	var tags ollamaTagsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		return err
-	}
-
-	if len(tags.Models) > 0 {
+	if len(modelos) > 0 {
 		// Pick the first one. Most users have "latest" or "llama3" as default.
-		p.Model = tags.Models[0].Name
+		p.Model = modelos[0]
 		return nil
 	}
 
 	return fmt.Errorf("nenhum modelo encontrado no Ollama")
+}
+
+// localModels lista os modelos baixados no Ollama (/api/tags), na ordem que ele devolve.
+func (p *OllamaProvider) localModels(ctx context.Context) ([]string, error) {
+	client := http.Client{Timeout: 2 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", p.BaseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama respondeu %d em /api/tags", resp.StatusCode)
+	}
+
+	var tags ollamaTagsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, err
+	}
+	modelos := make([]string, 0, len(tags.Models))
+	for _, m := range tags.Models {
+		if m.Name != "" {
+			modelos = append(modelos, m.Name)
+		}
+	}
+	return modelos, nil
 }
 
 type ollamaResponse struct {
