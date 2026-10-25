@@ -167,8 +167,11 @@ func TestModel_EscInterrompeSemFechar(t *testing.T) {
 	if n != 3 || m.messages[1].content != "primeiro" || m.messages[2].role != "nota" || m.messages[2].content != "resposta interrompida" {
 		t.Fatalf("mensagens inesperadas: %#v", m.messages)
 	}
-	if got := strings.Join(s.todas(), "\n"); got != "user: oi" {
-		t.Errorf("resposta interrompida não vai ao histórico: %q", got)
+	if got := strings.Join(s.todas(), "\n"); got != "user: oi\nassistant: primeiro\n\n*resposta interrompida*" {
+		t.Errorf("a resposta interrompida vai ao histórico com a marca: %q", got)
+	}
+	if got := textoInterrompido("  \n"); got != "*resposta interrompida*" {
+		t.Errorf("sem nada recebido, só a marca: %q", got)
 	}
 
 	// Uma nova pergunta abre a rodada seguinte normalmente.

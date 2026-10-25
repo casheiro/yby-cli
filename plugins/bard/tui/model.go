@@ -564,7 +564,7 @@ func (m Model) proximoEvento() tea.Cmd {
 }
 
 // encerrarRodada fecha a rodada: registra a resposta (ou o erro) e volta ao
-// estado ocioso. Resposta interrompida mostra o que chegou e não vai ao histórico.
+// estado ocioso. Resposta interrompida mostra o que chegou e vai ao histórico com a marca.
 func (m *Model) encerrarRodada(msg FimMsg) {
 	if m.cancelar != nil {
 		m.cancelar()
@@ -590,6 +590,11 @@ func (m *Model) encerrarRodada(msg FimMsg) {
 			m.messages = append(m.messages, resposta)
 		}
 		m.messages = append(m.messages, chatMessage{role: "nota", content: "resposta interrompida"})
+		// No histórico salvo vai o que chegou com a marca, para o /sessões mostrar a
+		// troca inteira e a IA saber, ao retomar, que a resposta foi cortada.
+		if m.config.SaveMessage != nil {
+			m.config.SaveMessage("assistant", textoInterrompido(msg.Resposta), m.config.SessionID)
+		}
 	case msg.Err != nil:
 		resposta.role, resposta.content = "error", msg.Err.Error()
 		m.messages = append(m.messages, resposta)
@@ -599,6 +604,17 @@ func (m *Model) encerrarRodada(msg FimMsg) {
 			m.config.SaveMessage("assistant", msg.Resposta, m.config.SessionID)
 		}
 	}
+}
+
+// marcaInterrompida fecha, no histórico salvo, uma resposta cortada com esc.
+const marcaInterrompida = "*resposta interrompida*"
+
+// textoInterrompido é a resposta parcial seguida da marca; sem nada recebido, só a marca.
+func textoInterrompido(parcial string) string {
+	if parcial = strings.TrimSpace(parcial); parcial == "" {
+		return marcaInterrompida
+	}
+	return parcial + "\n\n" + marcaInterrompida
 }
 
 // ferramentasDaRodada resume as ferramentas que terminaram na rodada.
