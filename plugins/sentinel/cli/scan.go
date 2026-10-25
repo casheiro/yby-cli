@@ -6,18 +6,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
+	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
-	"github.com/charmbracelet/lipgloss"
+	"k8s.io/client-go/kubernetes"
 )
 
 // ScanReport contém o resultado completo do scan de segurança.
@@ -28,167 +30,228 @@ type ScanReport struct {
 	Recommendations string                   `json:"recommendations,omitempty"`
 }
 
-func scanNamespace(namespace, outputFormat, outputFile, profile string, fix, fixDryRun bool) {
-	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Padding(0, 1)
-	fmt.Println(titleStyle.Render(fmt.Sprintf("\n Sentinel Security Scan: %s", namespace)))
+// Dependências do scan e do investigate, substituíveis nos testes.
+var (
+	novoClienteKube = getKubeClient
+	backendsDoScan  = func() []backends.SecurityBackend {
+		return []backends.SecurityBackend{backends.NewPolarisBackend(), backends.NewOPABackend()}
+	}
+	checksDoScan = checks.GetAll
+	provedorDeIA = func(ctx context.Context) ai.Provider { return ai.GetProvider(ctx, "auto") }
+)
 
-	k8sClient, err := getKubeClient()
+// semCluster é o erro de quando o cliente Kubernetes não pode ser montado.
+func semCluster(err error) error {
+	return yerrors.Wrap(err, yerrors.ErrCodeClusterOffline, "não deu para montar o cliente do Kubernetes").
+		WithHint("confira o kubeconfig e o contexto com kubectl config current-context")
+}
+
+// scanNamespace examina o namespace e escreve o resultado em saida. O título e as etapas
+// vão para saida, ou para erros quando o resultado é para scripts (json ou markdown sem
+// arquivo).
+func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error {
+	namespace := op.namespace
+	if namespace == "" {
+		namespace = "default"
+	}
+	var selecionados []checks.SecurityCheck
+	if op.perfil != "" {
+		p, ok := profiles.GetProfile(op.perfil)
+		if !ok {
+			return yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("o perfil %s não existe", op.perfil)).
+				WithHint("use --profile " + listaComOu(nomesDosPerfis()))
+		}
+		selecionados = checks.GetByIDs(p.CheckIDs)
+	} else {
+		selecionados = checksDoScan()
+	}
+
+	k8sClient, err := novoClienteKube()
 	if err != nil {
-		fmt.Printf("Falha ao obter cliente Kubernetes: %v\n", err)
-		return
+		return semCluster(err)
 	}
 
-	ctx := context.Background()
-
-	// 1. Rodar backends de seguranca (Polaris, OPA)
-	allBackends := []backends.SecurityBackend{
-		backends.NewPolarisBackend(),
-		backends.NewOPABackend(),
+	// O título só sai depois das verificações rápidas (perfil e cliente), para o erro
+	// delas não ficar separado dele por duas linhas em branco.
+	telaDasEtapas := saida
+	if op.paraScripts() {
+		telaDasEtapas = erros
+	} else {
+		ui.Title(saida, "sentinel", "scan · namespace "+namespace)
+		fmt.Fprintln(saida)
 	}
 
-	var backendFindings []backends.Finding
+	prog := novoProgresso(telaDasEtapas)
+	parar := animar(prog, erros)
+	report, patches, falhaPatches, err := coletarScan(ctx, prog, k8sClient, namespace, selecionados, op)
+	parar()
+	if err != nil {
+		return err
+	}
+	if err := escreverResultadoScan(saida, report, patches, namespace, op); err != nil {
+		return err
+	}
+	// Patches que o --fix não aplicou saem como erro depois do resultado, para o código de
+	// saída dizer a scripts e à CI que nada (ou nem tudo) foi corrigido.
+	return falhaPatches
+}
+
+// escreverResultadoScan escreve o json ou o markdown (no stdout ou no arquivo) ou, no
+// formato terminal, o resumo na tela, com o relatório completo em ~/.yby/reports/.
+func escreverResultadoScan(saida io.Writer, report ScanReport, patches []remediation.RemediationPatch, namespace string, op opcoes) error {
+	switch op.formato {
+	case "json":
+		data, _ := json.MarshalIndent(report, "", "  ")
+		return gravarRelatorio(saida, string(data), op.arquivo, "json")
+	case "markdown":
+		return gravarRelatorio(saida, exportScanMarkdown(report), op.arquivo, "markdown")
+	}
+	if len(report.Findings) == 0 {
+		fmt.Fprintln(saida)
+		ui.Check(saida, ui.CheckOk, "nenhum problema de segurança encontrado", "", "")
+		ui.Campos(saida, ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)})
+		return nil
+	}
+	caminho, errRelatorio := saveReportToGlobal(report, namespace)
+	escreverScan(saida, report, patches, op, caminho, errRelatorio)
+	return nil
+}
+
+// coletarScan roda os backends (ou os checks internos), as recomendações da IA e, com
+// --fix, os patches, uma etapa de prog para cada. Devolve os patches gerados com --fix ou
+// --fix-dry-run e, em falhaPatches, o erro dos patches que o --fix não aplicou; err é a
+// falha que interrompe o scan.
+func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Interface, namespace string, selecionados []checks.SecurityCheck, op opcoes) (report ScanReport, patches []remediation.RemediationPatch, falhaPatches, err error) {
+	var findings []checks.SecurityFinding
 	var sources []string
+	consultou := false
+	var primeiroErro error
 
-	for _, b := range allBackends {
+	// 1. Backends de segurança (Polaris, OPA)
+	for _, b := range backendsDoScan() {
 		if !b.IsAvailable() {
 			continue
 		}
-		bf, err := b.ScanCluster(ctx, k8sClient, namespace)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "aviso: backend %s falhou: %v\n", b.Name(), err)
+		prog.Iniciar(b.Name())
+		bf, errBackend := b.ScanCluster(ctx, client, namespace)
+		if errBackend != nil {
+			prog.Falhar("falhou")
+			prog.Detalhe(errBackend.Error())
+			if primeiroErro == nil {
+				primeiroErro = errBackend
+			}
 			continue
 		}
+		consultou = true
+		prog.Concluir(contar(len(bf), "achado", "achados"))
 		if len(bf) > 0 {
-			backendFindings = append(backendFindings, bf...)
 			sources = append(sources, b.Name())
 		}
-	}
-
-	// 2. Converter findings dos backends para o formato SecurityFinding
-	var findings []checks.SecurityFinding
-	for _, bf := range backendFindings {
-		findings = append(findings, checks.SecurityFinding{
-			CheckID:        bf.ID,
-			Severity:       checks.Severity(bf.Severity),
-			Category:       checks.Category(bf.Category),
-			Namespace:      bf.Namespace,
-			Resource:       bf.Resource,
-			Message:        bf.Message,
-			Recommendation: bf.Recommendation,
-			Type:           bf.Severity,
-			Description:    bf.Message,
-		})
-	}
-
-	// 3. Se nenhum backend rodou, fallback para checks artesanais
-	if len(sources) == 0 {
-		fmt.Println("Usando checks internos (nenhum backend disponivel)")
-		sources = append(sources, "checks-internos")
-
-		var selectedChecks []checks.SecurityCheck
-		if profile != "" {
-			p, ok := profiles.GetProfile(profile)
-			if !ok {
-				fmt.Printf("Perfil '%s' nao encontrado. Disponiveis:\n", profile)
-				for _, prof := range profiles.ListProfiles() {
-					fmt.Printf("  - %s: %s\n", prof.Name, prof.Description)
-				}
-				return
-			}
-			selectedChecks = checks.GetByIDs(p.CheckIDs)
-		} else {
-			selectedChecks = checks.GetAll()
+		for _, f := range bf {
+			findings = append(findings, checks.SecurityFinding{
+				CheckID:        f.ID,
+				Severity:       checks.Severity(f.Severity),
+				Category:       checks.Category(f.Category),
+				Namespace:      f.Namespace,
+				Resource:       f.Resource,
+				Message:        f.Message,
+				Recommendation: f.Recommendation,
+				Type:           f.Severity,
+				Description:    f.Message,
+			})
 		}
+	}
 
-		for _, check := range selectedChecks {
-			checkFindings, err := check.Run(ctx, k8sClient, namespace)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "aviso: check '%s' falhou: %v\n", check.Name(), err)
+	// 2. Sem achados dos backends, os checks internos
+	if len(sources) == 0 {
+		sources = append(sources, "checks-internos")
+		prog.Iniciar("checks internos")
+		var falhas []string
+		antes := len(findings)
+		for _, check := range selecionados {
+			cf, errCheck := check.Run(ctx, client, namespace)
+			if errCheck != nil {
+				falhas = append(falhas, check.Name())
+				if primeiroErro == nil {
+					primeiroErro = errCheck
+				}
 				continue
 			}
-			findings = append(findings, checkFindings...)
+			consultou = true
+			findings = append(findings, cf...)
+		}
+		if !consultou && primeiroErro != nil {
+			prog.Falhar("falhou")
+			return ScanReport{}, nil, nil, yerrors.Wrap(primeiroErro, yerrors.ErrCodeClusterOffline,
+				"não deu para consultar o cluster").
+				WithContext("namespace", namespace).
+				WithHint("confira se o cluster responde com kubectl get pods -n " + namespace)
+		}
+		prog.Concluir(contar(len(findings)-antes, "achado", "achados"))
+		if len(falhas) > 0 {
+			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(falhas), "check falhou", "checks falharam"), strings.Join(falhas, ", ")))
 		}
 	}
 
-	// 4. Deduplicar findings (mesmo recurso + mesma mensagem)
+	// 3. Deduplicar findings (mesmo recurso + mesma mensagem)
 	findings = deduplicateFindings(findings)
-
-	report := ScanReport{
-		Namespace: namespace,
-		Findings:  findings,
-		Sources:   sources,
-	}
-
+	report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources}
 	if len(findings) == 0 {
-		fmt.Println("\nNenhuma vulnerabilidade encontrada!")
-		return
+		return report, nil, nil, nil
 	}
 
-	fmt.Printf("\n%d vulnerabilidades encontradas.\n", len(findings))
-
-	// Gerar recomendações via IA
-	provider := ai.GetProvider(ctx, "auto")
-	if provider != nil {
-		fmt.Println("Gerando recomendacoes com IA...")
+	// 4. Recomendações via IA
+	if provider := provedorDeIA(ctx); provider != nil {
+		prog.Iniciar("recomendações da IA")
 		findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
-		recommendations, err := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))
-		if err == nil {
+		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))
+		if errIA != nil {
+			prog.Falhar("indisponíveis")
+			prog.Detalhe(errIA.Error())
+		} else {
 			report.Recommendations = recommendations
-		} else {
-			fmt.Fprintf(os.Stderr, "aviso: recomendacoes IA indisponiveis: %v\n", err)
+			prog.Concluir(provider.Name())
 		}
 	}
 
-	// Remediation
-	if fix || fixDryRun {
-		patches := remediation.GeneratePatches(findings)
-		if len(patches) == 0 {
-			fmt.Println("\nNenhum patch de remediacao disponivel para os findings encontrados.")
-		} else if fixDryRun {
-			fmt.Printf("\nDry-run: %d patches de remediacao gerados:\n", len(patches))
-			for i, p := range patches {
-				fmt.Printf("  %d. [%s] %s/%s - %s\n", i+1, p.ResourceKind, p.Namespace, p.ResourceName, p.Description)
-				fmt.Printf("     Patch: %s\n", p.Patch)
+	// 5. Remediação
+	if !op.fix && !op.fixDryRun {
+		return report, nil, nil, nil
+	}
+	patches = remediation.GeneratePatches(findings)
+	if op.fix && !op.fixDryRun && len(patches) > 0 {
+		prog.Iniciar("aplicar patches")
+		if errs := remediation.ApplyPatches(ctx, client, patches); len(errs) > 0 {
+			prog.Falhar(fmt.Sprintf("%d de %d falharam", len(errs), len(patches)))
+			for _, e := range errs {
+				prog.Detalhe(e.Error())
 			}
+			falhaPatches = yerrors.Wrap(errs[0], yerrors.ErrCodePlugin,
+				fmt.Sprintf("o --fix não aplicou %d de %d patches", len(errs), len(patches))).
+				WithContext("namespace", namespace).
+				WithHint("o motivo de cada um está na etapa aplicar patches; confira as permissões com kubectl auth can-i patch deployments -n " + namespace)
 		} else {
-			fmt.Printf("\nAplicando %d patches de remediacao...\n", len(patches))
-			errs := remediation.ApplyPatches(ctx, k8sClient, patches)
-			if len(errs) > 0 {
-				for _, e := range errs {
-					fmt.Printf("  Erro: %v\n", e)
-				}
-			} else {
-				fmt.Printf("  Todos os %d patches aplicados com sucesso!\n", len(patches))
-			}
+			prog.Concluir(contar(len(patches), "aplicado", "aplicados"))
 		}
 	}
+	return report, patches, falhaPatches, nil
+}
 
-	// Output: JSON ou Markdown explícito vai pro arquivo especificado
-	if outputFormat == "json" {
-		data, _ := json.MarshalIndent(report, "", "  ")
-		if err := writeReport(string(data), outputFile); err != nil {
-			fmt.Printf("Erro ao escrever relatorio: %v\n", err)
-			return
-		}
-		if outputFile != "" {
-			fmt.Printf("Relatorio JSON salvo em %s\n", outputFile)
-		}
-		return
+// gravarRelatorio escreve o json ou o markdown no stdout ou, com -f, no arquivo; neste
+// caso confirma em saida onde ele ficou.
+func gravarRelatorio(saida io.Writer, conteudo, arquivo, formato string) error {
+	if arquivo == "" {
+		fmt.Fprint(saida, conteudo)
+		return nil
 	}
-
-	if outputFormat == "markdown" && outputFile != "" {
-		content := exportScanMarkdown(report)
-		if err := writeReport(content, outputFile); err != nil {
-			fmt.Printf("Erro ao escrever relatorio: %v\n", err)
-			return
-		}
-		fmt.Printf("Relatorio Markdown salvo em %s\n", outputFile)
-		return
+	if err := writeReport(conteudo, arquivo); err != nil {
+		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para gravar o relatório").
+			WithContext("arquivo", arquivo).
+			WithHint("confira se a pasta existe e se você pode escrever nela")
 	}
-
-	// Padrão: resumo no terminal + relatório completo em ~/.yby/reports/
-	reportPath := saveReportToGlobal(report, namespace)
-	renderScanSummary(report, reportPath)
+	fmt.Fprintln(saida)
+	ui.Check(saida, ui.CheckOk, "relatório", formato, arquivo)
+	return nil
 }
 
 // deduplicateFindings remove findings duplicados (mesmo recurso + mesma mensagem).
@@ -207,27 +270,27 @@ func deduplicateFindings(findings []checks.SecurityFinding) []checks.SecurityFin
 }
 
 // saveReportToGlobal salva o relatório completo em ~/.yby/reports/.
-func saveReportToGlobal(report ScanReport, namespace string) string {
+func saveReportToGlobal(report ScanReport, namespace string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", err
 	}
 
 	reportsDir := filepath.Join(home, ".yby", "reports")
 	if err := os.MkdirAll(reportsDir, 0755); err != nil {
-		return ""
+		return "", err
 	}
 
-	date := time.Now().Format("2006-01-02")
+	date := relogio().Format("2006-01-02")
 	filename := fmt.Sprintf("sentinel-scan-%s-%s.md", namespace, date)
 	reportPath := filepath.Join(reportsDir, filename)
 
 	content := exportScanMarkdown(report)
 	if err := os.WriteFile(reportPath, []byte(content), 0644); err != nil {
-		return ""
+		return "", err
 	}
 
-	return reportPath
+	return reportPath, nil
 }
 
 // exportScanMarkdown gera o relatório de scan em formato Markdown.
@@ -266,44 +329,4 @@ func exportScanMarkdown(report ScanReport) string {
 	}
 
 	return sb.String()
-}
-
-// renderScanSummary renderiza um resumo compacto do scan no terminal.
-func renderScanSummary(report ScanReport, reportPath string) {
-	if len(report.Sources) > 0 {
-		fmt.Printf("  Backends: %s\n", strings.Join(report.Sources, ", "))
-	}
-	// Contar por severidade
-	bySeverity := make(map[string]int)
-	byCategory := make(map[string]int)
-
-	for _, f := range report.Findings {
-		sev := string(f.Severity)
-		if sev == "" {
-			sev = f.Type // backward compat
-		}
-		bySeverity[sev]++
-		byCategory[string(f.Category)]++
-	}
-
-	fmt.Println()
-	fmt.Println("  Por severidade:")
-	severityOrder := []string{"critical", "high", "medium", "low", "info"}
-	for _, s := range severityOrder {
-		if count, ok := bySeverity[s]; ok {
-			fmt.Printf("    %-12s %d\n", s, count)
-		}
-	}
-
-	fmt.Println()
-	fmt.Println("  Por categoria:")
-	for cat, count := range byCategory {
-		fmt.Printf("    %-20s %d\n", cat, count)
-	}
-
-	if reportPath != "" {
-		fmt.Println()
-		fmt.Printf("  Relatorio completo: %s\n", reportPath)
-	}
-	fmt.Println()
 }
