@@ -16,6 +16,9 @@ const (
 	ActionInputScale
 	// ActionConfirmRestart aguarda confirmação para restart
 	ActionConfirmRestart
+	// ActionMenu é o menu x com as ações da linha selecionada (o menu
+	// completo, com a confirmação por nome, é a T022)
+	ActionMenu
 )
 
 // renderActionPrompt renderiza, na linha de estado, a pergunta da ação atual
@@ -24,6 +27,9 @@ func renderActionPrompt(mode ActionMode, kind, resourceName, inputBuffer string)
 	s := yui.S()
 	digitado := s.Negrito.Render(inputBuffer) + cursor()
 	switch mode {
+	case ActionMenu:
+		return s.Negrito.Render("ações") + " " + s.TintaSuave.Render(yui.G().Caminho) + " " +
+			s.Tinta.Render(nomeDoTipo(kind)+" "+resourceName)
 	case ActionConfirmDelete:
 		return frase(yui.StatusFalha, "excluir "+kind+" "+resourceName+"? digite yes para confirmar: ") + digitado
 	case ActionInputScale:

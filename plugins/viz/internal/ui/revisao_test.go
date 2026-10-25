@@ -26,7 +26,8 @@ func atualizar(m Model, msg tea.Msg) (Model, tea.Cmd) {
 func tecla(k string) tea.KeyMsg {
 	especiais := map[string]tea.KeyType{
 		"enter": tea.KeyEnter, "esc": tea.KeyEsc, "pgdown": tea.KeyPgDown, "pgup": tea.KeyPgUp,
-		"ctrl+c": tea.KeyCtrlC, "tab": tea.KeyTab,
+		"ctrl+c": tea.KeyCtrlC, "tab": tea.KeyTab, "shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
+		"backspace": tea.KeyBackspace, "up": tea.KeyUp, "down": tea.KeyDown,
 	}
 	if t, ok := especiais[k]; ok {
 		return tea.KeyMsg{Type: t}
@@ -263,7 +264,7 @@ func TestErro_ListaQueChegaLimpaOErro(t *testing.T) {
 	if m.err != nil || !m.carregada(TabPods) {
 		t.Fatalf("a lista que chegou deveria limpar o erro: %v", m.err)
 	}
-	m, _ = atualizar(m, leituraMsg{respostas: []tea.Msg{muitosPods(2), fmt.Errorf("forbidden")}})
+	m, _ = atualizar(m, leituraMsg{abas: []ResourceTab{TabPods, TabDeployments}, respostas: []tea.Msg{muitosPods(2), fmt.Errorf("forbidden")}})
 	if m.err != nil || m.reconnecting {
 		t.Fatalf("a falha da aba de fundo derrubou a tela: err %v, reconectando %v", m.err, m.reconnecting)
 	}
@@ -275,7 +276,7 @@ func TestErro_ListaQueChegaLimpaOErro(t *testing.T) {
 func TestTrocaDeNamespace_AbasVoltamSemContagem(t *testing.T) {
 	usarModo(t, modo{"escuro", yui.TemaEscuro, false, termenv.TrueColor})
 	m := telaDaPrancha(t, 220, 32)
-	m, cmd := teclas(t, m, "/", "o", "u", "t", "r", "o", "enter")
+	m, cmd := teclas(t, m, "n", "o", "u", "t", "r", "o", "enter")
 	if cmd == nil {
 		t.Fatal("o namespace novo deveria ser lido")
 	}
@@ -297,7 +298,7 @@ func TestTrocaDeNamespace_AbasVoltamSemContagem(t *testing.T) {
 
 	// O mesmo namespace não apaga nada nem lê de novo.
 	m = telaDaPrancha(t, 140, 32)
-	if m, cmd = teclas(t, m, "/", "p", "a", "y", "m", "e", "n", "t", "s", "enter"); cmd != nil || !m.carregada(TabDeployments) {
+	if m, cmd = teclas(t, m, "n", "p", "a", "y", "m", "e", "n", "t", "s", "enter"); cmd != nil || !m.carregada(TabDeployments) {
 		t.Fatal("o mesmo namespace não deveria apagar as listas")
 	}
 }
@@ -382,12 +383,14 @@ func TestOrdemPorNome(t *testing.T) {
 	}
 }
 
-// TestCtrlC_SaiDeQualquerLugar: campo de filtro, confirmação, detalhe e lista.
+// TestCtrlC_SaiDeQualquerLugar: campo, menu, confirmação, ajuda, detalhe e lista.
 func TestCtrlC_SaiDeQualquerLugar(t *testing.T) {
 	base := telaDaPrancha(t, 140, 32)
 	niveis := map[string]Model{"lista": base}
 	niveis["campo"], _ = teclas(t, base, "/")
-	niveis["confirmação"], _ = teclas(t, base, "d")
+	niveis["menu"], _ = teclas(t, base, "x")
+	niveis["confirmação"], _ = teclas(t, base, "x", "d")
+	niveis["ajuda"], _ = teclas(t, base, "?")
 	niveis["detalhe"], _ = atualizar(base, detailMsg{title: "YAML: x", content: "a: 1"})
 	for nome, m := range niveis {
 		_, cmd := atualizar(m, tecla("ctrl+c"))
@@ -401,27 +404,41 @@ func TestCtrlC_SaiDeQualquerLugar(t *testing.T) {
 	}
 }
 
-// TestAjuda_InterrogacaoMostraTodasAsTeclas: a legenda corta e oferece
-// "? mais"; o ? mostra a lista inteira das teclas da aba.
+// TestAjuda_InterrogacaoMostraTodasAsTeclas: a legenda da lista é a da
+// prancha e corta com "? mais" na tela estreita; o ? mostra todas as teclas
+// da aba, agrupadas como na folha Atalhos, e só as que valem nela.
 func TestAjuda_InterrogacaoMostraTodasAsTeclas(t *testing.T) {
 	usarModo(t, modo{"escuro", yui.TemaEscuro, false, termenv.TrueColor})
 	m := telaDaPrancha(t, 100, 30)
 	m, _ = teclas(t, m, "2")
-	if !strings.Contains(ansi.Strip(m.View()), "? mais") {
-		t.Fatal("a 100 colunas a legenda dos Deployments corta e oferece ? mais")
+	linhas := strings.Split(ansi.Strip(m.View()), "\n")
+	legenda := strings.Join(strings.Fields(linhas[len(linhas)-1]), " ")
+	if legenda != "↑↓ mover ↵ abrir / buscar f filtrar x ações n namespace ? ajuda q sair" {
+		t.Errorf("legenda dos Deployments: %q", legenda)
 	}
+	m.width = 72
+	if !strings.Contains(ansi.Strip(m.View()), "? mais") {
+		t.Error("a 72 colunas a legenda corta e oferece ? mais")
+	}
+	m.width = 100
 	m, _ = teclas(t, m, "?")
 	tela := ansi.Strip(m.View())
-	for _, quer := range []string{"TECLAS", "reiniciar", "escalar", "label", "aba anterior", "ctrl+c"} {
+	for _, quer := range []string{"TECLAS · DEPLOYMENTS", "EM TODA TUI", "LISTA · DEPLOYMENTS", "r reiniciar · s escalar · d excluir",
+		"filtrar por label", "trocar de aba", "ctrl+c", "sai (só no nível de cima)", "esc fechar", "ctrl+c sair"} {
 		if !strings.Contains(tela, quer) {
 			t.Errorf("a ajuda deveria ter %q:\n%s", quer, tela)
 		}
 	}
-	if strings.Contains(tela, "status") {
-		t.Errorf("o S status não vale nos Deployments:\n%s", tela)
+	for _, nao := range []string{"status e label", "logs", "q sair"} {
+		if strings.Contains(tela, nao) {
+			t.Errorf("a ajuda dos Deployments não deveria ter %q:\n%s", nao, tela)
+		}
 	}
-	if m, _ = teclas(t, m, "esc"); m.viewMode != ModeList {
-		t.Fatal("esc volta para a lista")
+	if m, _ = teclas(t, m, "esc"); m.ajuda {
+		t.Fatal("esc fecha a ajuda")
+	}
+	if m, _ = teclas(t, m, "?", "?"); m.ajuda {
+		t.Fatal("? fecha a ajuda")
 	}
 }
 
@@ -445,7 +462,7 @@ func TestFeedback_CanceladaENomesEmPortugues(t *testing.T) {
 // TestLabel_InvalidoNaoAplica: um seletor que não é válido não vira filtro.
 func TestLabel_InvalidoNaoAplica(t *testing.T) {
 	m := telaDaPrancha(t, 140, 32)
-	m, _ = teclas(t, m, "L", "a", "p", "p", "=", "=", "=", "enter")
+	m, _ = teclas(t, m, "f", "a", "p", "p", "=", "=", "=", "enter")
 	if m.filter.LabelSelector != "" || !strings.Contains(ansi.Strip(m.actionFeedback), "label inválido") {
 		t.Fatalf("label inválido: %q, %q", m.filter.LabelSelector, ansi.Strip(m.actionFeedback))
 	}

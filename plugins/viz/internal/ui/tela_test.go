@@ -270,7 +270,7 @@ func TestFiltros_ChipsComNDeM(t *testing.T) {
 	linha := func(m Model) string { return ansi.Strip(m.linhaFiltros(m.itensDaAba(m.activeTab))) }
 
 	sem := linha(m)
-	for _, quer := range []string{"ordem problemas primeiro", "filtros  nenhum", "f buscar", "8 pods · 2 com problema"} {
+	for _, quer := range []string{"ordem problemas primeiro", "filtros  nenhum", "/ buscar", "8 pods · 2 com problema"} {
 		if !strings.Contains(sem, quer) {
 			t.Errorf("sem filtro, a linha deveria ter %q: %q", quer, sem)
 		}
@@ -365,8 +365,42 @@ func TestLinhaDeEstado_Prioridade(t *testing.T) {
 	if fr := ansi.Strip(m.mensagem(itens)); fr != yui.G().Feito+" Deployment 'api' reiniciado." {
 		t.Errorf("resultado da ação: %q", fr)
 	}
-	m, _ = teclas(t, m, "d")
+	m, _ = teclas(t, m, "x", "d")
 	if fr := ansi.Strip(m.mensagem(itens)); !strings.Contains(fr, "excluir pod worker-5d8b6-q7tvn?") {
 		t.Errorf("confirmação da ação: %q", fr)
+	}
+}
+
+// TestTelaAjuda: a tela ? com as teclas da aba, em grupos lado a lado quando
+// cabem e um embaixo do outro (com rolagem) quando não; e o campo do f aberto,
+// com a regra dele na linha de estado.
+func TestTelaAjuda(t *testing.T) {
+	escuro := modo{"escuro", yui.TemaEscuro, false, termenv.TrueColor}
+	for _, tam := range [][2]int{{140, 32}, {72, 24}} {
+		t.Run(fmt.Sprintf("ajuda_%dx%d", tam[0], tam[1]), func(t *testing.T) {
+			usarModo(t, escuro)
+			m, _ := teclas(t, telaDaPrancha(t, tam[0], tam[1]), "?")
+			conferirTela(t, m, tam[0], tam[1])
+		})
+	}
+	t.Run("filtro_100x30", func(t *testing.T) {
+		usarModo(t, escuro)
+		m, _ := teclas(t, telaDaPrancha(t, 100, 30), "f", "a", "p", "p", "=")
+		conferirTela(t, m, 100, 30)
+	})
+	// Abaixo de 80 colunas, a legenda das camadas em que o ? é letra (campo,
+	// confirmação) não oferece "? mais"; a do menu, em que o ? abre a ajuda, sim.
+	for nome, ks := range map[string][]string{
+		"filtro_72x24": {"f", "a", "p", "p", "="}, "confirmacao_72x24": {"x", "d"}, "menu_72x24": {"x"},
+	} {
+		t.Run(nome, func(t *testing.T) {
+			usarModo(t, escuro)
+			m, _ := teclas(t, telaDaPrancha(t, 72, 24), ks...)
+			tela := strings.Split(ansi.Strip(conferirTela(t, m, 72, 24)), "\n")
+			legenda := tela[len(tela)-1]
+			if quer := nome == "menu_72x24"; strings.Contains(legenda, "? mais") != quer {
+				t.Errorf("? mais na legenda deveria ser %v: %q", quer, legenda)
+			}
+		})
 	}
 }

@@ -181,6 +181,45 @@ func TestMoldura_TopoExcessivoMantemAltura(t *testing.T) {
 	}
 }
 
+func TestMoldura_SairNaLegenda(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, true)
+	p := framePartes()
+	linhas := strings.Split(Moldura(120, 20, p), "\n")
+	if l := linhas[len(linhas)-1]; !strings.HasSuffix(l, "q sair") {
+		t.Errorf("sem Sair, a legenda termina em q sair: %q", l)
+	}
+	p.Sair = DefaultKeys().Global.SairForcado
+	p.Teclas = p.Teclas[:len(p.Teclas)-1] // sem o q sair, que numa camada não sai
+	linhas = strings.Split(Moldura(120, 20, p), "\n")
+	if l := linhas[len(linhas)-1]; !strings.HasSuffix(l, "ctrl+c sair") || strings.Contains(l, "q sair") {
+		t.Errorf("com Sair, a legenda termina na tecla dada: %q", l)
+	}
+}
+
+func TestMoldura_SemAjudaTiraOMais(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, true)
+	k := DefaultKeys()
+	p := framePartes()
+	p.Sair = k.Global.SairForcado
+	p.Teclas = []key.Binding{k.Lista.Abrir, k.Global.Voltar}
+	ultima := func() string {
+		linhas := strings.Split(Moldura(72, 20, p), "\n")
+		return linhas[len(linhas)-1]
+	}
+	if l := ultima(); !strings.Contains(l, "? mais") {
+		t.Errorf("estreita, a legenda oferece ? mais: %q", l)
+	}
+	p.SemAjuda = true
+	if l := ultima(); strings.Contains(l, "?") || !strings.HasSuffix(l, "ctrl+c sair") || !strings.Contains(l, "abrir") {
+		t.Errorf("com SemAjuda, a legenda não oferece o ?: %q", l)
+	}
+	// Sem espaço, as teclas do fim somem sem prometer o ?.
+	p.Teclas = []key.Binding{k.Lista.Abrir, k.Lista.Buscar, k.Lista.Filtrar, k.Lista.Logs, k.Lista.Yaml}
+	if l := ultima(); strings.Contains(l, "?") || strings.Contains(l, "logs") {
+		t.Errorf("com SemAjuda e sem espaço: %q", l)
+	}
+}
+
 func TestEmpilhado_AlturaPequena(t *testing.T) {
 	usarTema(t, true, termenv.Ascii, true)
 	got := empilhado("lista", "detalhe", 20, 4)

@@ -79,6 +79,13 @@ func StatusLineTexto(largura int, mensagem, direita string) string {
 // ajuda ficam de fora. Abaixo de 80 colunas mostra 3 teclas + "? mais"; em qualquer
 // largura, descarta teclas do fim até caber.
 func KeyHintsCom(largura int, sair key.Binding, teclas ...key.Binding) string {
+	return legendaDeTeclas(largura, sair, true, teclas...)
+}
+
+// legendaDeTeclas monta a legenda de KeyHintsCom. Sem comMais (camadas em que o ? é
+// letra ou fecha a camada), o "? mais" nunca aparece: quando não cabe, as teclas do fim
+// somem sem aviso.
+func legendaDeTeclas(largura int, sair key.Binding, comMais bool, teclas ...key.Binding) string {
 	ajuda := DefaultKeys().Global.Ajuda
 	compacto := largura < LarguraColuna
 
@@ -88,12 +95,12 @@ func KeyHintsCom(largura int, sair key.Binding, teclas ...key.Binding) string {
 		if !b.Enabled() || h.Key == "" || h.Desc == "" || h.Key == sair.Help().Key {
 			continue
 		}
-		if compacto && h.Key == ajuda.Help().Key {
+		if comMais && compacto && h.Key == ajuda.Help().Key {
 			continue // vira o "? mais" fixo
 		}
 		itens = append(itens, b)
 	}
-	mais := compacto
+	mais := comMais && compacto
 	if compacto && len(itens) > 3 {
 		itens = itens[:3]
 	}
@@ -115,6 +122,6 @@ func KeyHintsCom(largura int, sair key.Binding, teclas ...key.Binding) string {
 			return linhaEsqDir(esq, dir, largura)
 		}
 		itens = itens[:len(itens)-1]
-		mais = true
+		mais = comMais
 	}
 }

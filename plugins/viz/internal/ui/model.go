@@ -7,8 +7,8 @@ import (
 
 	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -50,6 +50,9 @@ type Model struct {
 	atualizado     time.Time        // hora da última lista recebida (linha de estado)
 	agora          func() time.Time // relógio, injetável nos testes
 	rodizio        ResourceTab      // última aba de fundo relida pelo relógio
+	ajuda          bool             // a tela ? está aberta
+	ajudaScroll    int              // primeira linha da ajuda na janela
+	recarregando   bool             // o r pediu uma leitura que ainda não voltou
 	// tique agenda a próxima leitura do relógio (tea.Tick; injetável nos testes).
 	tique func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
@@ -62,7 +65,8 @@ type FilterState struct {
 	SearchQuery   string
 	InputMode     bool
 	InputBuffer   string
-	InputField    string // "namespace", "label", "status", "search"
+	InputField    string // "search" (/), "namespace" (n) ou "filtro" (f: status ou label)
+	buscaAnterior string // a busca de antes do /, que o esc devolve
 }
 
 // NewModel cria o modelo com injeção do client
@@ -99,11 +103,13 @@ func (m Model) Init() tea.Cmd {
 }
 
 // leituraMsg é a resposta de uma leitura do cluster: a lista (ou o erro) de
-// cada aba lida, a primeira sendo a aba ativa, e o namespace da leitura.
+// cada aba lida, a primeira sendo a aba ativa no pedido, e o namespace da leitura.
 type leituraMsg struct {
 	namespace string
-	relogio   bool      // leitura do relógio: a resposta agenda a próxima
-	respostas []tea.Msg // []monitor.Pod, []monitor.Deployment… ou error
+	relogio   bool          // leitura do relógio: a resposta agenda a próxima
+	recarga   bool          // leitura pedida pelo r: a resposta avisa na linha de estado
+	abas      []ResourceTab // a aba de cada resposta
+	respostas []tea.Msg     // []monitor.Pod, []monitor.Deployment… ou error
 }
 
 // ler devolve o comando que lê as abas dadas no namespace atual. O label, o
@@ -112,7 +118,7 @@ type leituraMsg struct {
 func (m Model) ler(relogio bool, tabs ...ResourceTab) tea.Cmd {
 	client, ns := m.client, m.filter.Namespace
 	return func() tea.Msg {
-		msg := leituraMsg{namespace: ns, relogio: relogio}
+		msg := leituraMsg{namespace: ns, relogio: relogio, abas: tabs}
 		for _, t := range tabs {
 			msg.respostas = append(msg.respostas, lerAba(client, ns, t))
 		}
@@ -181,7 +187,9 @@ func (m Model) itemCount() int {
 	return len(m.itensDaAba(m.activeTab))
 }
 
-// seguirSelecao rola a lista para a linha selecionada ficar na janela.
+// seguirSelecao rola a lista para a linha selecionada ficar na janela, sem
+// passar do fim: o scrollY do modelo é sempre o que a tela desenha (o clique
+// e a ação contam as linhas a partir dele).
 func (m *Model) seguirSelecao() {
 	h := m.linhasDeDados()
 	if m.selectedIndex >= m.scrollY+h {
@@ -190,6 +198,7 @@ func (m *Model) seguirSelecao() {
 	if m.selectedIndex < m.scrollY {
 		m.scrollY = m.selectedIndex
 	}
+	m.clampScroll(m.itemCount())
 }
 
 // clampScroll garante que scrollY está dentro dos limites válidos
@@ -351,6 +360,35 @@ func (m Model) irParaAba(tab ResourceTab) (tea.Model, tea.Cmd) {
 type detailMsg struct {
 	title   string
 	content string
+	// pedido marca a resposta de um pedido da lista (pedirDetalhe), com a aba e
+	// o recurso selecionados quando ele saiu.
+	pedido bool
+	aba    ResourceTab
+	chave  string
+}
+
+// pedirDetalhe marca o pedido de logs, YAML ou eventos com a aba e o recurso
+// da linha selecionada: a resposta só abre se a tela ainda estiver neles.
+func (m Model) pedirDetalhe(cmd tea.Cmd) tea.Cmd {
+	aba, chave := m.activeTab, m.chaveSelecionada()
+	return func() tea.Msg {
+		msg := cmd()
+		if d, ok := msg.(detailMsg); ok {
+			d.pedido, d.aba, d.chave = true, aba, chave
+			return d
+		}
+		return msg
+	}
+}
+
+// detalheAtrasado diz se o detalhe chegou tarde demais para abrir: uma camada
+// abriu por cima (campo, menu, confirmação, ajuda), que ficaria escondida e
+// recebendo as teclas, ou a aba ou a seleção mudaram desde o pedido.
+func (m Model) detalheAtrasado(msg detailMsg) bool {
+	if m.filter.InputMode || m.actionMode != ActionNone || m.ajuda {
+		return true
+	}
+	return msg.pedido && (msg.aba != m.activeTab || msg.chave != m.chaveSelecionada())
 }
 
 // actionResultMsg carrega o resultado de uma ação executada
@@ -385,287 +423,17 @@ func (m Model) chaveSelecionada() string {
 
 // Update processa mensagens e atualiza o estado do modelo
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
-		// ctrl+c sai de qualquer lugar: campo, confirmação, detalhe ou lista.
-		if k.String() == "ctrl+c" {
-			return m, tea.Quit
-		}
-		// Limpar feedback após qualquer tecla
-		m.actionFeedback = ""
-	}
-
-	// No modo de ação, capturar teclas para confirmação/input; as listas que
-	// chegam seguem o caminho normal (o alvo já foi guardado)
-	if m.actionMode != ActionNone {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "enter":
-				mode := m.actionMode
-				alvo := alvoDaAcao{nome: m.actionTarget, namespace: m.actionNS, kind: m.actionKind}
-				buf := m.actionBuffer
-				m.actionMode = ActionNone
-				m.actionBuffer = ""
-				return m, m.executeAction(mode, alvo, buf)
-			case "esc":
-				m.actionMode = ActionNone
-				m.actionBuffer = ""
-				m.actionTarget = ""
-				return m, nil
-			case "backspace":
-				if len(m.actionBuffer) > 0 {
-					m.actionBuffer = m.actionBuffer[:len(m.actionBuffer)-1]
-				}
-				return m, nil
-			default:
-				if len(keyMsg.String()) == 1 {
-					m.actionBuffer += keyMsg.String()
-				}
-				return m, nil
-			}
-		}
-	}
-
-	// No modo de detalhe, scroll independente e Esc para voltar; o relógio e
-	// as listas seguem para o caminho normal (a lista volta atualizada)
-	if m.viewMode == ModeDetail {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "esc", "q":
-				m.viewMode = ModeList
-				m.detailContent = ""
-				m.detailTitle = ""
-				m.detailScrollY = 0
-				return m, nil
-			case "j", "down":
-				m.detailScrollY++
-				return m, nil
-			case "k", "up":
-				if m.detailScrollY > 0 {
-					m.detailScrollY--
-				}
-				return m, nil
-			case "pgdown":
-				m.detailScrollY += m.alturaCorpo()
-				return m, nil
-			case "pgup":
-				m.detailScrollY -= m.alturaCorpo()
-				if m.detailScrollY < 0 {
-					m.detailScrollY = 0
-				}
-				return m, nil
-			case "home":
-				m.detailScrollY = 0
-			}
-			return m, nil
-		}
-	}
-
-	// No modo de input de filtro, capturar teclas para o buffer
-	if m.filter.InputMode {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "enter":
-				campo, valor := m.filter.InputField, strings.TrimSpace(m.filter.InputBuffer)
-				m.filter.InputMode = false
-				m.filter.InputBuffer = ""
-				m.filter.InputField = ""
-				var cmd tea.Cmd
-				switch campo {
-				case "namespace":
-					if valor != m.filter.Namespace {
-						// As listas lidas são do namespace anterior.
-						m.filter.Namespace = valor
-						m.esquecerListas()
-						cmd = m.ler(false, m.activeTab)
-					}
-				case "label":
-					if _, err := labels.Parse(valor); err != nil {
-						m.actionFeedback = frase(yui.StatusAlerta, "label inválido: "+valor)
-						return m, nil
-					}
-					m.filter.LabelSelector = valor
-				case "status":
-					m.filter.StatusFilter = valor
-				case "search":
-					m.filter.SearchQuery = valor
-				}
-				m.scrollY = 0
-				m.selectedIndex = 0
-				return m, cmd
-			case "esc":
-				m.filter.InputMode = false
-				m.filter.InputBuffer = ""
-				m.filter.InputField = ""
-				return m, nil
-			case "backspace":
-				if len(m.filter.InputBuffer) > 0 {
-					m.filter.InputBuffer = m.filter.InputBuffer[:len(m.filter.InputBuffer)-1]
-				}
-				return m, nil
-			default:
-				if len(keyMsg.String()) == 1 {
-					m.filter.InputBuffer += keyMsg.String()
-				}
-				return m, nil
-			}
-		}
-	}
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		visibleH := m.linhasDeDados()
-		count := m.itemCount()
-		maxScroll := max(0, count-visibleH)
-
-		switch msg.String() {
-		case "q":
+		// ctrl+c sai de qualquer lugar: campo, menu, confirmação, ajuda, detalhe ou lista.
+		if key.Matches(msg, mapa().Global.SairForcado) {
 			return m, tea.Quit
-		case "?":
-			// Até a tela de ajuda da T020: a lista inteira das teclas no detalhe.
-			m.viewMode = ModeDetail
-			m.detailTitle = "Teclas"
-			m.detailContent = m.textoDasTeclas()
-			m.detailScrollY = 0
-			return m, nil
-		case "tab":
-			return m.irParaAba((m.activeTab + 1) % tabCount)
-		case "shift+tab":
-			return m.irParaAba((m.activeTab - 1 + tabCount) % tabCount)
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			return m.irParaAba(ResourceTab(msg.String()[0] - '1'))
-		case "j", "down":
-			if count > 0 && m.selectedIndex < count-1 {
-				m.selectedIndex++
-				m.seguirSelecao()
-			}
-			return m, nil
-		case "k", "up":
-			if m.selectedIndex > 0 {
-				m.selectedIndex--
-				m.seguirSelecao()
-			}
-			return m, nil
-		case "pgdown":
-			// A seleção desce junto: a ação atinge sempre uma linha da tela.
-			if count > 0 {
-				m.selectedIndex = min(count-1, m.selectedIndex+visibleH)
-				m.scrollY = min(maxScroll, m.scrollY+visibleH)
-				m.seguirSelecao()
-			}
-			return m, nil
-		case "pgup":
-			m.selectedIndex = max(0, m.selectedIndex-visibleH)
-			m.scrollY = max(0, m.scrollY-visibleH)
-			m.seguirSelecao()
-			return m, nil
-		case "home":
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, nil
-		case "end":
-			m.scrollY = maxScroll
-			if count > 0 {
-				m.selectedIndex = count - 1
-			}
-			return m, nil
-		case "/":
-			m.filter.InputMode = true
-			m.filter.InputField = "namespace"
-			m.filter.InputBuffer = ""
-			return m, nil
-		case "L":
-			m.filter.InputMode = true
-			m.filter.InputField = "label"
-			m.filter.InputBuffer = ""
-			return m, nil
-		case "S":
-			m.filter.InputMode = true
-			m.filter.InputField = "status"
-			m.filter.InputBuffer = ""
-			return m, nil
-		case "f":
-			// Busca por nome (search)
-			m.filter.InputMode = true
-			m.filter.InputField = "search"
-			m.filter.InputBuffer = ""
-			return m, nil
-		case "l":
-			// Logs do pod selecionado
-			name, ns, kind := m.selectedResourceInfo()
-			if name == "" {
-				return m, nil
-			}
-			if kind != "pod" {
-				m.actionFeedback = frase(yui.StatusAlerta, "logs só existem para pods")
-				return m, nil
-			}
-			return m, m.fetchPodLogs(name, ns)
-		case "y":
-			// YAML do recurso selecionado
-			name, ns, kind := m.selectedResourceInfo()
-			if name != "" {
-				return m, m.fetchResourceYAML(kind, name, ns)
-			}
-			return m, nil
-		case "e":
-			// Eventos do recurso selecionado
-			name, ns, _ := m.selectedResourceInfo()
-			if name != "" {
-				return m, m.fetchResourceEvents(name, ns)
-			}
-			return m, nil
-		case "d":
-			// Deletar recurso selecionado
-			name, ns, kind := m.selectedResourceInfo()
-			if name == "" {
-				return m, nil
-			}
-			if kind == "node" || kind == "event" {
-				m.actionFeedback = frase(yui.StatusAlerta, "não dá para excluir "+abas[m.activeTab].plural)
-				return m, nil
-			}
-			m.actionMode = ActionConfirmDelete
-			m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
-			m.actionBuffer = ""
-			return m, nil
-		case "s":
-			// Escalar deployment/statefulset selecionado
-			name, ns, kind := m.selectedResourceInfo()
-			if name == "" {
-				return m, nil
-			}
-			if kind != "deployment" && kind != "statefulset" {
-				m.actionFeedback = frase(yui.StatusAlerta, "escalar só vale para Deployments e StatefulSets")
-				return m, nil
-			}
-			m.actionMode = ActionInputScale
-			m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
-			m.actionBuffer = ""
-			return m, nil
-		case "r":
-			// Reiniciar deployment/statefulset selecionado
-			name, ns, kind := m.selectedResourceInfo()
-			if name == "" {
-				return m, nil
-			}
-			if kind != "deployment" && kind != "statefulset" {
-				m.actionFeedback = frase(yui.StatusAlerta, "reiniciar só vale para Deployments e StatefulSets")
-				return m, nil
-			}
-			m.actionMode = ActionConfirmRestart
-			m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
-			m.actionBuffer = ""
-			return m, nil
-		case "esc":
-			// Limpa label, status e busca; o namespace é o contexto e troca por /.
-			if !m.algumFiltro() {
-				return m, nil
-			}
-			m.filter.LabelSelector, m.filter.StatusFilter, m.filter.SearchQuery = "", "", ""
-			m.scrollY = 0
-			m.selectedIndex = 0
-			return m, nil
 		}
+		m.actionFeedback = "" // a frase da última ação some na tecla seguinte
+		return m.tecla(msg)
+
+	case tea.MouseMsg:
+		return m.mouse(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -686,13 +454,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.namespace == m.filter.Namespace {
 			for i, r := range msg.respostas {
 				if err, ok := r.(error); ok {
-					if i == 0 { // a falha de uma aba de fundo (RBAC) não derruba a tela
+					// Só a falha da aba ativa derruba a tela: a de uma aba de fundo
+					// (RBAC) ou de uma aba que a pessoa já deixou, não.
+					if i < len(msg.abas) && msg.abas[i] == m.activeTab {
 						m.falhar(err)
 					}
 					continue
 				}
 				m.receber(r)
 			}
+			if msg.recarga {
+				m.fimDaRecarga(msg)
+			}
+		}
+		if msg.recarga {
+			m.recarregando = false
 		}
 		if msg.relogio {
 			return m, m.proximoTique()
@@ -700,6 +476,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case detailMsg:
+		if m.detalheAtrasado(msg) {
+			return m, nil
+		}
 		m.detailTitle = msg.title
 		m.detailContent = msg.content
 		m.detailScrollY = 0

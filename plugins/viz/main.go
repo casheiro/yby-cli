@@ -59,7 +59,7 @@ func run() error {
 				return nil
 			}
 			retryClient := monitor.NewRetryClient(client)
-			p := tea.NewProgram(ui.NewModel(retryClient), tea.WithAltScreen())
+			p := tea.NewProgram(ui.NewModel(retryClient), tea.WithAltScreen(), tea.WithMouseCellMotion())
 			if _, err := p.Run(); err != nil {
 				return fmt.Errorf("ops, ocorreu um erro: %w", err)
 			}

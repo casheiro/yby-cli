@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91
+	github.com/charmbracelet/x/exp/teatest v0.0.0-20261018003744-cb897cb4ed72
 	github.com/muesli/termenv v0.16.0
 	github.com/spf13/cobra v1.10.2
 	k8s.io/api v0.35.3

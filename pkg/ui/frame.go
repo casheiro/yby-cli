@@ -148,42 +148,7 @@ func itemTecla(tecla, acao string) string {
 // "q sair" (tecla Sair do keymap) fica sempre no canto direito. Abaixo de 80 colunas mostra
 // 3 teclas + "? mais"; em qualquer largura, descarta teclas do fim até caber.
 func KeyHints(largura int, teclas ...key.Binding) string {
-	sair := DefaultKeys().Global.Sair
-	ajuda := DefaultKeys().Global.Ajuda
-	compacto := largura < LarguraColuna
-
-	var itens []key.Binding
-	for _, b := range teclas {
-		h := b.Help()
-		if !b.Enabled() || h.Key == "" || h.Desc == "" || h.Key == sair.Help().Key {
-			continue
-		}
-		if compacto && h.Key == ajuda.Help().Key {
-			continue // vira o "? mais" fixo
-		}
-		itens = append(itens, b)
-	}
-	mais := compacto
-	if compacto && len(itens) > 3 {
-		itens = itens[:3]
-	}
-
-	dir := itemTecla(sair.Help().Key, sair.Help().Desc)
-	for {
-		partes := make([]string, 0, len(itens)+1)
-		for _, b := range itens {
-			partes = append(partes, itemTecla(b.Help().Key, b.Help().Desc))
-		}
-		if mais {
-			partes = append(partes, itemTecla(ajuda.Help().Key, "mais"))
-		}
-		esq := strings.Join(partes, "  ")
-		if lipgloss.Width(esq)+2+lipgloss.Width(dir) <= largura || len(itens) == 0 {
-			return linhaEsqDir(esq, dir, largura)
-		}
-		itens = itens[:len(itens)-1]
-		mais = true
-	}
+	return legendaDeTeclas(largura, DefaultKeys().Global.Sair, true, teclas...)
 }
 
 // Partes reúne o conteúdo já renderizado de uma tela para Moldura.
@@ -197,6 +162,12 @@ type Partes struct {
 	Mensagem                      string // frase de status, já com glifo
 	Hora                          time.Time
 	Teclas                        []key.Binding // teclas válidas na tela, em ordem de importância
+	// Sair é a tecla de saída no canto direito da legenda; vazia, "q sair". Nas camadas em
+	// que q é letra ou não sai (campo, menu, ajuda), DefaultKeys().Global.SairForcado.
+	Sair key.Binding
+	// SemAjuda tira o "? mais" da legenda nas camadas em que o ? não abre a ajuda (campo
+	// de texto, confirmação, a própria tela de ajuda).
+	SemAjuda bool
 }
 
 // linhasDe divide s em linhas; string vazia vira nenhuma linha.
@@ -276,10 +247,15 @@ func Moldura(largura, altura int, p Partes) string {
 	for _, l := range linhasDe(p.Filtros) {
 		topo = append(topo, ajustar(l, largura))
 	}
+	sair := p.Sair
+	if sair.Help().Key == "" {
+		sair = DefaultKeys().Global.Sair
+	}
+	legenda := legendaDeTeclas(largura, sair, !p.SemAjuda, p.Teclas...)
 	rodape := []string{
 		Rule(largura),
 		ajustar(StatusLine(largura, p.Mensagem, p.Hora), largura),
-		KeyHints(largura, p.Teclas...),
+		legenda,
 	}
 
 	h := altura - len(topo) - len(rodape)

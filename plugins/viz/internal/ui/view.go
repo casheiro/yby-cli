@@ -26,6 +26,9 @@ func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return "" // o Bubble Tea manda o tamanho da janela logo no início
 	}
+	if m.ajuda {
+		return m.viewAjuda()
+	}
 	if m.viewMode == ModeDetail {
 		return m.viewDetalhe()
 	}
@@ -37,7 +40,9 @@ func (m Model) View() string {
 	}
 	p.Lista = m.corpoLista(itens)
 	p.Mensagem = m.mensagem(itens)
-	p.Teclas = m.teclas()
+	p.Teclas, p.Sair = m.teclas()
+	// No campo e na confirmação o ? é letra: a legenda não oferece "? mais".
+	p.SemAjuda = m.filter.InputMode || (m.actionMode != ActionNone && m.actionMode != ActionMenu)
 	return yui.Moldura(m.width, m.height, p)
 }
 
@@ -125,7 +130,7 @@ func (m Model) linhaFiltros(itens []itemLista) string {
 	}
 	// Sem espaço para tudo, a dica de busca sai antes do resumo.
 	esq := prefixo + yui.Filtros(nil, 0, 0, resto)
-	busca := teclaBuscar()
+	busca := mapa().Lista.Buscar
 	comDica := esq + "   " + s.TintaSuave.Render(busca.Help().Key+" "+busca.Help().Desc)
 	resumo := m.resumo(itens)
 	if lipgloss.Width(comDica)+2+lipgloss.Width(resumo) <= m.width {
@@ -241,7 +246,11 @@ func (m Model) listaVazia() string {
 // estadoErro mostra a falha de conexão, o erro e o que conferir.
 func (m Model) estadoErro() string {
 	s := yui.S()
-	linhas := []string{yui.NovoEstadoErro("sem acesso ao cluster", "q sai").View(), ""}
+	dica := "q sai"
+	if m.client != nil {
+		dica = "r tenta de novo"
+	}
+	linhas := []string{yui.NovoEstadoErro("sem acesso ao cluster", dica).View(), ""}
 	for _, l := range strings.Split(ansi.Wrap(m.err.Error(), max(20, m.width), ""), "\n") {
 		linhas = append(linhas, s.TintaSuave.Render(l))
 	}
@@ -251,12 +260,25 @@ func (m Model) estadoErro() string {
 	return strings.Join(linhas, "\n")
 }
 
-// rotulosDosCampos nomeia o campo de filtro sendo digitado.
+// rotulosDosCampos nomeia o campo de texto sendo digitado.
 var rotulosDosCampos = map[string]string{
-	"namespace": "namespace",
-	"label":     "label",
-	"status":    "status",
-	"search":    "buscar por nome",
+	campoBusca:     "buscar",
+	campoNamespace: "namespace",
+	campoFiltro:    "filtrar",
+}
+
+// dicaDoCampo explica, ao lado do campo, o que ele aceita.
+func (m Model) dicaDoCampo() string {
+	switch m.filter.InputField {
+	case campoBusca:
+		return "filtra por nome enquanto digita"
+	case campoNamespace:
+		return "vazio mostra todos os namespaces"
+	}
+	if !abas[m.activeTab].filtroStatus {
+		return "label (app=web, tier!=db) · vazio limpa"
+	}
+	return "status (Running) ou label (app=web, tier!=db) · vazio limpa"
 }
 
 // cursor é o bloco em tinta invertida no fim do texto digitado.
@@ -265,18 +287,20 @@ func cursor() string {
 }
 
 // mensagem é a frase mais importante agora: o campo sendo digitado, a ação
-// pedindo confirmação, o resultado da última ação, a reconexão, o erro ou o
-// primeiro problema da lista (a ordem já põe o mais grave no topo).
+// pedindo confirmação, o resultado da última ação, a recarga, a reconexão, o
+// erro ou o primeiro problema da lista (a ordem já põe o mais grave no topo).
 func (m Model) mensagem(itens []itemLista) string {
 	s, g := yui.S(), yui.G()
 	switch {
 	case m.filter.InputMode:
 		return s.Negrito.Render(rotulosDosCampos[m.filter.InputField]) + " " + s.TintaSuave.Render(g.Prompt) + " " +
-			s.Tinta.Render(m.filter.InputBuffer) + cursor()
+			s.Tinta.Render(m.filter.InputBuffer) + cursor() + "   " + s.TintaSuave.Render(m.dicaDoCampo())
 	case m.actionMode != ActionNone:
 		return renderActionPrompt(m.actionMode, m.actionKind, m.actionTarget, m.actionBuffer)
 	case m.actionFeedback != "":
 		return m.actionFeedback
+	case m.recarregando:
+		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render("recarregando "+abas[m.activeTab].plural+"…")
 	case m.reconnecting:
 		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render("reconectando ao cluster…")
 	case m.err != nil:
@@ -308,84 +332,197 @@ func setas() string {
 	return "↑↓"
 }
 
-func teclaBuscar() key.Binding { return atalho("f", "buscar", "f") }
-
-// teclas é a legenda da tela, em ordem de importância (a moldura descarta do
-// fim quando não cabe e põe "? mais"). As teclas são as de hoje; a troca é a T020.
-func (m Model) teclas() []key.Binding {
-	cancelar := atalho("esc", "cancelar", "esc")
+// teclas é a legenda da tela, só com as teclas que funcionam nela, em ordem
+// de importância (a moldura descarta do fim quando não cabe e põe "? mais"),
+// e a tecla de saída do canto direito: vazia é "q sair"; nas camadas, em que
+// q é letra ou não sai, ctrl+c.
+func (m Model) teclas() ([]key.Binding, key.Binding) {
+	k := mapa()
+	g, l := k.Global, k.Lista
+	voltar := atalho("esc", "voltar", "esc")
 	switch {
-	case m.err != nil:
-		return nil
 	case m.filter.InputMode:
-		return []key.Binding{atalho("↵", "aplicar", "enter"), cancelar}
+		aplicar := "aplicar"
+		if m.filter.InputField == campoBusca {
+			aplicar = "confirmar"
+		}
+		return []key.Binding{atalho("↵", aplicar, "enter"), atalho("esc", "cancelar", "esc")}, g.SairForcado
+	case m.actionMode == ActionMenu:
+		var t []key.Binding
+		for _, a := range acoesDoTipo(m.actionKind) {
+			t = append(t, atalho(a.tecla, a.rotulo, a.tecla))
+		}
+		if m.width < yui.LarguraColuna {
+			// A legenda compacta guarda só três teclas: a saída do menu vem primeiro.
+			return append([]key.Binding{voltar}, t...), g.SairForcado
+		}
+		return append(t, voltar), g.SairForcado
 	case m.actionMode != ActionNone:
-		return []key.Binding{atalho("↵", "confirmar", "enter"), cancelar}
+		return []key.Binding{atalho("↵", "confirmar", "enter"), voltar}, g.SairForcado
+	case m.err != nil:
+		if m.client != nil {
+			return []key.Binding{atalho("r", "tentar de novo", "r")}, key.Binding{}
+		}
+		return nil, key.Binding{}
 	}
-	return append(m.teclasDaLista(false), atalho("?", "ajuda", "?"))
-}
-
-// teclasDaLista são as teclas da lista da aba ativa; completa traz também as
-// que a legenda deixa de fora (página, início e fim, números, esc), para o ?.
-func (m Model) teclasDaLista(completa bool) []key.Binding {
-	d := abas[m.activeTab]
-	t := []key.Binding{atalho(setas(), "mover", "up", "down", "j", "k"), atalho("⇥", "aba", "tab")}
-	if completa {
-		t = append(t, atalho("⇧⇥", "aba anterior", "shift+tab"), atalho("1-9", "ir para a aba", "1"),
-			atalho("pgup/pgdn", "página", "pgup", "pgdown"), atalho("home/end", "início e fim", "home", "end"))
+	t := []key.Binding{atalho(setas(), "mover", "up", "down", "j", "k"), l.Abrir, l.Buscar, l.Filtrar}
+	if len(acoesDoTipo(abas[m.activeTab].kind)) > 0 {
+		t = append(t, l.Acoes)
 	}
-	t = append(t, teclaBuscar(), atalho("/", "namespace", "/"))
-	if d.kind == "pod" {
-		t = append(t, atalho("l", "logs", "l"))
-	}
-	t = append(t, atalho("y", "yaml", "y"), atalho("e", "eventos", "e"))
-	if d.kind != "node" && d.kind != "event" {
-		t = append(t, atalho("d", "excluir", "d"))
-	}
-	if d.kind == "deployment" || d.kind == "statefulset" {
-		t = append(t, atalho("s", "escalar", "s"), atalho("r", "reiniciar", "r"))
-	}
-	if completa || m.temFiltro() {
+	t = append(t, l.Namespace)
+	if m.temFiltro() {
 		t = append(t, atalho("esc", "limpar filtros", "esc"))
 	}
-	t = append(t, atalho("L", "label", "L"))
-	if d.filtroStatus {
-		t = append(t, atalho("S", "status", "S"))
-	}
-	if completa {
-		t = append(t, atalho("q", "sair", "q"), atalho("ctrl+c", "sair de qualquer lugar", "ctrl+c"))
-	}
-	return t
+	return append(t, g.Ajuda), key.Binding{}
 }
 
-// textoDasTeclas é a lista inteira das teclas da aba, uma por linha, que o ?
-// abre no detalhe até a tela de ajuda da T020.
-func (m Model) textoDasTeclas() string {
-	teclas := m.teclasDaLista(true)
-	largura := 0
-	for _, b := range teclas {
-		largura = max(largura, lipgloss.Width(b.Help().Key))
+// linhaAjuda é uma tecla da tela ? e o que ela faz.
+type linhaAjuda struct{ tecla, desc string }
+
+// grupoAjuda é um bloco da tela ?, como na folha Atalhos.
+type grupoAjuda struct {
+	titulo string
+	linhas []linhaAjuda
+}
+
+// gruposDaAjuda são as teclas da tela, agrupadas como na folha Atalhos: as de
+// toda TUI e as da lista da aba ativa (só as que valem nela).
+func (m Model) gruposDaAjuda() []grupoAjuda {
+	d := abas[m.activeTab]
+	todas := grupoAjuda{"em toda TUI", []linhaAjuda{
+		{"?", "ajuda com todas as teclas da tela"},
+		{"esc", "fecha o que está aberto, limpa filtros, cancela"},
+		{"q", "sai (só no nível de cima)"},
+		{"ctrl+c", "sai de qualquer lugar"},
+		{"r", "recarrega os dados"},
+		{"mouse", "a roda rola; o clique seleciona linha e aba"},
+	}}
+	filtrar := "filtrar por status e label"
+	if !d.filtroStatus {
+		filtrar = "filtrar por label"
 	}
-	linhas := make([]string, 0, len(teclas))
-	for _, b := range teclas {
-		h := b.Help()
-		linhas = append(linhas, h.Key+strings.Repeat(" ", largura-lipgloss.Width(h.Key)+3)+h.Desc)
+	lista := grupoAjuda{"lista · " + d.titulo, []linhaAjuda{
+		{setas() + " j k", "mover"},
+		{"pgup pgdn", "página"},
+		{"g G", "início e fim (home end)"},
+		{yui.RotuloTecla("⇥ ⇧⇥") + " 1-9", "trocar de aba"},
+		{"/", "buscar por nome"},
+		{"f", filtrar},
+		{"n", "trocar namespace"},
+		{yui.RotuloTecla("↵"), "abrir"},
+	}}
+	if acoes := acoesDoTipo(d.kind); len(acoes) > 0 {
+		nomes := make([]string, len(acoes))
+		for i, a := range acoes {
+			nomes[i] = a.tecla + " " + strings.TrimSuffix(a.rotulo, "…")
+		}
+		lista.linhas = append(lista.linhas, linhaAjuda{"x", "ações: " + strings.Join(nomes, " · ")})
 	}
-	return strings.Join(linhas, "\n")
+	if d.kind == "pod" {
+		lista.linhas = append(lista.linhas, linhaAjuda{"l y e", "logs · yaml · eventos"})
+	} else {
+		lista.linhas = append(lista.linhas, linhaAjuda{"y e", "yaml · eventos"})
+	}
+	return []grupoAjuda{todas, lista}
+}
+
+// linhasDoGrupo desenha um grupo: o título e as teclas com a coluna da tecla
+// na largura dada.
+func linhasDoGrupo(gr grupoAjuda, larguraTecla int) []string {
+	s := yui.S()
+	linhas := []string{s.Rotulo.Render(strings.ToUpper(gr.titulo))}
+	for _, l := range gr.linhas {
+		linhas = append(linhas, s.Negrito.Render(l.tecla)+strings.Repeat(" ", larguraTecla-lipgloss.Width(l.tecla)+2)+
+			s.TintaSuave.Render(l.desc))
+	}
+	return linhas
+}
+
+// larguraDasLinhas é a maior largura entre as linhas.
+func larguraDasLinhas(linhas []string) int {
+	w := 0
+	for _, l := range linhas {
+		w = max(w, lipgloss.Width(l))
+	}
+	return w
+}
+
+// linhasDaAjuda é o conteúdo da tela ?: os dois grupos lado a lado quando
+// cabem, um embaixo do outro quando não.
+func (m Model) linhasDaAjuda() []string {
+	grupos := m.gruposDaAjuda()
+	kw := 0
+	for _, gr := range grupos {
+		for _, l := range gr.linhas {
+			kw = max(kw, lipgloss.Width(l.tecla))
+		}
+	}
+	a, b := linhasDoGrupo(grupos[0], kw), linhasDoGrupo(grupos[1], kw)
+	wa := larguraDasLinhas(a)
+	const entre = 4
+	if wa+entre+larguraDasLinhas(b)+4 > m.width {
+		return append(append(a, ""), b...)
+	}
+	linhas := make([]string, max(len(a), len(b)))
+	for i := range linhas {
+		esq := ""
+		if i < len(a) {
+			esq = a[i]
+		}
+		if i < len(b) {
+			esq += strings.Repeat(" ", wa+entre-lipgloss.Width(esq)) + b[i]
+		}
+		linhas[i] = esq
+	}
+	return linhas
+}
+
+// linhasVisiveisDaAjuda é quanto da ajuda cabe no corpo: menos a linha em
+// branco de cima e as bordas do quadro.
+func (m Model) linhasVisiveisDaAjuda() int {
+	return max(1, m.alturaCorpo()-3)
+}
+
+// maxRolagemAjuda é a maior rolagem da ajuda (zero quando ela cabe inteira).
+func (m Model) maxRolagemAjuda() int {
+	return max(0, len(m.linhasDaAjuda())-m.linhasVisiveisDaAjuda())
+}
+
+// viewAjuda mostra a tela ? no lugar da lista, num quadro, com a moldura em volta.
+func (m Model) viewAjuda() string {
+	p := m.partesBase()
+	if m.err == nil {
+		p.Filtros = m.linhaFiltros(m.itensDaAba(m.activeTab))
+	}
+	linhas := m.linhasDaAjuda()
+	ini := min(m.ajudaScroll, m.maxRolagemAjuda())
+	fim := min(len(linhas), ini+m.linhasVisiveisDaAjuda())
+	largura := min(m.width, larguraDasLinhas(linhas)+4)
+	p.Lista = "\n" + yui.Quadro("teclas · "+abas[m.activeTab].titulo, strings.Join(linhas[ini:fim], "\n"), largura, yui.QuadroFoco)
+	p.Mensagem = m.actionFeedback
+	p.Teclas = []key.Binding{atalho("esc", "fechar", "esc")}
+	if m.maxRolagemAjuda() > 0 {
+		p.Teclas = append(p.Teclas, atalho(setas(), "rolar", "up", "down"))
+	}
+	p.Sair = mapa().Global.SairForcado
+	p.SemAjuda = true // aqui o ? fecha a ajuda
+	return yui.Moldura(m.width, m.height, p)
 }
 
 // viewDetalhe mostra logs, YAML ou eventos na moldura, com rolagem própria.
 func (m Model) viewDetalhe() string {
 	s := yui.S()
 	p := m.partesBase()
-	linhas := strings.Split(strings.ReplaceAll(strings.TrimRight(m.detailContent, "\n"), "\t", "    "), "\n")
+	linhas := m.linhasDoDetalhe()
 	h := m.alturaCorpo()
 	ini := min(max(0, m.detailScrollY), max(0, len(linhas)-h))
 	fim := min(len(linhas), ini+h)
 	p.Filtros = esqDir(s.Rotulo.Render(strings.ToUpper(m.detailTitle)),
 		s.TintaSuave.Render(fmt.Sprintf("linha %d de %d", ini+1, len(linhas))), m.width)
 	p.Lista = strings.Join(linhas[ini:fim], "\n")
+	p.Mensagem = m.actionFeedback
 	p.Teclas = []key.Binding{atalho(setas(), "rolar", "up", "down"), atalho("pgup/pgdn", "página", "pgup", "pgdown"),
 		atalho("esc", "voltar", "esc")}
+	p.Sair = mapa().Global.SairForcado
 	return yui.Moldura(m.width, m.height, p)
 }

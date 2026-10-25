@@ -32,26 +32,17 @@ func teclas(t *testing.T, m Model, ks ...string) (Model, tea.Cmd) {
 	t.Helper()
 	var cmd tea.Cmd
 	for _, k := range ks {
-		var msg tea.KeyMsg
-		switch k {
-		case "enter":
-			msg = tea.KeyMsg{Type: tea.KeyEnter}
-		case "esc":
-			msg = tea.KeyMsg{Type: tea.KeyEsc}
-		default:
-			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
-		}
 		var nm tea.Model
-		nm, cmd = m.Update(msg)
+		nm, cmd = m.Update(tecla(k))
 		m = nm.(Model)
 	}
 	return m, cmd
 }
 
-// buscar aplica a busca por nome pela tecla f.
+// buscar aplica a busca por nome pela tecla /.
 func buscar(t *testing.T, m Model, termo string) Model {
 	t.Helper()
-	ks := append([]string{"f"}, strings.Split(termo, "")...)
+	ks := append([]string{"/"}, strings.Split(termo, "")...)
 	m, _ = teclas(t, m, append(ks, "enter")...)
 	return m
 }
@@ -103,7 +94,7 @@ func TestAcao_ComBuscaAtingeLinhaSelecionada(t *testing.T) {
 	}
 	m = buscar(t, m, "worker")
 
-	m, _ = teclas(t, m, "d")
+	m, _ = teclas(t, m, "x", "d")
 	// A lista muda (atualização do cluster) antes da confirmação.
 	nm, _ := m.Update([]monitor.Pod{{Name: "worker-1", Namespace: "fila"}, {Name: "api-1", Namespace: "loja"}})
 	m = nm.(Model)
@@ -152,11 +143,11 @@ func TestAcao_StatefulSetUsaAsFuncoesDeStatefulSet(t *testing.T) {
 	m.activeTab = TabStatefulSets
 	m.statefulsets = []monitor.StatefulSet{{Name: "db", Namespace: "dados"}}
 
-	_, cmd := teclas(t, m, "s", "3", "enter")
+	_, cmd := teclas(t, m, "x", "s", "3", "enter")
 	if res := cmd().(actionResultMsg); res.err != nil || !strings.Contains(res.feedback, "StatefulSet") {
 		t.Fatalf("escalar: %#v", res)
 	}
-	_, cmd = teclas(t, m, "r", "y", "e", "s", "enter")
+	_, cmd = teclas(t, m, "x", "r", "y", "e", "s", "enter")
 	if res := cmd().(actionResultMsg); res.err != nil || !strings.Contains(res.feedback, "StatefulSet") {
 		t.Fatalf("reiniciar: %#v", res)
 	}

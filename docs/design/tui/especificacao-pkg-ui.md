@@ -70,7 +70,7 @@ Linhas fixas, de cima para baixo:
 3. Abas (`tabs.go`), filtros (`filtro.go`), corpo.
 4. **Rule.**
 5. **StatusLine:** à esquerda uma frase (com glifo de status), à direita `atualizado HH:MM:SS` em `TintaSuave`.
-6. **KeyHints:** tecla em negrito, ação em `TintaSuave`, separadas por dois espaços; `q sair` sempre no canto direito; só teclas válidas na tela.
+6. **KeyHints:** tecla em negrito, ação em `TintaSuave`, separadas por dois espaços; `q sair` sempre no canto direito; só teclas válidas na tela. Nas camadas em que q é letra ou não sai (campo, menu, ajuda), `Partes.Sair` troca a tecla do canto direito (o Viz usa `ctrl+c sair`). Abaixo de 80 colunas a legenda fecha com `? mais`; nas camadas em que o ? não abre a ajuda (campo de texto, confirmação, a própria tela ?), `Partes.SemAjuda` tira o `? mais`.
 
 **Moldura de texto** (`moldura_texto.go`), para telas com campo de texto (Bard): `MolduraTexto(largura, altura, PartesTexto)` monta masthead, régua, corpo alinhado ao topo, régua, campo (n linhas), régua, estado e legenda. A tecla de sair é configurável (o Bard usa ctrl+c, porque q é digitado). Abaixo de 60×16 mostra a tela "aumente a janela". Junto: `AlturaCorpoTexto(altura, linhasCampo)`, `StatusLineTexto(largura, mensagem, direita)` (direita em `TintaSuave`) e `KeyHintsCom(largura, sair, teclas...)`.
 
