@@ -5,26 +5,19 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
-type PluginManifest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Version     string   `json:"version"`
-	Hooks       []string `json:"hooks"`
-}
-
-type PluginRequest struct {
-	Hook string `json:"hook"`
-}
-
-type PluginResponse struct {
-	Data interface{} `json:"data"`
-}
+// Tipos do protocolo de plugins, os mesmos do core.
+type (
+	PluginManifest = plugin.PluginManifest
+	PluginRequest  = plugin.PluginRequest
+	PluginResponse = plugin.PluginResponse
+)
 
 func main() {
 	if err := run(); err != nil {

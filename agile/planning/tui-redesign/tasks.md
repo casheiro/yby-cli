@@ -160,7 +160,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 
 ### Fase 3 · Viz (`plugins/viz`)
 
-- [ ] T017 Atualizar dependências, sem mudança visual (commit isolado).
+- [x] T017 Atualizar dependências, sem mudança visual (commit isolado).
   - `go.mod` passa a exigir `github.com/casheiro/yby-cli` com `replace => ../../`.
   - Bubbletea sobe de v0.25.0 para v1.3.6 e o lipgloss é alinhado.
   - Verificar: testes atuais do Viz passam e `go build -C ./plugins/viz` compila.
@@ -296,3 +296,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T037 | Logo nas boas-vindas do Bard: na conversa vazia, a grande ou a compacta conforme a janela, alinhada ao topo como o corpo da moldura; sem espaço, o corpo fica vazio (a marca já está no cabeçalho). Some com a primeira pergunta. Goldens 120×40, 64×20 e 60×16 | este commit |
 | 24/10/2026 | T016 | Checkpoint da fase 2 rodado pelo agente num ConPTY, com claude e kubectl falsos: uma linha de log no terminal durante a conversa (o download do modelo de embeddings) empurrava a moldura e deixava restos na tela. Agora o log vai para `~/.yby/logs/bard.log` enquanto a TUI está aberta, e a TUI só abre o índice do Synapstor se o projeto tiver um, como o `-p` (antes criava `.synapstor/` no projeto e baixava o modelo de 90 MB na primeira pergunta) | este commit |
 | 24/10/2026 | T013 · T014 · T015 | Decisões do checkpoint da fase 2, aprovado pelo usuário pelas capturas: nova linha fica `ctrl+j` (e alt+enter), porque o Bubble Tea v1 não separa ⇧↵ de ↵ no Windows; copiar o comando fica `ctrl+y` em vez do `c` da prancha; a resposta interrompida com esc passa a ir para o histórico salvo com a marca *resposta interrompida*; a troca de modelo dentro do provider vira a T039 | este commit |
+| 25/10/2026 | T017 | Dependências do Viz: `go.mod` exige `github.com/casheiro/yby-cli` com `replace => ../../` (o `main.go` usa os tipos do protocolo de `pkg/plugin` em vez de cópias locais); Bubble Tea v0.25.0 → v1.3.6, lipgloss e cobra alinhados com o core; o k8s sai do `replace` em v0.32.0 e sobe para v0.35.3, como no core, porque `pkg/plugin` já puxa o k8s. Sem mudança visual | este commit |
