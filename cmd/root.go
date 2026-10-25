@@ -46,8 +46,14 @@ Atua no bootstrap, governança e operação assistida, complementando o uso do k
 	PersistentPreRun: initConfig,
 	// só "yby", sem subcomando: a logo antes da ajuda (o --help não passa por aqui)
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		ui.Logo(cmd.OutOrStdout())
-		return cmd.Help()
+		out := cmd.OutOrStdout()
+		a := ajudaDe(cmd)
+		if ui.Largura(out) > 0 {
+			ui.Logo(out)
+			a.SemTitulo = true
+		}
+		ui.EscreverAjuda(out, a)
+		return nil
 	},
 }
 
@@ -218,6 +224,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "info", "Nível de log (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVar(&logFormatFlag, "log-format", "text", "Formato de log (text, json)")
 	rootCmd.SetFlagErrorFunc(erroDeFlag)
+	configurarAjuda(rootCmd)
 
 }
 

@@ -69,9 +69,14 @@ func larguraLinha(w io.Writer) int {
 
 // Title escreve o cabeçalho "◆ YBY  INSTRUMENTO" com o texto da direita (data, contexto) em TintaSuave.
 // Num terminal estreito demais para os dois, o texto da direita desce para a linha de baixo.
+// Sem texto da direita, a linha termina na marca, sem espaços sobrando.
 func Title(w io.Writer, instrumento, direita string) {
 	s := S()
 	esq := s.Ok.Render(G().Ativo) + " " + s.Negrito.Render("YBY  "+strings.ToUpper(instrumento))
+	if direita == "" {
+		fmt.Fprintln(w, esq)
+		return
+	}
 	larg := larguraLinha(w)
 	if l := larguraDe(w); l > 0 && lipgloss.Width(esq)+2+lipgloss.Width(direita) > l {
 		fmt.Fprintln(w, esq)

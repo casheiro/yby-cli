@@ -100,6 +100,7 @@ func Gerar(w io.Writer, largura int) {
 		{"progresso", progresso},
 		{"listagem, campos e passos", listagem},
 		{"erro", erro},
+		{"ajuda", ajuda},
 	}
 	for _, s := range secoes {
 		var b bytes.Buffer
@@ -372,4 +373,19 @@ func erro(w io.Writer, _ int) {
 		"Não deu para falar com o cluster staging").
 		WithHint("yby cloud refresh --provider aws")
 	fmt.Fprintln(w, ui.RenderError(e))
+}
+
+func ajuda(w io.Writer, _ int) {
+	ui.EscreverAjuda(w, ui.Ajuda{
+		Comando:   "yby env create",
+		Descricao: "Cria um novo ambiente e gera o values correspondente",
+		Uso:       []string{"yby env create [nome] [flags]"},
+		Exemplos:  "yby env create qa --type remote\n# Cria config/values-qa.yaml e adiciona o ambiente em .yby/environments.yaml",
+		Flags: []ui.Termo{
+			{Nome: "    --description texto", Descricao: "Descrição do ambiente"},
+			{Nome: "-h, --help", Descricao: "mostra esta ajuda"},
+			{Nome: "    --type texto", Descricao: "Tipo do ambiente (local/remote)"},
+		},
+		Globais: []ui.Termo{{Nome: "-c, --context texto", Descricao: "Define o contexto de execução (ex: local, staging, prod)"}},
+	})
 }

@@ -140,6 +140,12 @@ Erro (`RenderError(*errors.YbyError)`):
 
 Título e hint seguem o tom da seção 9: título em minúscula, sem ponto; hint no imperativo, em minúscula e sem ponto final (`confira o caminho passado em --file`). Na causa, o último nível, quando é a saída de um comando externo, fica só com a linha de erro (`errors.ResumirSaida`: sem "exit status N", sem o prefixo `error:` e sem o rodapé do kubectl). Cada erro dos comandos traz o próprio hint; as dicas padrão de `pkg/errors/hints.go`, usadas quando não há hint, seguem o mesmo tom.
 
+### Ajuda (`ajuda.go`, folha "ajuda")
+
+`EscreverAjuda(w, Ajuda{...})` escreve a ajuda de um comando no formato das saídas: `Title` com o caminho (`◆ YBY  ENV CREATE`, "ajuda" à direita; na raiz, `◆ YBY  AJUDA`), a descrição e as seções USO (com "também yby gen" para os apelidos), COMANDOS, EXEMPLOS, FLAGS e FLAGS GLOBAIS; seção vazia não aparece. Nomes em `Tinta` numa coluna com a largura do mais largo (até 30) + 2, descrições em `TintaSuave` quebradas sob a coluna; nome mais largo fica sozinho e a descrição desce. Nos exemplos, linhas `#` em `TintaSuave`; num terminal estreito, comando longo continua com recuo de 4 e comentário continua com `# `. Rodapé `yby env <comando> --help mostra os detalhes de cada um`.
+
+O core liga a ajuda ao cobra em `cmd/ajuda.go` (`SetHelpFunc` e `SetUsageFunc` no root, herdados por todos os comandos): flags como `-c, --context texto` (tipos em português: `texto`, `n`, `lista`, `duração`), `(padrão info)` quando o padrão diz algo, `-h, --help  mostra esta ajuda`, e o `help` padrão do cobra traduzido. Grupos que só mostram a ajuda (bootstrap, cloud, generate, plugin) não têm linha de uso própria. Com `--help` o cobra pula o `PersistentPreRun`, então a ajuda resolve o modo visual por conta própria. `yby` sem argumentos mostra a logo no lugar do título. Os plugins passam a usar `EscreverAjuda` nas tarefas deles (T016, T031, T032).
+
 ## 8. Teclas (`keys.go`, folha 04)
 
 Global (toda TUI): `?` ajuda · `esc` fecha camada de cima / limpa filtros / cancela · `q` sai (só no nível de cima) · `ctrl+c` sai de qualquer lugar · `r` recarrega.

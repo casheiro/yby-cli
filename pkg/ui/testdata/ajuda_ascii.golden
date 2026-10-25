@@ -1,0 +1,25 @@
+* YBY  ENV CREATE                                          ajuda
+
+  Cria um novo ambiente e gera o values correspondente.
+
+  O ambiente entra em .yby/environments.yaml.
+
+USO
+  yby env create [nome] [flags]
+  também yby env novo
+
+EXEMPLOS
+  yby env create qa --type remote
+  # Cria config/values-qa.yaml
+
+FLAGS
+      --description texto  Descrição do ambiente
+      --uma-flag-com-nome-muito-comprido texto
+                           desce para a linha de baixo
+  -h, --help               mostra esta ajuda
+
+FLAGS GLOBAIS
+      --log-level texto  Nível de log (debug, info, warn, error)
+                         (padrão info)
+
+  yby env create --help mostra os detalhes
