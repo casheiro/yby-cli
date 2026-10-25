@@ -96,14 +96,13 @@ func projetoDoSelfLink(link string) string {
 }
 
 // ListClusters lista clusters GKE via `gcloud container clusters list`.
-// Filtra por projeto (opts.Project) e região (opts.Region) quando informados.
+// Filtra por projeto (opts.Project) e região (opts.Region) quando informados. A região é
+// filtrada aqui, não com --region: o gcloud só traria os clusters regionais, e os zonais
+// da região (us-central1-a em us-central1) ficariam de fora.
 func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]ClusterInfo, error) {
 	args := []string{"container", "clusters", "list", "--format", "json"}
 	if opts.Project != "" {
 		args = append(args, "--project", opts.Project)
-	}
-	if opts.Region != "" {
-		args = append(args, "--region", opts.Region)
 	}
 
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", args...)
@@ -118,6 +117,9 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 
 	clusters := make([]ClusterInfo, 0, len(gcpClusters))
 	for _, c := range gcpClusters {
+		if opts.Region != "" && c.Location != opts.Region && !strings.HasPrefix(c.Location, opts.Region+"-") {
+			continue
+		}
 		projeto := opts.Project
 		if projeto == "" {
 			// sem --project, o gcloud lista o projeto padrão, que está no selfLink
@@ -139,7 +141,8 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 func (g *gcpProvider) ConfigureKubeconfig(ctx context.Context, cluster ClusterInfo) error {
 	args := []string{"container", "clusters", "get-credentials", cluster.Name}
 	if cluster.Region != "" {
-		args = append(args, "--region", cluster.Region)
+		// --location aceita zona e região; --region é só de cluster regional
+		args = append(args, "--location", cluster.Region)
 	}
 	if cluster.ProjectID != "" {
 		args = append(args, "--project", cluster.ProjectID)

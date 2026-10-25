@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/testutil"
@@ -225,28 +226,33 @@ func TestGCPProvider_ListClusters_ProjetoDoSelfLink(t *testing.T) {
 	}
 }
 
+// A região filtra a lista: entram os clusters regionais e os zonais dela, e o gcloud
+// lista todas as locations (com --region traria só os regionais).
 func TestGCPProvider_ListClusters_WithRegion(t *testing.T) {
 	var capturedArgs []string
 	runner := &testutil.MockRunner{
 		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
 			capturedArgs = args
-			return []byte(`[]`), nil
+			return []byte(`[{"name":"regional","location":"us-central1"},{"name":"zonal","location":"us-central1-a"},
+				{"name":"outra","location":"us-east1-b"},{"name":"parecida","location":"us-central10"}]`), nil
 		},
 	}
 	p := &gcpProvider{runner: runner}
-	_, err := p.ListClusters(context.Background(), ListOptions{Project: "proj", Region: "us-central1"})
+	clusters, err := p.ListClusters(context.Background(), ListOptions{Project: "proj", Region: "us-central1"})
 	if err != nil {
 		t.Fatalf("ListClusters() error = %v, want nil", err)
 	}
-	// Verifica --region us-central1
-	regionFound := false
-	for i, arg := range capturedArgs {
-		if arg == "--region" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "us-central1" {
-			regionFound = true
-		}
+	var nomes []string
+	for _, c := range clusters {
+		nomes = append(nomes, c.Name)
 	}
-	if !regionFound {
-		t.Errorf("--region us-central1 não encontrado nos args: %v", capturedArgs)
+	if strings.Join(nomes, ",") != "regional,zonal" {
+		t.Errorf("clusters = %v, quer regional e zonal", nomes)
+	}
+	for _, arg := range capturedArgs {
+		if arg == "--region" || arg == "--location" || arg == "--zone" {
+			t.Errorf("a região vai no filtro, não no gcloud: %v", capturedArgs)
+		}
 	}
 	// Verifica --project proj
 	projectFound := false
@@ -335,15 +341,15 @@ func TestGCPProvider_ConfigureKubeconfig(t *testing.T) {
 	if !nameFound {
 		t.Errorf("prod-gke não encontrado nos args: %v", capturedArgs)
 	}
-	// Verifica --region us-central1
+	// Verifica --location us-central1 (aceita zona e região)
 	regionFound := false
 	for i, arg := range capturedArgs {
-		if arg == "--region" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "us-central1" {
+		if arg == "--location" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "us-central1" {
 			regionFound = true
 		}
 	}
 	if !regionFound {
-		t.Errorf("--region us-central1 não encontrado nos args: %v", capturedArgs)
+		t.Errorf("--location us-central1 não encontrado nos args: %v", capturedArgs)
 	}
 	// Verifica --project my-project
 	projectFound := false
