@@ -58,7 +58,7 @@ func (r *Renderizador) Largura() int { return r.largura }
 
 // Renderizar converte md. Tabelas no nível de cima viram ui.Tabela (ou registros, quando
 // não cabem na largura); blocos de código cercados viram ui.Quadro, com o rótulo
-// "COMANDO · c copia" para shell. O resto passa pelo glamour. Os blocos ficam separados
+// "COMANDO · ctrl+y copia" para shell. O resto passa pelo glamour. Os blocos ficam separados
 // por uma linha em branco. Nada é cortado: o que não cabe quebra.
 func (r *Renderizador) Renderizar(md string) (string, error) {
 	var saida []string

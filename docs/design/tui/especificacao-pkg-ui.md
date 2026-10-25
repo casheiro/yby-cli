@@ -72,6 +72,8 @@ Linhas fixas, de cima para baixo:
 5. **StatusLine:** à esquerda uma frase (com glifo de status), à direita `atualizado HH:MM:SS` em `TintaSuave`.
 6. **KeyHints:** tecla em negrito, ação em `TintaSuave`, separadas por dois espaços; `q sair` sempre no canto direito; só teclas válidas na tela.
 
+**Moldura de texto** (`moldura_texto.go`), para telas com campo de texto (Bard): `MolduraTexto(largura, altura, PartesTexto)` monta masthead, régua, corpo alinhado ao topo, régua, campo (n linhas), régua, estado e legenda. A tecla de sair é configurável (o Bard usa ctrl+c, porque q é digitado). Abaixo de 60×16 mostra a tela "aumente a janela". Junto: `AlturaCorpoTexto(altura, linhasCampo)`, `StatusLineTexto(largura, mensagem, direita)` (direita em `TintaSuave`) e `KeyHintsCom(largura, sair, teclas...)`.
+
 Responsivo:
 - ≥ 120 colunas: lista e detalhe lado a lado (60/40).
 - 80–119: uma coluna; o detalhe abre por cima da lista.
@@ -91,6 +93,9 @@ Responsivo:
 - **Spinner:** quadros `◇ ◈ ◆ ◈`; sem animação (quadro fixo `◈`) com `NO_COLOR` ou fora de TTY.
 - **Toast:** na linha de estado, `✓ Deployment api reiniciado · 3 réplicas` ou `✕ sem permissão para escalar · RBAC`; some em 6 s.
 - **Confirmar:** destrutivo = Quadro com fio `Erro`, rótulo `EXCLUIR POD`, `digite  <nome em negrito>`, campo `› ` com cursor, `esc cancelar`; ↵ só confirma com o nome exato. Reversível = ↵ confirma, esc cancela.
+- **Quadro com tecla** (`quadro_tecla.go`): `QuadroComTecla(rotulo, tecla, acao, corpo, largura, variante)` põe `ROTULO · tecla ação` no fio de cima (`┌ SAÍDA · ctrl+y copia ─┐`); se não couber, vira o Quadro comum.
+- **Aviso de rolagem** (`rolagem.go`): `AvisoRolagem(SetaAcima|SetaAbaixo, texto)` marca conteúdo fora da janela em `TintaSuave`, sem recuo: `↑ 2 mensagens anteriores`, `↓ 3 mensagens novas` (`^`/`v` no ASCII).
+- **Markdown** (`pkg/ui/uimarkdown`, pacote separado para o core não levar o glamour): `Novo(largura)` e `Renderizar(md)` com estilo tirado dos tokens: texto em Tinta, h1/h2 em negrito e caixa-alta, código inline em negrito sem fundo, links em TintaSuave sublinhados, régua em Fio, listas com • (- no ASCII). Tabelas viram `ui.Tabela` na largura toda (status do Kubernetes vira `ui.Status`), blocos cercados viram Quadro com o nome da linguagem (shell vira `COMANDO · ctrl+y copia`) e linhas longas de código quebram dentro do quadro. Sem cor fica só o negrito; no perfil Ascii, texto puro. `Comandos(md)` devolve os blocos de shell.
 - **Estados:** carregando `◈ lendo pods de payments`; vazio `○ nenhum pod com esse filtro · esc limpa`; erro `✕ sem acesso ao cluster · r tenta de novo`.
 - **Campo (tema huh):** título em caixa-alta negrito, `› ` + valor (sem o `> ` do huh), descrição em `TintaSuave`.
 - **Assistente** (`assistente.go`, folha "assistente"): `NovoAssistente(largura, passos...)` com `PassoAssistente{Marco, Campos, Ocultar}` monta um único `huh.Form`, um grupo por passo, com a Rota em cima marcando o passo do campo em foco. Passos seguidos com o mesmo marco dividem o marco; passo sem campos fica de fora; `Ocultar` pula o grupo. `⇧⇥` volta um campo e, no primeiro campo do passo, o passo anterior; `esc` e `ctrl+c` cancelam (as listas não abrem filtro com `/`, para o `esc` sempre cancelar). Legenda `↵ continuar · ⇧⇥ voltar · esc cancelar`, que perde itens em janela estreita. Largura até 64; altura a da janela menos 7 linhas. Ao terminar, a view fica vazia e quem roda lê `Concluido` e `Cancelado`. Usado pelo `yby init`, que não grava nada antes da revisão.
@@ -153,6 +158,8 @@ Global (toda TUI): `?` ajuda · `esc` fecha camada de cima / limpa filtros / can
 Listas (Viz, Cloud): `↑↓ j k` mover · `pgup pgdn` página · `g G` início e fim · `⇥ ⇧⇥ 1–9` aba · `/` buscar por nome · `f` filtrar · `n` namespace · `↵` abrir · `x` ações · `l` logs · `y` yaml · `e` eventos · `b` perguntar ao Bard.
 
 Texto (Bard, assistentes): `↵` enviar/continuar · `⇧↵` nova linha · `/` comandos (início da linha) · `↑` editar última mensagem · `pgup pgdn` rolar · `esc` interrompe a resposta · `⇧⇥` voltar uma etapa · `␣` marcar · `a` marcar todos.
+
+No Bard: a nova linha é `ctrl+j` (e `alt+enter`, que a maioria dos terminais manda no ⇧↵), porque o Bubble Tea v1 não separa ⇧↵ de ↵ no console do Windows, e a legenda mostra `ctrl+j`. Só pgup, pgdn e a roda do mouse rolam; o resto do teclado é do campo. Com o campo vazio, `↵` abre a saída da ferramenta e `ctrl+y` copia o último comando de shell da resposta (OSC 52) e, com a saída aberta, a saída inteira; a prancha mostra `c copia`, mas no Bard um `c` solto comeria a primeira letra da pergunta. `/` abre a lista de comandos sobre o campo: texto filtra · `↑↓` escolher · `⇥` completar · `↵` executar · `esc` fechar e apagar a barra; os seletores de `/sessões` e `/modelo` usam `↑↓ escolher · ↵ retomar|usar · esc fechar`.
 
 Níveis: Quadro →(↵) Detalhe →(x) Ações →(d) Confirmação; `esc` sobe um nível. Token do Cloud em `t`; reiniciar em `x ▸ r`.
 

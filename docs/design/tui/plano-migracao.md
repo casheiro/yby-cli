@@ -100,11 +100,13 @@ As fases 1 a 4 podem andar em paralelo depois da fase 0. A ordem sugerida é 0 �
 
 **Comandos `/`:** `/sessões`, `/limpar`, `/contexto`, `/ferramentas`, `/modelo`, `/copiar`, `/exportar` e `/ajuda`, com lista filtrável.
 
-**Saída fora da TUI:** one-shot (`-p`) e batch usam `pkg/ui/msg.go`.
+**Saída fora da TUI:** one-shot (`-p`) e batch usam `pkg/ui/msg.go`. Feito na T016: os dois usam o mesmo `tui.Fluxo` da TUI.
 
 **Limpeza:**
 - remover o REPL antigo (`YBY_BARD_LEGACY_UI`) quando a TUI tiver tudo o que ele tem;
 - remover `maxToolIterations` e `promptStyle`, que não são usados.
+
+Feito na T016. O `promptStyle` já não existia; saíram também `ClassifyIntent` (duplicado da TUI), `filterByThreshold` e `clearHistory`.
 
 **Aceite:** as 4 telas da prancha reproduzidas; testes com `teatest` para foco, rolagem, `esc` e comandos `/`.
 
