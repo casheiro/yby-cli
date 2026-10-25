@@ -172,7 +172,7 @@ func (s *doctorService) checkCloudProviders(ctx context.Context) []CheckResult {
 			results = append(results, CheckResult{
 				Name:    fmt.Sprintf("%s credenciais", p.Name()),
 				Status:  false,
-				Message: "Não autenticado. Execute 'yby cloud auth'",
+				Message: "Não autenticado: " + cloud.DicaDeLogin(p.Name()),
 			})
 		}
 	}

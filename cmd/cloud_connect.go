@@ -112,7 +112,7 @@ func runCloudConnect(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			e = errors.Wrap(err, errors.ErrCodeCloudTokenExpired, "credenciais inválidas para "+provider.Name())
 		}
-		return e.WithHint("faça o login no CLI do provider e rode yby cloud connect de novo")
+		return e.WithHint(cloud.DicaDeLogin(provider.Name()) + " e depois yby cloud connect de novo")
 	}
 	linhaConnect(w, linhaCheck{ui.CheckOk, "credenciais", "válidas", status.Identity})
 

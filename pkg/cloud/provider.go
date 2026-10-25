@@ -86,3 +86,17 @@ type CredentialStatus struct {
 	// Method descreve o método de autenticação usado (ex: "profile", "service-account").
 	Method string
 }
+
+// DicaDeLogin é a dica de login no CLI do provider: "rode gcloud auth login". Para um
+// provider desconhecido, a frase genérica.
+func DicaDeLogin(provider string) string {
+	switch provider {
+	case "aws":
+		return "rode aws sso login (ou aws configure)"
+	case "azure":
+		return "rode az login"
+	case "gcp":
+		return "rode gcloud auth login"
+	}
+	return "faça o login no CLI do provider"
+}
