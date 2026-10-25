@@ -50,8 +50,10 @@ type itemLista struct {
 	status          string // texto do filtro de status; vazio se o recurso não tem status
 	labels          map[string]string
 	grupo           grupo
-	celulas         []string // na ordem de defAba.colunas
-	frase           string   // frase da linha de estado quando é problema (com glifo)
+	celulas         []string       // na ordem de defAba.colunas
+	frase           string         // frase da linha de estado quando é problema (com glifo)
+	tipo            yui.TipoStatus // glifo do status no painel de detalhe
+	obj             any            // o recurso da lista (monitor.Pod, monitor.Deployment…), para o detalhe
 }
 
 // defAba descreve uma aba: título, nomes para as frases, colunas e linhas.
@@ -313,12 +315,23 @@ func itensPods(m Model) []itemLista {
 		g, tipo, fr := classificarPod(p, agora)
 		ok := fmt.Sprintf("%d/%d", p.Prontos, p.Containers)
 		itens = append(itens, itemLista{
-			nome: p.Name, namespace: p.Namespace, status: p.Status, labels: p.Labels, grupo: g, frase: fr,
+			nome: p.Name, namespace: p.Namespace, status: p.Status, labels: p.Labels, grupo: g, frase: fr, tipo: tipo, obj: p,
 			celulas: comNamespace([]string{p.Name, ok, yui.Status(tipo, p.Status), strconv.Itoa(int(p.Reinicios)),
 				monitor.Idade(p.CriadoEm, agora), p.No, p.IP}, p.Namespace),
 		})
 	}
 	return itens
+}
+
+// tipoDoGrupo é o glifo de um recurso sem status próprio: falha, alerta ou rodando.
+func tipoDoGrupo(g grupo) yui.TipoStatus {
+	switch g {
+	case grupoFalha:
+		return yui.StatusFalha
+	case grupoAlerta:
+		return yui.StatusAlerta
+	}
+	return yui.StatusRodando
 }
 
 // classificarReplicas: nenhuma réplica pronta é falha, parte delas é alerta.
@@ -338,7 +351,7 @@ func itensDeployments(m Model) []itemLista {
 	for _, d := range m.deployments {
 		g, fr := classificarReplicas("Deployment", d.Name, d.Ready, d.Replicas)
 		itens = append(itens, itemLista{
-			nome: d.Name, namespace: d.Namespace, labels: d.Labels, grupo: g, frase: fr,
+			nome: d.Name, namespace: d.Namespace, labels: d.Labels, grupo: g, frase: fr, tipo: tipoDoGrupo(g), obj: d,
 			celulas: comNamespace([]string{d.Name, fmt.Sprintf("%d/%d", d.Ready, d.Replicas), strconv.Itoa(int(d.Atualizados)),
 				strconv.Itoa(int(d.Available)), monitor.Idade(d.CriadoEm, agora)}, d.Namespace),
 		})
@@ -352,7 +365,7 @@ func itensStatefulSets(m Model) []itemLista {
 	for _, s := range m.statefulsets {
 		g, fr := classificarReplicas("StatefulSet", s.Name, s.Ready, s.Replicas)
 		itens = append(itens, itemLista{
-			nome: s.Name, namespace: s.Namespace, labels: s.Labels, grupo: g, frase: fr,
+			nome: s.Name, namespace: s.Namespace, labels: s.Labels, grupo: g, frase: fr, tipo: tipoDoGrupo(g), obj: s,
 			celulas: comNamespace([]string{s.Name, fmt.Sprintf("%d/%d", s.Ready, s.Replicas), strconv.Itoa(int(s.Atualizados)),
 				monitor.Idade(s.CriadoEm, agora)}, s.Namespace),
 		})
@@ -365,7 +378,7 @@ func itensServices(m Model) []itemLista {
 	itens := make([]itemLista, 0, len(m.services))
 	for _, s := range m.services {
 		itens = append(itens, itemLista{
-			nome: s.Name, namespace: s.Namespace, labels: s.Labels, grupo: grupoSaudavel,
+			nome: s.Name, namespace: s.Namespace, labels: s.Labels, grupo: grupoSaudavel, obj: s,
 			celulas: comNamespace([]string{s.Name, s.Type, s.ClusterIP, s.Ports, monitor.Idade(s.CriadoEm, agora)}, s.Namespace),
 		})
 	}
@@ -381,7 +394,7 @@ func itensNodes(m Model) []itemLista {
 			g, tipo, fr = grupoFalha, yui.StatusFalha, frase(yui.StatusFalha, "nó "+n.Name+" em "+n.Status)
 		}
 		itens = append(itens, itemLista{
-			nome: n.Name, status: n.Status, labels: n.Labels, grupo: g, frase: fr,
+			nome: n.Name, status: n.Status, labels: n.Labels, grupo: g, frase: fr, tipo: tipo, obj: n,
 			celulas: comNamespace([]string{n.Name, yui.Status(tipo, n.Status), n.CPUCapacity, n.MemoryCapacity, n.Version,
 				monitor.Idade(n.CriadoEm, agora)}, ""),
 		})
@@ -428,7 +441,7 @@ func itensJobs(m Model) []itemLista {
 	for _, j := range m.jobs {
 		g, tipo, st, fr := classificarJob(j)
 		itens = append(itens, itemLista{
-			nome: j.Name, namespace: j.Namespace, status: st, labels: j.Labels, grupo: g, frase: fr,
+			nome: j.Name, namespace: j.Namespace, status: st, labels: j.Labels, grupo: g, frase: fr, tipo: tipo, obj: j,
 			celulas: comNamespace([]string{j.Name, yui.Status(tipo, st), conclusoes(j),
 				strconv.Itoa(int(j.Failed)), monitor.Idade(j.CriadoEm, agora)}, j.Namespace),
 		})
@@ -441,7 +454,7 @@ func itensIngresses(m Model) []itemLista {
 	itens := make([]itemLista, 0, len(m.ingresses))
 	for _, i := range m.ingresses {
 		itens = append(itens, itemLista{
-			nome: i.Name, namespace: i.Namespace, labels: i.Labels, grupo: grupoSaudavel,
+			nome: i.Name, namespace: i.Namespace, labels: i.Labels, grupo: grupoSaudavel, obj: i,
 			celulas: comNamespace([]string{i.Name, i.Class, i.Hosts, i.Paths, monitor.Idade(i.CriadoEm, agora)}, i.Namespace),
 		})
 	}
@@ -453,7 +466,7 @@ func itensConfigMaps(m Model) []itemLista {
 	itens := make([]itemLista, 0, len(m.configmaps))
 	for _, c := range m.configmaps {
 		itens = append(itens, itemLista{
-			nome: c.Name, namespace: c.Namespace, labels: c.Labels, grupo: grupoSaudavel,
+			nome: c.Name, namespace: c.Namespace, labels: c.Labels, grupo: grupoSaudavel, obj: c,
 			celulas: comNamespace([]string{c.Name, strconv.Itoa(c.Keys), c.DataSize, monitor.Idade(c.CriadoEm, agora)}, c.Namespace),
 		})
 	}
@@ -475,15 +488,16 @@ func itensEventos(m Model) []itemLista {
 			chave = e.Namespace + "/evento/" + e.ID
 		}
 		itens = append(itens, itemLista{
-			nome: e.Name, namespace: e.Namespace, chave: chave, status: e.Type, labels: e.Labels, grupo: g, frase: fr,
+			nome: e.Name, namespace: e.Namespace, chave: chave, status: e.Type, labels: e.Labels, grupo: g, frase: fr, tipo: tipo, obj: e,
 			celulas: comNamespace([]string{e.Name, yui.Status(tipo, e.Type), e.Reason, e.Message, e.Age}, e.Namespace),
 		})
 	}
 	return itens
 }
 
-// tabelaDaAba devolve colunas e linhas da aba para yui.Tabela; a coluna de
-// namespace só entra com todos os namespaces na tela.
+// tabelaDaAba devolve colunas e linhas da aba para yui.Tabela, na largura da
+// lista (ao lado do painel, 60% da janela); a coluna de namespace só entra
+// com todos os namespaces na tela.
 func (m Model) tabelaDaAba(tab ResourceTab, itens []itemLista) ([]yui.Coluna, []yui.Linha) {
 	d := abas[tab]
 	colunas := append([]yui.Coluna(nil), d.colunas...)
@@ -502,7 +516,7 @@ func (m Model) tabelaDaAba(tab ResourceTab, itens []itemLista) ([]yui.Coluna, []
 		}
 		linhas[i] = yui.Linha{Celulas: celulas, Concluida: it.grupo == grupoConcluido}
 	}
-	return caberNaLargura(colunas, linhas, m.width)
+	return caberNaLargura(colunas, linhas, m.larguraDaLista())
 }
 
 // espacoEntreColunas é o espaço que yui.Tabela põe entre as colunas.

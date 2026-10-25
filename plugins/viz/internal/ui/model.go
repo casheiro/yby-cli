@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	yui "github.com/casheiro/yby-cli/pkg/ui"
@@ -36,10 +35,6 @@ type Model struct {
 	reconnecting   bool
 	retryCount     int
 	filter         FilterState
-	viewMode       ViewMode
-	detailContent  string
-	detailTitle    string
-	detailScrollY  int
 	actionMode     ActionMode
 	actionTarget   string           // nome do recurso alvo da ação
 	actionKind     string           // tipo do recurso alvo, guardado quando a ação abre
@@ -53,6 +48,14 @@ type Model struct {
 	ajuda          bool             // a tela ? está aberta
 	ajudaScroll    int              // primeira linha da ajuda na janela
 	recarregando   bool             // o r pediu uma leitura que ainda não voltou
+	detalheAberto  bool             // o ↵ abriu o painel (abaixo de 120 colunas ele só aparece assim)
+	alvoDetalhe    string           // recurso do painel na tela (tipo|chave); vazio sem painel
+	pedidoDetalhe  int              // atraso mais novo: só ele lê os extras do painel
+	lendoExtras    string           // recurso cujos extras estão sendo lidos
+	leituraExtras  int              // leitura de extras mais nova: a resposta de outra é descartada
+	extras         map[string]extrasDetalhe
+	quadro         quadroAberto // logs, YAML ou eventos ocupando o corpo
+	idQuadro       int          // último pedido de conteúdo do quadro: resposta de outro é descartada
 	// tique agenda a próxima leitura do relógio (tea.Tick; injetável nos testes).
 	tique func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
@@ -168,14 +171,14 @@ func (m Model) alturaCorpo() int {
 	return max(1, m.height-7)
 }
 
-// linhasDeDados é quantas linhas da tabela cabem no corpo (sem a linha em
+// linhasDeDados é quantas linhas da tabela cabem na lista (sem a linha em
 // branco e o cabeçalho acima delas e, quando a lista não cabe, sem a última
 // linha, que avisa quantas ficaram fora); sem tamanho de janela, não há limite.
 func (m Model) linhasDeDados() int {
 	if m.height <= 0 {
 		return 1000
 	}
-	h := max(1, m.alturaCorpo()-2)
+	h := max(1, m.alturaDaLista()-m.linhasAntesDaTabela())
 	if m.itemCount() > h {
 		h = max(1, h-1)
 	}
@@ -356,41 +359,6 @@ func (m Model) irParaAba(tab ResourceTab) (tea.Model, tea.Cmd) {
 	return m, m.ler(false, tab)
 }
 
-// detailMsg carrega conteúdo para exibir no modo detalhe
-type detailMsg struct {
-	title   string
-	content string
-	// pedido marca a resposta de um pedido da lista (pedirDetalhe), com a aba e
-	// o recurso selecionados quando ele saiu.
-	pedido bool
-	aba    ResourceTab
-	chave  string
-}
-
-// pedirDetalhe marca o pedido de logs, YAML ou eventos com a aba e o recurso
-// da linha selecionada: a resposta só abre se a tela ainda estiver neles.
-func (m Model) pedirDetalhe(cmd tea.Cmd) tea.Cmd {
-	aba, chave := m.activeTab, m.chaveSelecionada()
-	return func() tea.Msg {
-		msg := cmd()
-		if d, ok := msg.(detailMsg); ok {
-			d.pedido, d.aba, d.chave = true, aba, chave
-			return d
-		}
-		return msg
-	}
-}
-
-// detalheAtrasado diz se o detalhe chegou tarde demais para abrir: uma camada
-// abriu por cima (campo, menu, confirmação, ajuda), que ficaria escondida e
-// recebendo as teclas, ou a aba ou a seleção mudaram desde o pedido.
-func (m Model) detalheAtrasado(msg detailMsg) bool {
-	if m.filter.InputMode || m.actionMode != ActionNone || m.ajuda {
-		return true
-	}
-	return msg.pedido && (msg.aba != m.activeTab || msg.chave != m.chaveSelecionada())
-}
-
 // actionResultMsg carrega o resultado de uma ação executada
 type actionResultMsg struct {
 	feedback  string
@@ -421,11 +389,25 @@ func (m Model) chaveSelecionada() string {
 	return itens[m.selectedIndex].chave
 }
 
-// Update processa mensagens e atualiza o estado do modelo
+// Update processa mensagens e atualiza o estado do modelo; depois de cada
+// mensagem, o painel de detalhe confere se a seleção mudou de recurso.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	nm, cmd := m.processar(msg)
+	novo, ok := nm.(Model)
+	if !ok {
+		return nm, cmd
+	}
+	if c := novo.acompanharDetalhe(); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
+	return novo, cmd
+}
+
+// processar trata uma mensagem.
+func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// ctrl+c sai de qualquer lugar: campo, menu, confirmação, ajuda, detalhe ou lista.
+		// ctrl+c sai de qualquer lugar: campo, menu, confirmação, ajuda, quadro, detalhe ou lista.
 		if key.Matches(msg, mapa().Global.SairForcado) {
 			return m, tea.Quit
 		}
@@ -438,7 +420,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if yui.ModoPara(m.width, m.height) == yui.ModoLadoALado {
+			m.detalheAberto = false // ao lado, o painel não precisa do ↵; voltando a estreitar, ele começa fechado
+		}
 		m.seguirSelecao()
+		m.rolarQuadro(0) // a rolagem do quadro fica dentro do máximo da janela nova
 		return m, nil
 
 	case tickMsg:
@@ -447,7 +433,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rodizio = t
 			tabs = append(tabs, t)
 		}
-		return m, m.ler(true, tabs...)
+		cmd := tea.Batch(m.ler(true, tabs...), m.renovarExtras()) // renovarExtras muda m: antes do return
+		return m, cmd
 
 	case leituraMsg:
 		// Uma leitura de outro namespace chegou atrasada: os dados não valem.
@@ -475,14 +462,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case detailMsg:
-		if m.detalheAtrasado(msg) {
-			return m, nil
-		}
-		m.detailTitle = msg.title
-		m.detailContent = msg.content
-		m.detailScrollY = 0
-		m.viewMode = ModeDetail
+	case paradaMsg:
+		cmd := m.selecaoParou(msg)
+		return m, cmd
+
+	case extrasMsg:
+		m.guardarExtras(msg)
+		return m, nil
+
+	case conteudoMsg:
+		m.receberConteudo(msg)
 		return m, nil
 
 	case actionResultMsg:
@@ -507,7 +496,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // acessoDireto é o client que alcança a API do cluster além das listagens
-// (logs, YAML e ações): o K8sClient, direto ou dentro do RetryClient
+// (as ações): o K8sClient, direto ou dentro do RetryClient
 type acessoDireto interface {
 	Clientset() kubernetes.Interface
 	RESTConfig() *rest.Config
@@ -538,58 +527,6 @@ func (m Model) contextoDoCluster() string {
 		return c.Contexto()
 	}
 	return ""
-}
-
-// fetchPodLogs busca logs do pod selecionado de forma assíncrona
-func (m Model) fetchPodLogs(podName, namespace string) tea.Cmd {
-	return func() tea.Msg {
-		k8sClient := resolveK8sClient(m.client)
-		if k8sClient == nil {
-			return detailMsg{title: "Logs: " + podName, content: "(logs não disponíveis: client não suporta acesso direto)"}
-		}
-		logs, err := monitor.GetPodLogs(k8sClient.Clientset(), namespace, podName, 100)
-		if err != nil {
-			return detailMsg{title: "Logs: " + podName, content: fmt.Sprintf("Erro ao buscar logs: %v", err)}
-		}
-		return detailMsg{title: "Logs: " + podName, content: logs}
-	}
-}
-
-// fetchResourceYAML busca o YAML do recurso selecionado de forma assíncrona
-func (m Model) fetchResourceYAML(kind, name, namespace string) tea.Cmd {
-	return func() tea.Msg {
-		k8sClient := resolveK8sClient(m.client)
-		if k8sClient == nil {
-			return detailMsg{title: "YAML: " + name, content: "(YAML não disponível: client não suporta acesso direto)"}
-		}
-		yaml, err := monitor.GetResourceYAML(k8sClient.RESTConfig(), kind, name, namespace)
-		if err != nil {
-			return detailMsg{title: "YAML: " + name, content: fmt.Sprintf("Erro ao buscar YAML: %v", err)}
-		}
-		return detailMsg{title: "YAML: " + name, content: yaml}
-	}
-}
-
-// fetchResourceEvents busca eventos filtrados pelo recurso selecionado
-func (m Model) fetchResourceEvents(resourceName, namespace string) tea.Cmd {
-	return func() tea.Msg {
-		events, err := m.client.GetEvents(monitor.ListFilter{Namespace: namespace})
-		if err != nil {
-			return detailMsg{title: "Eventos: " + resourceName, content: fmt.Sprintf("Erro ao buscar eventos: %v", err)}
-		}
-		var sb strings.Builder
-		found := false
-		for _, e := range events {
-			if e.Name == resourceName {
-				found = true
-				sb.WriteString(fmt.Sprintf("[%s] %s - %s: %s\n", e.Age, e.Type, e.Reason, e.Message))
-			}
-		}
-		if !found {
-			sb.WriteString("Nenhum evento encontrado para este recurso.")
-		}
-		return detailMsg{title: "Eventos: " + resourceName, content: sb.String()}
-	}
 }
 
 // alvoDaAcao é o recurso escolhido quando a ação abriu: a lista pode mudar

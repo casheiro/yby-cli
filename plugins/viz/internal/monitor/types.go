@@ -21,6 +21,22 @@ type Pod struct {
 	IP             string
 	CriadoEm       time.Time
 	Labels         map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	// Motivo explica o estado: por que o último contêiner terminou ("Error ·
+	// código de saída 1"), por que espera ou por que não foi agendado.
+	Motivo   string
+	Imagens  []string // imagem de cada contêiner
+	Dono     string   // quem controla o pod ("Deployment worker", "Job migrate")
+	Recursos Recursos // soma dos pedidos e limites dos contêineres
+	// Conteiner é o contêiner cujo log explica o pod: o que está com problema,
+	// senão o padrão (a API recusa o log sem contêiner em pod com mais de um).
+	Conteiner string
+}
+
+// Recursos são os pedidos (requests) e limites de CPU e memória, somados nos
+// contêineres; vazio quando nenhum contêiner declara.
+type Recursos struct {
+	CPUPedido, CPULimite string
+	MemPedido, MemLimite string
 }
 
 // Deployment representa um deployment Kubernetes
@@ -33,6 +49,9 @@ type Deployment struct {
 	Atualizados int32 // réplicas já na versão atual do template
 	CriadoEm    time.Time
 	Labels      map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Estrategia  string            // "RollingUpdate · surge 25% · indisponível 25%" ou "Recreate"
+	Imagens     []string          // imagem de cada contêiner do template
+	Seletor     string            // seletor dos pods ("app=worker")
 }
 
 // Service representa um serviço Kubernetes
@@ -44,6 +63,8 @@ type Service struct {
 	Ports     string
 	CriadoEm  time.Time
 	Labels    map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Externos  string            // IPs externos e do balanceador
+	Seletor   string            // seletor dos pods ("app=api")
 }
 
 // Node representa um nó do cluster Kubernetes
@@ -55,6 +76,8 @@ type Node struct {
 	Version        string
 	CriadoEm       time.Time
 	Labels         map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Papeis         string            // papéis do node-role.kubernetes.io ("control-plane")
+	IPInterno      string
 }
 
 // StatefulSet representa um statefulset Kubernetes
@@ -66,6 +89,9 @@ type StatefulSet struct {
 	Atualizados int32 // réplicas já na revisão atual
 	CriadoEm    time.Time
 	Labels      map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Servico     string            // service headless que dá nome aos pods
+	Imagens     []string          // imagem de cada contêiner do template
+	Seletor     string            // seletor dos pods ("app=redis")
 }
 
 // Job representa um job Kubernetes
@@ -93,6 +119,7 @@ type Ingress struct {
 	Paths     string
 	CriadoEm  time.Time
 	Labels    map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Endereco  string            // IP ou nome do balanceador
 }
 
 // ConfigMap representa um configmap Kubernetes
@@ -103,6 +130,7 @@ type ConfigMap struct {
 	DataSize  string
 	CriadoEm  time.Time
 	Labels    map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Chaves    []string          // nomes das chaves, em ordem
 }
 
 // Event representa um evento Kubernetes
@@ -117,4 +145,7 @@ type Event struct {
 	Message   string
 	Age       string
 	Labels    map[string]string // labels do objeto (o filtro L é aplicado na TUI)
+	Kind      string            // tipo do objeto envolvido ("Pod")
+	Quantas   int32             // quantas vezes o evento se repetiu
+	Quando    time.Time         // a última ocorrência (zero se a API não diz)
 }

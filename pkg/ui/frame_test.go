@@ -346,3 +346,40 @@ func TestKeyHints_Cores(t *testing.T) {
 	frameConferirDimensoes(t, got, 100, 1)
 	conferirGolden(t, "frame_keyhints_claro_100", got)
 }
+
+// TestLargurasEAlturaDoDetalhe: as larguras lado a lado somam o corpo menos o
+// fio e são as que a moldura usa; o detalhe empilhado vai até metade do corpo.
+func TestLargurasEAlturaDoDetalhe(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, true)
+	for _, w := range []int{120, 140, 201} {
+		l, d := LargurasLadoALado(w)
+		if l+d+3 != w || l != (w-3)*60/100 {
+			t.Errorf("largura %d: lista %d, detalhe %d", w, l, d)
+		}
+		linha := ladoALado(strings.Repeat("x", l), strings.Repeat("y", d), w, 1)[0]
+		if !strings.HasSuffix(linha, strings.Repeat("y", d)) || !strings.HasPrefix(linha, strings.Repeat("x", l)+" ") {
+			t.Errorf("largura %d: a moldura não usa as larguras: %q", w, linha)
+		}
+	}
+	for h, quer := range map[int]int{4: 4, 5: 5, 6: 2, 23: 11, 24: 11} {
+		if got := LimiteDetalheEmpilhado(h); got != quer {
+			t.Errorf("corpo de %d linhas: limite %d, esperado %d", h, got, quer)
+		}
+	}
+	if got := empilhado("lista", strings.Repeat("d\n", 30), 20, 23); strings.Count(strings.Join(got[:12], "\n"), "d") != 11 {
+		t.Errorf("o detalhe empilhado deveria ocupar o limite: %q", got)
+	}
+}
+
+// TestTeclasDoPainel: as teclas do painel saem como na legenda, sem "q sair"
+// nem "? mais", e as do fim somem quando não cabem.
+func TestTeclasDoPainel(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	k := DefaultKeys().Lista
+	if got := strings.TrimRight(TeclasDoPainel(40, k.Logs, k.Yaml, k.Eventos), " "); got != "l logs  y yaml  e eventos" {
+		t.Errorf("teclas do painel: %q", got)
+	}
+	if got := strings.TrimRight(TeclasDoPainel(16, k.Logs, k.Yaml, k.Eventos), " "); got != "l logs  y yaml" {
+		t.Errorf("teclas do painel estreito: %q", got)
+	}
+}

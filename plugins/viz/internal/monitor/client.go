@@ -43,6 +43,7 @@ type K8sClient struct {
 	clientset  kubernetes.Interface
 	restConfig *rest.Config
 	contexto   string // contexto atual do kubeconfig
+	lerLog     lerLog // lê o log de um contêiner; nil usa lerLogs (os testes trocam)
 }
 
 // Contexto devolve o nome do contexto atual do kubeconfig (vazio se não há).
@@ -180,6 +181,11 @@ func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
 		IP:         p.Status.PodIP,
 		CriadoEm:   p.CreationTimestamp.Time,
 		Labels:     p.Labels,
+		Motivo:     motivoDoPod(p),
+		Imagens:    imagens(p.Spec.Containers),
+		Dono:       donoDoPod(p),
+		Recursos:   recursosDe(p.Spec.Containers),
+		Conteiner:  conteinerDoLog(p),
 	}
 	if m, ok := metrics[podMetricsKey(p.Namespace, p.Name)]; ok {
 		if m[0] != "" {
@@ -276,6 +282,9 @@ func (c *K8sClient) GetDeployments(filter ListFilter) ([]Deployment, error) {
 			Atualizados: d.Status.UpdatedReplicas,
 			CriadoEm:    d.CreationTimestamp.Time,
 			Labels:      d.Labels,
+			Estrategia:  estrategiaDe(d.Spec.Strategy),
+			Imagens:     imagens(d.Spec.Template.Spec.Containers),
+			Seletor:     metav1.FormatLabelSelector(d.Spec.Selector),
 		})
 	}
 	return deps, nil
@@ -309,6 +318,8 @@ func (c *K8sClient) GetServices(filter ListFilter) ([]Service, error) {
 			Ports:     ports,
 			CriadoEm:  s.CreationTimestamp.Time,
 			Labels:    s.Labels,
+			Externos:  externosDe(&s),
+			Seletor:   seletorDeMapa(s.Spec.Selector),
 		})
 	}
 	return svcs, nil
@@ -343,6 +354,8 @@ func (c *K8sClient) GetNodes(filter ListFilter) ([]Node, error) {
 			Version:        n.Status.NodeInfo.KubeletVersion,
 			CriadoEm:       n.CreationTimestamp.Time,
 			Labels:         n.Labels,
+			Papeis:         papeisDe(n.Labels),
+			IPInterno:      ipInternoDe(n.Status.Addresses),
 		})
 	}
 	return nodes, nil
@@ -373,6 +386,9 @@ func (c *K8sClient) GetStatefulSets(filter ListFilter) ([]StatefulSet, error) {
 			Atualizados: s.Status.UpdatedReplicas,
 			CriadoEm:    s.CreationTimestamp.Time,
 			Labels:      s.Labels,
+			Servico:     s.Spec.ServiceName,
+			Imagens:     imagens(s.Spec.Template.Spec.Containers),
+			Seletor:     metav1.FormatLabelSelector(s.Spec.Selector),
 		})
 	}
 	return result, nil
@@ -460,6 +476,7 @@ func (c *K8sClient) GetIngresses(filter ListFilter) ([]Ingress, error) {
 			Paths:     strings.Join(paths, ", "),
 			CriadoEm:  ing.CreationTimestamp.Time,
 			Labels:    ing.Labels,
+			Endereco:  enderecoDe(ing.Status.LoadBalancer.Ingress),
 		})
 	}
 	return result, nil
@@ -496,6 +513,7 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 			DataSize:  dataSize,
 			CriadoEm:  cm.CreationTimestamp.Time,
 			Labels:    cm.Labels,
+			Chaves:    chavesDe(&cm),
 		})
 	}
 	return result, nil
@@ -540,16 +558,26 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 		return nil, fmt.Errorf("falha ao listar eventos: %w", err)
 	}
 
-	// Ordenar por LastTimestamp desc
-	sort.Slice(list.Items, func(i, j int) bool {
-		return list.Items[i].LastTimestamp.Time.After(list.Items[j].LastTimestamp.Time)
-	})
+	return eventosDeK8s(list.Items, nil), nil
+}
 
+// eventosDeK8s converte os eventos que passam em aceitar (todos, se nil), dos
+// mais recentes para os mais antigos.
+func eventosDeK8s(itens []corev1.Event, aceitar func(*corev1.Event) bool) []Event {
 	var result []Event
-	for _, e := range list.Items {
+	for i := range itens {
+		e := &itens[i]
+		if aceitar != nil && !aceitar(e) {
+			continue
+		}
+		quando := quandoDoEvento(e)
 		age := "N/A"
-		if !e.LastTimestamp.Time.IsZero() {
-			age = formatAge(time.Since(e.LastTimestamp.Time))
+		if !quando.IsZero() {
+			age = formatAge(time.Since(quando))
+		}
+		quantas := e.Count
+		if e.Series != nil && e.Series.Count > quantas {
+			quantas = e.Series.Count
 		}
 		result = append(result, Event{
 			ID:        e.Name,
@@ -560,7 +588,27 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 			Message:   e.Message,
 			Age:       age,
 			Labels:    e.Labels,
+			Kind:      e.InvolvedObject.Kind,
+			Quantas:   quantas,
+			Quando:    quando,
 		})
 	}
-	return result, nil
+	sort.SliceStable(result, func(i, j int) bool { return result[i].Quando.After(result[j].Quando) })
+	return result
+}
+
+// quandoDoEvento é a última ocorrência do evento: o LastTimestamp dos eventos
+// antigos, a série ou o EventTime dos novos, o FirstTimestamp ou a criação.
+func quandoDoEvento(e *corev1.Event) time.Time {
+	switch {
+	case !e.LastTimestamp.IsZero():
+		return e.LastTimestamp.Time
+	case e.Series != nil && !e.Series.LastObservedTime.IsZero():
+		return e.Series.LastObservedTime.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	case !e.FirstTimestamp.IsZero():
+		return e.FirstTimestamp.Time
+	}
+	return e.CreationTimestamp.Time
 }

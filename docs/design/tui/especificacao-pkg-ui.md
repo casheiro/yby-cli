@@ -80,6 +80,8 @@ Responsivo:
 - < 80: compacto; abas viram números (`1 Pods · 2 Deploy…`), a legenda mostra 3 teclas + `? mais`.
 - < 60×16: tela única "aumente a janela".
 
+Quem desenha a lista e o detalhe usa as medidas da moldura: `LargurasLadoALado(largura)` devolve as larguras da lista (60%) e do detalhe (40%) sem o fio entre elas, e `LimiteDetalheEmpilhado(h)` a altura máxima do detalhe por cima da lista num corpo de h linhas. `TeclasDoPainel(largura, teclas...)` escreve as teclas do rodapé de um painel no formato da legenda, sem `q sair` nem `? mais`.
+
 ## 6. Componentes (folha 03)
 
 - **Tabs:** ativa `◆ Pods 8` em negrito (◆ em `Ok`); outras `◇ Deployments 4` em `TintaSuave`; `⇥ mais` quando não cabem; teclas 1–9.
@@ -93,6 +95,7 @@ Responsivo:
 - **Spinner:** quadros `◇ ◈ ◆ ◈`; sem animação (quadro fixo `◈`) com `NO_COLOR` ou fora de TTY.
 - **Toast:** na linha de estado, `✓ Deployment api reiniciado · 3 réplicas` ou `✕ sem permissão para escalar · RBAC`; some em 6 s.
 - **Confirmar:** destrutivo = Quadro com fio `Erro`, rótulo `EXCLUIR POD`, `digite  <nome em negrito>`, campo `› ` com cursor, `esc cancelar`; ↵ só confirma com o nome exato. Reversível = ↵ confirma, esc cancela.
+- **Quadro nomeado:** `QuadroNomeado(rotulo, nome, corpo, largura, variante)` põe o nome do recurso depois do rótulo sem caixa-alta (`┌ POD · worker-5d8b6-q7tvn ───┐`), porque os nomes do Kubernetes são em minúsculas.
 - **Quadro com tecla** (`quadro_tecla.go`): `QuadroComTecla(rotulo, tecla, acao, corpo, largura, variante)` põe `ROTULO · tecla ação` no fio de cima (`┌ SAÍDA · ctrl+y copia ─┐`); se não couber, vira o Quadro comum.
 - **Aviso de rolagem** (`rolagem.go`): `AvisoRolagem(SetaAcima|SetaAbaixo, texto)` marca conteúdo fora da janela em `TintaSuave`, sem recuo: `↑ 2 mensagens anteriores`, `↓ 3 mensagens novas` (`^`/`v` no ASCII).
 - **Markdown** (`pkg/ui/uimarkdown`, pacote separado para o core não levar o glamour): `Novo(largura)` e `Renderizar(md)` com estilo tirado dos tokens: texto em Tinta, h1/h2 em negrito e caixa-alta, código inline em negrito sem fundo, links em TintaSuave sublinhados, régua em Fio, listas com • (- no ASCII). Tabelas viram `ui.Tabela` na largura toda (status do Kubernetes vira `ui.Status`), blocos cercados viram Quadro com o nome da linguagem (shell vira `COMANDO · ctrl+y copia`) e linhas longas de código quebram dentro do quadro. Sem cor fica só o negrito; no perfil Ascii, texto puro. `Comandos(md)` devolve os blocos de shell.

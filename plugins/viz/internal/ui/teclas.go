@@ -69,14 +69,14 @@ func (m Model) tecla(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.filter.InputMode:
 		return m.teclaCampo(k)
-	case m.ajuda: // a ajuda abre por cima do menu e do detalhe
+	case m.ajuda: // a ajuda abre por cima do menu, do painel e do quadro
 		return m.teclaAjuda(k)
 	case m.actionMode == ActionMenu:
 		return m.teclaMenu(k)
 	case m.actionMode != ActionNone:
 		return m.teclaConfirmacao(k)
-	case m.viewMode == ModeDetail:
-		return m.teclaDetalhe(k)
+	case m.quadro.aberto:
+		return m.teclaQuadro(k)
 	}
 	return m.teclaLista(k)
 }
@@ -97,13 +97,22 @@ func (m Model) teclaLista(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case key.Matches(k, g.Sair) && m.painelPorCima():
+		m.actionFeedback = avisoQ() // o painel é um nível abaixo da lista
+		return m, nil
 	case key.Matches(k, g.Sair):
 		return m, tea.Quit
 	case key.Matches(k, g.Ajuda):
 		m.ajuda, m.ajudaScroll = true, 0
 		return m, nil
+	case key.Matches(k, g.Voltar) && m.painelPorCima():
+		m.detalheAberto = false // fecha o painel por cima; ao lado, ele fica
+		m.seguirSelecao()
+		return m, nil
 	case key.Matches(k, g.Voltar):
 		// Limpa label, status e busca; o namespace é o contexto e troca por n.
+		// O painel aberto que não está na tela (a lista ficou vazia) fecha junto.
+		m.detalheAberto = false
 		if m.algumFiltro() {
 			m.filter.LabelSelector, m.filter.StatusFilter, m.filter.SearchQuery = "", "", ""
 			m.scrollY, m.selectedIndex = 0, 0
@@ -114,7 +123,8 @@ func (m Model) teclaLista(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil // uma recarga por vez: segurar o r não vira uma rajada de leituras
 		}
 		m.recarregando = true
-		return m, m.recarregar()
+		cmd := tea.Batch(m.recarregar(), m.esquecerExtras())
+		return m, cmd
 	case key.Matches(k, l.AbaSeguinte):
 		return m.irParaAba((m.activeTab + 1) % tabCount)
 	case key.Matches(k, l.AbaAnterior):
@@ -168,36 +178,26 @@ func (m Model) teclaLista(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(k, l.Acoes):
 		return m.abrirAcoes()
 	case key.Matches(k, l.Abrir):
-		// Até o painel de detalhe (T021): o YAML do recurso; nos eventos, os
-		// eventos do objeto (o nome da linha é o do objeto, não o do evento).
-		name, ns, kind := m.selectedResourceInfo()
-		switch {
-		case name == "":
+		// ↵ desce um nível: abaixo de 120 colunas abre o painel; com o painel
+		// na tela, o YAML do recurso (na aba Eventos, os eventos do objeto).
+		if count == 0 {
 			return m, nil
-		case kind == "event":
-			return m, m.pedirDetalhe(m.fetchResourceEvents(name, ns))
 		}
-		return m, m.pedirDetalhe(m.fetchResourceYAML(kind, name, ns))
+		if !m.painelAberto() {
+			m.detalheAberto = true
+			m.seguirSelecao() // a lista encolhe embaixo do painel: a seleção fica na janela
+			return m, nil
+		}
+		if abas[m.activeTab].kind == "event" {
+			return m.abrirQuadroDaSelecao(quadroEventos)
+		}
+		return m.abrirQuadroDaSelecao(quadroYAML)
 	case key.Matches(k, l.Logs):
-		name, ns, kind := m.selectedResourceInfo()
-		if name == "" {
-			return m, nil
-		}
-		if kind != "pod" {
-			m.actionFeedback = frase(yui.StatusAlerta, "logs só existem para pods")
-			return m, nil
-		}
-		return m, m.pedirDetalhe(m.fetchPodLogs(name, ns))
+		return m.abrirQuadroDaSelecao(quadroLogs)
 	case key.Matches(k, l.Yaml):
-		if name, ns, kind := m.selectedResourceInfo(); name != "" {
-			return m, m.pedirDetalhe(m.fetchResourceYAML(kind, name, ns))
-		}
-		return m, nil
+		return m.abrirQuadroDaSelecao(quadroYAML)
 	case key.Matches(k, l.Eventos):
-		if name, ns, _ := m.selectedResourceInfo(); name != "" {
-			return m, m.pedirDetalhe(m.fetchResourceEvents(name, ns))
-		}
-		return m, nil
+		return m.abrirQuadroDaSelecao(quadroEventos)
 	}
 	m.actionFeedback = m.avisoTeclaAntiga(k.String())
 	return m, nil
@@ -470,41 +470,7 @@ func (m Model) teclaAjuda(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// linhasDoDetalhe são as linhas do conteúdo do detalhe (logs, YAML, eventos).
-func (m Model) linhasDoDetalhe() []string {
-	return strings.Split(strings.ReplaceAll(strings.TrimRight(m.detailContent, "\n"), "\t", "    "), "\n")
-}
-
-// teclaDetalhe trata o detalhe: rolagem própria e esc para voltar à lista.
-func (m Model) teclaDetalhe(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	g, l := mapa().Global, mapa().Lista
-	switch {
-	case key.Matches(k, g.Voltar):
-		m.viewMode = ModeList
-		m.detailContent, m.detailTitle, m.detailScrollY = "", "", 0
-		return m, nil
-	case key.Matches(k, g.Sair):
-		m.actionFeedback = avisoQ()
-	case key.Matches(k, g.Ajuda):
-		m.ajuda, m.ajudaScroll = true, 0
-	case key.Matches(k, l.Baixo):
-		m.detailScrollY++
-	case key.Matches(k, l.Cima):
-		m.detailScrollY--
-	case key.Matches(k, l.PaginaBaixo):
-		m.detailScrollY += m.alturaCorpo()
-	case key.Matches(k, l.PaginaCima):
-		m.detailScrollY -= m.alturaCorpo()
-	case key.Matches(k, l.Inicio):
-		m.detailScrollY = 0
-	case key.Matches(k, l.Fim):
-		m.detailScrollY = len(m.linhasDoDetalhe())
-	}
-	m.detailScrollY = max(0, min(m.detailScrollY, len(m.linhasDoDetalhe())-m.alturaCorpo()))
-	return m, nil
-}
-
-// mouse: a roda rola a lista (ou o detalhe e a ajuda); o clique seleciona a
+// mouse: a roda rola a lista (ou o quadro e a ajuda); o clique seleciona a
 // linha e troca de aba. Com campo, menu ou confirmação aberta, o mouse não age.
 func (m Model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.filter.InputMode || m.actionMode != ActionNone || m.janelaPequena() {
@@ -517,7 +483,7 @@ func (m Model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseButtonWheelDown:
 		delta = passoRoda
 	case tea.MouseButtonLeft:
-		if msg.Action == tea.MouseActionPress && !m.ajuda && m.viewMode == ModeList {
+		if msg.Action == tea.MouseActionPress && !m.ajuda && !m.quadro.aberto {
 			return m.clique(msg.X, msg.Y)
 		}
 		return m, nil
@@ -527,8 +493,8 @@ func (m Model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.ajuda:
 		m.ajudaScroll = max(0, min(m.ajudaScroll+delta, m.maxRolagemAjuda()))
-	case m.viewMode == ModeDetail:
-		m.detailScrollY = max(0, min(m.detailScrollY+delta, len(m.linhasDoDetalhe())-m.alturaCorpo()))
+	case m.quadro.aberto:
+		m.rolarQuadro(delta)
 	case m.err == nil: // sem conexão, a lista não está na tela
 		m.rolarLista(delta)
 	}
@@ -550,9 +516,8 @@ func (m *Model) rolarLista(delta int) {
 // Geometria da lista na moldura: masthead e régua em cima, depois as abas e
 // os filtros; o corpo começa com uma linha em branco e o cabeçalho da tabela.
 const (
-	linhaDasAbas        = 2
-	linhasAntesDaAba    = 2 // masthead e régua
-	linhasAntesDosDados = 2 // linha em branco e cabeçalho
+	linhaDasAbas     = 2
+	linhasAntesDaAba = 2 // masthead e régua
 )
 
 // abasNaTela é a linha de abas que a moldura desenha na largura atual.
@@ -564,13 +529,18 @@ func (m Model) abasNaTela() string {
 	return normais
 }
 
-// primeiraLinhaDeDados é a linha da tela (0 no topo) da primeira linha da tabela.
+// primeiraLinhaDeDados é a linha da tela (0 no topo) da primeira linha da
+// tabela; com o painel por cima, a lista começa abaixo dele e do fio.
 func (m Model) primeiraLinhaDeDados() int {
 	filtros := 0
 	if m.err == nil && m.linhaFiltros(m.itensDaAba(m.activeTab)) != "" {
 		filtros = 1
 	}
-	return linhasAntesDaAba + 1 + filtros + linhasAntesDosDados
+	painel := 0
+	if m.painelPorCima() {
+		painel = m.alturaDoPainelPorCima() + 1
+	}
+	return linhasAntesDaAba + 1 + filtros + painel + m.linhasAntesDaTabela()
 }
 
 // regiaoAba é o trecho de colunas [ini, fim) de uma aba na linha de abas.
@@ -633,7 +603,7 @@ func (m Model) clique(x, y int) (tea.Model, tea.Cmd) {
 	}
 	i := y - m.primeiraLinhaDeDados()
 	visiveis := min(m.linhasDeDados(), m.itemCount()-m.scrollY)
-	if i >= 0 && i < visiveis {
+	if i >= 0 && i < visiveis && x < m.larguraDaLista() { // o clique no painel ao lado não seleciona
 		m.selectedIndex = m.scrollY + i
 	}
 	return m, nil

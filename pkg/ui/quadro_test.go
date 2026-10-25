@@ -31,3 +31,22 @@ func TestQuadroGeometria(t *testing.T) {
 		}
 	}
 }
+
+// TestQuadroNomeado: o rótulo vai em caixa-alta e o nome fica como veio; sem
+// nome, é o Quadro comum; a borda continua reta com nome comprido.
+func TestQuadroNomeado(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	topo := strings.Split(QuadroNomeado("pod", "worker-5d8b6-q7tvn", "status  Running", 40, QuadroFoco), "\n")[0]
+	if !strings.HasPrefix(topo, "┌ POD · worker-5d8b6-q7tvn ─") {
+		t.Errorf("fio de cima: %q", topo)
+	}
+	if sem, comum := QuadroNomeado("logs", "", "a", 30, QuadroNormal), Quadro("logs", "a", 30, QuadroNormal); sem != comum {
+		t.Errorf("sem nome deveria ser o Quadro comum:\n%s\n%s", sem, comum)
+	}
+	saida := QuadroNomeado("pod", strings.Repeat("nome-comprido-", 6), "x", 30, QuadroNormal)
+	for _, l := range strings.Split(saida, "\n") {
+		if w := lipgloss.Width(l); w != 30 {
+			t.Errorf("linha com %d células: %q", w, l)
+		}
+	}
+}

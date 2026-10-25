@@ -202,11 +202,11 @@ func TestTeclado_Niveis(t *testing.T) {
 		tm := abrirViz(t, vizDeTeste(t))
 		enviar(tm, "?", "q")
 		esperarTela(t, tm, "q sai só da lista; esc volta")
-		enviar(tm, "esc", "2", "x", "q", "esc")
-		tm.Send(detailMsg{title: "YAML: api", content: "kind: Deployment"})
+		enviar(tm, "esc", "2", "x", "q", "esc", "y")
+		esperarTela(t, tm, "YAML · ")
 		enviar(tm, "q", "esc", "/", "z")
-		if m := fecharViz(t, tm); m.filter.InputBuffer != "z" || m.ajuda || m.viewMode != ModeList {
-			t.Fatalf("depois das camadas: campo %q, ajuda %v, modo %d", m.filter.InputBuffer, m.ajuda, m.viewMode)
+		if m := fecharViz(t, tm); m.filter.InputBuffer != "z" || m.ajuda || m.quadro.aberto {
+			t.Fatalf("depois das camadas: campo %q, ajuda %v, quadro %v", m.filter.InputBuffer, m.ajuda, m.quadro.aberto)
 		}
 	})
 
@@ -231,6 +231,7 @@ func TestTeclado_Niveis(t *testing.T) {
 		"menu":        {[]string{"x"}, "ações ▸ pod", func(m Model) bool { return m.actionMode == ActionMenu }},
 		"confirmação": {[]string{"x", "d"}, "digite yes", func(m Model) bool { return m.actionMode == ActionConfirmDelete }},
 		"ajuda":       {[]string{"?"}, "TECLAS · PODS", func(m Model) bool { return m.ajuda }},
+		"quadro":      {[]string{"l"}, "LOGS · worker-5d8b6-q7tvn", func(m Model) bool { return m.quadro.aberto }},
 		"lista":       {nil, "", func(m Model) bool { return !m.ajuda && !m.filter.InputMode && m.actionMode == ActionNone }},
 	} {
 		t.Run("ctrl+c no "+nome, func(t *testing.T) {
@@ -418,8 +419,8 @@ func TestRecarga_FalhaAvisa(t *testing.T) {
 	}
 }
 
-// TestAjuda_PorCimaDoMenuEDoDetalhe: o ? abre a ajuda por cima do menu e do
-// detalhe, e o esc volta para a camada de baixo.
+// TestAjuda_PorCimaDoMenuEDoDetalhe: o ? abre a ajuda por cima do menu, do
+// quadro e do painel, e o esc volta para a camada de baixo.
 func TestAjuda_PorCimaDoMenuEDoDetalhe(t *testing.T) {
 	m := telaDaPrancha(t, 140, 32)
 	m, _ = teclas(t, m, "2", "x", "?")
@@ -429,10 +430,13 @@ func TestAjuda_PorCimaDoMenuEDoDetalhe(t *testing.T) {
 	if m, _ = teclas(t, m, "esc"); m.ajuda || m.actionMode != ActionMenu {
 		t.Fatalf("esc na ajuda volta ao menu: ajuda %v, modo %d", m.ajuda, m.actionMode)
 	}
-	m, _ = teclas(t, m, "esc")
-	m, _ = atualizar(m, detailMsg{title: "YAML: api", content: "kind: Deployment"})
-	if m, _ = teclas(t, m, "?", "esc"); m.ajuda || m.viewMode != ModeDetail {
-		t.Fatalf("esc na ajuda volta ao detalhe: ajuda %v, modo %d", m.ajuda, m.viewMode)
+	m, _ = teclas(t, m, "esc", "y")
+	if m, _ = teclas(t, m, "?", "esc"); m.ajuda || !m.quadro.aberto {
+		t.Fatalf("esc na ajuda volta ao quadro: ajuda %v, quadro %v", m.ajuda, m.quadro.aberto)
+	}
+	p, _ := teclas(t, telaDaPrancha(t, 100, 30), "enter", "?", "esc")
+	if p.ajuda || !p.painelPorCima() {
+		t.Fatalf("esc na ajuda volta ao painel: ajuda %v, painel %v", p.ajuda, p.painelPorCima())
 	}
 }
 
@@ -466,6 +470,7 @@ func conferirCliques(t *testing.T, m Model) int {
 	t.Helper()
 	clicadas := 0
 	for y, linha := range linhasNaTela(m) {
+		linha = ansi.Truncate(linha, m.larguraDaLista(), "") // só a lista: o painel ao lado repete o nome
 		for _, it := range m.itensDaAba(TabPods) {
 			if !strings.Contains(linha, it.nome+" ") {
 				continue
@@ -507,35 +512,6 @@ func TestMouse_CliqueDepoisDeMudarAJanela(t *testing.T) {
 	}
 	if n := conferirCliques(t, menor); n != menor.linhasDeDados() {
 		t.Errorf("lista menor: %d linhas clicadas, esperado %d", n, menor.linhasDeDados())
-	}
-}
-
-// TestDetalhe_AtrasadoNaoAbrePorBaixo: o YAML que chega depois que uma
-// camada abriu, ou depois que a seleção ou a aba mudaram, não abre o
-// detalhe; sem nada disso, abre.
-func TestDetalhe_AtrasadoNaoAbrePorBaixo(t *testing.T) {
-	base := telaDaPrancha(t, 120, 30)
-	_, pedido := teclas(t, base, "enter")
-	if pedido == nil {
-		t.Fatal("o ↵ deveria pedir o YAML")
-	}
-	resposta := pedido()
-	if m, _ := atualizar(base, resposta); m.viewMode != ModeDetail {
-		t.Fatal("sem camada nem troca de linha, o YAML abre o detalhe")
-	}
-	camadas := map[string][]string{"menu": {"x"}, "confirmação": {"x", "d"}, "campo": {"/"}, "ajuda": {"?"}}
-	for nome, ks := range camadas {
-		m, _ := teclas(t, base, ks...)
-		antes := ansi.Strip(m.View())
-		if m, _ = atualizar(m, resposta); m.viewMode == ModeDetail || ansi.Strip(m.View()) != antes {
-			t.Errorf("%s: o YAML atrasado abriu o detalhe por cima da camada", nome)
-		}
-	}
-	for nome, ks := range map[string][]string{"seleção": {"down"}, "aba": {"2"}} {
-		m, _ := teclas(t, base, ks...)
-		if m, _ = atualizar(m, resposta); m.viewMode == ModeDetail {
-			t.Errorf("%s mudou: o YAML do recurso anterior abriu o detalhe", nome)
-		}
 	}
 }
 
@@ -619,7 +595,7 @@ func TestRecarga_UmaPorVezENaAbaLida(t *testing.T) {
 }
 
 // TestRolagem_AjudaEDetalhe: as setas, o fim e a roda rolam a ajuda e o
-// detalhe; na ajuda de 72x24, rolar mostra as teclas do fim.
+// quadro; na ajuda de 72x24, rolar mostra as teclas do fim.
 func TestRolagem_AjudaEDetalhe(t *testing.T) {
 	semCor(t)
 	m, _ := teclas(t, telaDaPrancha(t, 72, 24), "?")
@@ -645,12 +621,21 @@ func TestRolagem_AjudaEDetalhe(t *testing.T) {
 	for i := range linhas {
 		linhas[i] = fmt.Sprintf("linha-%03d: x", i)
 	}
-	d, _ := atualizar(telaDaPrancha(t, 120, 30), detailMsg{title: "YAML: api", content: strings.Join(linhas, "\n")})
-	if d, _ = atualizar(d, roda); d.detailScrollY != passoRoda || strings.Contains(ansi.Strip(d.View()), "linha-002") {
-		t.Errorf("roda no detalhe: rolagem %d", d.detailScrollY)
+	base := telaDaPrancha(t, 120, 30)
+	base.client = &clienteComDetalhe{clienteStaging: clienteDaPrancha(), yaml: strings.Join(linhas, "\n")}
+	d, pedido := teclas(t, base, "y")
+	d, _ = atualizar(d, pedido())
+	if d, _ = atualizar(d, roda); d.quadro.scroll != passoRoda || strings.Contains(ansi.Strip(d.View()), "linha-002") {
+		t.Errorf("roda no quadro: rolagem %d", d.quadro.scroll)
 	}
-	if d, _ = teclas(t, d, "down"); d.detailScrollY != passoRoda+1 {
-		t.Errorf("↓ no detalhe: rolagem %d", d.detailScrollY)
+	if d, _ = teclas(t, d, "down"); d.quadro.scroll != passoRoda+1 {
+		t.Errorf("↓ no quadro: rolagem %d", d.quadro.scroll)
+	}
+	if d, _ = teclas(t, d, "G"); d.quadro.scroll != d.maxRolagemQuadro() || !strings.Contains(ansi.Strip(d.View()), "linha-099") {
+		t.Errorf("G no quadro: rolagem %d de %d", d.quadro.scroll, d.maxRolagemQuadro())
+	}
+	if d, _ = teclas(t, d, "g"); d.quadro.scroll != 0 || !strings.Contains(ansi.Strip(d.View()), "linha-000") {
+		t.Errorf("g no quadro: rolagem %d", d.quadro.scroll)
 	}
 }
 

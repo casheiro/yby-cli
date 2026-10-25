@@ -188,7 +188,7 @@ func relogioImediato(m Model, agendados *int) Model {
 
 // TestRelogio_UmaLeituraPorVez: só a leitura do relógio agenda a próxima; as
 // leituras avulsas (troca de aba, ação, namespace) não abrem outro relógio, o
-// esc sem filtro não lê o cluster e o detalhe não para o relógio.
+// esc sem filtro não lê o cluster e o quadro não para o relógio.
 func TestRelogio_UmaLeituraPorVez(t *testing.T) {
 	agendados := 0
 	m := relogioImediato(comJanela(NewModel(&MockClient{Pods: muitosPods(3)})), &agendados)
@@ -213,18 +213,18 @@ func TestRelogio_UmaLeituraPorVez(t *testing.T) {
 		t.Fatal("esc sem filtro não deveria ler o cluster")
 	}
 
-	// No detalhe, o tique ainda lê e a resposta agenda o próximo.
-	m, _ = atualizar(m, detailMsg{title: "Logs: p-00", content: "ok"})
+	// No quadro, o tique ainda lê e a resposta agenda o próximo.
+	m, _ = teclas(t, m, "y")
 	m, cmd = atualizar(m, tique)
 	if cmd == nil {
-		t.Fatal("o tique no detalhe deveria ler o cluster")
+		t.Fatal("o tique no quadro deveria ler o cluster")
 	}
 	m, cmd = atualizar(m, cmd())
 	if cmd == nil || agendados != 2 {
-		t.Fatalf("a resposta no detalhe deveria agendar o próximo tique (agendados %d)", agendados)
+		t.Fatalf("a resposta no quadro deveria agendar o próximo tique (agendados %d)", agendados)
 	}
-	if m.viewMode != ModeDetail {
-		t.Fatal("a leitura não deveria fechar o detalhe")
+	if !m.quadro.aberto {
+		t.Fatal("a leitura não deveria fechar o quadro")
 	}
 }
 
@@ -383,7 +383,7 @@ func TestOrdemPorNome(t *testing.T) {
 	}
 }
 
-// TestCtrlC_SaiDeQualquerLugar: campo, menu, confirmação, ajuda, detalhe e lista.
+// TestCtrlC_SaiDeQualquerLugar: campo, menu, confirmação, ajuda, painel, quadro e lista.
 func TestCtrlC_SaiDeQualquerLugar(t *testing.T) {
 	base := telaDaPrancha(t, 140, 32)
 	niveis := map[string]Model{"lista": base}
@@ -391,7 +391,8 @@ func TestCtrlC_SaiDeQualquerLugar(t *testing.T) {
 	niveis["menu"], _ = teclas(t, base, "x")
 	niveis["confirmação"], _ = teclas(t, base, "x", "d")
 	niveis["ajuda"], _ = teclas(t, base, "?")
-	niveis["detalhe"], _ = atualizar(base, detailMsg{title: "YAML: x", content: "a: 1"})
+	niveis["quadro"], _ = teclas(t, base, "y")
+	niveis["painel"], _ = teclas(t, telaDaPrancha(t, 100, 30), "enter")
 	for nome, m := range niveis {
 		_, cmd := atualizar(m, tecla("ctrl+c"))
 		if cmd == nil {

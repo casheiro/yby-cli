@@ -151,6 +151,13 @@ func KeyHints(largura int, teclas ...key.Binding) string {
 	return legendaDeTeclas(largura, DefaultKeys().Global.Sair, true, teclas...)
 }
 
+// TeclasDoPainel devolve as teclas de um painel (o rodapé do detalhe do Viz: "l logs  y yaml
+// e eventos"), no formato da legenda mas sem "q sair" nem "? mais"; descarta teclas do fim
+// até caber em largura.
+func TeclasDoPainel(largura int, teclas ...key.Binding) string {
+	return legendaDeTeclas(largura, key.Binding{}, false, teclas...)
+}
+
 // Partes reúne o conteúdo já renderizado de uma tela para Moldura.
 type Partes struct {
 	Instrumento, Rotulo, Contexto string // masthead (Contexto já formatado, ver CaminhoContexto)
@@ -280,12 +287,28 @@ func Moldura(largura, altura int, p Partes) string {
 	return strings.Join(todas, "\n")
 }
 
+// LargurasLadoALado devolve as larguras da lista (60%) e do detalhe (40%) no corpo lado a
+// lado de largura células, descontado o fio vertical entre eles: quem desenha a lista e o
+// detalhe usa estas larguras para que nada seja cortado pela moldura.
+func LargurasLadoALado(largura int) (lista, detalhe int) {
+	const sepLargura = 3 // " │ "
+	util := max(0, largura-sepLargura)
+	lista = util * 60 / 100
+	return lista, util - lista
+}
+
+// LimiteDetalheEmpilhado é quantas linhas o detalhe empilhado (abaixo de 120 colunas) pode
+// ocupar num corpo de h linhas: até metade, menos o fio; abaixo de 6 linhas, o corpo todo.
+func LimiteDetalheEmpilhado(h int) int {
+	if h < 6 {
+		return max(h, 0)
+	}
+	return (h - 1) / 2
+}
+
 // ladoALado divide o corpo em lista (60%) e detalhe (40%) com um fio vertical entre eles.
 func ladoALado(lista, detalhe string, largura, h int) []string {
-	const sepLargura = 3 // " │ "
-	util := largura - sepLargura
-	wLista := util * 60 / 100
-	wDetalhe := util - wLista
+	wLista, wDetalhe := LargurasLadoALado(largura)
 	sep := " " + S().Fio.Render(separadorVertical()) + " "
 	esq, dir := bloco(lista, wLista, h), bloco(detalhe, wDetalhe, h)
 	saida := make([]string, h)
@@ -308,7 +331,7 @@ func empilhado(lista, detalhe string, largura, h int) []string {
 		return bloco(detalhe, largura, h)
 	}
 	hDet := len(linhasDe(detalhe))
-	if limite := (h - 1) / 2; hDet > limite {
+	if limite := LimiteDetalheEmpilhado(h); hDet > limite {
 		hDet = limite
 	}
 	if hDet < 1 {

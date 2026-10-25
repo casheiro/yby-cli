@@ -76,8 +76,16 @@ func podsDaPrancha() []monitor.Pod {
 		podDaPrancha("redis-0", "Running", 1, 0, 6*dia, 0, "ip-10-0-3-9", "10.42.2.5"),
 		podDaPrancha("web-8b77c-5jw4f", "Pending", 0, 0, 4*time.Minute, 0, "", ""),
 		podDaPrancha("web-8b77c-9pd2s", "Running", 1, 0, 4*time.Minute, 0, "ip-10-0-2-17", "10.42.1.40"),
-		podDaPrancha("worker-5d8b6-q7tvn", "CrashLoopBackOff", 0, 14, 52*time.Minute, 2*time.Minute, "ip-10-0-2-17", "10.42.1.23"),
+		workerDaPrancha(),
 	}
+}
+
+// workerDaPrancha é o pod do painel da folha VizPods, com os campos do detalhe.
+func workerDaPrancha() monitor.Pod {
+	p := podDaPrancha("worker-5d8b6-q7tvn", "CrashLoopBackOff", 0, 14, 52*time.Minute, 2*time.Minute, "ip-10-0-2-17", "10.42.1.23")
+	p.Motivo, p.Imagens, p.Dono = "Error · código de saída 1", []string{"worker:1.8.2"}, "Deployment worker"
+	p.Recursos = monitor.Recursos{CPUPedido: "120m", CPULimite: "500m", MemPedido: "210Mi"}
+	return p
 }
 
 // telaDaPrancha monta o Viz da folha VizPods: staging ▸ payments, as outras
@@ -85,7 +93,13 @@ func podsDaPrancha() []monitor.Pod {
 // pods por último, na aba ativa.
 func telaDaPrancha(t *testing.T, largura, altura int) Model {
 	t.Helper()
-	m := NewModel(clienteStaging{&MockClient{}})
+	return telaDaPranchaCom(t, clienteStaging{&MockClient{}}, largura, altura)
+}
+
+// telaDaPranchaCom é a tela da prancha com o client dado.
+func telaDaPranchaCom(t *testing.T, client monitor.Client, largura, altura int) Model {
+	t.Helper()
+	m := NewModel(client)
 	m.agora = func() time.Time { return horaDaPrancha }
 	m.filter.Namespace = "payments"
 	ns := "payments"
@@ -130,8 +144,8 @@ func conferirTela(t *testing.T, m Model, largura, altura int) string {
 	return tela
 }
 
-// TestTelaPods reproduz a lista da folha "pods com detalhe" (o painel de
-// detalhe é a T021): masthead com staging ▸ payments e o indicador ao vivo,
+// TestTelaPods reproduz a lista da folha "pods com detalhe" (o painel com os
+// eventos e o log está em TestTelaPodsComDetalhe; aqui o client não os lê): masthead com staging ▸ payments e o indicador ao vivo,
 // abas com contagem, ordem e resumo, problemas primeiro com o concluído por
 // último, a frase do pod com problema e a hora da última leitura.
 func TestTelaPods(t *testing.T) {

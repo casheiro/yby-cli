@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -29,8 +28,8 @@ func (m Model) View() string {
 	if m.ajuda {
 		return m.viewAjuda()
 	}
-	if m.viewMode == ModeDetail {
-		return m.viewDetalhe()
+	if m.quadro.aberto {
+		return m.viewQuadro()
 	}
 
 	p := m.partesBase()
@@ -39,6 +38,7 @@ func (m Model) View() string {
 		p.Filtros = m.linhaFiltros(itens)
 	}
 	p.Lista = m.corpoLista(itens)
+	p.Detalhe = m.detalheNaTela()
 	p.Mensagem = m.mensagem(itens)
 	p.Teclas, p.Sair = m.teclas()
 	// No campo e na confirmação o ? é letra: a legenda não oferece "? mais".
@@ -197,13 +197,16 @@ func (m Model) corpoLista(itens []itemLista) string {
 	colunas, linhas := m.tabelaDaAba(m.activeTab, itens)
 	// A tabela inteira mede as colunas (a largura não muda ao rolar); a janela
 	// mostra o cabeçalho e as linhas a partir de scrollY.
-	tabela := strings.Split(yui.Tabela(colunas, linhas, m.selectedIndex, m.width), "\n")
+	tabela := strings.Split(yui.Tabela(colunas, linhas, m.selectedIndex, m.larguraDaLista()), "\n")
 	m.clampScroll(len(itens))
 	ini := m.scrollY
 	fim := min(len(itens), ini+m.linhasDeDados())
 	corpo := append(tabela[:1], tabela[1+ini:1+fim]...)
 	if ini > 0 || fim < len(itens) {
 		corpo = append(corpo, m.avisoRolagem(ini, len(itens)-fim))
+	}
+	if m.painelPorCima() {
+		return strings.Join(corpo, "\n") // a moldura já põe o fio entre o painel e a lista
 	}
 	return "\n" + strings.Join(corpo, "\n")
 }
@@ -364,6 +367,17 @@ func (m Model) teclas() ([]key.Binding, key.Binding) {
 			return []key.Binding{atalho("r", "tentar de novo", "r")}, key.Binding{}
 		}
 		return nil, key.Binding{}
+	case m.painelPorCima():
+		// O painel por cima não tem rodapé: as teclas dele vêm para a legenda.
+		t := append([]key.Binding{atalho(setas(), "mover", "up", "down", "j", "k")}, teclasDoPainel(abas[m.activeTab].kind)...)
+		if len(acoesDoTipo(abas[m.activeTab].kind)) > 0 {
+			t = append(t, l.Acoes)
+		}
+		if m.width < yui.LarguraColuna {
+			// A legenda compacta guarda só três teclas: a saída do painel vem primeiro.
+			return append([]key.Binding{voltar}, t...), g.SairForcado
+		}
+		return append(t, voltar, g.Ajuda), g.SairForcado
 	}
 	t := []key.Binding{atalho(setas(), "mover", "up", "down", "j", "k"), l.Abrir, l.Buscar, l.Filtrar}
 	if len(acoesDoTipo(abas[m.activeTab].kind)) > 0 {
@@ -506,23 +520,5 @@ func (m Model) viewAjuda() string {
 	}
 	p.Sair = mapa().Global.SairForcado
 	p.SemAjuda = true // aqui o ? fecha a ajuda
-	return yui.Moldura(m.width, m.height, p)
-}
-
-// viewDetalhe mostra logs, YAML ou eventos na moldura, com rolagem própria.
-func (m Model) viewDetalhe() string {
-	s := yui.S()
-	p := m.partesBase()
-	linhas := m.linhasDoDetalhe()
-	h := m.alturaCorpo()
-	ini := min(max(0, m.detailScrollY), max(0, len(linhas)-h))
-	fim := min(len(linhas), ini+h)
-	p.Filtros = esqDir(s.Rotulo.Render(strings.ToUpper(m.detailTitle)),
-		s.TintaSuave.Render(fmt.Sprintf("linha %d de %d", ini+1, len(linhas))), m.width)
-	p.Lista = strings.Join(linhas[ini:fim], "\n")
-	p.Mensagem = m.actionFeedback
-	p.Teclas = []key.Binding{atalho(setas(), "rolar", "up", "down"), atalho("pgup/pgdn", "página", "pgup", "pgdown"),
-		atalho("esc", "voltar", "esc")}
-	p.Sair = mapa().Global.SairForcado
 	return yui.Moldura(m.width, m.height, p)
 }

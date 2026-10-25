@@ -10,11 +10,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
 var criado = time.Date(2026, 10, 25, 11, 12, 0, 0, time.UTC)
+
+var verdade = true
 
 // esperando é o estado de um contêiner parado com o motivo dado.
 func esperando(motivo string) corev1.ContainerState {
@@ -27,15 +30,24 @@ func TestPodDeK8s(t *testing.T) {
 	ultimo := metav1.NewTime(criado.Add(50 * time.Minute))
 	p := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "worker-5d8b6-q7tvn", Namespace: "payments", CreationTimestamp: metav1.NewTime(criado),
-			Labels: map[string]string{"app": "worker"}},
-		Spec: corev1.PodSpec{NodeName: "ip-10-0-2-17", Containers: []corev1.Container{{Name: "worker"}, {Name: "proxy"}}},
+			Labels:          map[string]string{"app": "worker", "pod-template-hash": "5d8b6"},
+			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "worker-5d8b6", Controller: &verdade}}},
+		Spec: corev1.PodSpec{NodeName: "ip-10-0-2-17", Containers: []corev1.Container{
+			{Name: "worker", Image: "worker:1.8.2", Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("200Mi")},
+				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+			}},
+			{Name: "proxy", Image: "envoy:1.30", Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("10Mi")},
+			}},
+		}},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
 			PodIP: "10.42.1.23",
 			ContainerStatuses: []corev1.ContainerStatus{
 				{
 					Name: "worker", RestartCount: 14, State: esperando("CrashLoopBackOff"),
-					LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, FinishedAt: ultimo}},
+					LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1, FinishedAt: ultimo}},
 				},
 				{Name: "proxy", Ready: true, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 			},
@@ -45,7 +57,9 @@ func TestPodDeK8s(t *testing.T) {
 	want := Pod{
 		Name: "worker-5d8b6-q7tvn", Namespace: "payments", Status: "CrashLoopBackOff", CPU: "120m", Memory: "210Mi",
 		Prontos: 1, Containers: 2, Reinicios: 14, UltimoReinicio: ultimo.Time,
-		No: "ip-10-0-2-17", IP: "10.42.1.23", CriadoEm: criado, Labels: map[string]string{"app": "worker"},
+		No: "ip-10-0-2-17", IP: "10.42.1.23", CriadoEm: criado, Labels: map[string]string{"app": "worker", "pod-template-hash": "5d8b6"},
+		Motivo: "Error · código de saída 1", Imagens: []string{"worker:1.8.2", "envoy:1.30"}, Dono: "Deployment worker",
+		Recursos: Recursos{CPUPedido: "120m", CPULimite: "500m", MemPedido: "210Mi"}, Conteiner: "worker",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("pod convertido:\n%+v\nesperado:\n%+v", got, want)
