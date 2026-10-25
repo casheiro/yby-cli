@@ -66,6 +66,7 @@
 ## Restrições
 
 - **Marca:** tokens do site (`yby-site/app/assets/css/main.css`). Nas telas de trabalho a marca aparece como `◆ YBY`. A logo oficial (`docs/assets/brand/yby-logo.svg`) aparece desenhada em meio-blocos só onde há espaço e é o momento de apresentação: `yby` sem argumentos e boas-vindas do Bard (decisão do usuário de 24/10/2026).
+- **Idioma:** só português do Brasil, sem i18n (decisão do usuário de 24/10/2026). Textos em inglês que sobrarem (padrões do cobra, descrições de comandos, manifestos de plugins) são traduzidos, não viram segunda língua. A língua das respostas da IA continua em `YBY_AI_LANGUAGE`.
 - **Acessibilidade:** todo status tem glifo e palavra, além da cor; respeitar `NO_COLOR`; contraste mínimo de 4,5:1 para texto nos dois temas; fallback ASCII para terminais sem Unicode.
 - **Stack:** Go 1.26, Bubbletea v1.3.6, Lipgloss, Bubbles, Glamour e Huh v1.0.0. O plugin Viz está em Bubbletea v0.25 com módulo próprio e precisa ser atualizado.
 - **Não pode mudar:**
