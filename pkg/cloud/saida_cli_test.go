@@ -48,6 +48,49 @@ func TestErroDoCLI_LevaAUltimaLinhaUtil(t *testing.T) {
 	}
 }
 
+// Saídas reais do gcloud 590.0.1 (Windows, 25/10/2026): sem login, com a API do GKE
+// desligada e com projeto sem permissão.
+const (
+	saidaGcloudSemLogin = "ERROR: (gcloud.auth.print-access-token) You do not currently have an active account selected.\r\n" +
+		"Please run:\r\n\r\n  $ gcloud auth login\r\n\r\nto obtain new credentials.\r\n\r\n" +
+		"If you have already logged in with a different account, run:\r\n\r\n" +
+		"  $ gcloud config set account ACCOUNT\r\n\r\nto select an already authenticated account to use.\r\n"
+	saidaGcloudAPIDesligada = "ERROR: (gcloud.container.clusters.list) ResponseError: code=403, message=Kubernetes Engine API " +
+		"has not been used in project yby-teste-2610 before or it is disabled. Enable it by visiting " +
+		"https://console.developers.google.com/apis/api/container.googleapis.com/overview?project=yby-teste-2610 " +
+		"then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our " +
+		"systems and retry. This command is authenticated as fulano@example.com which is the active account " +
+		"specified by the [core/account] property.\r\n"
+	saidaGcloudSemPermissao = "ERROR: (gcloud.container.clusters.list) ResponseError: code=403, message=Permission denied " +
+		"on resource project yby-nao-existe-9z. This command is authenticated as fulano@example.com which is " +
+		"the active account specified by the [core/account] property.\r\n"
+)
+
+// O gcloud escreve a linha de erro e depois a ajuda; o motivo é a linha de erro, sem o
+// comando repetido nem o envelope da resposta.
+func TestErroDoCLI_LinhaDeErroDoGcloud(t *testing.T) {
+	casos := []struct {
+		nome, saida, quer string
+	}{
+		{"sem login", saidaGcloudSemLogin, "You do not currently have an active account selected."},
+		{"api desligada", saidaGcloudAPIDesligada, "Kubernetes Engine API has not been used in project yby-teste-2610 " +
+			"before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/" +
+			"container.googleapis.com/overview?project=yby-teste-2610 then retry."},
+		{"sem permissão", saidaGcloudSemPermissao, "Permission denied on resource project yby-nao-existe-9z."},
+		{"progresso antes do erro", "Fetching cluster endpoint and auth data.\r\n" + saidaGcloudSemPermissao,
+			"Permission denied on resource project yby-nao-existe-9z."},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			err := erroDoCLI("gcloud container clusters list", []byte(c.saida), errors.New("exit status 1"))
+			linha := strings.TrimPrefix(err.Error(), "gcloud container clusters list: exit status 1: ")
+			if !strings.HasPrefix(linha, c.quer) {
+				t.Errorf("linha = %q, quer começando com %q", linha, c.quer)
+			}
+		})
+	}
+}
+
 func TestErroDoCLI_AparaLinhaLonga(t *testing.T) {
 	err := erroDoCLI("az aks list", []byte(strings.Repeat("a", 500)), errors.New("exit status 1"))
 	linha := strings.TrimPrefix(err.Error(), "az aks list: exit status 1: ")
