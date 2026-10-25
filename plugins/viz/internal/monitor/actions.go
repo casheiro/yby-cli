@@ -10,9 +10,19 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// PrazoDaAcao é quanto uma ação espera pela API: sem resposta nesse tempo, ela
+// falha com context.DeadlineExceeded e a tela diz que o cluster não respondeu.
+const PrazoDaAcao = 30 * time.Second
+
+// contextoDaAcao é o contexto de uma ação, com o PrazoDaAcao.
+func contextoDaAcao() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), PrazoDaAcao)
+}
+
 // DeleteResource deleta um recurso Kubernetes pelo kind, nome e namespace
 func DeleteResource(clientset kubernetes.Interface, kind, name, namespace string) error {
-	ctx := context.Background()
+	ctx, cancelar := contextoDaAcao()
+	defer cancelar()
 
 	switch kind {
 	case "pod":
@@ -27,6 +37,8 @@ func DeleteResource(clientset kubernetes.Interface, kind, name, namespace string
 		return clientset.BatchV1().Jobs(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	case "configmap":
 		return clientset.CoreV1().ConfigMaps(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	case "ingress":
+		return clientset.NetworkingV1().Ingresses(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	default:
 		return fmt.Errorf("deleção não suportada para tipo '%s'", kind)
 	}
@@ -34,7 +46,8 @@ func DeleteResource(clientset kubernetes.Interface, kind, name, namespace string
 
 // ScaleDeployment escala um deployment para o número de réplicas desejado
 func ScaleDeployment(clientset kubernetes.Interface, name, namespace string, replicas int32) error {
-	ctx := context.Background()
+	ctx, cancelar := contextoDaAcao()
+	defer cancelar()
 
 	scale, err := clientset.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -53,7 +66,8 @@ func ScaleDeployment(clientset kubernetes.Interface, name, namespace string, rep
 // RestartDeployment realiza um rollout restart de um deployment
 // (adiciona/atualiza a annotation kubectl.kubernetes.io/restartedAt)
 func RestartDeployment(clientset kubernetes.Interface, name, namespace string) error {
-	ctx := context.Background()
+	ctx, cancelar := contextoDaAcao()
+	defer cancelar()
 
 	patch := fmt.Sprintf(`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"%s"}}}}}`,
 		time.Now().Format(time.RFC3339))
@@ -69,7 +83,8 @@ func RestartDeployment(clientset kubernetes.Interface, name, namespace string) e
 
 // ScaleStatefulSet escala um statefulset para o número de réplicas desejado
 func ScaleStatefulSet(clientset kubernetes.Interface, name, namespace string, replicas int32) error {
-	ctx := context.Background()
+	ctx, cancelar := contextoDaAcao()
+	defer cancelar()
 
 	scale, err := clientset.AppsV1().StatefulSets(namespace).GetScale(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -88,7 +103,8 @@ func ScaleStatefulSet(clientset kubernetes.Interface, name, namespace string, re
 // RestartStatefulSet realiza um rollout restart de um statefulset
 // (adiciona/atualiza a annotation kubectl.kubernetes.io/restartedAt)
 func RestartStatefulSet(clientset kubernetes.Interface, name, namespace string) error {
-	ctx := context.Background()
+	ctx, cancelar := contextoDaAcao()
+	defer cancelar()
 
 	patch := fmt.Sprintf(`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"%s"}}}}}`,
 		time.Now().Format(time.RFC3339))

@@ -152,23 +152,26 @@ func TestTeclado_AcoesEmX(t *testing.T) {
 	tm := abrirViz(t, vizDeTeste(t))
 	esperarTela(t, tm, "8 pods")
 	enviar(tm, "2", "x")
-	esperarTela(t, tm, "ações ▸ deployment worker", "r reiniciar  s escalar…  d excluir…  esc voltar")
+	esperarTela(t, tm, "AÇÕES · Deployment worker", "◆ r  reiniciar", "◇ s  escalar…", "hoje 2 réplicas",
+		"◇ c  copiar nome", "◇ d  excluir…", "pede confirmação", "↵ escolher", "esc fechar")
 	enviar(tm, "s")
-	esperarTela(t, tm, "escalar deployment worker para quantas réplicas?")
+	esperarTela(t, tm, "ESCALAR DEPLOYMENT", "Quantas réplicas?", "↵ escalar")
 	// esc sobe um nível: da confirmação para o menu, do menu para a lista.
 	enviar(tm, "esc")
-	esperarTela(t, tm, "ações ▸ deployment worker")
+	esperarTela(t, tm, "AÇÕES · Deployment worker")
 	enviar(tm, "esc")
 	m := fecharViz(t, tm)
-	if m.actionMode != ActionNone || m.actionTarget != "" {
-		t.Fatalf("o esc deveria fechar o menu: modo %d, alvo %q", m.actionMode, m.actionTarget)
+	if m.acao.aberta() || m.acao.alvo.nome != "" {
+		t.Fatalf("o esc deveria fechar o menu: etapa %d, alvo %q", m.acao.etapa, m.acao.alvo.nome)
 	}
 
-	// Nós e eventos não têm ações.
+	// Nós e eventos só copiam o nome.
 	tm = abrirViz(t, vizDeTeste(t))
 	enviar(tm, "5", "x")
-	esperarTela(t, tm, "nós não têm ações")
-	fecharViz(t, tm)
+	esperarTela(t, tm, "AÇÕES · Node ip-10-0-1-5", "◆ c  copiar nome")
+	if m := fecharViz(t, tm); len(acoesDoTipo(m.acao.alvo.kind)) != 1 {
+		t.Fatalf("nós: %v", acoesDoTipo(m.acao.alvo.kind))
+	}
 }
 
 func TestTeclado_TelaDeAjuda(t *testing.T) {
@@ -228,11 +231,11 @@ func TestTeclado_Niveis(t *testing.T) {
 		aberta func(Model) bool
 	}{
 		"campo":       {[]string{"n"}, "namespace › ", func(m Model) bool { return m.filter.InputMode }},
-		"menu":        {[]string{"x"}, "ações ▸ pod", func(m Model) bool { return m.actionMode == ActionMenu }},
-		"confirmação": {[]string{"x", "d"}, "digite yes", func(m Model) bool { return m.actionMode == ActionConfirmDelete }},
+		"menu":        {[]string{"x"}, "AÇÕES · Pod", func(m Model) bool { return m.acao.etapa == noMenu }},
+		"confirmação": {[]string{"x", "d"}, "EXCLUIR POD", func(m Model) bool { return m.acao.etapa == confirmando }},
 		"ajuda":       {[]string{"?"}, "TECLAS · PODS", func(m Model) bool { return m.ajuda }},
 		"quadro":      {[]string{"l"}, "LOGS · worker-5d8b6-q7tvn", func(m Model) bool { return m.quadro.aberto }},
-		"lista":       {nil, "", func(m Model) bool { return !m.ajuda && !m.filter.InputMode && m.actionMode == ActionNone }},
+		"lista":       {nil, "", func(m Model) bool { return !m.ajuda && !m.filter.InputMode && !m.acao.aberta() }},
 	} {
 		t.Run("ctrl+c no "+nome, func(t *testing.T) {
 			tm := abrirViz(t, vizDeTeste(t))
@@ -268,8 +271,8 @@ func TestTeclado_TeclasAntigas(t *testing.T) {
 		esperarTela(t, tm, c.aviso)
 	}
 	m := fecharViz(t, tm)
-	if m.actionMode != ActionNone || m.filter.InputMode {
-		t.Fatalf("as teclas antigas não abrem nada: modo %d, campo %v", m.actionMode, m.filter.InputMode)
+	if m.acao.aberta() || m.filter.InputMode {
+		t.Fatalf("as teclas antigas não abrem nada: modo %d, campo %v", m.acao.etapa, m.filter.InputMode)
 	}
 }
 
@@ -424,11 +427,22 @@ func TestRecarga_FalhaAvisa(t *testing.T) {
 func TestAjuda_PorCimaDoMenuEDoDetalhe(t *testing.T) {
 	m := telaDaPrancha(t, 140, 32)
 	m, _ = teclas(t, m, "2", "x", "?")
-	if !m.ajuda || m.actionMode != ActionMenu {
-		t.Fatalf("? no menu: ajuda %v, modo %d", m.ajuda, m.actionMode)
+	if !m.ajuda || m.acao.etapa != noMenu {
+		t.Fatalf("? no menu: ajuda %v, modo %d", m.ajuda, m.acao.etapa)
 	}
-	if m, _ = teclas(t, m, "esc"); m.ajuda || m.actionMode != ActionMenu {
-		t.Fatalf("esc na ajuda volta ao menu: ajuda %v, modo %d", m.ajuda, m.actionMode)
+	if m, _ = teclas(t, m, "esc"); m.ajuda || m.acao.etapa != noMenu {
+		t.Fatalf("esc na ajuda volta ao menu: ajuda %v, modo %d", m.ajuda, m.acao.etapa)
+	}
+	// A roda rola a ajuda aberta por cima do menu, como rola a da lista.
+	for _, ks := range [][]string{{"2", "?"}, {"2", "x", "?"}} {
+		a, _ := teclas(t, telaDaPrancha(t, 80, 16), ks...)
+		if a.maxRolagemAjuda() == 0 {
+			t.Fatal("a 80x16 a ajuda deveria rolar")
+		}
+		a, _ = atualizar(a, tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		if a.ajudaScroll != min(passoRoda, a.maxRolagemAjuda()) {
+			t.Fatalf("%v: a roda deixou a ajuda em %d", ks, a.ajudaScroll)
+		}
 	}
 	m, _ = teclas(t, m, "esc", "y")
 	if m, _ = teclas(t, m, "?", "esc"); m.ajuda || !m.quadro.aberto {
@@ -532,9 +546,9 @@ func TestTeclado_SemListaNaTela(t *testing.T) {
 		antes := m.selectedIndex
 		for _, ks := range [][]string{{"x"}, {"x", "d"}, {"enter"}, {"l"}, {"y"}, {"e"}, {"/"}, {"f"}, {"down"}, {"G"}} {
 			nm, cmd := teclas(t, m, ks...)
-			if cmd != nil || nm.actionMode != ActionNone || nm.filter.InputMode || nm.selectedIndex != antes {
+			if cmd != nil || nm.acao.aberta() || nm.filter.InputMode || nm.selectedIndex != antes {
 				t.Errorf("%s: %v agiu sobre a lista escondida (modo %d, campo %v, seleção %d)",
-					nome, ks, nm.actionMode, nm.filter.InputMode, nm.selectedIndex)
+					nome, ks, nm.acao.etapa, nm.filter.InputMode, nm.selectedIndex)
 			}
 		}
 		if _, cmd := teclas(t, m, "q"); cmd == nil {

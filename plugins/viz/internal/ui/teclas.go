@@ -30,40 +30,6 @@ const (
 	campoFiltro    = "filtro"
 )
 
-// acao é uma entrada do menu x: a tecla, o rótulo e o modo que ela abre.
-type acao struct {
-	tecla, rotulo string
-	modo          ActionMode
-}
-
-// acoesDoTipo são as ações do menu x para o tipo de recurso, na ordem do
-// menu; nós e eventos não têm ações.
-func acoesDoTipo(kind string) []acao {
-	excluir := acao{"d", "excluir…", ActionConfirmDelete}
-	switch kind {
-	case "node", "event":
-		return nil
-	case "deployment", "statefulset":
-		return []acao{{"r", "reiniciar", ActionConfirmRestart}, {"s", "escalar…", ActionInputScale}, excluir}
-	}
-	return []acao{excluir}
-}
-
-// temAcao diz se o tipo tem a ação do modo dado.
-func temAcao(kind string, modo ActionMode) bool {
-	for _, a := range acoesDoTipo(kind) {
-		if a.modo == modo {
-			return true
-		}
-	}
-	return false
-}
-
-// emX escreve onde a ação foi parar: "x ▸ d".
-func emX(tecla string) string {
-	return "x " + yui.G().Caminho + " " + tecla
-}
-
 // tecla despacha a tecla para a camada de cima.
 func (m Model) tecla(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
@@ -71,10 +37,12 @@ func (m Model) tecla(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.teclaCampo(k)
 	case m.ajuda: // a ajuda abre por cima do menu, do painel e do quadro
 		return m.teclaAjuda(k)
-	case m.actionMode == ActionMenu:
+	case m.acao.etapa == noMenu:
 		return m.teclaMenu(k)
-	case m.actionMode != ActionNone:
+	case m.acao.etapa == confirmando:
 		return m.teclaConfirmacao(k)
+	case m.acao.etapa == escalando:
+		return m.teclaEscalar(k)
 	case m.quadro.aberto:
 		return m.teclaQuadro(k)
 	}
@@ -233,12 +201,12 @@ func (m Model) avisoTeclaAntiga(k string) string {
 	d := abas[m.activeTab]
 	switch k {
 	case "d":
-		if !temAcao(d.kind, ActionConfirmDelete) {
+		if !temAcao(d.kind, acaoExcluir) {
 			return frase(yui.StatusAlerta, "não dá para excluir "+d.plural)
 		}
 		return frase(yui.StatusParado, "excluir agora fica em "+emX("d"))
 	case "s":
-		if !temAcao(d.kind, ActionInputScale) {
+		if !temAcao(d.kind, acaoEscalar) {
 			return frase(yui.StatusAlerta, "escalar só vale para Deployments e StatefulSets")
 		}
 		return frase(yui.StatusParado, "escalar agora fica em "+emX("s"))
@@ -276,7 +244,7 @@ func (m *Model) fimDaRecarga(msg leituraMsg) {
 		}
 	}
 	texto := d.plural + " recarregados"
-	if temAcao(d.kind, ActionConfirmRestart) {
+	if temAcao(d.kind, acaoReiniciar) {
 		texto += " · reiniciar fica em " + emX("r")
 	}
 	m.actionFeedback = frase(yui.StatusRodando, texto)
@@ -377,74 +345,6 @@ func (m Model) aplicarCampo(campo, valor string) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// abrirAcoes abre o menu x da linha selecionada, guardando o alvo.
-func (m Model) abrirAcoes() (tea.Model, tea.Cmd) {
-	name, ns, kind := m.selectedResourceInfo()
-	if name == "" {
-		return m, nil
-	}
-	if len(acoesDoTipo(kind)) == 0 {
-		m.actionFeedback = frase(yui.StatusAlerta, abas[m.activeTab].plural+" não têm ações")
-		return m, nil
-	}
-	m.actionMode = ActionMenu
-	m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
-	m.actionBuffer = ""
-	return m, nil
-}
-
-// fecharAcoes fecha o menu e esquece o alvo.
-func (m *Model) fecharAcoes() {
-	m.actionMode = ActionNone
-	m.actionBuffer = ""
-	m.actionTarget, m.actionNS, m.actionKind = "", "", ""
-}
-
-// teclaMenu trata o menu x: a letra da ação abre a confirmação dela.
-func (m Model) teclaMenu(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(k, mapa().Global.Voltar):
-		m.fecharAcoes()
-		return m, nil
-	case key.Matches(k, mapa().Global.Sair):
-		m.actionFeedback = avisoQ()
-		return m, nil
-	case key.Matches(k, mapa().Global.Ajuda):
-		m.ajuda, m.ajudaScroll = true, 0
-		return m, nil
-	}
-	for _, a := range acoesDoTipo(m.actionKind) {
-		if k.String() == a.tecla {
-			m.actionMode = a.modo
-			m.actionBuffer = ""
-		}
-	}
-	return m, nil
-}
-
-// teclaConfirmacao trata a confirmação de uma ação: ↵ executa, esc volta ao
-// menu e o resto é o texto digitado.
-func (m Model) teclaConfirmacao(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.Type {
-	case tea.KeyEnter:
-		mode := m.actionMode
-		alvo := alvoDaAcao{nome: m.actionTarget, namespace: m.actionNS, kind: m.actionKind}
-		buf := m.actionBuffer
-		m.fecharAcoes()
-		return m, m.executeAction(mode, alvo, buf)
-	case tea.KeyEsc:
-		m.actionMode = ActionMenu
-		m.actionBuffer = ""
-	case tea.KeyBackspace:
-		if _, n := utf8.DecodeLastRuneInString(m.actionBuffer); n > 0 {
-			m.actionBuffer = m.actionBuffer[:len(m.actionBuffer)-n]
-		}
-	case tea.KeyRunes:
-		m.actionBuffer += string(k.Runes)
-	}
-	return m, nil
-}
-
 // teclaAjuda trata a tela ?: esc ou ? fecham; as setas rolam quando ela não cabe.
 func (m Model) teclaAjuda(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	g, l := mapa().Global, mapa().Lista
@@ -471,9 +371,10 @@ func (m Model) teclaAjuda(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // mouse: a roda rola a lista (ou o quadro e a ajuda); o clique seleciona a
-// linha e troca de aba. Com campo, menu ou confirmação aberta, o mouse não age.
+// linha e troca de aba. Com campo, menu ou confirmação aberta, o mouse não age
+// (a ajuda aberta por cima do menu rola).
 func (m Model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.filter.InputMode || m.actionMode != ActionNone || m.janelaPequena() {
+	if m.filter.InputMode || (m.acao.aberta() && !m.ajuda) || m.janelaPequena() {
 		return m, nil
 	}
 	delta := 0

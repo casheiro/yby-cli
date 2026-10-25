@@ -35,24 +35,23 @@ type Model struct {
 	reconnecting   bool
 	retryCount     int
 	filter         FilterState
-	actionMode     ActionMode
-	actionTarget   string           // nome do recurso alvo da ação
-	actionKind     string           // tipo do recurso alvo, guardado quando a ação abre
-	actionNS       string           // namespace do recurso alvo, guardado quando a ação abre
-	actionBuffer   string           // buffer de input para ações (scale, confirmação)
-	actionFeedback string           // resultado da última ação, já com glifo (linha de estado)
-	carregadas     uint16           // bit por aba: a lista já chegou do cluster ao menos uma vez
-	atualizado     time.Time        // hora da última lista recebida (linha de estado)
-	agora          func() time.Time // relógio, injetável nos testes
-	rodizio        ResourceTab      // última aba de fundo relida pelo relógio
-	ajuda          bool             // a tela ? está aberta
-	ajudaScroll    int              // primeira linha da ajuda na janela
-	recarregando   bool             // o r pediu uma leitura que ainda não voltou
-	detalheAberto  bool             // o ↵ abriu o painel (abaixo de 120 colunas ele só aparece assim)
-	alvoDetalhe    string           // recurso do painel na tela (tipo|chave); vazio sem painel
-	pedidoDetalhe  int              // atraso mais novo: só ele lê os extras do painel
-	lendoExtras    string           // recurso cujos extras estão sendo lidos
-	leituraExtras  int              // leitura de extras mais nova: a resposta de outra é descartada
+	acao           acaoAberta         // menu x ou confirmação na tela
+	toast          yui.Toast          // resultado da última ação (linha de estado; some em 6 s)
+	executando     string             // ação mandada ao cluster sem resposta ainda ("reiniciando Deployment api")
+	copiar         func(string) error // manda o nome para a área de transferência (OSC 52; trocado nos testes)
+	actionFeedback string             // aviso da última tecla, já com glifo (linha de estado)
+	carregadas     uint16             // bit por aba: a lista já chegou do cluster ao menos uma vez
+	atualizado     time.Time          // hora da última lista recebida (linha de estado)
+	agora          func() time.Time   // relógio, injetável nos testes
+	rodizio        ResourceTab        // última aba de fundo relida pelo relógio
+	ajuda          bool               // a tela ? está aberta
+	ajudaScroll    int                // primeira linha da ajuda na janela
+	recarregando   bool               // o r pediu uma leitura que ainda não voltou
+	detalheAberto  bool               // o ↵ abriu o painel (abaixo de 120 colunas ele só aparece assim)
+	alvoDetalhe    string             // recurso do painel na tela (tipo|chave); vazio sem painel
+	pedidoDetalhe  int                // atraso mais novo: só ele lê os extras do painel
+	lendoExtras    string             // recurso cujos extras estão sendo lidos
+	leituraExtras  int                // leitura de extras mais nova: a resposta de outra é descartada
 	extras         map[string]extrasDetalhe
 	quadro         quadroAberto // logs, YAML ou eventos ocupando o corpo
 	idQuadro       int          // último pedido de conteúdo do quadro: resposta de outro é descartada
@@ -83,6 +82,8 @@ func NewModel(client monitor.Client) Model {
 		err:    err,
 		agora:  time.Now,
 		tique:  tea.Tick,
+		toast:  yui.NovoToast(),
+		copiar: yui.CopiarOSC52,
 	}
 }
 
@@ -359,13 +360,6 @@ func (m Model) irParaAba(tab ResourceTab) (tea.Model, tea.Cmd) {
 	return m, m.ler(false, tab)
 }
 
-// actionResultMsg carrega o resultado de uma ação executada
-type actionResultMsg struct {
-	feedback  string
-	err       error
-	cancelada bool // a confirmação não bateu: nada foi feito
-}
-
 // maxRetries é o número máximo de tentativas de reconexão antes de exibir erro fatal
 const maxRetries = 3
 
@@ -396,6 +390,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	novo, ok := nm.(Model)
 	if !ok {
 		return nm, cmd
+	}
+	if novo.acao.aberta() && !novo.listaNaTela() {
+		novo.cancelarAcaoSemLista()
 	}
 	if c := novo.acompanharDetalhe(); c != nil {
 		cmd = tea.Batch(cmd, c)
@@ -474,16 +471,13 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.receberConteudo(msg)
 		return m, nil
 
-	case actionResultMsg:
-		switch {
-		case msg.err != nil:
-			m.actionFeedback = frase(yui.StatusFalha, fmt.Sprintf("erro: %v", msg.err))
-		case msg.cancelada:
-			m.actionFeedback = frase(yui.StatusParado, msg.feedback)
-		default:
-			m.actionFeedback = frase(yui.StatusRodando, msg.feedback)
-		}
-		return m, m.ler(false, m.activeTab)
+	case resultadoAcaoMsg:
+		return m.mostrarResultado(msg)
+
+	case yui.ToastSomeMsg:
+		t, _ := m.toast.Update(msg)
+		m.toast = t.(yui.Toast)
+		return m, nil
 
 	case error:
 		m.falhar(msg)
@@ -527,64 +521,4 @@ func (m Model) contextoDoCluster() string {
 		return c.Contexto()
 	}
 	return ""
-}
-
-// alvoDaAcao é o recurso escolhido quando a ação abriu: a lista pode mudar
-// (atualização, busca) até a confirmação, e a ação não pode mudar de alvo
-type alvoDaAcao struct {
-	nome, namespace, kind string
-}
-
-// executeAction executa a ação confirmada pelo usuário
-func (m Model) executeAction(mode ActionMode, alvo alvoDaAcao, input string) tea.Cmd {
-	return func() tea.Msg {
-		k8sClient := resolveK8sClient(m.client)
-		if k8sClient == nil {
-			return actionResultMsg{err: fmt.Errorf("client não suporta ações diretas")}
-		}
-
-		target, ns, kind := alvo.nome, alvo.namespace, alvo.kind
-		clientset := k8sClient.Clientset()
-
-		switch mode {
-		case ActionConfirmDelete:
-			if input != "yes" {
-				return actionResultMsg{feedback: "exclusão cancelada", cancelada: true}
-			}
-			err := monitor.DeleteResource(clientset, kind, target, ns)
-			if err != nil {
-				return actionResultMsg{err: err}
-			}
-			return actionResultMsg{feedback: fmt.Sprintf("%s %s excluído", nomeDoTipo(kind), target)}
-
-		case ActionInputScale:
-			var replicas int32
-			if _, err := fmt.Sscanf(input, "%d", &replicas); err != nil {
-				return actionResultMsg{err: fmt.Errorf("valor inválido para réplicas: %s", input)}
-			}
-			escalar, rotulo := monitor.ScaleDeployment, "Deployment"
-			if kind == "statefulset" {
-				escalar, rotulo = monitor.ScaleStatefulSet, "StatefulSet"
-			}
-			if err := escalar(clientset, target, ns, replicas); err != nil {
-				return actionResultMsg{err: err}
-			}
-			return actionResultMsg{feedback: fmt.Sprintf("%s '%s' escalado para %d réplicas.", rotulo, target, replicas)}
-
-		case ActionConfirmRestart:
-			if input != "yes" {
-				return actionResultMsg{feedback: "reinício cancelado", cancelada: true}
-			}
-			reiniciar, rotulo := monitor.RestartDeployment, "Deployment"
-			if kind == "statefulset" {
-				reiniciar, rotulo = monitor.RestartStatefulSet, "StatefulSet"
-			}
-			if err := reiniciar(clientset, target, ns); err != nil {
-				return actionResultMsg{err: err}
-			}
-			return actionResultMsg{feedback: fmt.Sprintf("%s '%s' reiniciado.", rotulo, target)}
-		}
-
-		return actionResultMsg{err: fmt.Errorf("ação desconhecida")}
-	}
 }

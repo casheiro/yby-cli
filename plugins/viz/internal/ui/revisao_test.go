@@ -424,7 +424,7 @@ func TestAjuda_InterrogacaoMostraTodasAsTeclas(t *testing.T) {
 	m.width = 100
 	m, _ = teclas(t, m, "?")
 	tela := ansi.Strip(m.View())
-	for _, quer := range []string{"TECLAS · DEPLOYMENTS", "EM TODA TUI", "LISTA · DEPLOYMENTS", "r reiniciar · s escalar · d excluir",
+	for _, quer := range []string{"TECLAS · DEPLOYMENTS", "EM TODA TUI", "LISTA · DEPLOYMENTS", "r reiniciar · s escalar · c copiar nome · d excluir",
 		"filtrar por label", "trocar de aba", "ctrl+c", "sai (só no nível de cima)", "esc fechar", "ctrl+c sair"} {
 		if !strings.Contains(tela, quer) {
 			t.Errorf("a ajuda deveria ter %q:\n%s", quer, tela)
@@ -443,13 +443,19 @@ func TestAjuda_InterrogacaoMostraTodasAsTeclas(t *testing.T) {
 	}
 }
 
-// TestFeedback_CanceladaENomesEmPortugues: cancelar não aparece como sucesso,
-// e a recusa de excluir usa o nome do recurso em PT-BR.
+// TestFeedback_CanceladaENomesEmPortugues: cancelar não faz nada nem aparece
+// como sucesso, a falha sai com ✕, e a recusa de excluir usa o nome do
+// recurso em PT-BR.
 func TestFeedback_CanceladaENomesEmPortugues(t *testing.T) {
 	m := telaDaPrancha(t, 140, 32)
-	m, _ = atualizar(m, actionResultMsg{feedback: "exclusão cancelada", cancelada: true})
-	if fr := ansi.Strip(m.actionFeedback); fr != yui.G().Parado+" exclusão cancelada" {
-		t.Errorf("cancelada: %q", fr)
+	m, cmd := teclas(t, m, "x", "d", "w", "esc")
+	if cmd != nil || m.acao.etapa != noMenu || m.toast.Visivel() {
+		t.Fatalf("esc na exclusão volta ao menu sem fazer nada: etapa %d, comando %v", m.acao.etapa, cmd != nil)
+	}
+	m, _ = teclas(t, m, "esc")
+	m, _ = atualizar(m, resultadoAcaoMsg{texto: "não deu para excluir Pod x: proibido", falha: true})
+	if fr := ansi.Strip(m.mensagem(nil)); fr != yui.G().Falha+" não deu para excluir Pod x: proibido" {
+		t.Errorf("falha: %q", fr)
 	}
 	m, _ = teclas(t, m, "5", "d")
 	if fr := ansi.Strip(m.actionFeedback); fr != yui.G().Alerta+" não dá para excluir nós" {

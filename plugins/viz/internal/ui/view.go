@@ -37,12 +37,16 @@ func (m Model) View() string {
 	if m.err == nil {
 		p.Filtros = m.linhaFiltros(itens)
 	}
-	p.Lista = m.corpoLista(itens)
-	p.Detalhe = m.detalheNaTela()
+	if m.acao.aberta() && m.listaNaTela() {
+		p.Lista, p.Detalhe = m.corpoComAcao(itens)
+	} else {
+		p.Lista = m.corpoLista(itens)
+		p.Detalhe = m.detalheNaTela()
+	}
 	p.Mensagem = m.mensagem(itens)
 	p.Teclas, p.Sair = m.teclas()
-	// No campo e na confirmação o ? é letra: a legenda não oferece "? mais".
-	p.SemAjuda = m.filter.InputMode || (m.actionMode != ActionNone && m.actionMode != ActionMenu)
+	// No campo e na confirmação o ? é letra (ou não abre a ajuda): a legenda não oferece "? mais".
+	p.SemAjuda = m.filter.InputMode || (m.acao.aberta() && m.acao.etapa != noMenu)
 	return yui.Moldura(m.width, m.height, p)
 }
 
@@ -289,23 +293,26 @@ func cursor() string {
 	return yui.S().Selecionado.Render(" ")
 }
 
-// mensagem é a frase mais importante agora: o campo sendo digitado, a ação
-// pedindo confirmação, o resultado da última ação, a recarga, a reconexão, o
-// erro ou o primeiro problema da lista (a ordem já põe o mais grave no topo).
+// mensagem é a frase mais importante agora: o campo sendo digitado, o aviso
+// da última tecla, a ação em andamento, o resultado da última (o Toast), a recarga, a
+// reconexão, o erro ou o primeiro problema da lista (a ordem já põe o mais
+// grave no topo). O menu e a confirmação ficam no corpo.
 func (m Model) mensagem(itens []itemLista) string {
 	s, g := yui.S(), yui.G()
 	switch {
 	case m.filter.InputMode:
 		return s.Negrito.Render(rotulosDosCampos[m.filter.InputField]) + " " + s.TintaSuave.Render(g.Prompt) + " " +
 			s.Tinta.Render(m.filter.InputBuffer) + cursor() + "   " + s.TintaSuave.Render(m.dicaDoCampo())
-	case m.actionMode != ActionNone:
-		return renderActionPrompt(m.actionMode, m.actionKind, m.actionTarget, m.actionBuffer)
 	case m.actionFeedback != "":
 		return m.actionFeedback
+	case m.executando != "":
+		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render(m.executando+g.Reticencias)
+	case m.toast.Visivel():
+		return m.toast.View()
 	case m.recarregando:
-		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render("recarregando "+abas[m.activeTab].plural+"…")
+		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render("recarregando "+abas[m.activeTab].plural+g.Reticencias)
 	case m.reconnecting:
-		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render("reconectando ao cluster…")
+		return s.Aviso.Render(g.Andamento) + " " + s.Tinta.Render("reconectando ao cluster"+g.Reticencias)
 	case m.err != nil:
 		return frase(yui.StatusFalha, "sem conexão com o cluster")
 	}
@@ -350,18 +357,8 @@ func (m Model) teclas() ([]key.Binding, key.Binding) {
 			aplicar = "confirmar"
 		}
 		return []key.Binding{atalho("↵", aplicar, "enter"), atalho("esc", "cancelar", "esc")}, g.SairForcado
-	case m.actionMode == ActionMenu:
-		var t []key.Binding
-		for _, a := range acoesDoTipo(m.actionKind) {
-			t = append(t, atalho(a.tecla, a.rotulo, a.tecla))
-		}
-		if m.width < yui.LarguraColuna {
-			// A legenda compacta guarda só três teclas: a saída do menu vem primeiro.
-			return append([]key.Binding{voltar}, t...), g.SairForcado
-		}
-		return append(t, voltar), g.SairForcado
-	case m.actionMode != ActionNone:
-		return []key.Binding{atalho("↵", "confirmar", "enter"), voltar}, g.SairForcado
+	case m.acao.aberta():
+		return m.teclasDaAcao(), g.SairForcado
 	case m.err != nil:
 		if m.client != nil {
 			return []key.Binding{atalho("r", "tentar de novo", "r")}, key.Binding{}
@@ -428,7 +425,7 @@ func (m Model) gruposDaAjuda() []grupoAjuda {
 	if acoes := acoesDoTipo(d.kind); len(acoes) > 0 {
 		nomes := make([]string, len(acoes))
 		for i, a := range acoes {
-			nomes[i] = a.tecla + " " + strings.TrimSuffix(a.rotulo, "…")
+			nomes[i] = a.tecla + " " + a.rotulo
 		}
 		lista.linhas = append(lista.linhas, linhaAjuda{"x", "ações: " + strings.Join(nomes, " · ")})
 	}

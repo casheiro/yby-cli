@@ -1,14 +1,13 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	tea "github.com/charmbracelet/bubbletea"
-	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -79,48 +78,20 @@ func TestSelecao_ComBuscaUsaListaDaTela(t *testing.T) {
 	}
 }
 
-// TestAcao_ComBuscaAtingeLinhaSelecionada: excluir com a busca ativa apaga o
-// recurso da linha selecionada na tela, mesmo que a lista seja atualizada
-// entre abrir a confirmação e confirmar.
-func TestAcao_ComBuscaAtingeLinhaSelecionada(t *testing.T) {
-	cs := fake.NewClientset(
-		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "loja"}},
-		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "worker-1", Namespace: "fila"}},
-	)
-	m := NewModel(&clientComAcesso{MockClient: &MockClient{}, cs: cs})
-	m.pods = []monitor.Pod{
-		{Name: "api-1", Namespace: "loja"},
-		{Name: "worker-1", Namespace: "fila"},
-	}
-	m = buscar(t, m, "worker")
-
-	m, _ = teclas(t, m, "x", "d")
-	// A lista muda (atualização do cluster) antes da confirmação.
-	nm, _ := m.Update([]monitor.Pod{{Name: "worker-1", Namespace: "fila"}, {Name: "api-1", Namespace: "loja"}})
-	m = nm.(Model)
-	_, cmd := teclas(t, m, "y", "e", "s", "enter")
-	if cmd == nil {
-		t.Fatal("confirmar a exclusão deveria devolver um comando")
-	}
-	res, ok := cmd().(actionResultMsg)
-	if !ok || res.err != nil {
-		t.Fatalf("resultado inesperado: %#v", res)
-	}
-
-	pods, _ := cs.CoreV1().Pods("").List(t.Context(), metav1.ListOptions{})
-	if len(pods.Items) != 1 || pods.Items[0].Name != "api-1" {
-		t.Fatalf("deveria sobrar só o api-1, sobrou %v", pods.Items)
-	}
-}
-
-// chamadas registra as chamadas à API (recurso/subrecurso e verbo) e responde
-// ao scale com um Scale vazio, que o clientset falso não monta sozinho.
+// chamadas registra as chamadas à API (recurso/subrecurso e verbo; no update
+// do scale, as réplicas gravadas: "update deployments/scale=3") e responde ao
+// scale com um Scale vazio, que o clientset falso não monta sozinho.
 func chamadas(cs *fake.Clientset) *[]string {
 	var feitas []string
 	cs.PrependReactor("*", "*", func(a k8stesting.Action) (bool, runtime.Object, error) {
 		rec := a.GetResource().Resource
 		if a.GetSubresource() != "" {
 			rec += "/" + a.GetSubresource()
+		}
+		if u, ok := a.(k8stesting.UpdateAction); ok {
+			if s, ok := u.GetObject().(*autoscalingv1.Scale); ok {
+				rec += "=" + strconv.Itoa(int(s.Spec.Replicas))
+			}
 		}
 		feitas = append(feitas, a.GetVerb()+" "+rec)
 		if a.GetSubresource() == "scale" {
@@ -129,33 +100,6 @@ func chamadas(cs *fake.Clientset) *[]string {
 		return false, nil, nil
 	})
 	return &feitas
-}
-
-// TestAcao_StatefulSetUsaAsFuncoesDeStatefulSet: escalar e reiniciar um
-// StatefulSet chamam a API de StatefulSets, não a de Deployments.
-func TestAcao_StatefulSetUsaAsFuncoesDeStatefulSet(t *testing.T) {
-	cs := fake.NewClientset(
-		&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "dados"}},
-		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "dados"}},
-	)
-	feitas := chamadas(cs)
-	m := NewModel(&clientComAcesso{MockClient: &MockClient{}, cs: cs})
-	m.activeTab = TabStatefulSets
-	m.statefulsets = []monitor.StatefulSet{{Name: "db", Namespace: "dados"}}
-
-	_, cmd := teclas(t, m, "x", "s", "3", "enter")
-	if res := cmd().(actionResultMsg); res.err != nil || !strings.Contains(res.feedback, "StatefulSet") {
-		t.Fatalf("escalar: %#v", res)
-	}
-	_, cmd = teclas(t, m, "x", "r", "y", "e", "s", "enter")
-	if res := cmd().(actionResultMsg); res.err != nil || !strings.Contains(res.feedback, "StatefulSet") {
-		t.Fatalf("reiniciar: %#v", res)
-	}
-
-	esperadas := []string{"get statefulsets/scale", "update statefulsets/scale", "patch statefulsets"}
-	if strings.Join(*feitas, ", ") != strings.Join(esperadas, ", ") {
-		t.Fatalf("chamadas = %v, esperado %v", *feitas, esperadas)
-	}
 }
 
 // TestListaVazia_PorFiltroNaoMostraCarregando: depois que a lista chegou,

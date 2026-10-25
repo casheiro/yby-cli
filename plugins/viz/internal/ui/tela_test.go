@@ -374,14 +374,20 @@ func TestLinhaDeEstado_Prioridade(t *testing.T) {
 		t.Errorf("reconexão: %q", fr)
 	}
 	m.reconnecting = false
-	nm, _ := m.Update(actionResultMsg{feedback: "Deployment 'api' reiniciado."})
+	nm, _ := m.Update(resultadoAcaoMsg{texto: "Deployment api reiniciado"})
 	m = nm.(Model)
-	if fr := ansi.Strip(m.mensagem(itens)); fr != yui.G().Feito+" Deployment 'api' reiniciado." {
+	if fr := ansi.Strip(m.mensagem(itens)); fr != yui.G().Feito+" Deployment api reiniciado" {
 		t.Errorf("resultado da ação: %q", fr)
 	}
+	// A confirmação fica no corpo; o Toast continua na linha de estado (folha
+	// VizConfirmar) até o tempo dele acabar.
 	m, _ = teclas(t, m, "x", "d")
-	if fr := ansi.Strip(m.mensagem(itens)); !strings.Contains(fr, "excluir pod worker-5d8b6-q7tvn?") {
-		t.Errorf("confirmação da ação: %q", fr)
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "EXCLUIR POD") || !strings.Contains(ansi.Strip(m.mensagem(itens)), "Deployment api reiniciado") {
+		t.Errorf("confirmação da ação:\n%s", v)
+	}
+	m, _ = atualizar(m, yui.ToastSomeMsg{ID: 1})
+	if fr := ansi.Strip(m.mensagem(itens)); strings.Contains(fr, "reiniciado") {
+		t.Errorf("o Toast deveria sumir no fim do tempo: %q", fr)
 	}
 }
 
