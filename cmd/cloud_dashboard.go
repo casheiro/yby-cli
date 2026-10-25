@@ -5,39 +5,38 @@ package cmd
 
 import (
 	gocontext "context"
-	"fmt"
+	"log/slog"
+	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/cloud"
+	ybycontext "github.com/casheiro/yby-cli/pkg/context"
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
-)
-
-// Estilos antigos que só o dashboard ainda usa: saíram do style.go e somem quando o
-// dashboard for redesenhado com pkg/ui na fase 4 (T029).
-var (
-	primaryColor   = lipgloss.Color("#7D56F4")
-	secondaryColor = lipgloss.Color("#04B575")
-	warningColor   = lipgloss.Color("#FFB000")
-	errorColor     = lipgloss.Color("#FF3B30")
-
-	crossStyle = lipgloss.NewStyle().Foreground(errorColor).SetString("❌ ")
-	grayStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6E6E6E"))
+	"golang.org/x/term"
 )
 
 var cloudDashboardCmd = &cobra.Command{
 	Use:     "dashboard",
-	Short:   "Dashboard interativo de clusters cloud",
+	Short:   "Painel dos clusters cloud, com a validade dos tokens",
 	Example: `  yby cloud dashboard`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		runner := &shared.RealRunner{}
-		m := newDashboardModel(runner)
-		p := tea.NewProgram(m, tea.WithAltScreen())
-		_, err := p.Run()
-		return err
+		// Sem terminal na entrada (pipe, CI) a TUI não teria de onde ler as teclas; com a
+		// saída num pipe ou arquivo, a tela iria parar lá, com as sequências do terminal.
+		if !stdinTerminal() || !stdoutTerminal() {
+			return errors.New(errors.ErrCodeValidation, "o painel do cloud precisa de um terminal interativo").
+				WithHint("para uma lista simples, use yby cloud list")
+		}
+		m := novoPainelCloud(fontesReais(&shared.RealRunner{}), time.Now)
+		if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
+			return errors.Wrap(err, errors.ErrCodeIO, "o painel do cloud falhou").
+				WithHint("rode de novo ou use yby cloud list")
+		}
+		return nil
 	},
 }
 
@@ -45,348 +44,249 @@ func init() {
 	cloudCmd.AddCommand(cloudDashboardCmd)
 }
 
-// clusterEntry representa um cluster na tabela do dashboard.
-type clusterEntry struct {
-	Provider    string
-	Name        string
-	Region      string
-	Version     string
-	Status      string
-	TokenStatus string // "valid", "expired", "unknown"
-	TokenExpiry string
+// stdoutTerminal informa se a saída padrão é um terminal. Variável para os testes.
+var stdoutTerminal = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
+
+// janelaAuditoria é até onde o painel olha para trás no audit log.
+const janelaAuditoria = 30 * 24 * time.Hour
+
+// fontesPainel são as leituras e a ação do painel, injetadas para os testes.
+type fontesPainel struct {
+	// ler busca os clusters (com as credenciais de cada provider) e a auditoria recente.
+	ler func(ctx gocontext.Context) leituraPainel
+	// renovar renova o token do cluster.
+	renovar func(ctx gocontext.Context, c clusterPainel) error
 }
 
-// dashboardModel é o modelo Bubbletea do dashboard cloud.
-type dashboardModel struct {
-	runner     shared.Runner
-	clusters   []clusterEntry
-	cursor     int
-	loading    bool
-	err        error
-	width      int
-	height     int
-	lastUpdate time.Time
-	detail     bool // mostra detalhes do cluster selecionado
+// leituraPainel é o resultado de uma leitura das clouds.
+type leituraPainel struct {
+	provedores int // providers detectados no kubeconfig com o CLI instalado
+	clusters   []clusterPainel
+	auditoria  []cloud.CloudAuditEvent
+	falhas     map[string]error // provider → erro do ListClusters (os outros responderam)
+	err        error            // nenhum provider respondeu
 }
 
-// mensagens assíncronas
-type clustersLoadedMsg struct {
-	clusters []clusterEntry
-	err      error
+// clusterPainel é uma linha do painel: o cluster e o que se sabe da credencial dele.
+type clusterPainel struct {
+	info        cloud.ClusterInfo // Provider sempre preenchido
+	autenticado bool
+	identidade  string
+	conta       string // conta AWS, assinatura Azure ou projeto GCP (sem máscara)
+	papel       string
+	metodo      string // já no texto da tela ("SSO · Identity Center")
+	sso         bool
+	ambiente    string    // nome em .yby/environments.yaml, quando houver
+	expiraEm    time.Time // zero: validade desconhecida
+	// desatualizado: o provider não respondeu nesta leitura e a linha é da anterior.
+	desatualizado bool
 }
 
-type refreshDoneMsg struct {
-	index   int
-	success bool
-	err     error
+// chave identifica o cluster entre leituras.
+func (c clusterPainel) chave() string {
+	return c.info.Provider + "/" + c.info.Region + "/" + c.info.Name
 }
 
-type tickMsg time.Time
-
-func newDashboardModel(runner shared.Runner) dashboardModel {
-	return dashboardModel{
-		runner:  runner,
-		loading: true,
-	}
-}
-
-func (m dashboardModel) Init() tea.Cmd {
-	return tea.Batch(
-		loadClusters(m.runner),
-		tickEvery(30*time.Second),
-	)
-}
-
-func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		// Voltar da tela de detalhes
-		if m.detail {
-			switch msg.String() {
-			case "q", "esc", "enter", "backspace":
-				m.detail = false
-				return m, nil
+// fontesReais lê as clouds pelos CLIs (aws, az, gcloud) e o audit log de ~/.yby.
+func fontesReais(runner shared.Runner) fontesPainel {
+	return fontesPainel{
+		ler: func(ctx gocontext.Context) leituraPainel {
+			return lerClouds(ctx, runner, ambientesCloud(), cloud.NewAuditLogger(), time.Now())
+		},
+		renovar: func(ctx gocontext.Context, c clusterPainel) error {
+			p := obterProviderCloud(runner, c.info.Provider)
+			if p == nil {
+				return erroProviderDesconhecido(c.info.Provider)
 			}
-			return m, nil
-		}
-
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
-			return m, tea.Quit
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.clusters)-1 {
-				m.cursor++
-			}
-		case "r":
-			if len(m.clusters) > 0 && m.cursor < len(m.clusters) {
-				m.loading = true
-				return m, refreshToken(m.runner, m.clusters[m.cursor], m.cursor)
-			}
-		case "R":
-			m.loading = true
-			return m, loadClusters(m.runner)
-		case "enter":
-			if len(m.clusters) > 0 {
-				m.detail = true
-			}
-		}
-
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-
-	case clustersLoadedMsg:
-		m.loading = false
-		m.lastUpdate = time.Now()
-		if msg.err != nil {
-			m.err = msg.err
-		} else {
-			m.clusters = msg.clusters
-			m.err = nil
-			if m.cursor >= len(m.clusters) && len(m.clusters) > 0 {
-				m.cursor = len(m.clusters) - 1
-			}
-		}
-
-	case refreshDoneMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err
-		} else if msg.success && msg.index < len(m.clusters) {
-			m.clusters[msg.index].TokenStatus = "valid"
-			m.clusters[msg.index].TokenExpiry = "renovado"
-			m.err = nil
-		}
-
-	case tickMsg:
-		return m, tea.Batch(
-			loadClusters(m.runner),
-			tickEvery(30*time.Second),
-		)
-	}
-
-	return m, nil
-}
-
-func (m dashboardModel) View() string {
-	if m.width == 0 {
-		return "Carregando..."
-	}
-
-	if m.detail && len(m.clusters) > 0 {
-		return m.viewDetail()
-	}
-
-	var b strings.Builder
-
-	// Cabeçalho
-	header := dashboardTitleStyle.Render("  Yby Cloud Dashboard")
-	b.WriteString(header)
-	b.WriteString("\n")
-
-	// Status de carregamento e última atualização
-	var statusLine string
-	if m.loading {
-		statusLine = grayStyle.Render("  Carregando...")
-	} else if !m.lastUpdate.IsZero() {
-		statusLine = grayStyle.Render(fmt.Sprintf("  Atualizado: %s", m.lastUpdate.Format("15:04:05")))
-	}
-	b.WriteString(statusLine)
-	b.WriteString("\n\n")
-
-	// Erro
-	if m.err != nil {
-		b.WriteString(crossStyle.Render(""))
-		b.WriteString(lipgloss.NewStyle().Foreground(errorColor).Render(m.err.Error()))
-		b.WriteString("\n\n")
-	}
-
-	// Tabela
-	if len(m.clusters) == 0 && !m.loading {
-		b.WriteString(grayStyle.Render("  Nenhum cluster encontrado."))
-		b.WriteString("\n")
-		b.WriteString(grayStyle.Render("  Verifique se os CLIs cloud estao instalados e autenticados."))
-		b.WriteString("\n")
-	} else {
-		// Cabeçalho da tabela
-		headerRow := fmt.Sprintf("  %-3s %-10s %-20s %-15s %-10s %-8s %-5s",
-			"", "Provider", "Cluster", "Regiao", "Versao", "Status", "Token")
-		b.WriteString(dashboardHeaderStyle.Render(headerRow))
-		b.WriteString("\n")
-
-		// Linhas
-		for i, c := range m.clusters {
-			cursor := "  "
-			rowStyle := lipgloss.NewStyle()
-			if i == m.cursor {
-				cursor = "> "
-				rowStyle = rowStyle.Bold(true).Foreground(primaryColor)
-			}
-
-			tokenIcon := tokenIndicator(c.TokenStatus)
-
-			row := fmt.Sprintf("%s %-10s %-20s %-15s %-10s %-8s %s",
-				cursor, c.Provider, truncate(c.Name, 20), truncate(c.Region, 15),
-				truncate(c.Version, 10), truncate(c.Status, 8), tokenIcon)
-			b.WriteString(rowStyle.Render(row))
-			b.WriteString("\n")
-		}
-	}
-
-	// Preencher espaço restante
-	lines := strings.Count(b.String(), "\n")
-	remaining := m.height - lines - 3
-	for i := 0; i < remaining; i++ {
-		b.WriteString("\n")
-	}
-
-	// Barra de ajuda
-	help := grayStyle.Render("  r: refresh token | R: recarregar | enter: detalhes | j/k: navegar | q: sair")
-	b.WriteString(help)
-	b.WriteString("\n")
-
-	return b.String()
-}
-
-// viewDetail renderiza a tela de detalhes do cluster selecionado.
-func (m dashboardModel) viewDetail() string {
-	c := m.clusters[m.cursor]
-	var b strings.Builder
-
-	header := dashboardTitleStyle.Render(fmt.Sprintf("  Detalhes: %s", c.Name))
-	b.WriteString(header)
-	b.WriteString("\n\n")
-
-	detailLabel := lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
-	detailValue := lipgloss.NewStyle()
-
-	details := []struct{ k, v string }{
-		{"Provider", c.Provider},
-		{"Nome", c.Name},
-		{"Regiao", c.Region},
-		{"Versao", c.Version},
-		{"Status", c.Status},
-		{"Token", tokenIndicator(c.TokenStatus) + " " + c.TokenExpiry},
-	}
-
-	for _, d := range details {
-		b.WriteString(fmt.Sprintf("  %s %s\n",
-			detailLabel.Render(d.k+":"),
-			detailValue.Render(d.v),
-		))
-	}
-
-	b.WriteString("\n")
-	b.WriteString(grayStyle.Render("  Pressione esc/enter/q para voltar"))
-	b.WriteString("\n")
-
-	return b.String()
-}
-
-// --- Estilos do dashboard ---
-
-var (
-	dashboardTitleStyle = lipgloss.NewStyle().
-				Foreground(primaryColor).
-				Bold(true).
-				Padding(1, 0, 0, 0)
-
-	dashboardHeaderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("205")).
-				Bold(true)
-)
-
-// --- Funções auxiliares ---
-
-func tokenIndicator(status string) string {
-	switch status {
-	case "valid":
-		return lipgloss.NewStyle().Foreground(secondaryColor).Render("[OK]")
-	case "expired":
-		return lipgloss.NewStyle().Foreground(errorColor).Render("[EXP]")
-	default:
-		return lipgloss.NewStyle().Foreground(warningColor).Render("[?]")
+			err := p.RefreshToken(ctx, c.info)
+			registrarRenovacao(cloud.NewAuditLogger(), c, time.Now(), err)
+			return err
+		},
 	}
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
+// registrarRenovacao grava o t do painel no audit log, com o método da credencial.
+func registrarRenovacao(log *cloud.AuditLogger, c clusterPainel, quando time.Time, err error) {
+	e := cloud.CloudAuditEvent{
+		Timestamp: quando,
+		Action:    "refresh",
+		Provider:  c.info.Provider,
+		Identity:  c.identidade,
+		Cluster:   c.info.Name,
+		Region:    c.info.Region,
+		Method:    metodoCurto(c),
+		Success:   err == nil,
 	}
-	return s[:max-3] + "..."
-}
-
-// --- Comandos assíncronos ---
-
-func loadClusters(runner shared.Runner) tea.Cmd {
-	return func() tea.Msg {
-		ctx := gocontext.Background()
-		providers := cloud.Detect(ctx, runner)
-		var entries []clusterEntry
-
-		for _, p := range providers {
-			clusters, err := p.ListClusters(ctx, cloud.ListOptions{})
-			if err != nil {
-				continue
-			}
-
-			cred, _ := p.ValidateCredentials(ctx)
-
-			for _, c := range clusters {
-				entry := clusterEntry{
-					Provider: p.Name(),
-					Name:     c.Name,
-					Region:   c.Region,
-					Version:  c.Version,
-					Status:   c.Status,
-				}
-
-				if cred != nil && cred.ExpiresAt != nil {
-					if cred.ExpiresAt.Before(time.Now()) {
-						entry.TokenStatus = "expired"
-						entry.TokenExpiry = "expirado"
-					} else {
-						entry.TokenStatus = "valid"
-						entry.TokenExpiry = formatDuration(time.Until(*cred.ExpiresAt)) + " restante"
-					}
-				} else {
-					entry.TokenStatus = "unknown"
-				}
-
-				entries = append(entries, entry)
-			}
-		}
-
-		return clustersLoadedMsg{clusters: entries}
+	if err != nil {
+		e.Error = err.Error()
+	}
+	if errLog := log.Log(e); errLog != nil {
+		slog.Debug("cloud.dashboard.auditoria", "erro", errLog)
 	}
 }
 
-func refreshToken(runner shared.Runner, entry clusterEntry, index int) tea.Cmd {
-	return func() tea.Msg {
-		ctx := gocontext.Background()
-		p := cloud.GetProvider(runner, entry.Provider)
-		if p == nil {
-			return refreshDoneMsg{index: index, err: fmt.Errorf("provider %s nao encontrado", entry.Provider)}
-		}
+// metodoCurto é o método para o audit log: "SSO", "IAM", "CLI do Azure".
+func metodoCurto(c clusterPainel) string {
+	if c.sso {
+		return "SSO"
+	}
+	return strings.SplitN(c.metodo, " · ", 2)[0]
+}
 
-		err := p.RefreshToken(ctx, cloud.ClusterInfo{
-			Name:   entry.Name,
-			Region: entry.Region,
-		})
+// lerClouds lista os clusters de cada provider detectado e lê a auditoria recente. O
+// provider que falha fica em falhas; err só quando nenhum respondeu.
+func lerClouds(ctx gocontext.Context, runner shared.Runner, ambientes map[string]ambienteCloud, auditoria *cloud.AuditLogger, agora time.Time) leituraPainel {
+	providers := detectarProvidersCloud(ctx, runner)
+	l := leituraPainel{provedores: len(providers)}
+	var falha error
+	for _, p := range providers {
+		clusters, err := p.ListClusters(ctx, cloud.ListOptions{})
 		if err != nil {
-			return refreshDoneMsg{index: index, err: err}
+			slog.Debug("cloud.dashboard.listar", "provider", p.Name(), "erro", err)
+			if l.falhas == nil {
+				l.falhas = map[string]error{}
+			}
+			l.falhas[p.Name()] = err
+			falha = err
+			continue
 		}
-
-		return refreshDoneMsg{index: index, success: true}
+		cred, err := p.ValidateCredentials(ctx)
+		if err != nil {
+			slog.Debug("cloud.dashboard.credenciais", "provider", p.Name(), "erro", err)
+		}
+		for _, c := range clusters {
+			l.clusters = append(l.clusters, novoClusterPainel(p.Name(), c, cred, ambientes))
+		}
 	}
+	if len(providers) > 0 && len(l.falhas) == len(providers) {
+		l.err = falha
+	}
+	eventos, err := auditoria.ReadEvents(agora.Add(-janelaAuditoria))
+	if err != nil {
+		slog.Debug("cloud.dashboard.auditoria", "erro", err)
+	}
+	l.auditoria = eventos
+	return l
 }
 
-func tickEvery(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(t time.Time) tea.Msg {
-		return tickMsg(t)
-	})
+// ambienteCloud é um ambiente de .yby/environments.yaml ligado a um cluster cloud.
+type ambienteCloud struct {
+	nome string
+	cfg  *ybycontext.CloudConfig
+}
+
+// ambientesCloud lê os ambientes cloud do projeto, indexados por provider/cluster. Fora
+// de um projeto, nenhum.
+func ambientesCloud() map[string]ambienteCloud {
+	raiz, err := FindInfraRoot()
+	if err != nil {
+		raiz = "."
+	}
+	manifesto, err := ybycontext.NewManager(raiz).LoadManifest()
+	if err != nil {
+		return nil
+	}
+	saida := map[string]ambienteCloud{}
+	nomes := make([]string, 0, len(manifesto.Environments))
+	for nome := range manifesto.Environments {
+		nomes = append(nomes, nome)
+	}
+	sort.Strings(nomes) // dois ambientes no mesmo cluster: vale o primeiro em ordem alfabética
+	for _, nome := range nomes {
+		cfg := manifesto.Environments[nome].Cloud
+		if cfg == nil || cfg.Cluster == "" {
+			continue
+		}
+		k := strings.ToLower(cfg.Provider) + "/" + cfg.Cluster
+		if _, existe := saida[k]; !existe {
+			saida[k] = ambienteCloud{nome: nome, cfg: cfg}
+		}
+	}
+	return saida
+}
+
+// novoClusterPainel junta o cluster, a credencial do provider e o ambiente do projeto.
+func novoClusterPainel(provider string, info cloud.ClusterInfo, cred *cloud.CredentialStatus, ambientes map[string]ambienteCloud) clusterPainel {
+	info.Provider = provider
+	c := clusterPainel{info: info}
+	if cred != nil {
+		c.autenticado = cred.Authenticated
+		c.identidade = cred.Identity
+		if cred.ExpiresAt != nil {
+			c.expiraEm = *cred.ExpiresAt
+		}
+	}
+	amb, temAmbiente := ambientes[provider+"/"+info.Name]
+	if temAmbiente {
+		c.ambiente = amb.nome
+	}
+	c.conta, c.papel = contaEPapel(provider, c.identidade, info, amb.cfg)
+	metodoCred := ""
+	if cred != nil {
+		metodoCred = cred.Method
+	}
+	c.metodo, c.sso = metodoDeAcesso(provider, metodoCred, c.papel, amb.cfg)
+	return c
+}
+
+// contaEPapel tira a conta e o papel da identidade: o ARN na AWS, o usuário no Azure e
+// a conta de serviço no GCP; o ambiente do projeto completa o que a identidade não diz.
+func contaEPapel(provider, identidade string, info cloud.ClusterInfo, cfg *ybycontext.CloudConfig) (conta, papel string) {
+	switch provider {
+	case "aws":
+		// arn:aws:sts::482100009310:assumed-role/yby-staging-admin/sessao
+		if partes := strings.SplitN(identidade, ":", 6); len(partes) == 6 {
+			conta, papel = partes[4], partes[5]
+			if recurso := strings.Split(papel, "/"); len(recurso) >= 2 && recurso[0] == "assumed-role" {
+				papel = recurso[1]
+			}
+		}
+		if cfg != nil && cfg.RoleARN != "" {
+			papel = cfg.RoleARN[strings.LastIndex(cfg.RoleARN, "/")+1:]
+		}
+	case "azure":
+		papel = identidade
+		if cfg != nil {
+			conta = cfg.Subscription
+		}
+	case "gcp":
+		conta, papel = info.ProjectID, identidade
+		if cfg != nil && conta == "" {
+			conta = cfg.ProjectID
+		}
+		if cfg != nil && cfg.ServiceAccount != "" {
+			papel = cfg.ServiceAccount
+		}
+	default:
+		papel = identidade
+	}
+	return conta, papel
+}
+
+// metodoDeAcesso põe o método de autenticação no texto da tela e diz se é SSO.
+func metodoDeAcesso(provider, metodoCred, papel string, cfg *ybycontext.CloudConfig) (string, bool) {
+	if cfg != nil && cfg.Auth != nil && cfg.Auth.Method != "" {
+		switch cfg.Auth.Method {
+		case "sso":
+			return "SSO · Identity Center", true
+		case "web-identity":
+			return "IRSA · web identity", false
+		case "mfa":
+			return "MFA · assume-role", false
+		}
+		return cfg.Auth.Method, false
+	}
+	switch {
+	case provider == "aws" && strings.HasPrefix(papel, "AWSReservedSSO_"):
+		return "SSO · Identity Center", true
+	case metodoCred == "iam" && cfg != nil && cfg.Profile != "":
+		return "IAM · perfil " + cfg.Profile, false
+	case metodoCred == "iam":
+		return "IAM", false
+	case metodoCred == "az-cli":
+		return "CLI do Azure", false
+	case metodoCred == "gcloud-cli":
+		return "CLI do gcloud", false
+	}
+	return metodoCred, false
 }

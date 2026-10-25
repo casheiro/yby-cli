@@ -16,20 +16,21 @@ type Glifos struct {
 	Linha       string // fio fino (régua)
 	Prompt      string // prompt de campo de texto
 	Reticencias string // truncamento (sempre 1 célula)
+	Vazio       string // campo sem valor numa tabela ou num detalhe
 	Spinner     []string
 }
 
 // Unicode é o conjunto padrão de glifos.
 var Unicode = Glifos{
 	Ativo: "◆", Pendente: "◇", Andamento: "◈", Feito: "✓", Falha: "✕", Alerta: "▲",
-	Rodando: "●", Parado: "○", Cheio: "━", Tracejado: "┄", Caminho: "▸", Linha: "─", Prompt: "›", Reticencias: "…",
+	Rodando: "●", Parado: "○", Cheio: "━", Tracejado: "┄", Caminho: "▸", Linha: "─", Prompt: "›", Reticencias: "…", Vazio: "—",
 	Spinner: []string{"◇", "◈", "◆", "◈"},
 }
 
 // ASCII é o conjunto de fallback para terminais sem UTF-8; cada glifo ocupa a mesma largura do Unicode.
 var ASCII = Glifos{
 	Ativo: "*", Pendente: "o", Andamento: "+", Feito: "v", Falha: "x", Alerta: "!",
-	Rodando: "*", Parado: "o", Cheio: "=", Tracejado: "-", Caminho: ">", Linha: "-", Prompt: ">", Reticencias: "~",
+	Rodando: "*", Parado: "o", Cheio: "=", Tracejado: "-", Caminho: ">", Linha: "-", Prompt: ">", Reticencias: "~", Vazio: "-",
 	Spinner: []string{"o", "+", "*", "+"},
 }
 

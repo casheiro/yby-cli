@@ -220,3 +220,61 @@ func TestStatus_GlifoCorEPalavra(t *testing.T) {
 		t.Errorf("ASCII: %q", got)
 	}
 }
+
+func TestTabela_NomeMarcadoLevaONegritoNaSelecao(t *testing.T) {
+	usarTema(t, true, termenv.TrueColor, false)
+	colunas := []Coluna{{Titulo: "Cloud", Min: 3}, {Titulo: "Cluster", Min: 7, Nome: true}, {Titulo: "Status", Min: 6}}
+	linhas := []Linha{{Celulas: []string{"aws", "staging", "pronto"}}}
+	saida := Tabela(colunas, linhas, 0, 40)
+	linha := strings.Split(saida, "\n")[1]
+	if !strings.Contains(linha, S().Selecionado.Render("staging")) {
+		t.Errorf("o nome marcado deveria sair em negrito invertido: %q", linha)
+	}
+	if strings.Contains(linha, S().Selecionado.Render("aws  ")) || !strings.Contains(linha, S().Selecionado.Bold(false).Render("aws  ")) {
+		t.Errorf("a primeira coluna, sem Nome, sai sem negrito: %q", linha)
+	}
+	// Sem nenhuma coluna marcada, a saída é a de sempre (negrito na primeira).
+	colunas[1].Nome = false
+	antes := Tabela(colunas, linhas, 0, 40)
+	if !strings.HasPrefix(strings.Split(antes, "\n")[1], S().Selecionado.Render("aws  ")) {
+		t.Errorf("sem Nome, o negrito fica na primeira coluna: %q", antes)
+	}
+}
+
+func TestLargurasDasColunas_IgualATabela(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	w := LargurasDasColunas(tableColunas(), tableLinhas(), 50)
+	if len(w) != len(tableColunas()) {
+		t.Fatalf("uma largura por coluna: %v", w)
+	}
+	cab := strings.Split(Tabela(tableColunas(), tableLinhas(), -1, 50), "\n")[0]
+	for i, c := range tableColunas() {
+		if (w[i] == 0) == strings.Contains(cab, strings.ToUpper(c.Titulo)) {
+			t.Errorf("coluna %s: largura %d não bate com o cabeçalho %q", c.Titulo, w[i], cab)
+		}
+	}
+	if total := sum(w) + espacoColunas*(contar(w)-1); total > 50 {
+		t.Errorf("larguras somam %d > 50", total)
+	}
+	if got := LargurasDasColunas(nil, nil, 50); len(got) != 0 {
+		t.Errorf("sem colunas: %v", got)
+	}
+}
+
+func sum(v []int) int {
+	t := 0
+	for _, x := range v {
+		t += x
+	}
+	return t
+}
+
+func contar(v []int) int {
+	n := 0
+	for _, x := range v {
+		if x > 0 {
+			n++
+		}
+	}
+	return n
+}

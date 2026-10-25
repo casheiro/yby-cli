@@ -39,6 +39,7 @@ Seis papéis, cada um um `lipgloss.CompleteAdaptiveColor` (`Dark` = mapa noturno
 | `Linha` | `─` | `-` | fio fino da régua |
 | `Prompt` | `›` | `>` | prompt de campo de texto |
 | `Reticencias` | `…` | `~` **(1 célula, como o original)** | truncamento |
+| `Vazio` | `—` | `-` | campo sem valor numa tabela ou num detalhe |
 
 Teclas exibidas: `↵ ⇥ ⇧ esc ␣ ↑↓`; em ASCII: `enter tab shift esc space up/down`.
 Spinner: `◇ ◈ ◆ ◈` (ASCII `o + * +`).
@@ -87,10 +88,10 @@ Quem desenha a lista e o detalhe usa as medidas da moldura: `LargurasLadoALado(l
 - **Tabs:** ativa `◆ Pods 8` em negrito (◆ em `Ok`); outras `◇ Deployments 4` em `TintaSuave`; `⇥ mais` quando não cabem; teclas 1–9.
 - **Filtro:** `filtros  [status: com problema ✕]  [app=api ✕]` à esquerda, `8 de 42` à direita em `TintaSuave`.
 - **Quadro:** painel com borda em `Fio` e rótulo em caixa-alta no fio de cima (`┌ DETALHE · POD ───┐`); com foco o fio vira `Tinta`. Variante destrutiva com fio `Erro`.
-- **Table:** rótulos de coluna em `TintaSuave` caixa-alta; largura em células (`lipgloss.Width` / `ansi.StringWidth`); truncar com `…`; colunas com prioridade somem primeiro em terminal estreito; linha selecionada em tinta invertida (+ negrito no nome); itens concluídos em `TintaSuave`.
+- **Table:** rótulos de coluna em `TintaSuave` caixa-alta; largura em células (`lipgloss.Width` / `ansi.StringWidth`); truncar com `…`; colunas com prioridade somem primeiro em terminal estreito; linha selecionada em tinta invertida (+ negrito no nome: as colunas com `Nome`, ou a primeira); `LargurasDasColunas` dá a largura que a tabela daria a cada coluna, para ajustar o conteúdo de uma célula antes de desenhar; itens concluídos em `TintaSuave`.
 - **Status:** sempre glifo + cor + palavra: `● Running` (Ok), `✕ CrashLoopBackOff` (Erro), `▲ Pending` (Aviso), `✓ Completed` e `○ Parado` (TintaSuave).
 - **Etapas:** linhas `✓ contexto do projeto   0,3 s` (✓ em Ok), `◈ kubectl get pvc -A   2,1 s` (atual, negrito), `◇ resposta` (TintaSuave), `✕` em Erro. Tempo à direita em `TintaSuave`, formato `0,3 s`, `38 s`, `1 min 12 s` (vírgula decimal).
-- **Cota:** `argo cd  ━━━━━━━━━━━━━━┄┄┄┄┄┄┄┄  64%` — cheio em `Tinta`, tracejado em `Fio`; à direita percentual ou tempo restante (tempo em `Aviso` quando perto do fim).
+- **Cota:** `argo cd  ━━━━━━━━━━━━━━┄┄┄┄┄┄┄┄  64%` — cheio em `Tinta`, tracejado em `Fio`; à direita percentual ou tempo restante (tempo em `Aviso` quando perto do fim). `CotaRestante` é a cota de uma validade (o token do painel do Cloud): a barra é o que ainda resta, o texto do tempo vem pronto e quem chama decide o aviso; sem rótulo, começa na barra.
 - **Rota:** `◆━━━◆━━━◆┄┄┄◇┄┄┄◇┄┄┄◇  03/06`; marcos feitos `◆` em `Ok`, o atual `◆` negrito em `Tinta`, futuros `◇` em `TintaSuave`, trechos feitos `━`, futuros `┄` em `Fio`; abaixo os rótulos em caixa-alta separados por ` · `, o atual em negrito `Tinta`.
 - **Spinner:** quadros `◇ ◈ ◆ ◈`; sem animação (quadro fixo `◈`) com `NO_COLOR` ou fora de TTY.
 - **Toast:** na linha de estado, `✓ Deployment api reiniciado · 3 réplicas` ou `✕ sem permissão para escalar · RBAC`; some em 6 s. `MostrarComNota(tipo, texto, nota)` põe a nota depois de ` · `, em `TintaSuave` (o `RBAC` da prancha).

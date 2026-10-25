@@ -61,6 +61,7 @@ func (a *awsProvider) ValidateCredentials(ctx context.Context) (*CredentialStatu
 		Authenticated: true,
 		Identity:      identity.Arn,
 		Method:        "iam",
+		ExpiresAt:     validadeAWS(ctx, a),
 	}, nil
 }
 

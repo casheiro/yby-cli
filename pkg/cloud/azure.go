@@ -67,6 +67,7 @@ func (a *azureProvider) ValidateCredentials(ctx context.Context) (*CredentialSta
 		Authenticated: true,
 		Identity:      account.User.Name,
 		Method:        "az-cli",
+		ExpiresAt:     validadeAzure(ctx, a),
 	}, nil
 }
 

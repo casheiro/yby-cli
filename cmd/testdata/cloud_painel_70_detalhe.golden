@@ -1,0 +1,30 @@
+◆ YBY  CLOUD                                 ◈ próxima leitura em 18 s
+──────────────────────────────────────────────────────────────────────
+✓ 2 prontos   ▲ 1 token expira em breve   ✕ 1 token expirado          
+┌ EKS · staging ─────────────────────────────────────────────────────┐
+│ IDENTIDADE                                                         │
+│ conta     4821·…·9310                                              │
+│ papel     yby-staging-admin                                        │
+│ método    SSO · Identity Center                                    │
+│ token     ✕ expirou às 11:55                                       │
+│ ambiente  staging (.yby/environments)                              │
+│                                                                    │
+│ AUDITORIA RECENTE                                                  │
+│ 11:55  ✕ renova  SSO vencido                                       │
+│ 10:55  ✓ renova  token · SSO                                       │
+│ 09:12  ✓ login   SSO · Identity Center                             │
+│ a auditoria completa                                               │
+│ ▸ yby cloud audit                                                  │
+└────────────────────────────────────────────────────────────────────┘
+──────────────────────────────────────────────────────────────────────
+CLOUD  CLUSTER    REGIÃO       K8S   STATUS     TOKEN                 
+aws    prod-core  us-east-1    1.31  ✓ pronto   ━┄┄┄┄┄┄┄  11 min      
+aws    staging    us-east-1    1.31  ✕ token    expirou há 12 min     
+azure  aks-dados  brazilsouth  1.30  ▲ atenção  ┄┄┄┄┄┄┄┄  3 min       
+gcp    gke-ml     us-central1  1.31  ✓ pronto   ━━━━━━━┄  52 min      
+                                                                      
+                                                                      
+                                                                      
+──────────────────────────────────────────────────────────────────────
+✕ staging sem token: t renova (com o SSO vencido,… atualizado 12:07:00
+esc voltar  ↑↓ mover  t renovar token  ? mais              ctrl+c sair

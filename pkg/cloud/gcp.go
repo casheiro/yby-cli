@@ -67,6 +67,7 @@ func (g *gcpProvider) ValidateCredentials(ctx context.Context) (*CredentialStatu
 				Authenticated: true,
 				Identity:      acc.Account,
 				Method:        "gcloud-cli",
+				ExpiresAt:     validadeGCP(ctx, g),
 			}, nil
 		}
 	}
