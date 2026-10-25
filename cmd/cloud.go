@@ -10,10 +10,11 @@ import (
 )
 
 // detectarProvidersCloud e obterProviderCloud permitem trocar os providers por dublês
-// nos testes dos comandos cloud e env.
+// nos testes dos comandos cloud e env; auditoriaCloud, o audit log (~/.yby/audit.log).
 var (
 	detectarProvidersCloud = cloud.Detect
 	obterProviderCloud     = cloud.GetProvider
+	auditoriaCloud         = cloud.NewAuditLogger
 )
 
 var cloudCmd = &cobra.Command{

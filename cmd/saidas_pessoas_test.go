@@ -308,8 +308,10 @@ func (f *fakeCloudProvider) RefreshToken(context.Context, cloud.ClusterInfo) err
 
 func usarProvidersFalsos(t *testing.T, providers ...*fakeCloudProvider) {
 	t.Helper()
-	antDetect, antGet := detectarProvidersCloud, obterProviderCloud
-	t.Cleanup(func() { detectarProvidersCloud, obterProviderCloud = antDetect, antGet })
+	antDetect, antGet, antAudit := detectarProvidersCloud, obterProviderCloud, auditoriaCloud
+	t.Cleanup(func() { detectarProvidersCloud, obterProviderCloud, auditoriaCloud = antDetect, antGet, antAudit })
+	audit := filepath.Join(t.TempDir(), "audit.log")
+	auditoriaCloud = func() *cloud.AuditLogger { return cloud.NewAuditLoggerWithPath(audit) }
 	detectarProvidersCloud = func(context.Context, shared.Runner) []cloud.CloudProvider {
 		lista := make([]cloud.CloudProvider, len(providers))
 		for i, p := range providers {
