@@ -150,7 +150,7 @@ func TestModel_EscInterrompeSemFechar(t *testing.T) {
 				}
 			}
 			m = atualizado.(Model)
-			if !m.interrompendo || !strings.Contains(m.viewport.View(), "Interrompendo") {
+			if !m.interrompendo || !strings.Contains(m.View(), "◈ interrompendo") {
 				t.Error("esc deveria marcar a rodada como interrompendo")
 			}
 		}
@@ -265,7 +265,7 @@ func TestModel_CtrlCCancelaRodada(t *testing.T) {
 func TestModel_TrechoNaoRenderizaOHistoricoDeNovo(t *testing.T) {
 	m := modeloComFluxo(t, &provedorFalso{}, nil)
 	chamadas := 0
-	m.markdown = func(s string) (string, error) {
+	m.markdown = func(s string, _ int) (string, error) {
 		chamadas++
 		return "**" + s + "**", nil
 	}

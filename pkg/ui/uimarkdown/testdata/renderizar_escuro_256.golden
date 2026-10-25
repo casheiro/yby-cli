@@ -1,0 +1,56 @@
+[38;5;187;1mVOLUMES DO[0m[38;5;187;1m STAGING[0m
+
+[38;5;187mO staging tem [0m[38;5;187;1m6 volumes[0m[38;5;187m. Quatro estão em uso e dois sobraram de apps[0m
+[0m[38;5;187mremovidos.[0m
+[0m[38;5;187mOs nomes vêm do [0m[38;5;187;1mkubectl get pvc,pv -A[0m[38;5;187m.[0m
+
+[38;5;144mVOLUME           NAMESPACE     TAMANHO  STATUS[0m
+[38;5;187mdata-postgres-0[0m  [38;5;187mpayments    [0m  [38;5;187m   20Gi[0m  [38;5;187m[38;5;143m● Bound[0m
+[38;5;187mpvc-3f1a9c2e   [0m  [38;5;187msem dono    [0m  [38;5;187m    8Gi[0m  [38;5;187m[38;5;179m▲ Released[0m
+[38;5;187mworker         [0m  [38;5;187mjobs | batch[0m  [38;5;187m    1Gi[0m  [38;5;187m[38;5;173m✕ CrashLoopBackOff[0m
+
+[38;5;187mSe não precisar dos[0m[38;5;187m dados:[0m
+
+[38;5;238m┌ [0m[38;5;144mCOMANDO · c copia[0m[38;5;238m ───────────────────────────────────────────────────┐[0m
+[38;5;238m│[0m [38;5;187mkubectl delete pv pvc-3f1a9c2e pvc-91cd04b7[0m                          [38;5;238m│[0m
+[38;5;238m└──────────────────────────────────────────────────────────────────────┘[0m
+
+[38;5;238m┌ [0m[38;5;144mCOMANDO · c copia[0m[38;5;238m ───────────────────────────────────────────────────┐[0m
+[38;5;238m│[0m [38;5;187mkubectl -n monitoring patch deployment grafana --type=json[0m           [38;5;238m│[0m
+[38;5;238m│[0m [38;5;187m-p='[{"op":"replace","path":"/spec/replicas","value":3}]'[0m            [38;5;238m│[0m
+[38;5;238m└──────────────────────────────────────────────────────────────────────┘[0m
+
+[38;5;238m┌ [0m[1;38;5;238mYAML[0m[38;5;238m ────────────────────────────────────────────────────────────────┐[0m
+[38;5;238m│[0m [38;5;187mkind: PersistentVolume[0m                                               [38;5;238m│[0m
+[38;5;238m│[0m [38;5;187m    spec: {}[0m                                                         [38;5;238m│[0m
+[38;5;238m└──────────────────────────────────────────────────────────────────────┘[0m
+
+[38;5;238m┌ [0m[1;38;5;238mCÓDIGO[0m[38;5;238m ──────────────────────────────────────────────────────────────┐[0m
+[38;5;238m│[0m [38;5;187msem linguagem[0m                                                        [38;5;238m│[0m
+[38;5;238m└──────────────────────────────────────────────────────────────────────┘[0m
+
+[38;5;144mRECURSO[0m       [38;5;187mDeployment/api[0m
+[38;5;144mPROBLEMA[0m      [38;5;187mO container roda como root e não define securityContext no[0m
+              [38;5;187mvalues.yaml do chart[0m
+[38;5;144mRECOMENDAÇÃO[0m  [38;5;187mDefina securityContext.runAsNonRoot e resources.limits no[0m
+              [38;5;187mvalues.yaml antes do próximo deploy[0m
+
+[38;5;144mRECURSO[0m       [38;5;187mService/web[0m
+[38;5;144mRECOMENDAÇÃO[0m  [38;5;179m▲ Pending[0m
+
+[38;5;187;1mPRÓXIMOS[0m[38;5;187;1m PASSOS[0m
+
+[0m[38;5;187;1mANTES DE[0m[38;5;187;1m APAGAR[0m
+
+[38;5;187m─ [0m[38;5;187mconfira o [0m[38;5;187;3mdono[0m[38;5;187m de cada[0m[38;5;187m volume[0m
+[38;5;187m✓ [0m[38;5;187mbackup[0m[38;5;187m feito[0m
+[38;5;187m◇ [0m[38;5;187mapagar[0m
+
+[38;5;187m1[0m[38;5;187m. [0m[38;5;187mrode o[0m[38;5;187m comando[0m
+[38;5;187m2[0m[38;5;187m. [0m[38;5;187mveja [0m[38;5;187;1ma doc[0m[38;5;187m [0m[38;5;144;4mhttps://kubernetes.io[0m
+
+[38;5;187m│ [0m[38;5;144mvolumes Released não voltam[0m[38;5;144m sozinhos[0m
+
+[0m[38;5;238m────────────────────────────────────────────────────────────────────────[0m
+
+[38;5;187mfim [0m[38;5;187;9mvelho[0m

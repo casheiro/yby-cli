@@ -1,0 +1,29 @@
+* YBY  BARD  INSTR. 03 · ORIENTAÇÃO                                             staging > default   claude-cli
+--------------------------------------------------------------------------------------------------------------
+VOCÊ · 11:51                                                                                                  
+  qual a situação do meu storage?                                                                             
+                                                                                                              
+* BARD · 11:52 · 1 ferramenta · 21 s                                                                          
+  v kubectl get pvc,pv -A · 14 linhas                                                                         
+                                                                                                              
+  O staging tem 6 volumes. Quatro estão em uso e dois sobraram de apps removidos.                             
+                                                                                                              
+  VOLUME           NAMESPACE   TAMANHO  STATUS                                                                
+  data-postgres-0  payments    20Gi     * Bound                                                               
+  redis-data-0     payments    5Gi      * Bound                                                               
+  minio-0          storage     50Gi     * Bound                                                               
+  grafana          monitoring  10Gi     * Bound                                                               
+  pvc-3f1a9c2e     sem dono    8Gi      ! Released                                                            
+  pvc-91cd04b7     sem dono    8Gi      ! Released                                                            
+                                                                                                              
+  Os dois volumes Released ainda ocupam 16Gi no nó. Se não precisar dos dados:                                
+                                                                                                              
+  + COMANDO · c copia ---------------------------------------------------------------------------------------+
+  | kubectl delete pv pvc-3f1a9c2e pvc-91cd04b7                                                              |
+  +----------------------------------------------------------------------------------------------------------+
+--------------------------------------------------------------------------------------------------------------
+>  Pergunte sobre o cluster, ou / para comandos                                                               
+                                                                                                              
+--------------------------------------------------------------------------------------------------------------
+v resposta em 21 s                                                                sessão de hoje · 4 mensagens
+enter enviar  pgup rolar                                                                           ctrl+c sair

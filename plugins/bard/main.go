@@ -67,6 +67,9 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		})
 		return nil
 	case "command":
+		// Modo visual (tema, ASCII, sem cor) antes de qualquer saída, em todos os modos.
+		configurarModoVisual(os.Getenv)
+
 		// Parsear flags
 		var promptMsg string
 		for i, arg := range req.Args {
@@ -236,6 +239,7 @@ func startChat(ctxData map[string]interface{}) error {
 		tuiConfig := tui.Config{
 			SystemPrompt: systemPrompt,
 			SessionID:    sessionID,
+			AIModel:      rotuloProvider(provider),
 			SaveMessage:  saveMessage,
 
 			TopK:             bardCfg.TopK,
@@ -245,6 +249,7 @@ func startChat(ctxData map[string]interface{}) error {
 			tuiConfig.Namespace = clusterCtx.Namespace
 			tuiConfig.Cluster = clusterCtx.Cluster
 		}
+		resolverTerminal()
 		return tui.Run(provider, vectorStore, tuiConfig)
 	}
 

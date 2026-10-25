@@ -31,37 +31,6 @@ func TestNew(t *testing.T) {
 	}
 }
 
-// TestRenderStatusBar verifica que a status bar contém as informações corretas.
-func TestRenderStatusBar(t *testing.T) {
-	config := Config{
-		SessionID: "test-session",
-		Namespace: "production",
-		Cluster:   "k3d-local",
-		AIModel:   "gpt-4",
-	}
-
-	model := New(nil, nil, config)
-	model.width = 120
-
-	bar := model.renderStatusBar()
-
-	if !strings.Contains(bar, "k3d-local") {
-		t.Error("status bar deveria conter o cluster")
-	}
-	if !strings.Contains(bar, "production") {
-		t.Error("status bar deveria conter o namespace")
-	}
-	if !strings.Contains(bar, "test-session") {
-		t.Error("status bar deveria conter a sessão")
-	}
-	if !strings.Contains(bar, "gpt-4") {
-		t.Errorf("status bar deveria conter o modelo, obteve: %q", bar)
-	}
-	if !strings.Contains(bar, "idle") {
-		t.Errorf("status bar deveria conter o status idle, obteve: %q", bar)
-	}
-}
-
 // TestUpdateWindowSize verifica que o modelo responde a mudanças de tamanho.
 func TestUpdateWindowSize(t *testing.T) {
 	model := New(nil, nil, Config{})
