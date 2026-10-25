@@ -72,13 +72,42 @@ func TestMensagemEstado(t *testing.T) {
 		t.Errorf("trabalhando: %q", got)
 	}
 	m.etapas = []EtapaMsg{{Etapa: EtapaContexto, Rotulo: rotuloContexto, Estado: ui.EtapaFeita}, {Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual}}
-	if got := m.mensagemEstado(); got != "◈ gerar resposta" {
+	if got := m.mensagemEstado(); got != "◈ gerando resposta" {
 		t.Errorf("etapa atual: %q", got)
 	}
+	for _, c := range []struct {
+		etapa Etapa
+		want  string
+	}{
+		{EtapaContexto, "◈ buscando contexto"},
+		{EtapaIntencao, "◈ entendendo o pedido"},
+		{EtapaFerramenta, "◈ rodando kubectl get"},
+	} {
+		m.etapas[1] = EtapaMsg{Etapa: c.etapa, Rotulo: "kubectl get", Estado: ui.EtapaAtual}
+		if got := m.mensagemEstado(); got != c.want {
+			t.Errorf("etapa %d: %q, esperado %q", c.etapa, got, c.want)
+		}
+	}
+	// Com a rodada aberta, o tempo corrido vem depois da etapa.
+	inicio := time.Date(2026, 10, 24, 12, 7, 0, 0, time.Local)
+	m.inicioRodada, m.instante = inicio, inicio.Add(9500*time.Millisecond)
+	m.etapas[1] = EtapaMsg{Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual}
+	if got := m.mensagemEstado(); got != "◈ gerando resposta · 9 s" {
+		t.Errorf("com o tempo: %q", got)
+	}
 	m.interrompendo = true
-	if got := m.mensagemEstado(); got != "◈ interrompendo" {
+	if got := m.mensagemEstado(); got != "◈ interrompendo · 9 s" {
 		t.Errorf("interrompendo: %q", got)
 	}
+	m.aviso = &avisoEstado{ok: true, texto: "comando enviado à área de transferência"}
+	if got := m.mensagemEstado(); got != "✓ comando enviado à área de transferência" {
+		t.Errorf("o aviso da cópia passa na frente: %q", got)
+	}
+	m.aviso = &avisoEstado{texto: "não deu para copiar o comando"}
+	if got := m.mensagemEstado(); got != "✕ não deu para copiar o comando" {
+		t.Errorf("falha da cópia: %q", got)
+	}
+	m.aviso = nil
 	m.state = stateIdle
 	for _, c := range []struct {
 		fim  FimMsg
@@ -207,12 +236,12 @@ func TestRenderizarMensagem_ErroENota(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{}, "10:00")
 	erro := m.renderizarMensagem(chatMessage{role: "error", content: "o provider recusou\nsegunda linha", hora: m.agora(), duracao: 3 * time.Second,
-		ferramentas: []ferramentaUsada{{rotulo: "kubectl get", alvo: "pods", linhas: 3}}})
+		ferramentas: []ferramentaUsada{{rotulo: "kubectl get", alvo: "pods", linhas: 3}}}, false, false)
 	want := "✕ BARD · 10:00 · 1 ferramenta · 3,0 s\n  ✓ kubectl get pods · 3 linhas\n\n  o provider recusou\n  segunda linha\n\n"
 	if erro != want {
 		t.Errorf("bloco de erro:\n%q\nesperado\n%q", erro, want)
 	}
-	if got := m.renderizarMensagem(chatMessage{role: "nota", content: "resposta interrompida"}); got != "  resposta interrompida\n\n" {
+	if got := m.renderizarMensagem(chatMessage{role: "nota", content: "resposta interrompida"}, false, false); got != "  resposta interrompida\n\n" {
 		t.Errorf("nota: %q", got)
 	}
 }
@@ -220,8 +249,8 @@ func TestRenderizarMensagem_ErroENota(t *testing.T) {
 func TestCorpoResposta_MarkdownFalhaMostraTextoCru(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{}, "10:00")
-	m.markdown = func(string, int) (string, error) { return "", errors.New("quebrou") }
-	if got := m.corpoResposta("**oi**\n\ntchau", 40); got != "  **oi**\n\n  tchau\n" {
+	m.markdown = func(string, int, int) (string, error) { return "", errors.New("quebrou") }
+	if got := m.corpoResposta("**oi**\n\ntchau", 40, -1); got != "  **oi**\n\n  tchau\n" {
 		t.Errorf("texto cru: %q", got)
 	}
 }
@@ -241,15 +270,15 @@ func TestParcialAparecePorBaixo(t *testing.T) {
 func TestMarkdownCache(t *testing.T) {
 	semCores(t)
 	c := &markdownCache{}
-	a, err := c.renderizar("**oi**", 40)
+	a, err := c.renderizar("**oi**", 40, -1)
 	if err != nil || a != "oi" {
 		t.Fatalf("render: %q %v", a, err)
 	}
 	r := c.r
-	if _, _ = c.renderizar("x", 40); c.r != r {
+	if _, _ = c.renderizar("x", 40, -1); c.r != r {
 		t.Error("a mesma largura reaproveita o renderizador")
 	}
-	if _, _ = c.renderizar("x", 60); c.r == r || c.largura != 60 {
+	if _, _ = c.renderizar("x", 60, -1); c.r == r || c.largura != 60 {
 		t.Error("largura nova pede outro renderizador")
 	}
 }

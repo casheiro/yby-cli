@@ -12,10 +12,11 @@ import (
 
 // Textos fixos da tela, como na prancha "conversa".
 const (
-	rotuloInstrumento    = "instr. 03 · orientação"
-	textoPlaceholder     = "Pergunte sobre o cluster, ou / para comandos"
-	textoPlaceholderResp = "a próxima pergunta pode ser escrita enquanto o Bard responde"
-	recuo                = "  " // recuo do texto das mensagens sob o autor
+	rotuloInstrumento     = "instr. 03 · orientação"
+	textoPlaceholder      = "Pergunte sobre o cluster, ou / para comandos"
+	textoPlaceholderResp  = "a próxima pergunta pode ser escrita enquanto o Bard responde"
+	textoPlaceholderSaida = "esc volta para a conversa"
+	recuo                 = "  " // recuo do texto das mensagens sob o autor
 )
 
 // View renderiza a TUI na moldura de texto da carta: cabeçalho com cluster,
@@ -24,17 +25,23 @@ func (m Model) View() string {
 	if m.width == 0 {
 		return "Carregando..."
 	}
-	return ui.MolduraTexto(m.width, m.height, ui.PartesTexto{
+	partes := ui.PartesTexto{
 		Instrumento: "bard",
 		Rotulo:      rotuloInstrumento,
 		Contexto:    m.contexto(),
-		Corpo:       m.corpo(),
 		Campo:       m.campo(),
 		Mensagem:    m.mensagemEstado(),
-		Direita:     m.resumoSessao(),
 		Sair:        ui.DefaultKeys().Global.SairForcado,
-		Teclas:      m.teclas(),
-	})
+	}
+	switch {
+	case m.saida != nil:
+		partes.Corpo, partes.Direita, partes.Teclas = m.corpoSaida(), m.posicaoSaida(), m.teclasSaida()
+	case m.state == stateStreaming:
+		partes.Corpo, partes.Direita, partes.Teclas = m.corpo(), m.resumoRodada(), m.teclas()
+	default:
+		partes.Corpo, partes.Direita, partes.Teclas = m.corpo(), m.resumoSessao(), m.teclas()
+	}
+	return ui.MolduraTexto(m.width, m.height, partes)
 }
 
 // contexto é o lado direito do cabeçalho: "staging ▸ default   claude-cli".
@@ -55,20 +62,31 @@ func (m Model) contexto() string {
 	return strings.Join(partes, "   ")
 }
 
-// corpo é a conversa na janela. Rolada para cima com mensagens novas abaixo, as
-// duas últimas linhas dão lugar a uma linha em branco e ao aviso "↓ 2 mensagens novas".
-// Nada se perde: o pgdn anda só as linhas que apareceram (ver teclar), e
-// mensagensNovas conta também o que começa nas linhas cobertas.
+// corpo é a conversa na janela. Com a conversa rolada, as duas primeiras linhas dão
+// lugar ao aviso "↑ 2 mensagens anteriores" e a uma linha em branco, como na prancha
+// "trabalhando"; com mensagens novas abaixo, as duas últimas dão lugar a uma linha em
+// branco e ao aviso "↓ 2 mensagens novas". Nada se perde: pgup e pgdn andam só as
+// linhas que apareceram (ver rolarPagina), e os avisos contam também o que começa nas
+// linhas cobertas.
 func (m Model) corpo() string {
 	vista := m.viewport.View()
-	n := m.mensagensNovas()
-	if n == 0 {
+	acima, abaixo := m.mensagensAnteriores(), m.mensagensNovas()
+	if acima == 0 && abaixo == 0 {
 		return vista
 	}
 	linhas := strings.Split(vista, "\n")
-	linhas[len(linhas)-1] = ui.AvisoRolagem(ui.SetaAbaixo, plural(n, "mensagem nova", "mensagens novas"))
-	if m.linhasAviso() == 2 && len(linhas) > 1 {
-		linhas[len(linhas)-2] = ""
+	dupla := m.linhasAviso() == 2 && len(linhas) > 1
+	if acima > 0 {
+		linhas[0] = ui.AvisoRolagem(ui.SetaAcima, plural(acima, "mensagem anterior", "mensagens anteriores"))
+		if dupla {
+			linhas[1] = ""
+		}
+	}
+	if abaixo > 0 {
+		linhas[len(linhas)-1] = ui.AvisoRolagem(ui.SetaAbaixo, plural(abaixo, "mensagem nova", "mensagens novas"))
+		if dupla {
+			linhas[len(linhas)-2] = ""
+		}
 	}
 	return strings.Join(linhas, "\n")
 }
@@ -80,6 +98,9 @@ func (m Model) campo() string {
 	s, g := ui.S(), ui.G()
 	var linhas []string
 	switch {
+	case m.textarea.Value() == "" && m.saida != nil:
+		// Com a saída aberta as letras não vão para o campo: a dica diz como voltar.
+		linhas = []string{s.TintaSuave.Render(g.Prompt + " " + textoPlaceholderSaida)}
 	case m.textarea.Value() == "" && m.state == stateStreaming:
 		linhas = []string{s.TintaSuave.Render(g.Prompt + " " + textoPlaceholderResp)}
 	case m.textarea.Value() == "":
@@ -101,15 +122,14 @@ func (m Model) campo() string {
 // terminou a última rodada.
 func (m Model) mensagemEstado() string {
 	s, g := ui.S(), ui.G()
-	if m.state == stateStreaming {
-		texto := "trabalhando"
-		switch {
-		case m.interrompendo:
-			texto = "interrompendo"
-		case m.etapaAtual() != "":
-			texto = m.etapaAtual()
+	if a := m.aviso; a != nil {
+		if a.ok {
+			return s.Ok.Render(g.Feito) + s.Tinta.Render(" "+a.texto)
 		}
-		return s.Tinta.Render(g.Andamento + " " + texto)
+		return s.Erro.Render(g.Falha) + s.Tinta.Render(" "+a.texto)
+	}
+	if m.state == stateStreaming {
+		return m.estadoTrabalho()
 	}
 	f := m.ultimoFim
 	switch {
@@ -149,8 +169,8 @@ func (m Model) resumoSessao() string {
 
 // teclas devolve a legenda da tela, na ordem da prancha. Só aparecem as teclas que já
 // funcionam: pgup quando a conversa passa da altura do histórico, ↑ quando há uma
-// pergunta para editar e o campo está vazio; / e ? esperam a T015 e até lá ficam
-// desligadas.
+// pergunta para editar e o campo está vazio, ↵ ver etapa quando há uma saída de
+// ferramenta para abrir; / e ? esperam a T015 e até lá ficam desligadas.
 func (m Model) teclas() []key.Binding {
 	k := ui.DefaultKeys()
 	rolar := k.Texto.RolarCima
@@ -166,7 +186,10 @@ func (m Model) teclas() []key.Binding {
 	}
 	comandos, ajuda := pendentes[0], pendentes[1]
 	if m.state == stateStreaming {
-		return []key.Binding{k.Texto.Interromper, rolar, ajuda}
+		ver := teclaVerEtapa()
+		_, ok := m.saidaDisponivel()
+		ver.SetEnabled(ok)
+		return []key.Binding{k.Texto.Interromper, rolar, ver, ajuda}
 	}
 	// A prancha mostra ⇧↵, mas o Bubble Tea v1 recebe o shift+enter como ↵ e a
 	// pergunta iria pela metade; a legenda mostra a tecla que chega (ver novaLinha).
@@ -176,7 +199,9 @@ func (m Model) teclas() []key.Binding {
 }
 
 // renderizarMensagem devolve o bloco de uma mensagem, terminado por uma linha em branco.
-func (m Model) renderizarMensagem(msg chatMessage) string {
+// Com dica, a ferramenta cuja saída o ↵ abre leva "· ↵ ver saída"; com copia, o último
+// comando leva "ctrl+y copia" no quadro (os outros ficam só "COMANDO").
+func (m Model) renderizarMensagem(msg chatMessage, dica, copia bool) string {
 	s, g := ui.S(), ui.G()
 	largura := m.viewport.Width - len(recuo)
 	var b strings.Builder
@@ -190,8 +215,16 @@ func (m Model) renderizarMensagem(msg chatMessage) string {
 			marca = s.Erro.Render(g.Falha)
 		}
 		b.WriteString(marca + " " + s.Rotulo.Render(cabecalhoBard(msg)) + "\n")
-		for _, f := range msg.ferramentas {
-			b.WriteString(recuo + linhaFerramenta(f) + "\n")
+		ver := -1
+		if dica {
+			ver = ultimaComSaida(msg.ferramentas)
+		}
+		for i, f := range msg.ferramentas {
+			linha := linhaFerramenta(f)
+			if i == ver {
+				linha += s.TintaSuave.Render(" · ") + s.Negrito.Render(ui.RotuloTecla("↵")) + s.TintaSuave.Render(" ver saída")
+			}
+			b.WriteString(recuo + linha + "\n")
 		}
 		if len(msg.ferramentas) > 0 {
 			b.WriteString("\n")
@@ -199,7 +232,11 @@ func (m Model) renderizarMensagem(msg chatMessage) string {
 		if msg.role == "error" {
 			escreverRecuado(&b, quebrarTexto(msg.content, largura), s.Erro.Render)
 		} else {
-			b.WriteString(m.corpoResposta(msg.content, largura))
+			comando := -1
+			if copia {
+				comando = len(uimarkdown.Comandos(msg.content)) - 1
+			}
+			b.WriteString(m.corpoResposta(msg.content, largura, comando))
 		}
 	case "nota":
 		b.WriteString(recuo + s.TintaSuave.Render(msg.content) + "\n")
@@ -208,23 +245,20 @@ func (m Model) renderizarMensagem(msg chatMessage) string {
 	return b.String()
 }
 
-// renderizarParcial mostra a resposta enquanto ela chega, ainda sem markdown.
-func (m Model) renderizarParcial() string {
-	s, g := ui.S(), ui.G()
+// corpoResposta passa a resposta pelo markdown e recua as linhas sob o autor.
+func (m Model) corpoResposta(texto string, largura, comando int) string {
 	var b strings.Builder
-	b.WriteString(s.Tinta.Render(g.Andamento) + " " + s.Rotulo.Render("BARD · trabalhando") + "\n")
-	if m.parcial != "" {
-		escreverRecuado(&b, quebrarTexto(m.parcial, m.viewport.Width-len(recuo)), s.Tinta.Render)
-	}
+	escreverRecuado(&b, m.linhasResposta(texto, largura, comando), nil)
 	return b.String()
 }
 
-// corpoResposta passa a resposta pelo markdown e recua as linhas sob o autor.
-// Sem markdown (ou se ele falhar), mostra o texto cru quebrado na largura.
-func (m Model) corpoResposta(texto string, largura int) string {
+// linhasResposta são as linhas da resposta pelo markdown, sem o recuo; o comando de
+// índice comando (-1 nenhum) leva a tecla da cópia no quadro. Sem markdown (ou se ele
+// falhar), o texto cru quebrado na largura.
+func (m Model) linhasResposta(texto string, largura, comando int) []string {
 	var linhas []string
 	if m.markdown != nil {
-		if r, err := m.markdown(texto, largura); err == nil {
+		if r, err := m.markdown(texto, largura, comando); err == nil {
 			linhas = strings.Split(strings.TrimRight(r, "\n"), "\n")
 		}
 	}
@@ -234,9 +268,17 @@ func (m Model) corpoResposta(texto string, largura int) string {
 			linhas[i] = ui.S().Tinta.Render(l)
 		}
 	}
-	var b strings.Builder
-	escreverRecuado(&b, linhas, nil)
-	return b.String()
+	return linhas
+}
+
+// ultimaComSaida é o índice da última ferramenta com saída para abrir, ou -1.
+func ultimaComSaida(lista []ferramentaUsada) int {
+	for i := len(lista) - 1; i >= 0; i-- {
+		if !lista[i].falhou && strings.TrimSpace(lista[i].saida) != "" {
+			return i
+		}
+	}
+	return -1
 }
 
 // cabecalhoBard monta "BARD · 11:52 · 1 ferramenta · 21 s": o autor em caixa-alta,
@@ -308,7 +350,7 @@ type markdownCache struct {
 	r       *uimarkdown.Renderizador
 }
 
-func (c *markdownCache) renderizar(texto string, largura int) (string, error) {
+func (c *markdownCache) renderizar(texto string, largura, comando int) (string, error) {
 	if c.r == nil || c.largura != largura {
 		r, err := uimarkdown.Novo(largura)
 		if err != nil {
@@ -316,5 +358,5 @@ func (c *markdownCache) renderizar(texto string, largura int) (string, error) {
 		}
 		c.r, c.largura = r, largura
 	}
-	return c.r.Renderizar(texto)
+	return c.r.RenderizarComTecla(texto, comando, rotuloCopiar, "copia")
 }

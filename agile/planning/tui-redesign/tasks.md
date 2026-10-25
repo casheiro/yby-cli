@@ -131,7 +131,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
   - `↑` edita a última mensagem; `⇧↵` faz nova linha; `esc` interrompe a resposta.
   - Indicador "↓ N mensagens novas" quando a tela está rolada para cima.
   - Verificar: `teatest` digitando "jkdufb " sem mudar a rolagem.
-- [ ] T014 Mostrar etapas e ferramentas.
+- [x] T014 Mostrar etapas e ferramentas.
   - `ui.Etapas` durante o trabalho, com ↵ para ver a saída de uma ferramenta.
   - Bloco "COMANDO · c copia" (copiar via OSC 52).
   - Linha de estado "◈ gerando resposta · N s".
@@ -287,3 +287,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T011 | Fluxo de resposta em eventos (`plugins/bard/tui/fluxo.go`): `EtapaMsg` (contexto do projeto, entender o pedido, ferramenta, gerar resposta), `TrechoMsg` e `FimMsg` por canal; retry com o backoff do REPL antigo (2 s, 10 s, até 30 s) descartando o parcial; esc cancela por contexto sem fechar o Bard, mesmo com provider que ignora o contexto. Revisão: o histórico renderizado fica em cache e cada trecho só redesenha o parcial; panic no fluxo vira `FimMsg` com erro. Provider falso nos testes, inclusive 429 | este commit |
 | 24/10/2026 | T012 | Moldura e mensagens da carta no Bard: cabeçalho com cluster ▸ namespace e provider (`Config.AIModel`), blocos VOCÊ / ◆ BARD com ferramentas e tempo, linha de estado e legenda da prancha. Novo `pkg/ui/uimarkdown` (glamour na largura do terminal com estilo dos tokens, tabelas em `ui.Tabela`, status do Kubernetes com glifo, shell em quadro), `ui.MolduraTexto` e `ui.QuadroComTecla`. Goldens "conversa" e "tema kraft". Revisão: blocos de código quebram dentro do quadro em vez de cortar | este commit |
 | 24/10/2026 | T013 | Teclado e rolagem: letras vão só para o campo (bug "digitar rola a tela"), histórico rola com pgup/pgdn e a roda do mouse, "↓ N mensagens novas" (`ui.AvisoRolagem`), ↑ no campo vazio edita a última pergunta, esc interrompe, campo aceita a próxima pergunta durante a resposta. Nova linha com ctrl+j (e alt+enter): o Bubble Tea v1 não distingue ⇧↵ de ↵ no console do Windows, então a legenda mostra ctrl+j. teatest com "jkdufb " | este commit |
+| 24/10/2026 | T014 | Etapas e ferramentas: bloco "◈ BARD · trabalhando · N s" com `ui.Etapas`, linha de estado "◈ gerando resposta · N s", ↵ no campo vazio abre a saída da ferramenta (camada com rolagem e "SAÍDA · c copia"), ctrl+y copia o último comando de shell por OSC 52 (o c no campo comia a primeira letra da pergunta). Relógio injetado para os goldens; golden "trabalhando" | este commit |

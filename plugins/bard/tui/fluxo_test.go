@@ -703,14 +703,6 @@ func TestEmissor_DescartaDepoisDoFim(t *testing.T) {
 	}
 }
 
-func TestProximoEvento_CanalFechado(t *testing.T) {
-	ch := make(chan tea.Msg)
-	close(ch)
-	if msg := ProximoEvento(ch)(); msg != nil {
-		t.Errorf("canal fechado deveria dar nil, veio %#v", msg)
-	}
-}
-
 func TestPrimeiraLinhaEAlvo(t *testing.T) {
 	if got := primeiraLinha("  um\ndois "); got != "um" {
 		t.Errorf("primeiraLinha: %q", got)

@@ -59,6 +59,8 @@ func telaDeTeste(t *testing.T, cfg Config, horas ...string) Model {
 	isolarHome(t)
 	m := New(&provedorFalso{}, nil, cfg)
 	m.agora = relogio(horas...)
+	// Sem TTY o spinner fica no quadro fixo da carta, e as telas não dependem do terminal.
+	m.novoSpinner = func(r string) ui.Spinner { return ui.NovoSpinnerCom(r, func() bool { return false }) }
 	atualizado, _ := m.Update(tea.WindowSizeMsg{Width: larguraTela, Height: alturaTela})
 	return atualizado.(Model)
 }
@@ -109,8 +111,9 @@ const respostaStorage = "O staging tem 6 volumes. Quatro estão em uso e dois so
 	"```bash\nkubectl delete pv pvc-3f1a9c2e pvc-91cd04b7\n```\n"
 
 // TestTelaConversa reproduz a prancha "conversa": a ferramenta antes da resposta,
-// tabela e comando na largura do terminal e o provider no cabeçalho. Uma troca
-// anterior rola para cima, então a legenda mostra pgup.
+// tabela e comando na largura do terminal e o provider no cabeçalho. Como na prancha,
+// a sessão tem só esta troca ("2 mensagens"), que cabe na janela: sem nada acima, não
+// há o aviso das mensagens anteriores (ver TestTelaTrabalhando) nem pgup na legenda.
 func TestTelaConversa(t *testing.T) {
 	for _, md := range []modo{
 		{"escuro", ui.TemaEscuro, false, termenv.TrueColor},
@@ -120,8 +123,7 @@ func TestTelaConversa(t *testing.T) {
 			usarModo(t, md)
 			m := telaDeTeste(t, Config{
 				Cluster: "staging", Namespace: "default", AIModel: "claude-cli", SessionID: "20261024-114500",
-			}, "11:47", "11:47", "11:51", "11:52")
-			m = conversar(t, m, "oi", "Olá! Pergunte sobre o cluster staging.", 1200*time.Millisecond)
+			}, "11:51", "11:52")
 			saida := strings.TrimSuffix(strings.Repeat("NAMESPACE NAME STATUS VOLUME\n", 14), "\n")
 			m = conversar(t, m, "qual a situação do meu storage?", respostaStorage, 21*time.Second,
 				EtapaMsg{Etapa: EtapaFerramenta, Rotulo: "kubectl get", Nota: "pvc,pv -A", Estado: ui.EtapaAtual},
@@ -130,10 +132,14 @@ func TestTelaConversa(t *testing.T) {
 
 			tela := conferirTela(t, m)
 			for _, trecho := range []string{"BARD · 11:52 · 1 ferramenta · 21 s", "kubectl get pvc,pv -A · 14 linhas",
-				"COMANDO · c copia", "4 mensagens", "pgup", "Pergunte sobre o cluster, ou / para comandos"} {
+				"COMANDO · ctrl+y copia", "sessão de hoje · 2 mensagens", "Pergunte sobre o cluster, ou / para comandos"} {
 				if !strings.Contains(ansi.Strip(tela), trecho) {
 					t.Errorf("a tela deveria ter %q", trecho)
 				}
+			}
+			if limpa := ansi.Strip(tela); strings.Contains(limpa, "anteriores") || strings.Contains(limpa, "pgup") ||
+				!strings.HasPrefix(strings.Split(limpa, "\n")[2], "VOCÊ · 11:51") {
+				t.Errorf("a conversa cabe na janela e começa na pergunta:\n%s", limpa)
 			}
 		})
 	}

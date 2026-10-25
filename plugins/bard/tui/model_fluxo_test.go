@@ -97,11 +97,11 @@ func TestModel_RodadaCompleta(t *testing.T) {
 		switch msg.(type) {
 		case TrechoMsg:
 			parciais = append(parciais, m.parcial)
-			if !strings.Contains(m.viewport.View(), m.parcial) {
+			if !strings.Contains(m.viewport.View(), strings.TrimSpace(m.parcial)) {
 				t.Errorf("o trecho deveria aparecer no histórico: %q\n%q", m.parcial, m.viewport.View())
 			}
 		case EtapaMsg:
-			if m.etapaAtual() != "" {
+			if len(m.etapas) > 0 {
 				viuEtapa = true
 			}
 		}
@@ -264,9 +264,14 @@ func TestModel_CtrlCCancelaRodada(t *testing.T) {
 
 func TestModel_TrechoNaoRenderizaOHistoricoDeNovo(t *testing.T) {
 	m := modeloComFluxo(t, &provedorFalso{}, nil)
-	chamadas := 0
-	m.markdown = func(s string, _ int) (string, error) {
-		chamadas++
+	// chamadas conta o histórico; parciais, a resposta em andamento.
+	chamadas, parciais := 0, 0
+	m.markdown = func(s string, _, _ int) (string, error) {
+		if strings.HasPrefix(s, "tok") {
+			parciais++
+		} else {
+			chamadas++
+		}
 		return "**" + s + "**", nil
 	}
 	for i := 0; i < 20; i++ {
@@ -288,11 +293,21 @@ func TestModel_TrechoNaoRenderizaOHistoricoDeNovo(t *testing.T) {
 	if chamadas != 20 {
 		t.Errorf("os trechos não deveriam renderizar o histórico de novo: %d chamadas", chamadas)
 	}
+	if parciais != 200 {
+		t.Errorf("cada trecho renderiza a resposta em andamento uma vez: %d", parciais)
+	}
+	// O tique do relógio redesenha o bloco sem renderizar o mesmo texto de novo.
+	m.eventos = make(chan tea.Msg)
+	atualizado, _ := m.Update(tiqueMsg{rodada: 1})
+	m = atualizado.(Model)
+	if parciais != 200 || chamadas != 20 {
+		t.Errorf("o tique não deveria passar nada pelo markdown: %d parciais, %d chamadas", parciais, chamadas)
+	}
 	if !strings.Contains(m.viewport.View(), "tok tok") || !strings.Contains(m.historico, "**# resposta 19**") {
 		t.Error("o viewport deveria juntar o histórico e o parcial")
 	}
 
-	atualizado, _ := m.Update(FimMsg{Rodada: 1, Resposta: "final"})
+	atualizado, _ = m.Update(FimMsg{Rodada: 1, Resposta: "final"})
 	m = atualizado.(Model)
 	if chamadas != 21 {
 		t.Errorf("o fim deveria renderizar só a resposta nova: %d chamadas", chamadas)

@@ -63,8 +63,9 @@ type Model struct {
 	state       state
 	width       int
 	height      int
-	// markdown renderiza a resposta na largura dada; nil mostra o texto cru.
-	markdown func(texto string, largura int) (string, error)
+	// markdown renderiza a resposta na largura dada, com a tecla da cópia no comando de
+	// índice comando (-1 nenhum); nil mostra o texto cru.
+	markdown func(texto string, largura, comando int) (string, error)
 	agora    func() time.Time
 	err      error
 
@@ -74,8 +75,13 @@ type Model struct {
 	historico        string
 	historicoN       int
 	historicoLargura int
-	historicoLinhas  int   // linhas do histórico renderizado
-	inicios          []int // linha em que começa cada mensagem do histórico
+	historicoLinhas  int      // linhas do histórico renderizado
+	inicios          []int    // linha em que começa cada mensagem do histórico
+	blocosHistorico  []string // bloco renderizado de cada mensagem
+	// dicaEm é a mensagem renderizada com "↵ ver saída" (-1 nenhuma) e copiaEm a que tem
+	// o quadro "COMANDO · ctrl+y copia"; quando uma delas muda de lugar ou some, a
+	// mensagem é renderizada de novo.
+	dicaEm, copiaEm int
 
 	// lidas conta as mensagens que já passaram pela tela: todas as da última vez que
 	// a conversa esteve no fim. As de depois que ainda começam abaixo da janela são
@@ -92,9 +98,29 @@ type Model struct {
 	interrompendo bool
 	etapas        []EtapaMsg
 	parcial       string
+	parcialCache  cacheParcial
+
+	// Relógio da rodada: o início e o último instante lido (a cada evento ou tique). Os
+	// tempos ao vivo saem da diferença, sem ler o relógio ao renderizar.
+	inicioRodada  time.Time
+	instante      time.Time
+	iniciosEtapas []time.Time // início de cada etapa de m.etapas
 
 	// ultimoFim é o desfecho da última rodada, para a linha de estado.
 	ultimoFim *FimMsg
+	// spinner gira na linha de estado durante a resposta (◈ fixo sem TTY ou sem cor);
+	// novoSpinner o cria a cada rodada (trocado nos testes).
+	spinner     ui.Spinner
+	novoSpinner func(rotulo string) ui.Spinner
+
+	// saida é a camada com a saída de uma ferramenta (↵ no campo vazio); nil fechada.
+	saida *vistaSaida
+	// copiar manda texto para a área de transferência (OSC 52; trocado nos testes).
+	copiar func(texto string) error
+	// aviso é o resultado da última cópia na linha de estado, até a próxima tecla ou o
+	// fim do prazo; avisos numera os avisos.
+	aviso  *avisoEstado
+	avisos int
 }
 
 type chatMessage struct {
@@ -111,6 +137,7 @@ type ferramentaUsada struct {
 	falhou       bool
 	nota         string // na falha, a primeira linha do erro
 	linhas       int    // linhas da saída
+	saida        string // saída completa, para o ↵
 }
 
 // New cria uma nova instância do modelo da TUI.
@@ -151,6 +178,10 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 		markdown:    md.renderizar,
 		agora:       time.Now,
 		fluxo:       novoFluxo(provider, vectorStore, config),
+		dicaEm:      -1,
+		copiaEm:     -1,
+		copiar:      copiarOSC52,
+		novoSpinner: ui.NovoSpinner,
 	}
 }
 
@@ -166,7 +197,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.teclar(msg)
 
 	case tea.MouseMsg:
-		// A roda do mouse rola o histórico; o campo não usa o mouse.
+		// A roda do mouse rola o histórico (ou a saída aberta); o campo não usa o mouse.
+		if m.saida != nil {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				m.rolarSaida(-linhasRoda)
+			case tea.MouseButtonWheelDown:
+				m.rolarSaida(linhasRoda)
+			}
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		m.marcarLidas()
@@ -184,12 +224,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			m.marcarLidas()
 		}
+		m.ajustarSaida()
 		return m, nil
 
 	case EtapaMsg:
 		if msg.Rodada != m.rodada {
 			return m, nil
 		}
+		m.instante = m.agora()
 		if msg.Etapa == EtapaResposta && msg.Tentativa > 1 {
 			// A resposta recomeçou: o texto da tentativa anterior não vale.
 			m.parcial, m.parcialVisto = "", 0
@@ -202,9 +244,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Rodada != m.rodada {
 			return m, nil
 		}
+		m.instante = m.agora()
 		m.parcial += msg.Texto
 		m.updateViewport()
 		return m, m.proximoEvento()
+
+	case tiqueMsg:
+		// Um intervalo sem eventos: os tempos da tela andam e a leitura continua.
+		if msg.rodada != m.rodada || m.eventos == nil {
+			return m, nil
+		}
+		m.instante = m.agora()
+		m.updateViewport()
+		return m, m.proximoEvento()
+
+	case copiadoMsg:
+		return m, m.mostrarAviso(avisoCopia(msg))
+
+	case limparAvisoMsg:
+		if m.aviso != nil && m.aviso.id == msg.id {
+			m.aviso = nil
+		}
+		return m, nil
+
+	case ui.SpinnerTickMsg:
+		// O spinner só gira durante a resposta: fora dela o tique morre aqui.
+		if m.state != stateStreaming {
+			return m, nil
+		}
+		atualizado, cmd := m.spinner.Update(msg)
+		m.spinner = atualizado.(ui.Spinner)
+		return m, cmd
 
 	case FimMsg:
 		if msg.Rodada != m.rodada {
@@ -226,13 +296,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // pergunta, mas ↵ só envia quando a rodada termina.
 func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := ui.DefaultKeys()
-	switch {
-	case msg.Type == tea.KeyCtrlC:
+	m.aviso = nil
+	if msg.Type == tea.KeyCtrlC {
 		if m.cancelar != nil {
 			m.cancelar()
 		}
 		return m, tea.Quit
-
+	}
+	if m.saida != nil {
+		return m.teclarSaida(msg)
+	}
+	vazio := m.campoVazio()
+	switch {
 	case msg.Type == tea.KeyEsc:
 		// esc interrompe a resposta em andamento sem fechar o Bard; o
 		// FimMsg da rodada é que devolve o estado ocioso.
@@ -243,18 +318,9 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case key.Matches(msg, k.Texto.RolarBaixo) && m.mensagensNovas() > 0:
-		// Com o aviso no pé, a página anda só as linhas que apareceram: as que o
-		// aviso cobria abrem a página seguinte.
-		m.viewport.ScrollDown(max(m.viewport.Height-m.linhasAviso(), 1))
-		m.marcarLidas()
-		return m, nil
-
 	case key.Matches(msg, k.Texto.RolarCima, k.Texto.RolarBaixo):
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		m.marcarLidas()
-		return m, cmd
+		m.rolarPagina(key.Matches(msg, k.Texto.RolarCima))
+		return m, nil
 
 	case novaLinha(msg):
 		// A quebra vai pelo próprio textarea (o ↵ dele é "nova linha"), que leva a
@@ -262,22 +328,45 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		m.ajustarCampo()
+		m.seCampoMudou(vazio)
 		return m, cmd
 
 	case msg.Type == tea.KeyEnter:
+		// No campo vazio, ↵ abre a saída da última ferramenta ("↵ ver").
+		if m.campoVazio() && m.abrirSaida() {
+			return m, nil
+		}
 		return m.enviar()
+
+	case key.Matches(msg, teclaCopiar):
+		// ctrl+y copia o último comando da última resposta; sem ele, não faz nada.
+		if !m.podeCopiarComando() {
+			return m, nil
+		}
+		comando, _ := m.ultimoComando()
+		return m, m.copiarTexto(comando, "comando")
 
 	case key.Matches(msg, k.Texto.EditarUltima) && m.podeEditarUltima():
 		// ↑ no campo vazio traz a última pergunta para editar e enviar de novo.
 		m.textarea.SetValue(m.ultimaPergunta())
 		m.ajustarCampo()
+		m.seCampoMudou(vazio)
 		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
 	m.ajustarCampo()
+	m.seCampoMudou(vazio)
 	return m, cmd
+}
+
+// seCampoMudou redesenha a conversa quando o campo passa de vazio a escrito ou volta:
+// as dicas "↵ ver" só valem com o campo vazio, porque com texto o ↵ envia.
+func (m *Model) seCampoMudou(vazioAntes bool) {
+	if m.campoVazio() != vazioAntes {
+		m.updateViewport()
+	}
 }
 
 // novaLinha diz se a tecla quebra a linha do campo: ctrl+j, que chega igual em todo
@@ -287,6 +376,11 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // mandam CR puro). Por isso a legenda mostra ctrl+j.
 func novaLinha(msg tea.KeyMsg) bool {
 	return key.Matches(msg, ui.DefaultKeys().Texto.NovaLinha) || (msg.Type == tea.KeyEnter && msg.Alt)
+}
+
+// campoVazio diz se o campo não tem nada para enviar (só espaços também conta).
+func (m Model) campoVazio() bool {
+	return strings.TrimSpace(m.textarea.Value()) == ""
 }
 
 // enviar manda o texto do campo como pergunta e abre a rodada.
@@ -374,30 +468,22 @@ func (m *Model) iniciarRodada(input string) tea.Cmd {
 	m.rodada++
 	m.cancelar = cancel
 	m.interrompendo = false
-	m.etapas = nil
+	m.etapas, m.iniciosEtapas = nil, nil
 	m.parcial, m.parcialVisto = "", 0
+	m.inicioRodada = m.agora()
+	m.instante = m.inicioRodada
 	m.eventos = m.fluxo.Iniciar(ctx, m.rodada, input)
-	return ProximoEvento(m.eventos)
+	m.spinner = m.novoSpinner("")
+	return tea.Batch(m.proximoEvento(), m.spinner.Init())
 }
 
-// proximoEvento pede o evento seguinte da rodada; sem rodada aberta não há o
-// que ler (um canal nil travaria o comando para sempre).
+// proximoEvento pede o evento seguinte da rodada, ou um tique se ele demorar; sem
+// rodada aberta não há o que ler (um canal nil travaria o comando para sempre).
 func (m Model) proximoEvento() tea.Cmd {
 	if m.eventos == nil {
 		return nil
 	}
-	return ProximoEvento(m.eventos)
-}
-
-// registrarEtapa guarda o estado mais recente de cada etapa da rodada.
-func (m *Model) registrarEtapa(msg EtapaMsg) {
-	for i := range m.etapas {
-		if m.etapas[i].Etapa == msg.Etapa && m.etapas[i].Rotulo == msg.Rotulo {
-			m.etapas[i] = msg
-			return
-		}
-	}
-	m.etapas = append(m.etapas, msg)
+	return esperarEvento(m.eventos, m.rodada)
 }
 
 // encerrarRodada fecha a rodada: registra a resposta (ou o erro) e volta ao
@@ -411,6 +497,7 @@ func (m *Model) encerrarRodada(msg FimMsg) {
 	m.state = stateIdle
 	m.interrompendo = false
 	m.parcial = ""
+	m.parcialCache = cacheParcial{}
 	m.ultimoFim = &msg
 
 	resposta := chatMessage{
@@ -444,10 +531,10 @@ func (m Model) ferramentasDaRodada() []ferramentaUsada {
 		if e.Etapa != EtapaFerramenta || e.Estado == ui.EtapaAtual {
 			continue
 		}
-		f := ferramentaUsada{rotulo: e.Rotulo, alvo: e.Nota, linhas: contarLinhas(e.Saida)}
+		f := ferramentaUsada{rotulo: e.Rotulo, alvo: e.Nota, linhas: contarLinhas(e.Saida), saida: e.Saida}
 		if e.Estado == ui.EtapaFalha {
 			// Na falha a nota é o erro; o alvo fica só no rótulo.
-			f.falhou, f.alvo, f.nota, f.linhas = true, "", e.Nota, 0
+			f.falhou, f.alvo, f.nota, f.linhas, f.saida = true, "", e.Nota, 0, ""
 		}
 		usadas = append(usadas, f)
 	}
@@ -463,35 +550,63 @@ func contarLinhas(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
-// etapaAtual devolve o rótulo da última etapa em andamento, se houver.
-func (m Model) etapaAtual() string {
-	for i := len(m.etapas) - 1; i >= 0; i-- {
-		if m.etapas[i].Estado == ui.EtapaAtual {
-			return m.etapas[i].Rotulo
-		}
-	}
-	return ""
-}
-
-// renderizarHistorico acrescenta ao cache as mensagens ainda não renderizadas.
+// renderizarHistorico acrescenta ao cache as mensagens ainda não renderizadas. A
+// mensagem que ganha ou perde a dica "↵ ver saída" ou o "ctrl+y copia" é renderizada de
+// novo, com as seguintes.
 func (m *Model) renderizarHistorico() {
 	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) {
-		m.historico, m.historicoN, m.historicoLinhas, m.inicios = "", 0, 0, nil
+		m.cortarHistorico(0)
 		m.historicoLargura = m.viewport.Width
 	}
+	dica, copia := m.mensagemComDica(), m.mensagemComCopia()
+	for _, par := range [][2]int{{dica, m.dicaEm}, {copia, m.copiaEm}} {
+		if par[0] == par[1] {
+			continue
+		}
+		for _, i := range par {
+			if i >= 0 && i < m.historicoN {
+				m.cortarHistorico(i)
+			}
+		}
+	}
+	m.dicaEm, m.copiaEm = dica, copia
 	if m.historicoN == len(m.messages) {
 		return
 	}
-	var content strings.Builder
-	content.WriteString(m.historico)
-	for _, msg := range m.messages[m.historicoN:] {
-		bloco := m.renderizarMensagem(msg)
+	for i := m.historicoN; i < len(m.messages); i++ {
+		bloco := m.renderizarMensagem(m.messages[i], i == dica, i == copia)
 		m.inicios = append(m.inicios, m.historicoLinhas)
+		m.blocosHistorico = append(m.blocosHistorico, bloco)
 		m.historicoLinhas += strings.Count(bloco, "\n")
-		content.WriteString(bloco)
 	}
-	m.historico = content.String()
+	m.historico = strings.Join(m.blocosHistorico, "")
 	m.historicoN = len(m.messages)
+}
+
+// cortarHistorico descarta do cache a mensagem i e as seguintes.
+func (m *Model) cortarHistorico(i int) {
+	if i >= m.historicoN {
+		return
+	}
+	m.historicoLinhas = 0
+	if i < len(m.inicios) {
+		m.historicoLinhas = m.inicios[i]
+	}
+	m.inicios, m.blocosHistorico = m.inicios[:i], m.blocosHistorico[:i]
+	m.historico = strings.Join(m.blocosHistorico, "")
+	m.historicoN = i
+}
+
+// mensagemComDica é a mensagem que mostra "↵ ver saída" na ferramenta: a última
+// resposta, fora da rodada e com o campo vazio, se a saída dela pode ser aberta.
+func (m Model) mensagemComDica() int {
+	if m.state == stateStreaming {
+		return -1
+	}
+	if _, ok := m.saidaDisponivel(); !ok {
+		return -1
+	}
+	return m.ultimaResposta()
 }
 
 // updateViewport atualiza o conteúdo do viewport com as mensagens. Durante a
@@ -536,6 +651,55 @@ func (m Model) linhasAviso() int {
 		return 2
 	}
 	return 1
+}
+
+// mensagensAnteriores conta as mensagens que começam acima da janela ou nas linhas que o
+// aviso do topo cobre. Na conversa do topo (ou numa janela baixa, onde os dois avisos
+// não cabem) não há aviso. As notas não contam.
+func (m Model) mensagensAnteriores() int {
+	if m.viewport.YOffset == 0 || !m.cabemDoisAvisos() {
+		return 0
+	}
+	topo := m.viewport.YOffset + m.linhasAviso()
+	n := 0
+	for i, inicio := range m.inicios {
+		if inicio >= topo || i >= len(m.messages) {
+			break
+		}
+		if m.messages[i].role != "nota" {
+			n++
+		}
+	}
+	return n
+}
+
+// cabemDoisAvisos diz se a janela tem lugar para o aviso do topo e o do pé com ao menos
+// uma linha da conversa entre eles.
+func (m Model) cabemDoisAvisos() bool {
+	return m.viewport.Height > 2*m.linhasAviso()
+}
+
+// rolarPagina anda uma página (pgup ou pgdn) descontando as linhas que os avisos cobrem
+// no topo e no pé: o que um aviso escondia aparece na página seguinte, e nada da
+// conversa deixa de passar pela tela.
+func (m *Model) rolarPagina(acima bool) {
+	passo := m.viewport.Height
+	if m.mensagensNovas() > 0 {
+		passo -= m.linhasAviso()
+	}
+	if acima {
+		if m.mensagensAnteriores() > 0 {
+			passo -= m.linhasAviso()
+		}
+		m.viewport.ScrollUp(max(passo, 1))
+	} else {
+		// Descendo, o topo da página nova fica sob o aviso das anteriores.
+		if m.cabemDoisAvisos() {
+			passo -= m.linhasAviso()
+		}
+		m.viewport.ScrollDown(max(passo, 1))
+	}
+	m.marcarLidas()
 }
 
 // mensagensNovas conta as mensagens que chegaram depois que a conversa saiu do fim e

@@ -136,17 +136,6 @@ func (f *Fluxo) Iniciar(ctx context.Context, rodada int, entrada string) <-chan 
 	return e.ch
 }
 
-// ProximoEvento devolve um comando que lê o próximo evento do canal.
-func ProximoEvento(ch <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		msg, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return msg
-	}
-}
-
 func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 	inicio := time.Now()
 	var usadas []string

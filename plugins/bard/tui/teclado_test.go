@@ -75,6 +75,12 @@ func fundo(m Model) int {
 	return max(m.viewport.TotalLineCount()-m.viewport.Height, 0)
 }
 
+// pagina é quanto o pgup anda com a conversa rolada: a altura menos as linhas que o
+// aviso das mensagens anteriores cobre no topo.
+func pagina(m Model) int {
+	return m.viewport.Height - m.linhasAviso()
+}
+
 func TestTeclado_LetrasNaoRolam(t *testing.T) {
 	semCores(t)
 	tm := abrirBard(t, conversaLonga(t, nil))
@@ -83,7 +89,7 @@ func TestTeclado_LetrasNaoRolam(t *testing.T) {
 	digitar(tm, "jkdufb ")
 	m := fecharBard(t, tm)
 
-	if want := fundo(m) - m.viewport.Height; m.viewport.YOffset != want {
+	if want := fundo(m) - pagina(m); m.viewport.YOffset != want {
 		t.Errorf("as letras não deveriam mudar a rolagem: deslocamento %d, esperado %d", m.viewport.YOffset, want)
 	}
 	if got := m.textarea.Value(); got != "jkdufb " {
@@ -99,8 +105,8 @@ func TestTeclado_PgupPgdnRolam(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyPgDown})
 	m := fecharBard(t, tm)
 
-	if want := fundo(m) - m.viewport.Height; m.viewport.YOffset != want {
-		t.Errorf("pgup, pgup, pgdn deveriam deixar a conversa uma tela acima do fim: %d, esperado %d", m.viewport.YOffset, want)
+	if want := fundo(m) - pagina(m); m.viewport.YOffset != want {
+		t.Errorf("pgup, pgup, pgdn deveriam deixar a conversa uma página acima do fim: %d, esperado %d", m.viewport.YOffset, want)
 	}
 	if m.textarea.Value() != "" {
 		t.Errorf("pgup e pgdn não escrevem no campo: %q", m.textarea.Value())
@@ -432,7 +438,8 @@ func TestMensagensNovas_PaginarMostraTudo(t *testing.T) {
 		t.Fatal("a resposta chegou abaixo da janela: deveria haver o aviso")
 	}
 
-	inicio := m.viewport.YOffset
+	// As linhas sob o aviso do topo passaram pela tela na página de cima.
+	inicio := m.viewport.YOffset + m.linhasAviso()
 	vistas := map[string]bool{}
 	for passo := 0; ; passo++ {
 		for _, l := range strings.Split(ansi.Strip(m.corpo()), "\n") {
@@ -506,5 +513,62 @@ func TestTelaMensagensNovas(t *testing.T) {
 				t.Errorf("a tela deveria avisar a mensagem nova:\n%s", limpa)
 			}
 		})
+	}
+}
+
+// Com a conversa rolada, o topo da janela avisa as mensagens que começam acima dela,
+// como na prancha "trabalhando"; no começo da conversa o aviso some.
+func TestMensagensAnteriores(t *testing.T) {
+	semCores(t)
+	m := conversaLonga(t, nil)
+	linhas := strings.Split(m.corpo(), "\n")
+	n := m.mensagensAnteriores()
+	if n == 0 || ansi.Strip(linhas[0]) != fmt.Sprintf("↑ %d mensagens anteriores", n) || linhas[1] != "" {
+		t.Fatalf("o aviso abre a janela, seguido de uma linha em branco: %q", linhas[:2])
+	}
+	topo := m.viewport.YOffset + m.linhasAviso()
+	for i, ini := range m.inicios {
+		if acima := ini < topo; acima != (i < n) {
+			t.Errorf("a mensagem %d começa na linha %d (topo %d): contada=%v", i, ini, topo, i < n)
+		}
+	}
+	m.viewport.GotoTop()
+	if m.mensagensAnteriores() != 0 || strings.Contains(m.corpo(), "anterior") {
+		t.Error("no começo da conversa não há aviso")
+	}
+	// As notas não contam, e a janela baixa demais não tem lugar para os dois avisos.
+	m.messages = append(m.messages, chatMessage{role: "nota", content: "resposta interrompida"})
+	m.updateViewport()
+	m.viewport.GotoBottom()
+	if got := m.mensagensAnteriores(); got != n {
+		t.Errorf("a nota não conta: %d, antes %d", got, n)
+	}
+	m.viewport.Height = 4
+	if m.mensagensAnteriores() != 0 {
+		t.Error("numa janela de 4 linhas os avisos não cabem com a conversa")
+	}
+}
+
+// Subindo página por página com o aviso no topo, toda linha da conversa passa pela tela.
+func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
+	semCores(t)
+	m := conversaLonga(t, nil)
+	vistas := map[string]bool{}
+	for passo := 0; ; passo++ {
+		for _, l := range strings.Split(ansi.Strip(m.corpo()), "\n") {
+			vistas[strings.TrimSpace(l)] = true
+		}
+		if m.viewport.YOffset == 0 {
+			break
+		}
+		if passo > 50 {
+			t.Fatal("o pgup não chegou ao começo")
+		}
+		m = rolarAcima(t, m)
+	}
+	for i, l := range strings.Split(ansi.Strip(strings.TrimRight(m.historico, "\n")), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !vistas[l] {
+			t.Errorf("a linha %d nunca apareceu na tela: %q", i, l)
+		}
 	}
 }
