@@ -87,12 +87,12 @@ func TestUpdateCtrlC(t *testing.T) {
 	}
 }
 
-// TestResponseMsg verifica processamento de resposta da IA.
-func TestResponseMsg(t *testing.T) {
+// TestFimMsg verifica processamento do fim de uma rodada com resposta.
+func TestFimMsg(t *testing.T) {
 	model := New(nil, nil, Config{})
 	model.state = stateStreaming
 
-	updated, _ := model.Update(responseMsg{content: "resposta da IA"})
+	updated, _ := model.Update(FimMsg{Resposta: "resposta da IA"})
 	m := updated.(Model)
 
 	if m.state != stateIdle {
@@ -109,12 +109,12 @@ func TestResponseMsg(t *testing.T) {
 	}
 }
 
-// TestResponseMsg_ComErro verifica processamento de erro da IA.
-func TestResponseMsg_ComErro(t *testing.T) {
+// TestFimMsg_ComErro verifica processamento de erro da IA.
+func TestFimMsg_ComErro(t *testing.T) {
 	model := New(nil, nil, Config{})
 	model.state = stateStreaming
 
-	updated, _ := model.Update(responseMsg{err: fmt.Errorf("falha na IA")})
+	updated, _ := model.Update(FimMsg{Err: fmt.Errorf("falha na IA")})
 	m := updated.(Model)
 
 	if m.state != stateIdle {

@@ -117,7 +117,7 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 
 ### Fase 2 · Bard (`plugins/bard`)
 
-- [ ] T011 Refatorar o fluxo de resposta em eventos.
+- [x] T011 Refatorar o fluxo de resposta em eventos.
   - O `sendMessage` atual (`tui/model.go`) vira um pipeline que emite `EtapaMsg` (contexto, intenção, ferramenta, resposta), `TrechoMsg` (pedaços da resposta) e `FimMsg` por canal.
   - Cancelamento por contexto; retry igual ao do REPL antigo (`main.go`).
   - Verificar: testes com provider falso que emite pedaços e erro 429.
@@ -284,3 +284,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T025 | CI no Linux mostrou que, no Windows, o scaffold não achatava `.github/workflows/<padrão>/` (usava `filepath.Rel`, com `\`, num caminho de `fs.FS`): os goldens da árvore tinham sido gravados com esse defeito. Corrigido trabalhando com `/` e convertendo só no fim; os 7 goldens agora são iguais nos dois sistemas | este commit |
 | 24/10/2026 | T036 | Logo oficial no terminal: `pkg/ui/marca.go` com `Marca` e `Logo` e os três desenhos em `pkg/ui/marca/` (feitos à mão pixel a pixel, julgados e lapidados contra o SVG; as trilhas não encostam no caule, como no original). `yby` sem argumentos mostra a logo antes da ajuda, só num terminal; `--help` continua sem. Folha "marca" no catálogo. O README já usa o SVG novo (commit do PR #199, trazido para esta branch) | este commit |
 | 24/10/2026 | T038 | Ajuda de todos os comandos do core no formato da carta e em português (`ui.EscreverAjuda` + `cmd/ajuda.go`): USO, COMANDOS, EXEMPLOS, FLAGS e FLAGS GLOBAIS, tipos das flags e padrões traduzidos, `help` padrão do cobra traduzido, grupos sem linha de uso própria e exemplos que quebram com recuo. O `--help` resolve o modo visual sozinho (o cobra pula o `PersistentPreRun`), senão ignorava `YBY_THEME` e `YBY_ASCII`. `Title` sem texto à direita não deixa mais espaços no fim da linha. Os textos dos comandos (Short, Long, descrição das flags) continuam como estavam | este commit |
+| 24/10/2026 | T011 | Fluxo de resposta em eventos (`plugins/bard/tui/fluxo.go`): `EtapaMsg` (contexto do projeto, entender o pedido, ferramenta, gerar resposta), `TrechoMsg` e `FimMsg` por canal; retry com o backoff do REPL antigo (2 s, 10 s, até 30 s) descartando o parcial; esc cancela por contexto sem fechar o Bard, mesmo com provider que ignora o contexto. Revisão: o histórico renderizado fica em cache e cada trecho só redesenha o parcial; panic no fluxo vira `FimMsg` com erro. Provider falso nos testes, inclusive 429 | este commit |

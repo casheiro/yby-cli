@@ -237,6 +237,9 @@ func startChat(ctxData map[string]interface{}) error {
 			SystemPrompt: systemPrompt,
 			SessionID:    sessionID,
 			SaveMessage:  saveMessage,
+
+			TopK:             bardCfg.TopK,
+			LimiarRelevancia: bardCfg.RelevanceThreshold,
 		}
 		if clusterCtx != nil {
 			tuiConfig.Namespace = clusterCtx.Namespace

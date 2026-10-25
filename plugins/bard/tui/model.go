@@ -1,16 +1,15 @@
 package tui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"encoding/json"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -38,12 +37,11 @@ type Config struct {
 	Cluster      string
 	AIModel      string
 	SaveMessage  func(role, content, sessionID string)
-}
-
-// responseMsg é enviada quando o streaming da IA termina.
-type responseMsg struct {
-	content string
-	err     error
+	// TopK e LimiarRelevancia controlam a busca no Synapstor, como vêm do
+	// bard.yaml (padrões 5 e 0,6 no loadBardConfig). TopK 0 vira 5; limiar 0
+	// aceita todas as notas.
+	TopK             int
+	LimiarRelevancia float64
 }
 
 // Model é o modelo principal do Bubbletea para o Bard.
@@ -57,12 +55,28 @@ type Model struct {
 	state       state
 	width       int
 	height      int
-	renderer    *glamour.TermRenderer
+	markdown    func(string) (string, error) // glamour; nil mostra o texto cru
 	err         error
+
+	// Histórico já renderizado: as mensagens só crescem, então cada uma passa
+	// pelo glamour uma vez; a largura nova refaz tudo. Assim um trecho da
+	// resposta não paga a renderização da conversa inteira.
+	historico        string
+	historicoN       int
+	historicoLargura int
+
+	// Rodada em andamento: eventos do fluxo, cancelamento (esc) e o que já chegou.
+	fluxo         *Fluxo
+	rodada        int
+	eventos       <-chan tea.Msg
+	cancelar      context.CancelFunc
+	interrompendo bool
+	etapas        []EtapaMsg
+	parcial       string
 }
 
 type chatMessage struct {
-	role    string // "user", "assistant", "tool", "error"
+	role    string // "user", "assistant", "tool", "error", "nota"
 	content string
 }
 
@@ -83,15 +97,19 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 		glamour.WithWordWrap(76),
 	)
 
-	return Model{
+	m := Model{
 		viewport:    vp,
 		textarea:    ta,
 		provider:    provider,
 		vectorStore: vectorStore,
 		config:      config,
 		state:       stateIdle,
-		renderer:    renderer,
+		fluxo:       novoFluxo(provider, vectorStore, config),
 	}
+	if renderer != nil {
+		m.markdown = renderer.Render
+	}
+	return m
 }
 
 // Init inicializa o modelo do Bubbletea.
@@ -107,7 +125,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC:
+			if m.cancelar != nil {
+				m.cancelar()
+			}
 			return m, tea.Quit
+
+		case tea.KeyEsc:
+			// esc interrompe a resposta em andamento sem fechar o Bard; o
+			// FimMsg da rodada é que devolve o estado ocioso.
+			if m.state == stateStreaming && m.cancelar != nil && !m.interrompendo {
+				m.interrompendo = true
+				m.cancelar()
+				m.updateViewport()
+				return m, nil
+			}
 
 		case tea.KeyEnter:
 			if m.state == stateStreaming {
@@ -134,7 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.config.SaveMessage("user", input, m.config.SessionID)
 			}
 
-			return m, m.sendMessage(input)
+			return m, m.iniciarRodada(input)
 		}
 
 	case tea.WindowSizeMsg:
@@ -157,16 +188,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateViewport()
 		return m, nil
 
-	case responseMsg:
-		m.state = stateIdle
-		if msg.err != nil {
-			m.messages = append(m.messages, chatMessage{role: "error", content: msg.err.Error()})
-		} else {
-			m.messages = append(m.messages, chatMessage{role: "assistant", content: msg.content})
-			if m.config.SaveMessage != nil {
-				m.config.SaveMessage("assistant", msg.content, m.config.SessionID)
-			}
+	case EtapaMsg:
+		if msg.Rodada != m.rodada {
+			return m, nil
 		}
+		if msg.Etapa == EtapaResposta && msg.Tentativa > 1 {
+			// A resposta recomeçou: o texto da tentativa anterior não vale.
+			m.parcial = ""
+		}
+		m.registrarEtapa(msg)
+		m.updateViewport()
+		return m, m.proximoEvento()
+
+	case TrechoMsg:
+		if msg.Rodada != m.rodada {
+			return m, nil
+		}
+		m.parcial += msg.Texto
+		m.updateViewport()
+		return m, m.proximoEvento()
+
+	case FimMsg:
+		if msg.Rodada != m.rodada {
+			return m, nil
+		}
+		m.encerrarRodada(msg)
 		m.updateViewport()
 		return m, nil
 	}
@@ -217,58 +263,90 @@ func (m Model) View() string {
 	return b.String()
 }
 
-// sendMessage envia a mensagem para a IA e retorna o resultado.
-func (m Model) sendMessage(input string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
+// iniciarRodada dispara o fluxo da pergunta e devolve o comando que lê o
+// primeiro evento; cada evento tratado em Update pede o seguinte até o FimMsg.
+func (m *Model) iniciarRodada(input string) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.rodada++
+	m.cancelar = cancel
+	m.interrompendo = false
+	m.etapas = nil
+	m.parcial = ""
+	m.eventos = m.fluxo.Iniciar(ctx, m.rodada, input)
+	return ProximoEvento(m.eventos)
+}
 
-		// Busca RAG
-		runInput := input
-		if m.vectorStore != nil {
-			results, err := m.vectorStore.Search(ctx, input, 5)
-			if err == nil && len(results) > 0 {
-				var sb strings.Builder
-				for _, res := range results {
-					if float64(res.Score) >= 0.6 {
-						sb.WriteString(fmt.Sprintf("\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content))
-					}
-				}
-				if sb.Len() > 0 {
-					runInput = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", sb.String(), input)
-				}
-			}
+// proximoEvento pede o evento seguinte da rodada; sem rodada aberta não há o
+// que ler (um canal nil travaria o comando para sempre).
+func (m Model) proximoEvento() tea.Cmd {
+	if m.eventos == nil {
+		return nil
+	}
+	return ProximoEvento(m.eventos)
+}
+
+// registrarEtapa guarda o estado mais recente de cada etapa da rodada.
+func (m *Model) registrarEtapa(msg EtapaMsg) {
+	for i := range m.etapas {
+		if m.etapas[i].Etapa == msg.Etapa && m.etapas[i].Rotulo == msg.Rotulo {
+			m.etapas[i] = msg
+			return
 		}
+	}
+	m.etapas = append(m.etapas, msg)
+}
 
-		// Classificar intenção via IA (chamada rápida)
-		intent := classifyIntent(ctx, m.provider, input)
+// encerrarRodada fecha a rodada: registra a resposta (ou o erro) e volta ao
+// estado ocioso. Resposta interrompida mostra o que chegou e não vai ao histórico.
+func (m *Model) encerrarRodada(msg FimMsg) {
+	if m.cancelar != nil {
+		m.cancelar()
+	}
+	m.cancelar = nil
+	m.eventos = nil
+	m.state = stateIdle
+	m.interrompendo = false
+	m.parcial = ""
 
-		finalInput := runInput
-		if intent != nil && !intent.Direct && intent.Intent != "direct" {
-			tool := tools.FindByIntent(intent.Intent)
-			if tool != nil {
-				output, execErr := tool.Execute(ctx, intent.Params)
-				toolResult := output
-				if execErr != nil {
-					toolResult = fmt.Sprintf("Erro: %v", execErr)
-				}
-				finalInput = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", input, tool.Name, toolResult)
-			}
+	switch {
+	case msg.Interrompida:
+		if strings.TrimSpace(msg.Resposta) != "" {
+			m.messages = append(m.messages, chatMessage{role: "assistant", content: msg.Resposta})
 		}
-
-		var responseBuf bytes.Buffer
-		err := m.provider.StreamCompletion(ctx, m.config.SystemPrompt, finalInput, io.Writer(&responseBuf))
-		if err != nil {
-			return responseMsg{err: err}
+		m.messages = append(m.messages, chatMessage{role: "nota", content: "resposta interrompida"})
+	case msg.Err != nil:
+		m.messages = append(m.messages, chatMessage{role: "error", content: msg.Err.Error()})
+	default:
+		m.messages = append(m.messages, chatMessage{role: "assistant", content: msg.Resposta})
+		if m.config.SaveMessage != nil {
+			m.config.SaveMessage("assistant", msg.Resposta, m.config.SessionID)
 		}
-		return responseMsg{content: responseBuf.String()}
 	}
 }
 
-// updateViewport atualiza o conteúdo do viewport com as mensagens.
-func (m *Model) updateViewport() {
-	var content strings.Builder
+// etapaAtual devolve o rótulo da última etapa em andamento, se houver.
+func (m Model) etapaAtual() string {
+	for i := len(m.etapas) - 1; i >= 0; i-- {
+		if m.etapas[i].Estado == ui.EtapaAtual {
+			return m.etapas[i].Rotulo
+		}
+	}
+	return ""
+}
 
-	for _, msg := range m.messages {
+// renderizarHistorico acrescenta ao cache as mensagens ainda não renderizadas.
+func (m *Model) renderizarHistorico() {
+	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) {
+		m.historico, m.historicoN = "", 0
+		m.historicoLargura = m.viewport.Width
+	}
+	if m.historicoN == len(m.messages) {
+		return
+	}
+	var content strings.Builder
+	content.WriteString(m.historico)
+
+	for _, msg := range m.messages[m.historicoN:] {
 		switch msg.role {
 		case "user":
 			content.WriteString(userStyle.Render("You > "))
@@ -277,8 +355,8 @@ func (m *Model) updateViewport() {
 		case "assistant":
 			content.WriteString(bardStyle.Render("Bard > "))
 			// Renderizar markdown se disponível
-			if m.renderer != nil {
-				rendered, err := m.renderer.Render(msg.content)
+			if m.markdown != nil {
+				rendered, err := m.markdown(msg.content)
 				if err == nil {
 					content.WriteString(strings.TrimSpace(rendered))
 				} else {
@@ -296,11 +374,37 @@ func (m *Model) updateViewport() {
 			content.WriteString(errorMsgStyle.Render("Erro: "))
 			content.WriteString(msg.content)
 			content.WriteString("\n\n")
+		case "nota":
+			content.WriteString(ui.S().TintaSuave.Render(msg.content))
+			content.WriteString("\n\n")
 		}
 	}
+	m.historico = content.String()
+	m.historicoN = len(m.messages)
+}
+
+// updateViewport atualiza o conteúdo do viewport com as mensagens. Durante a
+// resposta, só o parcial e o indicador mudam a cada trecho.
+func (m *Model) updateViewport() {
+	m.renderizarHistorico()
+	var content strings.Builder
+	content.WriteString(m.historico)
 
 	if m.state == stateStreaming {
-		content.WriteString(thinkingStyle.Render("Pensando..."))
+		// A resposta chega crua enquanto é gerada; o markdown vem no fim.
+		if m.parcial != "" {
+			content.WriteString(bardStyle.Render("Bard > "))
+			content.WriteString(m.parcial)
+			content.WriteString("\n\n")
+		}
+		indicador := "Pensando..."
+		switch {
+		case m.interrompendo:
+			indicador = "Interrompendo..."
+		case m.etapaAtual() != "":
+			indicador = "Pensando... (" + m.etapaAtual() + ")"
+		}
+		content.WriteString(thinkingStyle.Render(indicador))
 		content.WriteString("\n")
 	}
 
