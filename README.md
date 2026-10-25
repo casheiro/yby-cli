@@ -20,7 +20,7 @@
 O **Yby CLI** não é apenas um wrapper de comandos. Ele é um **Assistente Estratégico** que orbita o ciclo de vida da sua infraestrutura, fornecendo:
 
 1.  🚀 **Bootstrap Platform**: Entrega um cluster de produção "batteries-included" em minutos (VPS -> K3s -> ArgoCD -> Monitoring).
-2.  ☁️ **Multi-Cloud**: Conecta e gerencia clusters em AWS EKS, Azure AKS e GCP GKE com refresh automático de credenciais.
+2.  ☁️ **Multi-Cloud** (beta): Conecta e gerencia clusters em AWS EKS, Azure AKS e GCP GKE com refresh automático de credenciais.
 3.  🛡️ **Guardian (Governança)**: Garante padrões de arquitetura e segurança desde o Day 0.
 4.  🤖 **Intelligence Layer**: Usa IA (Ollama, Claude, Gemini, OpenAI, Bedrock) para diagnosticar problemas (`sentinel`), documentar arquitetura (`atlas`) e gerir conhecimento (`synapstor`).
 5.  💻 **Developer Experience**: Abstrai a complexidade do ambiente local sem esconder a realidade do Kubernetes.
@@ -72,7 +72,9 @@ yby sentinel investigate pod-xyz -n production
 # 🤖 Sentinel: "Detectei OOMKilled. Seu limite de memória é 128Mi, mas o pico foi 256Mi."
 ```
 
-### 3. Multi-Cloud (EKS / AKS / GKE)
+### 3. Multi-Cloud (EKS / AKS / GKE) · beta
+> **Beta:** testado com os CLIs `aws`, `az` e `gcloud` e conferido contra a documentação oficial, mas ainda não contra clusters reais. O que falta validar está no [ROADMAP](./ROADMAP.md). Relate problemas nas [issues](https://github.com/casheiro/yby-cli/issues).
+
 Conecte clusters de qualquer cloud pública com auth avançada:
 ```bash
 # Conectar a cluster cloud (interativo)

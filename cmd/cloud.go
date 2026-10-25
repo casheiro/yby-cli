@@ -19,7 +19,10 @@ var (
 
 var cloudCmd = &cobra.Command{
 	Use:   "cloud",
-	Short: "Gerencia integrações com provedores cloud (AWS, Azure, GCP)",
+	Short: "Gerencia clusters em AWS, Azure e GCP",
+	Annotations: map[string]string{anotacaoBeta: "Beta: testado com os CLIs aws, az e gcloud e conferido contra a documentação oficial, " +
+		"mas ainda não contra clusters reais. Login, tokens e kubeconfig podem falhar de jeitos que os testes não pegaram; " +
+		"relate em github.com/casheiro/yby-cli/issues."},
 	Run: func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	},

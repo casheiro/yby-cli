@@ -167,6 +167,8 @@ Pacote `pkg/cloud/` fornece abstração para clusters K8s gerenciados em clouds 
 
 ### Comandos `yby cloud`
 
+Em beta: a anotação `yby/beta` do `cloudCmd` (`anotacaoBeta` em `cmd/ajuda.go`) põe "(beta)" na lista do `yby --help` e a nota na ajuda do `cloud` e de todos os subcomandos. Nunca testados contra cluster real; o que falta para sair do beta está no `ROADMAP.md`.
+
 - `yby cloud connect [--provider P] [--region R] [--cluster C] [--env-name N]` — guided setup interativo ou não-interativo para conexão a cluster cloud
 - `yby cloud list [--provider P] [--region R]` — lista clusters disponíveis em tabela
 - `yby cloud status` — exibe credenciais, identidade, expiração do token
