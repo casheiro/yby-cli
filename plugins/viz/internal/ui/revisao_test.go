@@ -228,26 +228,17 @@ func TestRelogio_UmaLeituraPorVez(t *testing.T) {
 	}
 }
 
-// TestRelogio_RelêUmaAbaDeFundoPorVez: o tique lê a aba ativa e, em rodízio,
-// uma das outras já lidas, para as contagens seguirem vivas.
-func TestRelogio_RelêUmaAbaDeFundoPorVez(t *testing.T) {
+// TestRelogio_LeSoAAbaAtiva: o tique lê só a aba ativa; as contagens das abas
+// de fundo vêm do watch (TestVigia_*), sem rodízio.
+func TestRelogio_LeSoAAbaAtiva(t *testing.T) {
 	m := telaDaPrancha(t, 140, 32) // Pods ativa; Deployments, StatefulSets, Services e Nodes lidas
-	var lidas []string
-	for i := 0; i < 5; i++ {
-		var cmd tea.Cmd
-		m, cmd = atualizar(m, tickMsg(horaDaPrancha))
+	for _, tab := range []ResourceTab{TabPods, TabDeployments} {
+		m.activeTab = tab
+		_, cmd := atualizar(m, tickMsg(horaDaPrancha))
 		msg := cmd().(leituraMsg)
-		if len(msg.respostas) != 2 {
-			t.Fatalf("tique %d leu %d abas", i, len(msg.respostas))
+		if len(msg.abas) != 1 || msg.abas[0] != tab || len(msg.respostas) != 1 {
+			t.Fatalf("o tique em %s leu %v", tab, msg.abas)
 		}
-		if _, ok := msg.respostas[0].([]monitor.Pod); !ok {
-			t.Fatalf("a primeira leitura é da aba ativa: %T", msg.respostas[0])
-		}
-		lidas = append(lidas, fmt.Sprintf("%T", msg.respostas[1]))
-	}
-	quer := "[]monitor.Deployment []monitor.StatefulSet []monitor.Service []monitor.Node []monitor.Deployment"
-	if got := strings.Join(lidas, " "); got != quer {
-		t.Fatalf("rodízio: %s", got)
 	}
 }
 

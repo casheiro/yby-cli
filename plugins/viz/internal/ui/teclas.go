@@ -69,7 +69,7 @@ func (m Model) teclaLista(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.actionFeedback = avisoQ() // o painel é um nível abaixo da lista
 		return m, nil
 	case key.Matches(k, g.Sair):
-		return m, tea.Quit
+		return m.sair()
 	case key.Matches(k, g.Ajuda):
 		m.ajuda, m.ajudaScroll = true, 0
 		return m, nil
@@ -183,16 +183,52 @@ func (m Model) listaNaTela() bool {
 	return m.err == nil && !m.janelaPequena()
 }
 
-// valeSemLista diz se a tecla vale com a lista fora da tela. As que agem
-// sobre a linha selecionada (mover, ↵, l y e, x) e as que filtram (/ f) não
-// valem: a ação atingiria uma linha que a pessoa não vê. Sem conexão valem
-// q, ?, esc, r, n e as abas; com a janela pequena, só q e r.
+// valeSemLista diz se a tecla vale sem conexão, com o erro no lugar da lista.
+// As que agem sobre a linha selecionada (mover, ↵, l y e, x) e as que filtram
+// (/ f) não valem: a ação atingiria uma linha que a pessoa não vê; valem q, ?,
+// esc, r, n e as abas. Com a janela pequena, as teclas nem chegam aqui
+// (teclaJanelaPequena).
 func (m Model) valeSemLista(k tea.KeyMsg) bool {
 	g, l := mapa().Global, mapa().Lista
-	if m.janelaPequena() {
-		return key.Matches(k, g.Sair, g.Recarregar)
-	}
 	return key.Matches(k, g.Sair, g.Ajuda, g.Voltar, g.Recarregar, l.AbaSeguinte, l.AbaAnterior, l.AbaNumero, l.Namespace)
+}
+
+// camadaDeLeitura diz se há uma camada só de leitura aberta (ajuda, quadro de
+// logs, YAML ou eventos, detalhe por cima): a janela pequena não a fecha.
+func (m Model) camadaDeLeitura() bool {
+	return m.ajuda || m.quadro.aberto || m.detalheAberto
+}
+
+// teclaJanelaPequena trata as teclas com a tela "aumente a janela": nada está
+// à vista, então só q sai (e só do nível de cima: com uma camada de leitura
+// aberta, que volta quando a janela crescer, ele não faz nada). O ctrl+c já
+// saiu antes de chegar aqui.
+func (m Model) teclaJanelaPequena(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(k, mapa().Global.Sair) && !m.camadaDeLeitura() {
+		return m.sair()
+	}
+	return m, nil
+}
+
+// cancelarPelaJanela fecha, quando a janela fica pequena demais, as camadas
+// que agem ou recebem texto, como o esc fecharia cada uma: o menu x, a
+// confirmação, o escalar e os campos /, n e f (a busca volta ao termo de
+// antes). Sem elas na tela, uma tecla poderia confirmar o que a pessoa não vê.
+// As camadas de leitura ficam e voltam quando a janela crescer, junto com o
+// aviso do que foi cancelado.
+func (m *Model) cancelarPelaJanela() {
+	if m.acao.aberta() {
+		m.fecharAcoes()
+		m.cancelouAcao = true
+	}
+	if m.filter.InputMode {
+		campo := m.filter.InputField
+		m.fecharCampo()
+		if campo == campoBusca {
+			m.buscarAgora(m.filter.buscaAnterior)
+		}
+		m.cancelouAcao = true
+	}
 }
 
 // avisoTeclaAntiga diz onde foi parar a ação de uma tecla que mudou de lugar
@@ -316,10 +352,10 @@ func (m Model) aplicarCampo(campo, valor string) (tea.Model, tea.Cmd) {
 		if valor == m.filter.Namespace {
 			return m, nil
 		}
-		// As listas lidas são do namespace anterior.
+		// As listas lidas são do namespace anterior; o watch reabre no novo.
 		m.filter.Namespace = valor
 		m.esquecerListas()
-		cmd = m.ler(false, m.activeTab)
+		cmd = tea.Batch(m.ler(false, m.activeTab), m.vigiar())
 	case campoBusca:
 		m.buscarAgora(valor)
 		return m, nil

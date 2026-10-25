@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -45,6 +47,8 @@ type K8sClient struct {
 	contexto   string // contexto atual do kubeconfig
 	namespace  string // namespace do contexto atual (vazio: todos)
 	lerLog     lerLog // lê o log de um contêiner; nil usa lerLogs (os testes trocam)
+	// intervaloLote é o tempo entre lotes do watch; zero usa intervaloDoLote.
+	intervaloLote time.Duration
 }
 
 // Contexto devolve o nome do contexto atual do kubeconfig (vazio se não há).
@@ -276,28 +280,31 @@ func (c *K8sClient) GetDeployments(filter ListFilter) ([]Deployment, error) {
 		return nil, fmt.Errorf("falha ao listar deployments: %w", err)
 	}
 	var deps []Deployment
-	for _, d := range list.Items {
-		ready := d.Status.ReadyReplicas
-		available := d.Status.AvailableReplicas
-		replicas := int32(0)
-		if d.Spec.Replicas != nil {
-			replicas = *d.Spec.Replicas
-		}
-		deps = append(deps, Deployment{
-			Name:        d.Name,
-			Namespace:   d.Namespace,
-			Replicas:    replicas,
-			Ready:       ready,
-			Available:   available,
-			Atualizados: d.Status.UpdatedReplicas,
-			CriadoEm:    d.CreationTimestamp.Time,
-			Labels:      d.Labels,
-			Estrategia:  estrategiaDe(d.Spec.Strategy),
-			Imagens:     imagens(d.Spec.Template.Spec.Containers),
-			Seletor:     metav1.FormatLabelSelector(d.Spec.Selector),
-		})
+	for i := range list.Items {
+		deps = append(deps, deploymentDeK8s(&list.Items[i]))
 	}
 	return deps, nil
+}
+
+// deploymentDeK8s converte o deployment da API.
+func deploymentDeK8s(d *appsv1.Deployment) Deployment {
+	replicas := int32(0)
+	if d.Spec.Replicas != nil {
+		replicas = *d.Spec.Replicas
+	}
+	return Deployment{
+		Name:        d.Name,
+		Namespace:   d.Namespace,
+		Replicas:    replicas,
+		Ready:       d.Status.ReadyReplicas,
+		Available:   d.Status.AvailableReplicas,
+		Atualizados: d.Status.UpdatedReplicas,
+		CriadoEm:    d.CreationTimestamp.Time,
+		Labels:      d.Labels,
+		Estrategia:  estrategiaDe(d.Spec.Strategy),
+		Imagens:     imagens(d.Spec.Template.Spec.Containers),
+		Seletor:     metav1.FormatLabelSelector(d.Spec.Selector),
+	}
 }
 
 // GetServices lista services com filtros opcionais de namespace e label.
@@ -312,27 +319,32 @@ func (c *K8sClient) GetServices(filter ListFilter) ([]Service, error) {
 		return nil, fmt.Errorf("falha ao listar services: %w", err)
 	}
 	var svcs []Service
-	for _, s := range list.Items {
-		ports := ""
-		for i, p := range s.Spec.Ports {
-			if i > 0 {
-				ports += ", "
-			}
-			ports += fmt.Sprintf("%d/%s", p.Port, p.Protocol)
-		}
-		svcs = append(svcs, Service{
-			Name:      s.Name,
-			Namespace: s.Namespace,
-			Type:      string(s.Spec.Type),
-			ClusterIP: s.Spec.ClusterIP,
-			Ports:     ports,
-			CriadoEm:  s.CreationTimestamp.Time,
-			Labels:    s.Labels,
-			Externos:  externosDe(&s),
-			Seletor:   seletorDeMapa(s.Spec.Selector),
-		})
+	for i := range list.Items {
+		svcs = append(svcs, serviceDeK8s(&list.Items[i]))
 	}
 	return svcs, nil
+}
+
+// serviceDeK8s converte o service da API.
+func serviceDeK8s(s *corev1.Service) Service {
+	ports := ""
+	for i, p := range s.Spec.Ports {
+		if i > 0 {
+			ports += ", "
+		}
+		ports += fmt.Sprintf("%d/%s", p.Port, p.Protocol)
+	}
+	return Service{
+		Name:      s.Name,
+		Namespace: s.Namespace,
+		Type:      string(s.Spec.Type),
+		ClusterIP: s.Spec.ClusterIP,
+		Ports:     ports,
+		CriadoEm:  s.CreationTimestamp.Time,
+		Labels:    s.Labels,
+		Externos:  externosDe(s),
+		Seletor:   seletorDeMapa(s.Spec.Selector),
+	}
 }
 
 // GetNodes lista nodes com filtros opcionais de label.
@@ -346,29 +358,32 @@ func (c *K8sClient) GetNodes(filter ListFilter) ([]Node, error) {
 		return nil, fmt.Errorf("falha ao listar nodes: %w", err)
 	}
 	var nodes []Node
-	for _, n := range list.Items {
-		status := "NotReady"
-		for _, cond := range n.Status.Conditions {
-			if cond.Type == "Ready" && cond.Status == "True" {
-				status = "Ready"
-				break
-			}
-		}
-		cpuCap := n.Status.Allocatable.Cpu().String()
-		memCap := n.Status.Allocatable.Memory().String()
-		nodes = append(nodes, Node{
-			Name:           n.Name,
-			Status:         status,
-			CPUCapacity:    cpuCap,
-			MemoryCapacity: memCap,
-			Version:        n.Status.NodeInfo.KubeletVersion,
-			CriadoEm:       n.CreationTimestamp.Time,
-			Labels:         n.Labels,
-			Papeis:         papeisDe(n.Labels),
-			IPInterno:      ipInternoDe(n.Status.Addresses),
-		})
+	for i := range list.Items {
+		nodes = append(nodes, nodeDeK8s(&list.Items[i]))
 	}
 	return nodes, nil
+}
+
+// nodeDeK8s converte o nó da API: Ready pela condição, senão NotReady.
+func nodeDeK8s(n *corev1.Node) Node {
+	status := "NotReady"
+	for _, cond := range n.Status.Conditions {
+		if cond.Type == "Ready" && cond.Status == "True" {
+			status = "Ready"
+			break
+		}
+	}
+	return Node{
+		Name:           n.Name,
+		Status:         status,
+		CPUCapacity:    n.Status.Allocatable.Cpu().String(),
+		MemoryCapacity: n.Status.Allocatable.Memory().String(),
+		Version:        n.Status.NodeInfo.KubeletVersion,
+		CriadoEm:       n.CreationTimestamp.Time,
+		Labels:         n.Labels,
+		Papeis:         papeisDe(n.Labels),
+		IPInterno:      ipInternoDe(n.Status.Addresses),
+	}
 }
 
 // GetStatefulSets lista statefulsets com filtros opcionais de namespace e label.
@@ -383,25 +398,30 @@ func (c *K8sClient) GetStatefulSets(filter ListFilter) ([]StatefulSet, error) {
 		return nil, fmt.Errorf("falha ao listar statefulsets: %w", err)
 	}
 	var result []StatefulSet
-	for _, s := range list.Items {
-		replicas := int32(0)
-		if s.Spec.Replicas != nil {
-			replicas = *s.Spec.Replicas
-		}
-		result = append(result, StatefulSet{
-			Name:        s.Name,
-			Namespace:   s.Namespace,
-			Replicas:    replicas,
-			Ready:       s.Status.ReadyReplicas,
-			Atualizados: s.Status.UpdatedReplicas,
-			CriadoEm:    s.CreationTimestamp.Time,
-			Labels:      s.Labels,
-			Servico:     s.Spec.ServiceName,
-			Imagens:     imagens(s.Spec.Template.Spec.Containers),
-			Seletor:     metav1.FormatLabelSelector(s.Spec.Selector),
-		})
+	for i := range list.Items {
+		result = append(result, statefulSetDeK8s(&list.Items[i]))
 	}
 	return result, nil
+}
+
+// statefulSetDeK8s converte o statefulset da API.
+func statefulSetDeK8s(s *appsv1.StatefulSet) StatefulSet {
+	replicas := int32(0)
+	if s.Spec.Replicas != nil {
+		replicas = *s.Spec.Replicas
+	}
+	return StatefulSet{
+		Name:        s.Name,
+		Namespace:   s.Namespace,
+		Replicas:    replicas,
+		Ready:       s.Status.ReadyReplicas,
+		Atualizados: s.Status.UpdatedReplicas,
+		CriadoEm:    s.CreationTimestamp.Time,
+		Labels:      s.Labels,
+		Servico:     s.Spec.ServiceName,
+		Imagens:     imagens(s.Spec.Template.Spec.Containers),
+		Seletor:     metav1.FormatLabelSelector(s.Spec.Selector),
+	}
 }
 
 // GetJobs lista jobs com filtros opcionais de namespace e label.
@@ -416,37 +436,42 @@ func (c *K8sClient) GetJobs(filter ListFilter) ([]Job, error) {
 		return nil, fmt.Errorf("falha ao listar jobs: %w", err)
 	}
 	var result []Job
-	for _, j := range list.Items {
-		completions := int32(0)
-		if j.Spec.Completions != nil {
-			completions = *j.Spec.Completions
-		}
-		concluido, falhou := false, false
-		for _, c := range j.Status.Conditions {
-			if c.Status != corev1.ConditionTrue {
-				continue
-			}
-			switch c.Type {
-			case batchv1.JobComplete:
-				concluido = true
-			case batchv1.JobFailed:
-				falhou = true
-			}
-		}
-		result = append(result, Job{
-			Name:        j.Name,
-			Namespace:   j.Namespace,
-			Completions: completions,
-			Active:      j.Status.Active,
-			Succeeded:   j.Status.Succeeded,
-			Failed:      j.Status.Failed,
-			Concluido:   concluido,
-			Falhou:      falhou,
-			CriadoEm:    j.CreationTimestamp.Time,
-			Labels:      j.Labels,
-		})
+	for i := range list.Items {
+		result = append(result, jobDeK8s(&list.Items[i]))
 	}
 	return result, nil
+}
+
+// jobDeK8s converte o job da API, com as condições Complete e Failed.
+func jobDeK8s(j *batchv1.Job) Job {
+	completions := int32(0)
+	if j.Spec.Completions != nil {
+		completions = *j.Spec.Completions
+	}
+	concluido, falhou := false, false
+	for _, c := range j.Status.Conditions {
+		if c.Status != corev1.ConditionTrue {
+			continue
+		}
+		switch c.Type {
+		case batchv1.JobComplete:
+			concluido = true
+		case batchv1.JobFailed:
+			falhou = true
+		}
+	}
+	return Job{
+		Name:        j.Name,
+		Namespace:   j.Namespace,
+		Completions: completions,
+		Active:      j.Status.Active,
+		Succeeded:   j.Status.Succeeded,
+		Failed:      j.Status.Failed,
+		Concluido:   concluido,
+		Falhou:      falhou,
+		CriadoEm:    j.CreationTimestamp.Time,
+		Labels:      j.Labels,
+	}
 }
 
 // GetIngresses lista ingresses com filtros opcionais de namespace e label.
@@ -461,35 +486,40 @@ func (c *K8sClient) GetIngresses(filter ListFilter) ([]Ingress, error) {
 		return nil, fmt.Errorf("falha ao listar ingresses: %w", err)
 	}
 	var result []Ingress
-	for _, ing := range list.Items {
-		class := ""
-		if ing.Spec.IngressClassName != nil {
-			class = *ing.Spec.IngressClassName
-		}
-		var hosts []string
-		var paths []string
-		for _, rule := range ing.Spec.Rules {
-			if rule.Host != "" {
-				hosts = append(hosts, rule.Host)
-			}
-			if rule.HTTP != nil {
-				for _, p := range rule.HTTP.Paths {
-					paths = append(paths, p.Path)
-				}
-			}
-		}
-		result = append(result, Ingress{
-			Name:      ing.Name,
-			Namespace: ing.Namespace,
-			Class:     class,
-			Hosts:     strings.Join(hosts, ", "),
-			Paths:     strings.Join(paths, ", "),
-			CriadoEm:  ing.CreationTimestamp.Time,
-			Labels:    ing.Labels,
-			Endereco:  enderecoDe(ing.Status.LoadBalancer.Ingress),
-		})
+	for i := range list.Items {
+		result = append(result, ingressDeK8s(&list.Items[i]))
 	}
 	return result, nil
+}
+
+// ingressDeK8s converte o ingress da API: classe, hosts e caminhos das regras.
+func ingressDeK8s(ing *networkingv1.Ingress) Ingress {
+	class := ""
+	if ing.Spec.IngressClassName != nil {
+		class = *ing.Spec.IngressClassName
+	}
+	var hosts []string
+	var paths []string
+	for _, rule := range ing.Spec.Rules {
+		if rule.Host != "" {
+			hosts = append(hosts, rule.Host)
+		}
+		if rule.HTTP != nil {
+			for _, p := range rule.HTTP.Paths {
+				paths = append(paths, p.Path)
+			}
+		}
+	}
+	return Ingress{
+		Name:      ing.Name,
+		Namespace: ing.Namespace,
+		Class:     class,
+		Hosts:     strings.Join(hosts, ", "),
+		Paths:     strings.Join(paths, ", "),
+		CriadoEm:  ing.CreationTimestamp.Time,
+		Labels:    ing.Labels,
+		Endereco:  enderecoDe(ing.Status.LoadBalancer.Ingress),
+	}
 }
 
 // GetConfigMaps lista configmaps com filtros opcionais de namespace e label.
@@ -504,29 +534,34 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 		return nil, fmt.Errorf("falha ao listar configmaps: %w", err)
 	}
 	var result []ConfigMap
-	for _, cm := range list.Items {
-		totalSize := 0
-		for _, v := range cm.Data {
-			totalSize += len(v)
-		}
-		for _, v := range cm.BinaryData {
-			totalSize += len(v)
-		}
-		dataSize := fmt.Sprintf("%dB", totalSize)
-		if totalSize >= 1024 {
-			dataSize = fmt.Sprintf("%.1fKi", float64(totalSize)/1024)
-		}
-		result = append(result, ConfigMap{
-			Name:      cm.Name,
-			Namespace: cm.Namespace,
-			Keys:      len(cm.Data) + len(cm.BinaryData),
-			DataSize:  dataSize,
-			CriadoEm:  cm.CreationTimestamp.Time,
-			Labels:    cm.Labels,
-			Chaves:    chavesDe(&cm),
-		})
+	for i := range list.Items {
+		result = append(result, configMapDeK8s(&list.Items[i]))
 	}
 	return result, nil
+}
+
+// configMapDeK8s converte o configmap da API: chaves e tamanho dos dados.
+func configMapDeK8s(cm *corev1.ConfigMap) ConfigMap {
+	totalSize := 0
+	for _, v := range cm.Data {
+		totalSize += len(v)
+	}
+	for _, v := range cm.BinaryData {
+		totalSize += len(v)
+	}
+	dataSize := fmt.Sprintf("%dB", totalSize)
+	if totalSize >= 1024 {
+		dataSize = fmt.Sprintf("%.1fKi", float64(totalSize)/1024)
+	}
+	return ConfigMap{
+		Name:      cm.Name,
+		Namespace: cm.Namespace,
+		Keys:      len(cm.Data) + len(cm.BinaryData),
+		DataSize:  dataSize,
+		CriadoEm:  cm.CreationTimestamp.Time,
+		Labels:    cm.Labels,
+		Chaves:    chavesDe(cm),
+	}
 }
 
 // formatAge formata uma duração em formato legível (ex: "5m", "2h", "3d")

@@ -193,17 +193,14 @@ func (m *Model) fecharAcoes() {
 	m.acao = acaoAberta{}
 }
 
-// cancelarAcaoSemLista fecha o menu ou a confirmação quando a lista sai da
-// tela (janela abaixo de 60x16 ou conexão caída): a View não desenha mais o
-// diálogo, e as teclas seguintes não podem confirmar uma ação que a pessoa
-// não vê. A linha de estado diz por que o diálogo sumiu.
+// cancelarAcaoSemLista fecha o menu ou a confirmação quando a conexão cai e o
+// erro toma o lugar da lista: a View não desenha mais o diálogo, e as teclas
+// seguintes não podem confirmar uma ação que a pessoa não vê. A linha de
+// estado diz por que o diálogo sumiu. A janela pequena fecha as camadas antes
+// (cancelarPelaJanela).
 func (m *Model) cancelarAcaoSemLista() {
 	m.fecharAcoes()
-	motivo := "a janela ficou pequena"
-	if m.err != nil {
-		motivo = "sem conexão com o cluster"
-	}
-	m.actionFeedback = frase(yui.StatusParado, "ação cancelada: "+motivo)
+	m.actionFeedback = frase(yui.StatusParado, "ação cancelada: sem conexão com o cluster")
 }
 
 // teclaMenu trata o menu x: ↑↓ movem o ◆, ↵ escolhe a ação focada, a letra

@@ -86,7 +86,10 @@ func (m Model) contexto() string {
 }
 
 // linhaAbas devolve as abas completas ("◆ 1 Pods 8") e as compactas (abaixo
-// de 80 colunas). Aba que ainda não chegou do cluster fica sem número.
+// de 80 colunas). O número de cada aba é o da lista que ela mostraria aberta:
+// a lista do namespace (pelo watch, ao vivo) com os filtros da tela (label e
+// busca em todas, status só nos pods). Aba que ainda não chegou do cluster,
+// ou que o RBAC não deixa listar, fica sem número.
 func (m Model) linhaAbas() (normais, compactas string) {
 	lista := make([]yui.Aba, tabCount)
 	curtas := make([]yui.Aba, tabCount)

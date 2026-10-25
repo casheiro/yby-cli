@@ -549,8 +549,8 @@ func TestMouse_CliqueDepoisDeMudarAJanela(t *testing.T) {
 }
 
 // TestTeclado_SemListaNaTela: sem conexão (depois das tentativas) ou abaixo
-// de 60x16, as teclas que agem sobre a linha selecionada não valem; q, r e
-// (sem conexão) ?, n e as abas continuam.
+// de 60x16, as teclas que agem sobre a linha selecionada não valem; q sai, e
+// sem conexão r, ?, n e as abas continuam (com a janela pequena, o r não lê).
 func TestTeclado_SemListaNaTela(t *testing.T) {
 	semConexao := telaDaPrancha(t, 140, 32)
 	semConexao.client = clienteStaging{&MockClient{Err: fmt.Errorf("connection refused")}}
@@ -573,9 +573,12 @@ func TestTeclado_SemListaNaTela(t *testing.T) {
 		if _, cmd := teclas(t, m, "q"); cmd == nil {
 			t.Errorf("%s: q deveria sair", nome)
 		}
-		if _, cmd := teclas(t, m, "r"); cmd == nil {
-			t.Errorf("%s: r deveria recarregar", nome)
-		}
+	}
+	if _, cmd := teclas(t, semConexao, "r"); cmd == nil {
+		t.Error("sem conexão, r tenta de novo")
+	}
+	if _, cmd := teclas(t, pequena, "r"); cmd != nil {
+		t.Error("com a janela pequena, r não lê")
 	}
 	if m, _ := teclas(t, semConexao, "n"); !m.filter.InputMode {
 		t.Error("sem conexão, n abre o namespace")

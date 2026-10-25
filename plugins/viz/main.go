@@ -12,7 +12,9 @@ import (
 	"github.com/casheiro/yby-cli/plugins/viz/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 )
 
 // Tipos do protocolo de plugins, os mesmos do core.
@@ -58,9 +60,16 @@ func run() error {
 				}
 				return nil
 			}
+			// O client-go (o watch, os avisos da API) escreve pelo klog no stderr,
+			// por cima da TUI: no Viz, ele não escreve nada.
+			klog.SetLogger(logr.Discard())
 			retryClient := monitor.NewRetryClient(client)
 			p := tea.NewProgram(ui.NewModel(retryClient), tea.WithAltScreen(), tea.WithMouseCellMotion())
-			if _, err := p.Run(); err != nil {
+			final, err := p.Run()
+			if m, ok := final.(ui.Model); ok {
+				m.Parar() // o watch para com o programa, mesmo sem passar pelo q
+			}
+			if err != nil {
 				return fmt.Errorf("ops, ocorreu um erro: %w", err)
 			}
 			return nil

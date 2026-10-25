@@ -43,7 +43,9 @@ type Model struct {
 	carregadas     uint16             // bit por aba: a lista já chegou do cluster ao menos uma vez
 	atualizado     time.Time          // hora da última lista recebida (linha de estado)
 	agora          func() time.Time   // relógio, injetável nos testes
-	rodizio        ResourceTab        // última aba de fundo relida pelo relógio
+	vigia          observacao         // o watch aberto no namespace atual
+	vigiadas       uint16             // bit por aba: a lista vem do watch (o relógio não a troca)
+	cancelouAcao   bool               // a janela pequena fechou uma camada: o aviso sai quando ela crescer
 	ajuda          bool               // a tela ? está aberta
 	ajudaScroll    int                // primeira linha da ajuda na janela
 	recarregando   bool               // o r pediu uma leitura que ainda não voltou
@@ -103,12 +105,17 @@ func NewModelComErro(err error) Model {
 }
 
 // Init inicializa o modelo do Bubbletea: a primeira leitura abre o relógio,
-// e cada resposta do relógio agenda a seguinte (uma leitura por vez).
+// e cada resposta do relógio agenda a seguinte (uma leitura por vez); com um
+// client que observa, o watch abre junto.
 func (m Model) Init() tea.Cmd {
 	if m.err != nil {
 		return nil
 	}
-	return m.ler(true, m.activeTab)
+	ler := m.ler(true, m.activeTab)
+	if _, ok := m.client.(monitor.Observador); ok {
+		return tea.Batch(ler, func() tea.Msg { return vigiarMsg{} })
+	}
+	return ler
 }
 
 // leituraMsg é a resposta de uma leitura do cluster: a lista (ou o erro) de
@@ -277,21 +284,32 @@ func (m Model) proximoTique() tea.Cmd {
 	return m.tique(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// abaDeFundo escolhe a próxima aba já lida, fora a ativa, para o relógio
-// reler junto (uma por vez, em rodízio): as contagens das abas seguem vivas.
-func (m Model) abaDeFundo() (ResourceTab, bool) {
-	for i := ResourceTab(1); i <= tabCount; i++ {
-		t := (m.rodizio + i) % tabCount
-		if t != m.activeTab && m.carregada(t) {
-			return t, true
-		}
-	}
-	return 0, false
-}
-
-// receber guarda a lista que chegou e devolve se a mensagem era uma lista.
+// receber guarda a lista que chegou, marca a conexão de pé e devolve se a
+// mensagem era uma lista.
 func (m *Model) receber(msg tea.Msg) bool {
 	chave, antes := m.chaveSelecionada(), m.selectedIndex
+	tab, ok := m.guardarLista(msg)
+	if !ok {
+		return false
+	}
+	m.conexaoDePe()
+	if tab == m.activeTab {
+		m.reselecionar(chave, antes)
+	}
+	return true
+}
+
+// conexaoDePe registra uma leitura que deu certo: sai o erro e a reconexão.
+func (m *Model) conexaoDePe() {
+	m.err = nil
+	m.reconnecting = false
+	m.retryCount = 0
+	m.atualizado = m.agora()
+}
+
+// guardarLista guarda a lista na aba dela, sem mexer no estado da conexão
+// (a lista de uma aba de fundo, pelo watch); devolve a aba.
+func (m *Model) guardarLista(msg tea.Msg) (ResourceTab, bool) {
 	var tab ResourceTab
 	switch d := msg.(type) {
 	case []monitor.Pod:
@@ -313,17 +331,11 @@ func (m *Model) receber(msg tea.Msg) bool {
 	case []monitor.Event:
 		tab, m.events = TabEvents, d
 	default:
-		return false
+		return 0, false
 	}
 	m.carregadas |= 1 << uint(tab)
-	m.err = nil
-	m.reconnecting = false
-	m.retryCount = 0
 	m.atualizado = m.agora()
-	if tab == m.activeTab {
-		m.reselecionar(chave, antes)
-	}
-	return true
+	return tab, true
 }
 
 // temDados diz se alguma aba tem lista para mostrar enquanto reconecta.
@@ -353,8 +365,38 @@ func (m *Model) falhar(err error) {
 func (m *Model) esquecerListas() {
 	m.pods, m.deployments, m.services, m.nodes, m.statefulsets = nil, nil, nil, nil, nil
 	m.jobs, m.ingresses, m.configmaps, m.events = nil, nil, nil, nil
-	m.carregadas = 0
+	m.carregadas, m.vigiadas = 0, 0
 	m.scrollY, m.selectedIndex = 0, 0
+}
+
+// esquecerAba apaga a lista de uma aba (o RBAC não deixa listar o tipo): ela
+// fica sem número.
+func (m *Model) esquecerAba(tab ResourceTab) {
+	chave, antes := m.chaveSelecionada(), m.selectedIndex
+	switch tab {
+	case TabPods:
+		m.pods = nil
+	case TabDeployments:
+		m.deployments = nil
+	case TabServices:
+		m.services = nil
+	case TabNodes:
+		m.nodes = nil
+	case TabStatefulSets:
+		m.statefulsets = nil
+	case TabJobs:
+		m.jobs = nil
+	case TabIngresses:
+		m.ingresses = nil
+	case TabConfigMaps:
+		m.configmaps = nil
+	case TabEvents:
+		m.events = nil
+	}
+	m.carregadas &^= 1 << uint(tab)
+	if tab == m.activeTab {
+		m.reselecionar(chave, antes)
+	}
 }
 
 // irParaAba troca a aba ativa, volta ao topo e lê a lista nova.
@@ -415,7 +457,10 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// ctrl+c sai de qualquer lugar: campo, menu, confirmação, ajuda, quadro, detalhe ou lista.
 		if key.Matches(msg, mapa().Global.SairForcado) {
-			return m, tea.Quit
+			return m.sair()
+		}
+		if m.janelaPequena() {
+			return m.teclaJanelaPequena(msg)
 		}
 		m.actionFeedback = "" // a frase da última ação some na tecla seguinte
 		return m.tecla(msg)
@@ -429,29 +474,54 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if yui.ModoPara(m.width, m.height) == yui.ModoLadoALado {
 			m.detalheAberto = false // ao lado, o painel não precisa do ↵; voltando a estreitar, ele começa fechado
 		}
+		var cmd tea.Cmd
+		if m.janelaPequena() {
+			m.cancelarPelaJanela()
+		} else if m.cancelouAcao {
+			m.cancelouAcao = false
+			m.actionFeedback = "" // o aviso é a frase mais nova
+			m.toast, cmd = m.toast.Mostrar(yui.ToastAviso, "ação cancelada: a janela ficou pequena demais")
+		}
 		m.seguirSelecao()
 		m.rolarQuadro(0) // a rolagem do quadro fica dentro do máximo da janela nova
-		return m, nil
+		return m, cmd
 
 	case tickMsg:
-		tabs := []ResourceTab{m.activeTab}
-		if t, ok := m.abaDeFundo(); ok {
-			m.rodizio = t
-			tabs = append(tabs, t)
+		cmd := tea.Batch(m.ler(true, m.activeTab), m.renovarExtras()) // renovarExtras muda m: antes do return
+		return m, cmd
+
+	case vigiarMsg:
+		if m.vigia.canal != nil {
+			return m, nil // já aberto
 		}
-		cmd := tea.Batch(m.ler(true, tabs...), m.renovarExtras()) // renovarExtras muda m: antes do return
+		cmd := m.vigiar()
+		return m, cmd
+
+	case loteMsg:
+		cmd := m.receberLote(msg)
 		return m, cmd
 
 	case leituraMsg:
 		// Uma leitura de outro namespace chegou atrasada: os dados não valem.
 		if msg.namespace == m.filter.Namespace {
 			for i, r := range msg.respostas {
+				tab, temAba := m.activeTab, i < len(msg.abas)
+				if temAba {
+					tab = msg.abas[i]
+				}
 				if err, ok := r.(error); ok {
 					// Só a falha da aba ativa derruba a tela: a de uma aba de fundo
 					// (RBAC) ou de uma aba que a pessoa já deixou, não.
-					if i < len(msg.abas) && msg.abas[i] == m.activeTab {
+					if temAba && tab == m.activeTab {
 						m.falhar(err)
 					}
+					continue
+				}
+				if temAba && m.vigiada(tab) {
+					// A lista é do watch: trocá-la por esta leitura poderia desfazer
+					// uma mudança que o watch já trouxe. A leitura só mostra que a
+					// conexão está de pé.
+					m.conexaoDePe()
 					continue
 				}
 				m.receber(r)

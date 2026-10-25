@@ -275,7 +275,8 @@ func TestAcao_SemAcessoDiretoAvisa(t *testing.T) {
 
 // TestAcao_SemListaNaTelaCancela: quando a lista sai da tela (janela abaixo de
 // 60x16 ou conexão caída), o menu e a confirmação fecham: as teclas seguintes
-// não confirmam uma exclusão que a pessoa não vê.
+// não confirmam uma exclusão que a pessoa não vê. Sem conexão o aviso sai na
+// hora; com a janela pequena, quando ela crescer (TestJanelaPequena_*).
 func TestAcao_SemListaNaTelaCancela(t *testing.T) {
 	sair := map[string]func(Model) Model{
 		"janela pequena": func(m Model) Model {
@@ -299,7 +300,9 @@ func TestAcao_SemListaNaTelaCancela(t *testing.T) {
 			for _, antes := range [][]string{{"x"}, append([]string{"x", "d"}, strings.Split("worker", "")...)} {
 				a, _ := teclas(t, m, antes...)
 				a = fn(a)
-				if a.acao.aberta() || !strings.Contains(ansi.Strip(a.actionFeedback), "ação cancelada") {
+				// Com a janela pequena, o aviso espera a janela crescer (cancelouAcao).
+				avisou := strings.Contains(ansi.Strip(a.actionFeedback), "ação cancelada") || a.cancelouAcao
+				if a.acao.aberta() || !avisou {
 					t.Fatalf("%v: a ação deveria fechar (etapa %d, aviso %q)", antes, a.acao.etapa, a.actionFeedback)
 				}
 				for _, k := range append([]string{"d"}, append(strings.Split("worker", ""), "enter")...) {
