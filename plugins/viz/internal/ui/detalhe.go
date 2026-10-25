@@ -534,9 +534,9 @@ func duasLinhas(l string, largura int) []string {
 func teclasDoPainel(kind string) []key.Binding {
 	l := mapa().Lista
 	if kind == "pod" {
-		return []key.Binding{l.Logs, l.Yaml, l.Eventos}
+		return []key.Binding{l.Logs, l.Yaml, l.Eventos, l.Bard}
 	}
-	return []key.Binding{l.Yaml, l.Eventos}
+	return []key.Binding{l.Yaml, l.Eventos, l.Bard}
 }
 
 // camposMinimos é quantos campos o painel guarda quando falta espaço (no pod,

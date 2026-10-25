@@ -25,6 +25,14 @@ func (r *RetryClient) Contexto() string {
 	return ""
 }
 
+// Kubeconfig devolve o arquivo do kubeconfig pedido ao client interno, quando ele o conhece.
+func (r *RetryClient) Kubeconfig() string {
+	if c, ok := r.inner.(interface{ Kubeconfig() string }); ok {
+		return c.Kubeconfig()
+	}
+	return ""
+}
+
 // NamespaceInicial devolve o namespace por onde a TUI começa, do client
 // interno, quando ele o conhece.
 func (r *RetryClient) NamespaceInicial() string {

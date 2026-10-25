@@ -165,3 +165,31 @@ contexts:
 		t.Fatalf("erro = %v", err)
 	}
 }
+
+// O --kubeconfig chega ao Bard do b pela cadeia do main.go: o K8sClient guarda o arquivo
+// pedido e o RetryClient em volta o repassa; sem --kubeconfig, ou com um client que não o
+// conhece, vem vazio (vale o KUBECONFIG herdado).
+func TestKubeconfig_PeloRetryClient(t *testing.T) {
+	caminho := usarKubeconfig(t, kubeconfigDeDois)
+	t.Setenv("KUBECONFIG", "")
+
+	c, err := NovoK8sClient(Conexao{Kubeconfig: caminho})
+	if err != nil {
+		t.Fatalf("NovoK8sClient: %v", err)
+	}
+	if got := NewRetryClient(c).Kubeconfig(); got != caminho {
+		t.Fatalf("RetryClient.Kubeconfig() = %q, esperado %q", got, caminho)
+	}
+
+	t.Setenv("KUBECONFIG", caminho)
+	c, err = NovoK8sClient(Conexao{})
+	if err != nil {
+		t.Fatalf("NovoK8sClient: %v", err)
+	}
+	if got := NewRetryClient(c).Kubeconfig(); got != "" {
+		t.Fatalf("sem --kubeconfig: %q", got)
+	}
+	if got := NewRetryClient(&FakeClient{}).Kubeconfig(); got != "" {
+		t.Fatalf("client sem kubeconfig: %q", got)
+	}
+}

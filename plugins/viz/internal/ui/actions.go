@@ -25,7 +25,8 @@ import (
 // selecionada; ↑↓ e ↵ ou a letra escolhem e esc fecha. Excluir pede o nome do
 // recurso (yui.Confirmar destrutivo), reiniciar confirma com ↵ (reversível) e
 // escalar pede as réplicas; esc volta ao menu. O resultado sai num yui.Toast
-// na linha de estado, e a lista é lida de novo.
+// na linha de estado, e a lista é lida de novo. Perguntar ao Bard é o b da lista
+// (bard.go), com a nota do problema da linha.
 
 // tipoAcao é uma ação do menu x.
 type tipoAcao int
@@ -35,6 +36,7 @@ const (
 	acaoEscalar
 	acaoCopiar
 	acaoExcluir
+	acaoBard
 )
 
 // acao é uma entrada do menu x: a tecla, o rótulo e a ação; pergunta diz se
@@ -50,6 +52,7 @@ var (
 	escalar   = acao{"s", "escalar", acaoEscalar, true}
 	copiar    = acao{"c", "copiar nome", acaoCopiar, false}
 	excluir   = acao{"d", "excluir", acaoExcluir, true}
+	perguntar = acao{"b", "perguntar ao Bard", acaoBard, false}
 )
 
 // rotuloNaTela é o rótulo do menu: "escalar…" (com as reticências do modo
@@ -62,16 +65,17 @@ func (a acao) rotuloNaTela() string {
 }
 
 // acoesDoTipo são as ações do menu x para o tipo de recurso, na ordem do
-// menu. Excluir vale para os tipos que o monitor.DeleteResource apaga; nós e
-// eventos só copiam o nome.
+// menu (folha VizConfirmar). Excluir vale para os tipos que o
+// monitor.DeleteResource apaga; nós e eventos só perguntam ao Bard e copiam o
+// nome.
 func acoesDoTipo(kind string) []acao {
 	switch kind {
 	case "deployment", "statefulset":
-		return []acao{reiniciar, escalar, copiar, excluir}
+		return []acao{reiniciar, escalar, perguntar, copiar, excluir}
 	case "pod", "job", "service", "configmap", "ingress":
-		return []acao{copiar, excluir}
+		return []acao{perguntar, copiar, excluir}
 	}
-	return []acao{copiar}
+	return []acao{perguntar, copiar}
 }
 
 // temAcao diz se o tipo tem a ação dada.
@@ -103,9 +107,11 @@ const (
 // (atualização, busca) até a confirmação, e a ação não pode mudar de alvo.
 type alvoDaAcao struct {
 	nome, namespace, kind string
-	replicas              int32  // réplicas pedidas hoje (deployments e statefulsets)
-	pods                  int    // pods do recurso na lista de pods; -1 sem a lista
-	dono                  string // quem controla o pod ("Deployment worker")
+	replicas              int32      // réplicas pedidas hoje (deployments e statefulsets)
+	pods                  int        // pods do recurso na lista de pods; -1 sem a lista
+	dono                  string     // quem controla o pod ("Deployment worker")
+	bard                  pedidoBard // o pedido do "b perguntar ao Bard"
+	notaBard              string     // a nota dele no menu ("por que está 0/2")
 }
 
 // acaoAberta é o menu ou a confirmação na tela.
@@ -184,7 +190,9 @@ func (m Model) abrirAcoes() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	m.acao = acaoAberta{etapa: noMenu, alvo: m.alvoDaLinha(abas[m.activeTab].kind, it)}
+	alvo := m.alvoDaLinha(abas[m.activeTab].kind, it)
+	alvo.bard, alvo.notaBard = m.pedidoSobre(it), notaBard(it, m.agora())
+	m.acao = acaoAberta{etapa: noMenu, alvo: alvo}
 	return m, nil
 }
 
@@ -240,7 +248,7 @@ func (m Model) teclaMenu(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) escolher(a acao) (tea.Model, tea.Cmd) {
 	alvo := m.acao.alvo
 	m.acao.tipo = a.tipo
-	if a.tipo != acaoCopiar && m.executando != "" {
+	if a.tipo != acaoCopiar && a.tipo != acaoBard && m.executando != "" {
 		m.fecharAcoes()
 		m.actionFeedback = frase(yui.StatusParado, "uma ação por vez: "+m.executando+yui.G().Reticencias)
 		return m, nil
@@ -249,6 +257,9 @@ func (m Model) escolher(a acao) (tea.Model, tea.Cmd) {
 	case acaoCopiar:
 		m.fecharAcoes()
 		return m, m.copiarNome(alvo.nome)
+	case acaoBard:
+		m.fecharAcoes()
+		return m.abrirBard(alvo.bard)
 	case acaoEscalar:
 		m.acao.etapa = escalando
 		m.acao.replicas = strconv.Itoa(int(alvo.replicas))
@@ -465,11 +476,15 @@ func notaDaAcao(a acao, alvo alvoDaAcao) string {
 		return "hoje " + replicasNaTela(alvo.replicas)
 	case acaoExcluir:
 		return "pede confirmação"
+	case acaoBard:
+		return alvo.notaBard
 	}
 	return ""
 }
 
-// larguraRotuloMenu é a coluna do rótulo da ação no menu, como na prancha.
+// larguraRotuloMenu é a coluna do rótulo da ação no menu, como na prancha. Um
+// rótulo mais largo ("perguntar ao Bard") alarga a coluna do menu inteiro, com
+// dois espaços até a nota, para as notas seguirem alinhadas.
 const larguraRotuloMenu = 16
 
 // quadroMenu é o quadro "AÇÕES · Deployment worker" com uma linha por ação:
@@ -481,9 +496,13 @@ func (m Model) quadroMenu(largura int) string {
 	type linha struct{ plano, estilizado string }
 	linhas := make([]linha, len(acoes))
 	interno := 0
+	coluna := larguraRotuloMenu
+	for _, a := range acoes {
+		coluna = max(coluna, lipgloss.Width(a.rotuloNaTela())+2)
+	}
 	for i, a := range acoes {
 		rotulo := a.rotuloNaTela()
-		rotulo += strings.Repeat(" ", max(1, larguraRotuloMenu-lipgloss.Width(rotulo)))
+		rotulo += strings.Repeat(" ", max(1, coluna-lipgloss.Width(rotulo)))
 		nota := notaDaAcao(a, alvo)
 		marca, tecla, nome := s.TintaSuave.Render(g.Pendente), s.Negrito.Render(a.tecla), s.Tinta.Render(rotulo)
 		if a.tipo == acaoExcluir {

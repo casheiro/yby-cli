@@ -452,6 +452,7 @@ func (m Model) gruposDaAjuda() []grupoAjuda {
 	} else {
 		lista.linhas = append(lista.linhas, linhaAjuda{"y e", "yaml · eventos"})
 	}
+	lista.linhas = append(lista.linhas, linhaAjuda{"b", "perguntar ao Bard"})
 	return []grupoAjuda{todas, lista}
 }
 

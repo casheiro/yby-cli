@@ -866,7 +866,7 @@ func TestQuadroLista_NegritoSoNoNome(t *testing.T) {
 // TestQuadroAjuda_TeclasDoKeymap: as teclas do /ajuda vêm dos mesmos bindings da legenda.
 func TestQuadroAjuda_TeclasDoKeymap(t *testing.T) {
 	semCores(t)
-	q := quadroAjuda(true)
+	q := quadroAjuda(true, "")
 	var linhas []string
 	for _, l := range q.linhas {
 		linhas = append(linhas, ansi.Strip(l.chave)+" | "+ansi.Strip(l.valor))
@@ -879,7 +879,7 @@ func TestQuadroAjuda_TeclasDoKeymap(t *testing.T) {
 			t.Errorf("a ajuda deveria ter %q:\n%s", trecho, texto)
 		}
 	}
-	if len(quadroAjuda(false).linhas) != len(q.linhas)-len(exemplosPerguntas)-1 {
+	if len(quadroAjuda(false, "").linhas) != len(q.linhas)-len(exemplosPerguntas)-1 {
 		t.Error("sem exemplos, só as teclas")
 	}
 }

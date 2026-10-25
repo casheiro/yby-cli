@@ -169,7 +169,7 @@ func (m Model) executarComando(nome, args string) (tea.Model, tea.Cmd) {
 	case "exportar":
 		cmd = m.exportar(args)
 	case "ajuda":
-		m.mostrarQuadro(texto, agora, quadroAjuda(true))
+		m.mostrarQuadro(texto, agora, quadroAjuda(true, m.config.Voltar))
 	}
 	return m, cmd
 }

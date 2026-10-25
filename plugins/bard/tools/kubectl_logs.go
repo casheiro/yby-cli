@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 )
 
@@ -30,7 +29,7 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 
 	args := []string{"logs", pod}
 
-	if ns := params["namespace"]; ns != "" {
+	if ns := namespaceDe(params); ns != "" {
 		args = append(args, "-n", ns)
 	}
 
@@ -42,7 +41,7 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 
 	slog.Debug("executando kubectl", "args", strings.Join(args, " "))
 
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	cmd := comandoKubectl(ctx, args)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("kubectl logs falhou: %w\n%s", err, string(output))

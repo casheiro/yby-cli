@@ -59,6 +59,8 @@ type Model struct {
 	extras         map[string]extrasDetalhe
 	quadro         quadroAberto // logs, YAML ou eventos ocupando o corpo
 	idQuadro       int          // último pedido de conteúdo do quadro: resposta de outro é descartada
+	bard           ligacaoBard  // o b abre o Bard (bard.go)
+	bardAbrindo    bool         // o yby do b rodando: outro b espera ele voltar
 	// tique agenda a próxima leitura do relógio (tea.Tick; injetável nos testes).
 	tique func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
@@ -88,6 +90,7 @@ func NewModel(client monitor.Client) Model {
 		tique:  tea.Tick,
 		toast:  yui.NovoToast(),
 		copiar: yui.CopiarOSC52,
+		bard:   novaLigacaoBard(),
 	}
 	// Começa no namespace pedido (--namespace) ou no do contexto do kubeconfig,
 	// como o kubectl; n troca.
@@ -553,6 +556,9 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case conteudoMsg:
 		m.receberConteudo(msg)
 		return m, nil
+
+	case bardFechadoMsg:
+		return m.bardFechado(msg)
 
 	case resultadoAcaoMsg:
 		return m.mostrarResultado(msg)

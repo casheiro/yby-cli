@@ -1,0 +1,32 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  BARD[0m                                                [38;2;161;147;121majuda[0m
+
+  [38;2;221;208;181mAssistente de IA para infraestrutura Kubernetes. O Bard entende o pedido e executa as ferramentas do Yby (sentinel, atlas, kubectl) quando preciso; a IA interpreta os resultados.[0m
+
+  [38;2;221;208;181mNa TUI, ↵ envia, esc interrompe a resposta e ctrl+c sai. No Viz, b abre o Bard com a pergunta sobre o recurso selecionado já escrita no campo, no cluster e no namespace do Viz; esc volta ao Viz.[0m
+
+  [38;2;221;208;181mFora da TUI, só a resposta vai para o stdout; as etapas (num terminal) e os erros vão para o stderr.[0m
+
+[38;2;161;147;121mUSO[0m
+  [38;2;221;208;181myby bard [flags][0m
+  [38;2;221;208;181myby bard -p "pergunta"[0m
+  [38;2;221;208;181mecho "pergunta" | yby bard[0m
+
+[38;2;161;147;121mEXEMPLOS[0m
+  [38;2;161;147;121m# conversa na TUI (precisa de um terminal)[0m
+  [38;2;221;208;181myby bard[0m
+  [38;2;161;147;121m# uma pergunta, resposta no stdout[0m
+  [38;2;221;208;181myby bard -p "lista os pods"[0m
+  [38;2;161;147;121m# uma pergunta por linha do stdin[0m
+  [38;2;221;208;181mecho "por que o pod api reinicia?" | yby bard[0m
+  [38;2;161;147;121m# a conversa abre com a pergunta escrita; ↵ envia[0m
+  [38;2;221;208;181myby bard --pergunta "por que o pod api reinicia?" --context k3d-yby-local -n payments[0m
+
+[38;2;161;147;121mFLAGS[0m
+  [38;2;221;208;181m-p, --prompt "pergunta"    [0m[38;2;161;147;121mresponde uma pergunta e sai[0m
+  [38;2;221;208;181m    --pergunta "pergunta"  [0m[38;2;161;147;121mabre a conversa com a pergunta escrita, sem enviar[0m
+  [38;2;221;208;181m    --context nome         [0m[38;2;161;147;121mcontexto do kubeconfig (padrão: o atual)[0m
+  [38;2;221;208;181m-n, --namespace nome       [0m[38;2;161;147;121mnamespace da conversa (padrão: o do contexto)[0m
+  [38;2;221;208;181m    --voltar instrumento   [0m[38;2;161;147;121mquem abriu o Bard (o Viz passa Viz): esc fora da resposta volta a ele[0m
+  [38;2;221;208;181m-h, --help                 [0m[38;2;161;147;121mmostra esta ajuda[0m
+
+  [38;2;161;147;121mFerramentas integradas: sentinel scan/investigate, kubectl get/logs/events/describe e atlas blueprint. Ferramentas externas em YAML: ~/.yby/tools/*.yaml (do usuário) e .yby/tools/*.yaml (do projeto).[0m
