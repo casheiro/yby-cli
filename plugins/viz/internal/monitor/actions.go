@@ -66,3 +66,38 @@ func RestartDeployment(clientset kubernetes.Interface, name, namespace string) e
 
 	return nil
 }
+
+// ScaleStatefulSet escala um statefulset para o número de réplicas desejado
+func ScaleStatefulSet(clientset kubernetes.Interface, name, namespace string, replicas int32) error {
+	ctx := context.Background()
+
+	scale, err := clientset.AppsV1().StatefulSets(namespace).GetScale(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("falha ao obter scale do statefulset '%s': %w", name, err)
+	}
+
+	scale.Spec.Replicas = replicas
+	_, err = clientset.AppsV1().StatefulSets(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("falha ao escalar statefulset '%s': %w", name, err)
+	}
+
+	return nil
+}
+
+// RestartStatefulSet realiza um rollout restart de um statefulset
+// (adiciona/atualiza a annotation kubectl.kubernetes.io/restartedAt)
+func RestartStatefulSet(clientset kubernetes.Interface, name, namespace string) error {
+	ctx := context.Background()
+
+	patch := fmt.Sprintf(`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"%s"}}}}}`,
+		time.Now().Format(time.RFC3339))
+
+	_, err := clientset.AppsV1().StatefulSets(namespace).Patch(
+		ctx, name, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("falha ao reiniciar statefulset '%s': %w", name, err)
+	}
+
+	return nil
+}

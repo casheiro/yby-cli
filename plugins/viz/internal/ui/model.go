@@ -7,6 +7,8 @@ import (
 
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	tea "github.com/charmbracelet/bubbletea"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type tickMsg time.Time
@@ -38,8 +40,11 @@ type Model struct {
 	detailScrollY  int
 	actionMode     ActionMode
 	actionTarget   string // nome do recurso alvo da ação
+	actionKind     string // tipo do recurso alvo, guardado quando a ação abre
+	actionNS       string // namespace do recurso alvo, guardado quando a ação abre
 	actionBuffer   string // buffer de input para ações (scale, confirmação)
 	actionFeedback string // mensagem de feedback após ação
+	carregadas     uint16 // bit por aba: a lista já chegou do cluster ao menos uma vez
 }
 
 // FilterState mantém o estado dos filtros de busca
@@ -162,8 +167,7 @@ func (m Model) visibleHeight() int {
 func (m Model) itemCount() int {
 	switch m.activeTab {
 	case TabPods:
-		pods := m.filteredPods()
-		return len(filterByName(pods, m.filter.SearchQuery, func(p monitor.Pod) string { return p.Name }))
+		return len(m.visiblePods())
 	case TabDeployments:
 		return len(m.filteredDeployments())
 	case TabServices:
@@ -182,6 +186,11 @@ func (m Model) itemCount() int {
 		return len(m.filteredEvents())
 	}
 	return 0
+}
+
+// visiblePods retorna os pods como aparecem na tela: filtro de status e busca por nome
+func (m Model) visiblePods() []monitor.Pod {
+	return filterByName(m.filteredPods(), m.filter.SearchQuery, func(p monitor.Pod) string { return p.Name })
 }
 
 // filteredItems retorna os itens da aba ativa com filtros de status e busca aplicados
@@ -222,66 +231,65 @@ func (m Model) contentLines() []string {
 	var content string
 	switch m.activeTab {
 	case TabPods:
-		pods := m.filteredPods()
-		pods = filterByName(pods, m.filter.SearchQuery, func(p monitor.Pod) string { return p.Name })
+		pods := m.visiblePods()
 		if len(pods) == 0 {
-			content = "  Carregando pods...\n"
+			content = m.listaVazia(len(m.pods), "pods")
 		} else {
 			content = renderPodTable(pods)
 		}
 	case TabDeployments:
 		deps := m.filteredDeployments()
 		if len(deps) == 0 {
-			content = "  Carregando deployments...\n"
+			content = m.listaVazia(len(m.deployments), "deployments")
 		} else {
 			content = renderDeploymentTable(deps)
 		}
 	case TabServices:
 		svcs := m.filteredServices()
 		if len(svcs) == 0 {
-			content = "  Carregando services...\n"
+			content = m.listaVazia(len(m.services), "services")
 		} else {
 			content = renderServiceTable(svcs)
 		}
 	case TabNodes:
 		nodes := m.filteredNodes()
 		if len(nodes) == 0 {
-			content = "  Carregando nodes...\n"
+			content = m.listaVazia(len(m.nodes), "nodes")
 		} else {
 			content = renderNodeTable(nodes)
 		}
 	case TabStatefulSets:
 		sets := m.filteredStatefulSets()
 		if len(sets) == 0 {
-			content = "  Carregando statefulsets...\n"
+			content = m.listaVazia(len(m.statefulsets), "statefulsets")
 		} else {
 			content = renderStatefulSetTable(sets)
 		}
 	case TabJobs:
 		jobs := m.filteredJobs()
 		if len(jobs) == 0 {
-			content = "  Carregando jobs...\n"
+			content = m.listaVazia(len(m.jobs), "jobs")
 		} else {
 			content = renderJobTable(jobs)
 		}
 	case TabIngresses:
 		ings := m.filteredIngresses()
 		if len(ings) == 0 {
-			content = "  Carregando ingresses...\n"
+			content = m.listaVazia(len(m.ingresses), "ingresses")
 		} else {
 			content = renderIngressTable(ings)
 		}
 	case TabConfigMaps:
 		cms := m.filteredConfigMaps()
 		if len(cms) == 0 {
-			content = "  Carregando configmaps...\n"
+			content = m.listaVazia(len(m.configmaps), "configmaps")
 		} else {
 			content = renderConfigMapTable(cms)
 		}
 	case TabEvents:
 		evts := m.filteredEvents()
 		if len(evts) == 0 {
-			content = "  Carregando eventos...\n"
+			content = m.listaVazia(len(m.events), "eventos")
 		} else {
 			content = renderEventTable(evts)
 		}
@@ -300,6 +308,19 @@ func (m Model) contentLines() []string {
 	}
 
 	return lines
+}
+
+// listaVazia explica a lista vazia da aba ativa: ainda carregando, nada no
+// cluster ou nada que passe nos filtros (total é o tamanho antes dos filtros)
+func (m Model) listaVazia(total int, nome string) string {
+	switch {
+	case m.carregadas&(1<<uint(m.activeTab)) == 0:
+		return "  Carregando " + nome + "...\n"
+	case total > 0:
+		return fmt.Sprintf("  Nenhum dos %d %s passa nos filtros. esc limpa os filtros.\n", total, nome)
+	default:
+		return "  Nenhum recurso em " + nome + ".\n"
+	}
 }
 
 // filteredPods aplica filtro de status client-side nos pods
@@ -348,46 +369,46 @@ type actionResultMsg struct {
 // maxRetries é o número máximo de tentativas de reconexão antes de exibir erro fatal
 const maxRetries = 3
 
-// selectedResourceInfo retorna nome, namespace e kind do recurso selecionado na aba ativa
+// selectedResourceInfo retorna nome, namespace e kind do recurso selecionado
+// na aba ativa, contado na lista como aparece na tela (filtros e busca aplicados)
 func (m Model) selectedResourceInfo() (name, namespace, kind string) {
 	idx := m.selectedIndex
 	switch m.activeTab {
 	case TabPods:
-		pods := m.filteredPods()
-		if idx >= 0 && idx < len(pods) {
-			return pods[idx].Name, pods[idx].Namespace, "pod"
+		if l := m.visiblePods(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "pod"
 		}
 	case TabDeployments:
-		if idx >= 0 && idx < len(m.deployments) {
-			return m.deployments[idx].Name, m.deployments[idx].Namespace, "deployment"
+		if l := m.filteredDeployments(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "deployment"
 		}
 	case TabServices:
-		if idx >= 0 && idx < len(m.services) {
-			return m.services[idx].Name, m.services[idx].Namespace, "service"
+		if l := m.filteredServices(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "service"
 		}
 	case TabNodes:
-		if idx >= 0 && idx < len(m.nodes) {
-			return m.nodes[idx].Name, "", "node"
+		if l := m.filteredNodes(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, "", "node"
 		}
 	case TabStatefulSets:
-		if idx >= 0 && idx < len(m.statefulsets) {
-			return m.statefulsets[idx].Name, m.statefulsets[idx].Namespace, "statefulset"
+		if l := m.filteredStatefulSets(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "statefulset"
 		}
 	case TabJobs:
-		if idx >= 0 && idx < len(m.jobs) {
-			return m.jobs[idx].Name, m.jobs[idx].Namespace, "job"
+		if l := m.filteredJobs(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "job"
 		}
 	case TabIngresses:
-		if idx >= 0 && idx < len(m.ingresses) {
-			return m.ingresses[idx].Name, m.ingresses[idx].Namespace, "ingress"
+		if l := m.filteredIngresses(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "ingress"
 		}
 	case TabConfigMaps:
-		if idx >= 0 && idx < len(m.configmaps) {
-			return m.configmaps[idx].Name, m.configmaps[idx].Namespace, "configmap"
+		if l := m.filteredConfigMaps(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "configmap"
 		}
 	case TabEvents:
-		if idx >= 0 && idx < len(m.events) {
-			return m.events[idx].Name, m.events[idx].Namespace, "event"
+		if l := m.filteredEvents(); idx >= 0 && idx < len(l) {
+			return l[idx].Name, l[idx].Namespace, "event"
 		}
 	}
 	return "", "", ""
@@ -406,11 +427,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch keyMsg.String() {
 			case "enter":
 				mode := m.actionMode
-				target := m.actionTarget
+				alvo := alvoDaAcao{nome: m.actionTarget, namespace: m.actionNS, kind: m.actionKind}
 				buf := m.actionBuffer
 				m.actionMode = ActionNone
 				m.actionBuffer = ""
-				return m, m.executeAction(mode, target, buf)
+				return m, m.executeAction(mode, alvo, buf)
 			case "esc":
 				m.actionMode = ActionNone
 				m.actionBuffer = ""
@@ -675,7 +696,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "d":
 			// Deletar recurso selecionado
-			name, _, kind := m.selectedResourceInfo()
+			name, ns, kind := m.selectedResourceInfo()
 			if name == "" {
 				return m, nil
 			}
@@ -684,12 +705,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.actionMode = ActionConfirmDelete
-			m.actionTarget = name
+			m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
 			m.actionBuffer = ""
 			return m, nil
 		case "s":
 			// Escalar deployment/statefulset selecionado
-			name, _, kind := m.selectedResourceInfo()
+			name, ns, kind := m.selectedResourceInfo()
 			if name == "" {
 				return m, nil
 			}
@@ -698,12 +719,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.actionMode = ActionInputScale
-			m.actionTarget = name
+			m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
 			m.actionBuffer = ""
 			return m, nil
 		case "r":
 			// Reiniciar deployment/statefulset selecionado
-			name, _, kind := m.selectedResourceInfo()
+			name, ns, kind := m.selectedResourceInfo()
 			if name == "" {
 				return m, nil
 			}
@@ -712,7 +733,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.actionMode = ActionConfirmRestart
-			m.actionTarget = name
+			m.actionTarget, m.actionNS, m.actionKind = name, ns, kind
 			m.actionBuffer = ""
 			return m, nil
 		case "esc":
@@ -752,6 +773,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Mensagens de dados por tipo de recurso
 	case []monitor.Pod:
 		m.pods = msg
+		m.carregadas |= 1 << uint(TabPods)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -759,6 +781,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.Deployment:
 		m.deployments = msg
+		m.carregadas |= 1 << uint(TabDeployments)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -766,6 +789,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.Service:
 		m.services = msg
+		m.carregadas |= 1 << uint(TabServices)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -773,6 +797,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.Node:
 		m.nodes = msg
+		m.carregadas |= 1 << uint(TabNodes)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -780,6 +805,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.StatefulSet:
 		m.statefulsets = msg
+		m.carregadas |= 1 << uint(TabStatefulSets)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -787,6 +813,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.Job:
 		m.jobs = msg
+		m.carregadas |= 1 << uint(TabJobs)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -794,6 +821,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.Ingress:
 		m.ingresses = msg
+		m.carregadas |= 1 << uint(TabIngresses)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -801,6 +829,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.ConfigMap:
 		m.configmaps = msg
+		m.carregadas |= 1 << uint(TabConfigMaps)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -808,6 +837,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case []monitor.Event:
 		m.events = msg
+		m.carregadas |= 1 << uint(TabEvents)
 		m.reconnecting = false
 		m.retryCount = 0
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -839,13 +869,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// resolveK8sClient extrai o *K8sClient do client (direto ou dentro de RetryClient)
-func resolveK8sClient(c monitor.Client) *monitor.K8sClient {
-	if k, ok := c.(*monitor.K8sClient); ok {
+// acessoDireto é o client que alcança a API do cluster além das listagens
+// (logs, YAML e ações): o K8sClient, direto ou dentro do RetryClient
+type acessoDireto interface {
+	Clientset() kubernetes.Interface
+	RESTConfig() *rest.Config
+}
+
+// resolveK8sClient extrai o acesso direto do client (direto ou dentro de RetryClient)
+func resolveK8sClient(c monitor.Client) acessoDireto {
+	if k, ok := c.(acessoDireto); ok {
 		return k
 	}
 	if rc, ok := c.(*monitor.RetryClient); ok {
-		if k, ok2 := rc.Inner().(*monitor.K8sClient); ok2 {
+		if k, ok2 := rc.Inner().(acessoDireto); ok2 {
 			return k
 		}
 	}
@@ -904,15 +941,21 @@ func (m Model) fetchResourceEvents(resourceName, namespace string) tea.Cmd {
 	}
 }
 
+// alvoDaAcao é o recurso escolhido quando a ação abriu: a lista pode mudar
+// (atualização, busca) até a confirmação, e a ação não pode mudar de alvo
+type alvoDaAcao struct {
+	nome, namespace, kind string
+}
+
 // executeAction executa a ação confirmada pelo usuário
-func (m Model) executeAction(mode ActionMode, target, input string) tea.Cmd {
+func (m Model) executeAction(mode ActionMode, alvo alvoDaAcao, input string) tea.Cmd {
 	return func() tea.Msg {
 		k8sClient := resolveK8sClient(m.client)
 		if k8sClient == nil {
 			return actionResultMsg{err: fmt.Errorf("client não suporta ações diretas")}
 		}
 
-		_, ns, kind := m.selectedResourceInfo()
+		target, ns, kind := alvo.nome, alvo.namespace, alvo.kind
 		clientset := k8sClient.Clientset()
 
 		switch mode {
@@ -931,21 +974,27 @@ func (m Model) executeAction(mode ActionMode, target, input string) tea.Cmd {
 			if _, err := fmt.Sscanf(input, "%d", &replicas); err != nil {
 				return actionResultMsg{err: fmt.Errorf("valor inválido para réplicas: %s", input)}
 			}
-			err := monitor.ScaleDeployment(clientset, target, ns, replicas)
-			if err != nil {
+			escalar, rotulo := monitor.ScaleDeployment, "Deployment"
+			if kind == "statefulset" {
+				escalar, rotulo = monitor.ScaleStatefulSet, "StatefulSet"
+			}
+			if err := escalar(clientset, target, ns, replicas); err != nil {
 				return actionResultMsg{err: err}
 			}
-			return actionResultMsg{feedback: fmt.Sprintf("Deployment '%s' escalado para %d réplicas.", target, replicas)}
+			return actionResultMsg{feedback: fmt.Sprintf("%s '%s' escalado para %d réplicas.", rotulo, target, replicas)}
 
 		case ActionConfirmRestart:
 			if input != "yes" {
 				return actionResultMsg{feedback: "Ação cancelada."}
 			}
-			err := monitor.RestartDeployment(clientset, target, ns)
-			if err != nil {
+			reiniciar, rotulo := monitor.RestartDeployment, "Deployment"
+			if kind == "statefulset" {
+				reiniciar, rotulo = monitor.RestartStatefulSet, "StatefulSet"
+			}
+			if err := reiniciar(clientset, target, ns); err != nil {
 				return actionResultMsg{err: err}
 			}
-			return actionResultMsg{feedback: fmt.Sprintf("Deployment '%s' reiniciado.", target)}
+			return actionResultMsg{feedback: fmt.Sprintf("%s '%s' reiniciado.", rotulo, target)}
 		}
 
 		return actionResultMsg{feedback: "Ação desconhecida."}
