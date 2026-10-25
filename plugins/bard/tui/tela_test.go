@@ -181,3 +181,45 @@ func TestTelaKraft(t *testing.T) {
 		})
 	}
 }
+
+// TestTelaBoasVindas mostra a logo na conversa vazia: a grande quando cabe, a compacta
+// numa janela menor e nenhuma quando não sobra espaço (o cabeçalho já traz a marca).
+// Com a primeira pergunta a logo sai.
+func TestTelaBoasVindas(t *testing.T) {
+	usarModo(t, modo{"escuro", ui.TemaEscuro, false, termenv.TrueColor})
+	casos := []struct {
+		nome            string
+		largura, altura int
+		linhasLogo      int
+	}{
+		{"120x40", 120, 40, 12},
+		{"64x20", 64, 20, 8},
+		{"60x16", 60, 16, 0},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			m := telaDeTeste(t, Config{Cluster: "staging", Namespace: "default", AIModel: "claude-cli"}, "11:51")
+			atualizado, _ := m.Update(tea.WindowSizeMsg{Width: c.largura, Height: c.altura})
+			m = atualizado.(Model)
+			tela := m.View()
+			if n := len(strings.Split(tela, "\n")); n != c.altura {
+				t.Errorf("altura: %d linhas, esperado %d", n, c.altura)
+			}
+			linhasLogo := 0
+			for _, l := range strings.Split(tela, "\n") {
+				if strings.ContainsAny(l, "▀▄█") {
+					linhasLogo++
+				}
+			}
+			if linhasLogo != c.linhasLogo {
+				t.Errorf("esperava a logo em %d linhas, veio em %d", c.linhasLogo, linhasLogo)
+			}
+			golden.RequireEqual(t, []byte(tela))
+
+			m = conversar(t, m, "oi", "olá", time.Second)
+			if strings.Contains(m.View(), "█") {
+				t.Error("a logo deveria sair quando a conversa começa")
+			}
+		})
+	}
+}

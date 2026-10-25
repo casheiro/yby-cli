@@ -150,9 +150,9 @@ Só a onda 1 C mexe em `go.mod` (teatest). `pkg/ui/helpers_test.go` é da onda 0
 - [x] T038 Passar a ajuda dos comandos para o formato da carta e para o português.
   - `ui.EscreverAjuda` (título, descrição, USO, COMANDOS, EXEMPLOS, FLAGS, FLAGS GLOBAIS) e `cmd/ajuda.go` ligando ao cobra; `yby` sem argumentos com a logo no lugar do título.
   - Verificar: goldens de `pkg/ui`, testes de `cmd/ajuda_test.go` sem "Usage:", "Flags:" nem "help for", e capturas num ConPTY (raiz, `env create --help` em 56 colunas, tema claro e ASCII).
-- [ ] T037 Mostrar a logo nas boas-vindas do Bard.
+- [x] T037 Mostrar a logo nas boas-vindas do Bard.
   - Conversa vazia, antes da primeira pergunta: `ui.Marca` com a largura e a altura livres do histórico; some quando a conversa começa.
-  - Verificar: golden da conversa vazia em 120×40 (grande), 80×24 (compacta) e 60×16 (`◆ YBY`).
+  - Verificar: golden da conversa vazia em 120×40 (grande), 64×20 (compacta) e 60×16 (sem logo: o cabeçalho já traz `◆ YBY  BARD`).
 
 **Checkpoint fase 2:** as 4 telas do Bard batem com a prancha no terminal real → PR "feat(bard): nova TUI da carta do terminal".
 
@@ -290,3 +290,4 @@ T028 → T031 → T032 ; T016 + T022 → T033 ; T028 → T034 → T035          
 | 24/10/2026 | T014 | Etapas e ferramentas: bloco "◈ BARD · trabalhando · N s" com `ui.Etapas`, linha de estado "◈ gerando resposta · N s", ↵ no campo vazio abre a saída da ferramenta (camada com rolagem e "SAÍDA · c copia"), ctrl+y copia o último comando de shell por OSC 52 (o c no campo comia a primeira letra da pergunta). Relógio injetado para os goldens; golden "trabalhando" | este commit |
 | 24/10/2026 | T015 | Comandos `/` com lista filtrável (prancha BardComandos): /sessões (retoma a conversa), /limpar, /contexto (quadro CONTEXTO DESTA SESSÃO), /ferramentas, /modelo (troca o provider da sessão), /copiar, /exportar e /ajuda; filtro sem acento, ⇥ completa, apelidos antigos digitados por inteiro, barra que não é comando vai como pergunta. teatest e golden "comandos" | este commit |
 | 24/10/2026 | T016 | `-p` e batch pelo mesmo `tui.Fluxo` (`plugins/bard/direto.go`): só a resposta no stdout, etapas no stderr por `ui.Progresso` quando é terminal, erros por `ui.WriteError`, nada espera entrada sem TTY. Removidos o REPL antigo (`YBY_BARD_LEGACY_UI`), `maxToolIterations`, `promptStyle` e os estilos à mão. No core, o erro do plugin não sai mais duplicado e o código de saída do plugin (inclusive 128+sinal) é repassado (`plugin.SaidaDoPlugin`) | este commit |
+| 24/10/2026 | T037 | Logo nas boas-vindas do Bard: na conversa vazia, a grande ou a compacta conforme a janela, alinhada ao topo como o corpo da moldura; sem espaço, o corpo fica vazio (a marca já está no cabeçalho). Some com a primeira pergunta. Goldens 120×40, 64×20 e 60×16 | este commit |

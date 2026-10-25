@@ -82,6 +82,9 @@ func (m Model) contexto() string {
 // linhas que apareceram (ver rolarPagina), e os avisos contam também o que começa nas
 // linhas cobertas.
 func (m Model) corpo() string {
+	if len(m.messages) == 0 && m.state != stateStreaming {
+		return m.boasVindas()
+	}
 	vista := m.viewport.View()
 	acima, abaixo := m.mensagensAnteriores(), m.mensagensNovas()
 	if acima == 0 && abaixo == 0 {
@@ -102,6 +105,21 @@ func (m Model) corpo() string {
 		}
 	}
 	return strings.Join(linhas, "\n")
+}
+
+// boasVindas mostra a logo na conversa vazia, antes da primeira pergunta: a grande ou a
+// compacta, a que couber na janela. Sem espaço para um desenho o corpo fica vazio, porque
+// o cabeçalho já traz "◆ YBY  BARD".
+func (m Model) boasVindas() string {
+	marca := ui.Marca(m.width-2, m.viewport.Height-1)
+	if !strings.Contains(marca, "\n") {
+		return ""
+	}
+	linhas := strings.Split(marca, "\n")
+	for i, l := range linhas {
+		linhas[i] = "  " + l
+	}
+	return "\n" + strings.Join(linhas, "\n")
 }
 
 // campo devolve as linhas do campo de texto. Vazio, mostra o cursor e a dica no
