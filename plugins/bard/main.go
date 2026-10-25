@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"log/slog"
-
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
@@ -238,15 +236,12 @@ func startChat(ctxData map[string]interface{}) error {
 		return semProvider()
 	}
 
-	// 1. Inicializar Vector Store (acesso somente leitura)
+	// 1. Abrir o índice do Synapstor, se o projeto tiver um (como no -p): sem ele, nada é
+	// criado no diretório nem o modelo de embeddings é baixado na primeira pergunta
 	cwd, _ := os.Getwd()
 	storePath := filepath.Join(cwd, ".synapstor", ".index")
 	embProvider := ai.GetEmbeddingProvider(ctx)
-	vectorStore, err := ai.NewVectorStore(ctx, storePath, embProvider)
-	if err != nil {
-		// Não fatal, apenas sem memória de longo prazo
-		slog.Debug("memoria semantica indisponivel", "erro", err)
-	}
+	vectorStore := abrirMemoria(ctx)
 
 	// 2. Carregar configuração do Bard
 	bardCfg := loadBardConfig()
@@ -286,6 +281,7 @@ func startChat(ctxData map[string]interface{}) error {
 	}
 	tuiConfig.Contexto = infoContexto(vectorStore, embProvider, storePath, cwd, tuiConfig.Cluster)
 	resolverTerminal()
+	defer logDaConversa()()
 	return tui.Run(provider, vectorStore, tuiConfig)
 }
 

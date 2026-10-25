@@ -1,7 +1,13 @@
 package main
 
 import (
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+
 	"github.com/casheiro/yby-cli/pkg/config"
+	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -23,4 +29,33 @@ func resolverTerminal() {
 		lipgloss.SetHasDarkBackground(lipgloss.HasDarkBackground())
 	}
 	lipgloss.SetColorProfile(lipgloss.ColorProfile())
+}
+
+// logDaConversa manda o log para ~/.yby/logs/bard.log enquanto a TUI está na tela: uma
+// linha de log no terminal (o download do modelo de embeddings, um aviso do Synapstor)
+// empurraria a moldura uma linha para cima e deixaria restos na tela. Se o arquivo não
+// abrir, o log some até a TUI fechar. Devolve a função que volta o log para o stderr.
+func logDaConversa() (restaurar func()) {
+	cfg := config.Get()
+	logger.InitGlobal(logger.Config{Level: cfg.Log.Level, Format: cfg.Log.Format})
+	var destino io.Writer = io.Discard
+	var arquivo *os.File
+	if home, err := os.UserHomeDir(); err == nil {
+		dir := filepath.Join(home, ".yby", "logs")
+		if err := os.MkdirAll(dir, 0o755); err == nil {
+			if f, err := os.OpenFile(filepath.Join(dir, "bard.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+				destino, arquivo = f, f
+			}
+		}
+	}
+	devolver := logger.Desviar(destino)
+	anterior := log.Writer()
+	log.SetOutput(destino)
+	return func() {
+		devolver()
+		log.SetOutput(anterior)
+		if arquivo != nil {
+			_ = arquivo.Close()
+		}
+	}
 }

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/config"
@@ -92,5 +95,27 @@ func TestResolverTerminal(t *testing.T) {
 	resolverTerminal()
 	if !lipgloss.HasDarkBackground() {
 		t.Error("no tema auto o fundo fica o já detectado")
+	}
+}
+
+func TestLogDaConversa_VaiParaArquivoEVolta(t *testing.T) {
+	isolarModoVisual(t, "")
+	home, _ := os.UserHomeDir()
+	restaurar := logDaConversa()
+	slog.Warn("aviso durante a conversa")
+	log.Print("linha do pacote log")
+	restaurar()
+
+	conteudo, err := os.ReadFile(filepath.Join(home, ".yby", "logs", "bard.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, esperado := range []string{"aviso durante a conversa", "linha do pacote log"} {
+		if !strings.Contains(string(conteudo), esperado) {
+			t.Errorf("o log da conversa deveria ter %q, veio %q", esperado, conteudo)
+		}
+	}
+	if log.Writer() == nil {
+		t.Error("o pacote log deveria voltar ao destino anterior")
 	}
 }
