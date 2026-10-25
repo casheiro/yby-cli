@@ -106,6 +106,10 @@ func resolverOpcoes(flag Opcoes, flagDefinida bool, getenv func(string) string, 
 	return o
 }
 
+// SaidaNoTerminal diz se o stdout é um terminal. Os testes a trocam para ver o perfil que
+// Configurar aplica num terminal.
+var SaidaNoTerminal = ttyStdout
+
 // Configurar aplica as opções no renderer padrão do lipgloss e no conjunto de glifos.
 func Configurar(o Opcoes) {
 	mu.Lock()
@@ -118,8 +122,9 @@ func Configurar(o Opcoes) {
 	case TemaClaro:
 		lipgloss.SetHasDarkBackground(false)
 	}
-	if o.SemCor {
-		// ANSI (não Ascii): o perfil Ascii descartaria também negrito e Reverse.
+	if o.SemCor && SaidaNoTerminal() {
+		// ANSI (não Ascii): o perfil Ascii descartaria também negrito e Reverse. Fora do
+		// terminal fica o Ascii que o lipgloss detecta, sem escape nenhum no pipe.
 		lipgloss.SetColorProfile(termenv.ANSI)
 	}
 }
