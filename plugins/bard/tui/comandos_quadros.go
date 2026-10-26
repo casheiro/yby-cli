@@ -85,7 +85,7 @@ func (m Model) quadroContexto(agora time.Time) quadroMsg {
 	if cluster == "" {
 		cluster = m.config.Cluster
 	}
-	provider := ou(m.config.AIModel, "nenhum")
+	provider := ou(m.rotuloIA(), "nenhum")
 	if info.Embeddings != "" {
 		provider += s.TintaSuave.Render(" · " + info.Embeddings)
 	}
@@ -275,8 +275,9 @@ func teclasAjuda() []teclaAjuda {
 }
 
 // quadroAjuda lista as teclas do Bard e, com exemplos, perguntas de exemplo. As teclas
-// das listas (as da legenda de /comandos) vão numa linha só, como na legenda.
-func quadroAjuda(exemplos bool) quadroMsg {
+// das listas (as da legenda de /comandos) vão numa linha só, como na legenda. Com voltar
+// (o Bard aberto pelo Viz), o esc que volta a ele ganha uma linha.
+func quadroAjuda(exemplos bool, voltar string) quadroMsg {
 	s := ui.S()
 	var linhas []linhaQuadro
 	for _, t := range teclasAjuda() {
@@ -295,9 +296,12 @@ func quadroAjuda(exemplos bool) quadroMsg {
 		listas = append(listas, s.Negrito.Render(b.Help().Key)+" "+s.TintaSuave.Render(b.Help().Desc))
 	}
 	sair := ui.DefaultKeys().Global.SairForcado
-	linhas = append(linhas,
-		linhaQuadro{s.TintaSuave.Render("nas listas"), strings.Join(listas, "  ")},
-		linhaQuadro{s.Negrito.Render(sair.Help().Key), s.Tinta.Render(sair.Help().Desc)})
+	linhas = append(linhas, linhaQuadro{s.TintaSuave.Render("nas listas"), strings.Join(listas, "  ")})
+	if v := teclaVoltarA(voltar); v.Enabled() {
+		linhas = append(linhas, linhaQuadro{s.Negrito.Render(v.Help().Key),
+			s.Tinta.Render(v.Help().Desc) + s.TintaSuave.Render(" · fora da resposta")})
+	}
+	linhas = append(linhas, linhaQuadro{s.Negrito.Render(sair.Help().Key), s.Tinta.Render(sair.Help().Desc)})
 	if !exemplos {
 		return quadroMsg{rotulo: "ajuda", linhas: linhas}
 	}
@@ -315,5 +319,5 @@ func quadroAjuda(exemplos bool) quadroMsg {
 // camadaAjuda é o quadro AJUDA da camada que o ? abre durante a resposta: só as teclas,
 // em foco, na largura da conversa.
 func (m Model) camadaAjuda() string {
-	return renderizarQuadroCom(quadroAjuda(false), m.viewport.Width, ui.QuadroFoco)
+	return renderizarQuadroCom(quadroAjuda(false, m.config.Voltar), m.viewport.Width, ui.QuadroFoco)
 }

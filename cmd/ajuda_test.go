@@ -104,3 +104,13 @@ func TestAjuda_RootReal(t *testing.T) {
 	assert.Contains(t, saida, "também yby context")
 	assert.NotContains(t, saida, "Available Commands")
 }
+
+func TestAjuda_BetaNaListaENosSubcomandos(t *testing.T) {
+	raiz, grupo, sub := arvoreDeAjuda()
+	grupo.Annotations = map[string]string{anotacaoBeta: "Beta: ainda sem teste real."}
+
+	assert.Equal(t, "Gera recursos (beta)", ajudaDe(raiz).Comandos[0].Descricao, "a lista do pai marca o comando em beta")
+	assert.Contains(t, ajudaDe(grupo).Descricao, "Beta: ainda sem teste real.")
+	assert.Contains(t, ajudaDe(sub).Descricao, "Beta: ainda sem teste real.", "o subcomando herda a nota")
+	assert.Equal(t, "Gera um ScaledObject", descricaoCurta(sub), "só o comando marcado leva o (beta) na lista")
+}

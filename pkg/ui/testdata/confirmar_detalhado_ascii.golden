@@ -1,0 +1,12 @@
++ EXCLUIR DEPLOYMENT --------------------------------------+
+| worker em payments · 2 réplicas                          |
+| Os pods param e o Deployment some do cluster. Se ele vem |
+| do Argo CD, a próxima sincronização cria de novo.        |
+|                                                          |
+| Digite worker para confirmar                             |
+| +------------------------------------------------------+ |
+| | > work                               faltam 2 letras | |
+| +------------------------------------------------------+ |
+|                                                          |
+| [ esc cancelar ]   [ enter excluir ]                     |
++----------------------------------------------------------+

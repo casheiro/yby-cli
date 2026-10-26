@@ -260,3 +260,36 @@ func TestBuildGraph_IgnoraArquivosNaoMd(t *testing.T) {
 		t.Errorf("esperado 0 nós (ignorar não-md), obtido %d", len(graph.Nodes))
 	}
 }
+
+// TestBuildGraph_TipoComAcento: os tipos em PT-BR do prompt synapstor.capture entram
+// inteiros no nó, com o acento.
+func TestBuildGraph_TipoComAcento(t *testing.T) {
+	ukiDir := filepath.Join(t.TempDir(), "ukis")
+	if err := os.MkdirAll(ukiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	esperados := map[string]string{
+		"UKI-1-decisao.md":    "Decisão",
+		"UKI-2-referencia.md": "Referência",
+		"UKI-3-guia.md":       "Guia",
+	}
+	for arquivo, tipo := range esperados {
+		conteudo := "# Título\n**ID:** " + arquivo[:5] + "\n**Tipo:** " + tipo + "\n**Status:** Ativo\n"
+		if err := os.WriteFile(filepath.Join(ukiDir, arquivo), []byte(conteudo), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	graph, err := BuildGraph(ukiDir, nil)
+	if err != nil {
+		t.Fatalf("erro ao construir grafo: %v", err)
+	}
+	for _, n := range graph.Nodes {
+		if n.Type != esperados[n.ID] {
+			t.Errorf("%s: tipo %q, esperado %q", n.ID, n.Type, esperados[n.ID])
+		}
+	}
+	if len(graph.Nodes) != len(esperados) {
+		t.Errorf("esperado %d nós, obtido %d", len(esperados), len(graph.Nodes))
+	}
+}

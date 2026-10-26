@@ -18,6 +18,9 @@ import (
 // se houver) e restaura o modo visual, o perfil do lipgloss e o config no fim do teste.
 func isolarModoVisual(t *testing.T, configYAML string) {
 	t.Helper()
+	terminalAnterior := ui.SaidaNoTerminal
+	ui.SaidaNoTerminal = func() bool { return true }
+	t.Cleanup(func() { ui.SaidaNoTerminal = terminalAnterior })
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

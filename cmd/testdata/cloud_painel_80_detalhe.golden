@@ -1,0 +1,16 @@
+◆ YBY  CLOUD                   4 clusters · 3 contas   ◈ próxima leitura em 18 s
+────────────────────────────────────────────────────────────────────────────────
+✓ 2 prontos   ▲ 1 token expira em breve   ✕ 1 token expirado                    
+                                                                                
+┌ EKS · staging ───────────────────────────────────────────────────────────────┐
+│ IDENTIDADE                                                                   │
+│ token     ✕ expirou às 11:55                                                 │
+│ …                                                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+CLOUD  CLUSTER    REGIÃO       K8S   STATUS     TOKEN                           
+aws    staging    us-east-1    1.31  ✕ token    expirou há 12 min               
+↑ 1 cluster acima   ↓ 2 clusters abaixo                                         
+────────────────────────────────────────────────────────────────────────────────
+✕ staging sem token: t renova (com o SSO vencido, rode aws … atualizado 12:07:00
+↑↓ mover  esc voltar  ↵ abrir no Viz  t renovar token  ? mais        ctrl+c sair

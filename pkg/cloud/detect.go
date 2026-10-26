@@ -91,9 +91,13 @@ func detectFromKubeconfig() map[string]struct{} {
 }
 
 // matchCommand retorna o nome canônico do provider para um dado nome de comando,
-// ou string vazia se nenhum padrão for reconhecido.
+// ou string vazia se nenhum padrão for reconhecido. A extensão do Windows não conta: o
+// kubeconfig gravado lá pode ter "gke-gcloud-auth-plugin.exe" ou "aws.cmd".
 func matchCommand(cmd string) string {
 	lower := strings.ToLower(cmd)
+	for _, ext := range []string{".exe", ".cmd", ".bat"} {
+		lower = strings.TrimSuffix(lower, ext)
+	}
 	for _, p := range execCommandPatterns {
 		if lower == p.fragment {
 			return p.providerName

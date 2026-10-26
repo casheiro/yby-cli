@@ -16,7 +16,7 @@ VOCÊ · 11:51
 | o /limpar         começa uma conversa nova; a atual fica salva                                             |
 | o /contexto       mostra o que o Bard sabe: cluster, namespace, notas                                      |
 | o /ferramentas    lista as ferramentas e quais estão disponíveis                                           |
-| o /modelo         troca o provider de IA nesta sessão                                                      |
+| o /modelo         troca o provider ou o modelo de IA                                                       |
 | o /copiar         copia a última resposta                                                                  |
 | o /exportar       salva a conversa em markdown no projeto                                                  |
 | o /ajuda          atalhos e exemplos de perguntas                                                          |

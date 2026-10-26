@@ -168,7 +168,7 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 		return ybyerrors.Wrap(err, ybyerrors.ErrCodePluginRPC, "falha ao serializar requisição do plugin")
 	}
 	// Plugins interativos herdam todas as env vars do parent (precisam de KUBECONFIG, etc)
-	cmd.Env = append(cmd.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqBytes)))
+	cmd.Env = ambienteInterativo(cmd.Environ(), reqBytes)
 
 	// Segurança: resource limits no processo filho
 	applyResourceLimits(cmd)
@@ -188,8 +188,8 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 	if err := cmd.Run(); err != nil {
 		var saida *exec.ExitError
 		if errors.As(err, &saida) {
-			if saida.ExitCode() > 0 {
-				return &SaidaDoPlugin{Codigo: saida.ExitCode(), causa: err}
+			if c := codigoDoPlugin(saida.ExitCode()); c > 0 {
+				return &SaidaDoPlugin{Codigo: c, causa: err}
 			}
 			// Morto por sinal (ex.: o ctrl+c num plugin que não o trata): ExitCode() é -1
 			// e o código segue a convenção do shell, 128 + o número do sinal.
@@ -201,6 +201,53 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 	}
 
 	return nil
+}
+
+// EnvBinarioDoCore é a variável com o caminho do executável do yby que abriu o plugin
+// interativo. Um plugin que chama outro (o b do Viz abre o Bard) roda "$YBY_BIN bard …":
+// passa pelo mesmo core, com a verificação de confiança dos plugins, sem depender do yby
+// no PATH.
+const EnvBinarioDoCore = "YBY_BIN"
+
+// envPedido é a variável com o pedido do plugin interativo.
+const envPedido = "YBY_PLUGIN_REQUEST"
+
+// executavelDoCore é o os.Executable, trocado nos testes.
+var executavelDoCore = os.Executable
+
+// ambienteInterativo é o ambiente do plugin interativo: o do core, com o pedido em
+// YBY_PLUGIN_REQUEST e o caminho do core em YBY_BIN (fora quando o caminho não é
+// conhecido). O pedido e o YBY_BIN herdados (o core aberto por outro plugin) dão lugar
+// aos deste core.
+func ambienteInterativo(base []string, req []byte) []string {
+	env := make([]string, 0, len(base)+2)
+	for _, kv := range base {
+		if !strings.HasPrefix(kv, EnvBinarioDoCore+"=") && !strings.HasPrefix(kv, envPedido+"=") {
+			env = append(env, kv)
+		}
+	}
+	env = append(env, envPedido+"="+string(req))
+	if bin, err := executavelDoCore(); err == nil && bin != "" {
+		env = append(env, EnvBinarioDoCore+"="+bin)
+	}
+	return env
+}
+
+// statusControlCExit é o código de um processo do Windows encerrado pelo ctrl+c antes de
+// tratar o sinal (STATUS_CONTROL_C_EXIT), por exemplo um plugin ainda carregando.
+const statusControlCExit = 0xC000013A
+
+// codigoCtrlC é o código do ctrl+c no yby (128 + SIGINT), o mesmo em todo sistema.
+const codigoCtrlC = 130
+
+// codigoDoPlugin é o código com que o yby sai depois do plugin: o ctrl+c do Windows vira
+// 130, como no Unix, para quem abriu o yby (o Viz abrindo o Bard, o Cloud abrindo o Viz)
+// reconhecer a interrupção; os outros seguem.
+func codigoDoPlugin(codigo int) int {
+	if uint32(codigo) == statusControlCExit {
+		return codigoCtrlC
+	}
+	return codigo
 }
 
 // SaidaDoPlugin é o fim de um plugin interativo com código de saída diferente de zero.

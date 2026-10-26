@@ -133,7 +133,7 @@ func (d *direto) lote(ctx context.Context, entrada io.Reader) error {
 	perguntas, falhas := 0, 0
 	for scanner.Scan() {
 		if ctx.Err() != nil {
-			return saidaSilenciosa{codigo: 130}
+			return saidaSilenciosa{codigo: codigoCtrlC}
 		}
 		pergunta := strings.TrimSpace(scanner.Text())
 		if pergunta == "" {
@@ -159,7 +159,7 @@ func (d *direto) lote(ctx context.Context, entrada io.Reader) error {
 		return yerrors.Wrap(err, yerrors.ErrCodeIO, "falha ao ler as perguntas do stdin")
 	}
 	if ctx.Err() != nil {
-		return saidaSilenciosa{codigo: 130}
+		return saidaSilenciosa{codigo: codigoCtrlC}
 	}
 	if perguntas == 0 {
 		return yerrors.New(yerrors.ErrCodeValidation, "nenhuma pergunta no stdin").
@@ -186,7 +186,7 @@ func comPergunta(err error, pergunta string) error {
 func (d *direto) erroDaRodada(fim tui.FimMsg) error {
 	switch {
 	case fim.Interrompida:
-		return saidaSilenciosa{codigo: 130}
+		return saidaSilenciosa{codigo: codigoCtrlC}
 	case fim.Err != nil:
 		ye := yerrors.Wrap(fim.Err, yerrors.ErrCodeExec, "a IA não respondeu").
 			WithHint("confira o provider de IA com yby doctor; para ver o log, rode com YBY_LOG_LEVEL=debug")

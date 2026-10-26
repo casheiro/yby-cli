@@ -1,0 +1,15 @@
+◆ YBY  SENTINEL                        scan · namespace payments
+
+  ✓ checks internos   1 achado                             1,5 s
+
+SEGURANÇA DOS PODS
+  ✕ api-7c9f/app  crítico  Container 'app' no pod 'api-7c9f' roda como root (UID 0)
+
+REMEDIAÇÃO · DRY-RUN
+  1. Pod payments/api-7c9f · Define runAsNonRoot: true para container 'app' no pod 'api-7c9f' · patch {"spec":{"containers":[{"name":"app","securityContext":{"runAsNonRoot":true}}]}}
+
+  ○ nada foi aplicado; rode com --fix para aplicar
+
+RESUMO  1 crítico
+  fontes     checks internos
+  relatório  ~/.yby/reports/sentinel-scan-payments-2026-10-25.md

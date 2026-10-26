@@ -106,6 +106,7 @@ Plugins são binários independentes que se comunicam via JSON:
 - **Descoberta:** Manager escaneia `~/.yby/plugins/` e `./.yby/plugins/`
 - **Hooks:** `manifest` (capabilities), `context` (contribui dados), `command` (execução interativa), `assets` (arquivos estáticos)
 - **Execução:** `Run()` captura STDOUT/STDERR parseando JSON; `RunInteractive()` passa contexto via env var `YBY_PLUGIN_REQUEST` e conecta TTY
+- **Plugin que abre plugin:** `RunInteractive()` também passa em `YBY_BIN` o caminho do executável do core. O `b` do Viz (e o "b perguntar ao Bard" do menu `x`) roda `$YBY_BIN bard --pergunta "…" --voltar Viz --context … --namespace …` (sem `YBY_BIN`, o `yby` do PATH) com `tea.Exec`: passa pelo core e pela verificação de confiança, e o Viz volta quando o Bard fecha pelo esc; o ctrl+c faz o yby sair com 130 e fecha o Viz também (o core troca o código do ctrl+c do Windows por 130)
 
 ### Tratamento de Erros
 
@@ -119,7 +120,7 @@ Usar `pkg/errors.YbyError` com códigos padronizados:
 
 ### Interface (pkg/ui)
 
-Toda saída para pessoas (TUIs e comandos) usa `pkg/ui`: paleta, glifos, componentes e saídas de comando (`Title`, `Check`, `Steps`, `Listagem`, `Campos`, `Passos`, `RenderError`) e a logo (`Marca`, `Logo`, só em momentos de apresentação). A ajuda de todos os comandos sai por `ui.EscreverAjuda`, ligada ao cobra em `cmd/ajuda.go`. Não monte cores ou glifos à mão. Comandos longos usam `ui.Progresso`; os serviços recebem `shared.Etapas` (ou `EtapasMudas`) e não escrevem na tela, e os comandos externos rodam por `runnerQuieto`/`runnerAoVivo` (`cmd/progresso.go`), que mandam a saída para o log em debug. Prompts usam o `Prompter` de `cmd/prompt.go`: sem terminal na entrada, nenhum prompt abre e o comando devolve erro em vez de travar. Especificação em `docs/design/tui/especificacao-pkg-ui.md`; catálogo visual com `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
+Toda saída para pessoas (TUIs e comandos) usa `pkg/ui`: paleta, glifos, componentes e saídas de comando (`Title`, `Check`, `Steps`, `Listagem`, `Campos`, `Passos`, `RenderError`) e a logo (`Marca`, `Logo`, só em momentos de apresentação). A ajuda de todos os comandos sai por `ui.EscreverAjuda`, ligada ao cobra em `cmd/ajuda.go`; a referência da wiki (`docs/wiki/CLI-Reference.md`) sai da mesma `ajudaDe`, com `go run ./cmd/yby gen-docs docs/wiki` (rode com os plugins instalados para as descrições deles entrarem). Não monte cores ou glifos à mão: a guarda `pkg/ui/guarda` (no `task test` e no pipeline) falha com emoji de status em texto ou cor do lipgloss montada à mão (`lipgloss.Color`, `AdaptiveColor` e cia.) em qualquer `.go` fora do `pkg/ui`, inclusive nos módulos próprios. Comandos longos usam `ui.Progresso`; os serviços recebem `shared.Etapas` (ou `EtapasMudas`) e não escrevem na tela, e os comandos externos rodam por `runnerQuieto`/`runnerAoVivo` (`cmd/progresso.go`), que mandam a saída para o log em debug. Prompts usam o `Prompter` de `cmd/prompt.go`: sem terminal na entrada, nenhum prompt abre e o comando devolve erro em vez de travar. Especificação em `docs/design/tui/especificacao-pkg-ui.md`; catálogo visual com `go run ./tools/ui-catalogo [--tema claro|escuro] [--largura N] [--ascii] [--sem-cor]`.
 
 Modo visual: env `YBY_THEME` (auto|dark|light), `YBY_ASCII=1` e `NO_COLOR`; config `ui.theme` e `ui.ascii` em `~/.yby/config.yaml`. Precedência: flags > env > config > padrão.
 
@@ -165,6 +166,8 @@ Pacote `pkg/cloud/` fornece abstração para clusters K8s gerenciados em clouds 
 - **Integração K8s** (`pkg/plugin/sdk/sdk_k8s_cloud.go`): quando `Cloud != nil` e build tag presente, `GetKubeClient()` injeta bearer token e `WrapTransport = AutoRefreshTransport`.
 
 ### Comandos `yby cloud`
+
+Em beta: a anotação `yby/beta` do `cloudCmd` (`anotacaoBeta` em `cmd/ajuda.go`) põe "(beta)" na lista do `yby --help` e a nota na ajuda do `cloud` e de todos os subcomandos. Nunca testados contra cluster real; o que falta para sair do beta está no `ROADMAP.md`.
 
 - `yby cloud connect [--provider P] [--region R] [--cluster C] [--env-name N]` — guided setup interativo ou não-interativo para conexão a cluster cloud
 - `yby cloud list [--provider P] [--region R]` — lista clusters disponíveis em tabela
@@ -238,9 +241,10 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 - **Capacidades do provider**: se o provider tem tools proprias (ex: Claude Code com MCP), o Bard aproveita sem restricoes
 - **Tools externas**: usuario pode registrar tools customizadas via YAML em `~/.yby/tools/` ou `.yby/tools/`
 - **3 modos de uso**: TUI interativo (`yby bard`), one-shot (`yby bard -p "pergunta"`), batch (`echo "pergunta" | yby bard`). Fora da TUI só a resposta vai para o stdout (inteira no fim num pipe, linha a linha num terminal); as etapas (só num terminal) e os erros (`ui.WriteError`) vão para o stderr. Sai com 1 em falha (no batch, se qualquer pergunta falhar) e 130 no ctrl+c. `yby bard` com stdin num terminal e stdout fora dele devolve erro em vez de abrir a TUI.
+- **Rascunho e cluster**: `yby bard --pergunta "…"` abre a TUI com a pergunta escrita no campo, desde o começo, sem enviar (↵ envia); `--voltar <instrumento>` faz o esc fora da resposta fechar o Bard e voltar a quem o abriu ("esc voltar ao Viz" na legenda); `--context` e `-n/--namespace` trocam o cluster ▸ namespace do cabeçalho, do contexto do cluster no prompt, do kubectl e do Sentinel das ferramentas (`tools.DefinirKube`). A TUI sai com 130 no ctrl+c (`tui.ErrInterrompido`). A ajuda sai por `ui.EscreverAjuda` (`plugins/bard/ajuda.go`)
 - **Fluxo em eventos** (`plugins/bard/tui/fluxo.go`): cada pergunta vira `EtapaMsg` (contexto do projeto, entender o pedido, ferramenta, gerar resposta), `TrechoMsg` (pedaços do `StreamCompletion`) e `FimMsg` por canal; a TUI, o `-p` e o batch usam o mesmo `tui.Fluxo`. Retry com backoff (2 s, 10 s, até 30 s); esc cancela por contexto sem fechar o Bard.
 - **TUI da carta**: `ui.MolduraTexto` com cluster ▸ namespace e provider no cabeçalho (`Config.AIModel`), mensagens em blocos (VOCÊ / ◆ BARD com ferramentas e tempo), markdown por `pkg/ui/uimarkdown`, etapas ao vivo e linha de estado "◈ gerando resposta · N s". Teclas: só pgup/pgdn e o mouse rolam (o resto vai para o campo), ↑ no campo vazio edita a última pergunta, ctrl+j ou alt+enter faz nova linha (o Bubble Tea v1 não separa ⇧↵ de ↵ no console do Windows), ↵ no campo vazio abre a saída da ferramenta, ctrl+y copia o último comando (ou a saída aberta) por OSC 52, esc interrompe e ctrl+c sai. Goldens em `plugins/bard/tui/testdata` (`go test -run TestTela ./plugins/bard/tui/ -update`).
-- **Comandos `/`** (lista filtrável sobre o campo): `/sessões` (lista e retoma; `/sessões <id>`), `/limpar` (sessão nova, histórico preservado), `/contexto`, `/ferramentas`, `/modelo [nome]` (troca o provider da sessão), `/copiar`, `/exportar [arquivo]` e `/ajuda`. Os apelidos antigos (`/clear`, `/session`, `/sessions`, `/help`) valem digitados por inteiro.
+- **Comandos `/`** (lista filtrável sobre o campo): `/sessões` (lista e retoma; `/sessões <id>`), `/limpar` (sessão nova, histórico preservado), `/contexto`, `/ferramentas`, `/modelo` (sem argumento, lista providers e modelos; `/modelo <provider>` troca o provider com o modelo padrão, `/modelo <provider>/<modelo>` troca os dois e `/modelo <modelo>` troca o modelo no provider da sessão ou no provider que o lista; vale só para a sessão e aparece no cabeçalho), `/copiar`, `/exportar [arquivo]` e `/ajuda`. Os apelidos antigos (`/clear`, `/session`, `/sessions`, `/help`) valem digitados por inteiro.
 
 ### Plugin Atlas — Scanner de Topologia (v1.0.0)
 
@@ -273,16 +277,14 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Plugin Viz — Observabilidade TUI (v1.0.0)
 
-- **Dashboard TUI**: visualizacao de Pods, Deployments, StatefulSets, Services em tempo real via Bubbletea
-- **Real K8s Client**: conexao direta ao cluster via client-go (nao usa kubectl)
-- **RetryClient**: reconexao com backoff exponencial, preserva ultimo estado durante reconexao
-- **Filtros**: namespace (`/`), label (`L`), status (`S`) com filtro server-side via `ListFilter`
-- **Scroll**: PgUp/PgDn, Home/End, indicador de posicao na status bar
-- **Tabs**: navegacao entre tipos de recurso (Pods, Deployments, StatefulSets, Services)
-- **Acoes**: delete, scale, restart direto da TUI com confirmacao
-- **Detail view**: YAML viewer para inspecao de recursos
-- **Logs**: visualizacao de logs de pods em tempo real
-- **Search**: busca por nome de recurso com highlight
+- **Moldura da carta** (`ui.Moldura`): masthead com contexto ▸ namespace do kubeconfig (começa no namespace do contexto; sem namespace no contexto, todos), client-go direto (`monitor.K8sClient` dentro do `RetryClient`), sem kubectl.
+- **9 abas** (Pods, Deployments, StatefulSets, Services, Nodes, Jobs, Ingresses, ConfigMaps, Eventos) com contagem ao vivo: um informer por tipo no namespace (`monitor.Observador`, `plugins/viz/internal/monitor/vigia.go`) manda lotes de no máximo 4 por segundo, e o número de cada aba é o da lista que ela mostraria aberta, com os filtros da tela. Tipo que o RBAC não deixa listar fica sem número. O relógio de 2 s só lê a aba ativa: confirma a conexão e vira lista quando o watch não cobre a aba.
+- **Lista**: problemas primeiro (pods, deployments, statefulsets, nós, jobs), por nome (services, ingresses, configmaps), eventos dos mais recentes; a linha de estado traz o problema mais grave.
+- **Detalhe**: painel ao lado a partir de 120 colunas e por cima abaixo disso (↵ abre); quadros de logs (`l`, pods), YAML (`y`) e eventos (`e`).
+- **Teclas**: `/` busca por nome enquanto digita, `n` troca o namespace (vazio: todos), `f` filtra status (só pods) ou label (texto com `=`, `!`, `,` ou parênteses); só o namespace vai ao servidor, label, status e busca filtram na TUI. `x` abre as ações (reiniciar e escalar em deployments e statefulsets, excluir com confirmação pelo nome, copiar nome por OSC 52), `r` recarrega, `?` ajuda, `1`–`9` e ⇥/⇧⇥ trocam de aba, esc fecha a camada de cima (sem camada, limpa os filtros), `q` sai só da lista, ctrl+c sai de qualquer lugar; o mouse rola e seleciona linha e aba. As teclas antigas (`d`, `s`, `L`, `S`) avisam onde a ação foi parar.
+- **AltGr**: `ui.TeclaAltGr` descarta o alt+NUL e tira o alt do símbolo que o console do Windows manda para `/` e `?` digitados com AltGr (ABNT2).
+- **Janela pequena** (abaixo de 60x16, "aumente a janela"): menu, confirmações e os campos `/`, `n` e `f` são cancelados como no esc, e a janela de volta avisa "ação cancelada: a janela ficou pequena demais"; ajuda, detalhe por cima e quadros ficam abertos. Enquanto isso só ctrl+c e `q` (sem camada aberta) fazem efeito.
+- **Goldens** em `plugins/viz/internal/ui/testdata` (`cd plugins/viz && go test -run TestTela ./internal/ui/ -update`).
 
 ### Enterprise Overrides
 
@@ -298,6 +300,7 @@ Sistema de customização enterprise via arquivo YAML (`pkg/scaffold/overrides.g
 ## Convenções
 
 - **Versionamento:** ldflags injetam `Version`, `commit`, `date` via GoReleaser
+- **Changelog:** as notas de cada release saem dos commits (GoReleaser); o `CHANGELOG.md` registra só o que pede atenção de quem já usa o yby (teclas que mudaram, códigos de saída, comportamentos novos)
 - **Linting:** golangci-lint com gofmt, govet, ineffassign, revive (exclui vendor, testdata, test/)
 - **Logs:** `log/slog` estruturado — nunca usar `fmt.Println` para output de diagnóstico
 - **Erros em comandos:** retornar `error` (nunca chamar `os.Exit` diretamente nos RunE)

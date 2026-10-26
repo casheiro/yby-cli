@@ -59,6 +59,38 @@ func exportMarkdown(result AnalysisResult, podName, namespace string) string {
 	return sb.String()
 }
 
+// HealthyReport é o relatório JSON do investigate quando o pod está saudável: a IA não é
+// chamada, então não há análise.
+type HealthyReport struct {
+	Metadata ReportMetadata `json:"metadata"`
+	Healthy  bool           `json:"healthy"`
+	Phase    string         `json:"phase"`
+}
+
+// exportHealthyJSON serializa o relatório de pod saudável em JSON.
+func exportHealthyJSON(podName, namespace, phase string) (string, error) {
+	data, err := json.MarshalIndent(HealthyReport{
+		Metadata: ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: time.Now()},
+		Healthy:  true,
+		Phase:    phase,
+	}, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("falha ao serializar relatório JSON: %w", err)
+	}
+	return string(data), nil
+}
+
+// exportHealthyMarkdown gera o relatório de pod saudável em Markdown, com o mesmo
+// cabeçalho do relatório da análise.
+func exportHealthyMarkdown(podName, namespace, phase string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# Relatório Sentinel — %s/%s\n\n", namespace, podName))
+	sb.WriteString(fmt.Sprintf("**Data:** %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
+	sb.WriteString("## Estado\n\n")
+	sb.WriteString(fmt.Sprintf("O pod está saudável (%s): nenhum sinal de problema nos contêineres nem nos eventos; a IA não foi chamada.\n", phase))
+	return sb.String()
+}
+
 // writeReport escreve o relatório no arquivo ou stdout.
 func writeReport(content, filePath string) error {
 	if filePath == "" {

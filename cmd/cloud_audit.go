@@ -47,7 +47,7 @@ func runCloudAudit(cmd *cobra.Command, args []string) error {
 		sinceTime = parsed
 	}
 
-	logger := cloud.NewAuditLogger()
+	logger := auditoriaCloud()
 	events, err := logger.ReadEvents(sinceTime)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeIO, "falha ao ler o log de auditoria").

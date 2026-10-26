@@ -17,16 +17,24 @@ type AzureTokenGenerator struct {
 }
 
 // azAccessToken representa a saída de `az account get-access-token --output json`.
+// expires_on é o instante em epoch (UTC); expiresOn, a hora local, sem fuso.
 type azAccessToken struct {
-	AccessToken string `json:"accessToken"`
-	ExpiresOn   string `json:"expiresOn"`
+	AccessToken    string `json:"accessToken"`
+	ExpiresOn      string `json:"expiresOn"`
+	ExpiresOnEpoch int64  `json:"expires_on"`
 }
 
 // GenerateToken gera um token Azure executando `az account get-access-token` via CLI.
 func (g *AzureTokenGenerator) GenerateToken(ctx context.Context) (*Token, error) {
-	out, err := g.Runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--output", "json")
+	return tokenAKSPeloCLI(ctx, g.Runner)
+}
+
+// tokenAKSPeloCLI pede ao az um token para o servidor de API do AKS (sem --resource, o
+// token sai para o Azure Resource Manager e o AKS com Entra ID o recusa).
+func tokenAKSPeloCLI(ctx context.Context, runner shared.Runner) (*Token, error) {
+	out, err := saidaDoCLI(ctx, runner, "az", "account", "get-access-token", "--resource", aksServidor, "--output", "json")
 	if err != nil {
-		return nil, fmt.Errorf("az account get-access-token: %w", err)
+		return nil, erroDoCLI("az account get-access-token", out, err)
 	}
 
 	var tok azAccessToken
@@ -34,17 +42,19 @@ func (g *AzureTokenGenerator) GenerateToken(ctx context.Context) (*Token, error)
 		return nil, fmt.Errorf("parse azure token: %w", err)
 	}
 
-	expiresAt, err := time.Parse("2006-01-02 15:04:05.999999", tok.ExpiresOn)
-	if err != nil {
-		// Fallback: tentar formato ISO 8601
-		expiresAt, err = time.Parse(time.RFC3339, tok.ExpiresOn)
-		if err != nil {
-			return nil, fmt.Errorf("parse azure token expiresOn %q: %w", tok.ExpiresOn, err)
-		}
+	var expiresAt *time.Time
+	if tok.ExpiresOnEpoch > 0 {
+		t := time.Unix(tok.ExpiresOnEpoch, 0)
+		expiresAt = &t
+	} else {
+		expiresAt = lerInstante(tok.ExpiresOn, time.Local)
+	}
+	if expiresAt == nil {
+		return nil, fmt.Errorf("parse azure token expiresOn %q: formato desconhecido", tok.ExpiresOn)
 	}
 
 	return &Token{
 		Value:     tok.AccessToken,
-		ExpiresAt: expiresAt,
+		ExpiresAt: *expiresAt,
 	}, nil
 }

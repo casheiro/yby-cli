@@ -2,12 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/pkg/ui/uimarkdown"
 	"github.com/charmbracelet/bubbles/key"
@@ -79,23 +76,13 @@ func (m *Model) mostrarAviso(a *avisoEstado) tea.Cmd {
 }
 
 // copiarOSC52 manda o texto para a área de transferência do terminal pela sequência
-// OSC 52, que atravessa SSH. Dentro do tmux e do screen a sequência vai embrulhada
-// para chegar ao terminal de fora.
+// OSC 52 (ui.CopiarOSC52, a mesma do Viz).
 func copiarOSC52(texto string) error {
-	return escreverOSC52(os.Stdout, os.Getenv, texto)
+	return ui.CopiarOSC52(texto)
 }
 
-func escreverOSC52(w io.Writer, getenv func(string) string, texto string) error {
-	seq := osc52.New(texto)
-	switch {
-	case getenv("TMUX") != "":
-		seq = seq.Tmux()
-	case strings.HasPrefix(getenv("TERM"), "screen"):
-		seq = seq.Screen()
-	}
-	_, err := seq.WriteTo(w)
-	return err
-}
+// escreverOSC52 é a escrita da sequência, com o destino e o ambiente injetáveis.
+var escreverOSC52 = ui.EscreverOSC52
 
 // copiarTexto devolve o comando que copia o texto e avisa o resultado.
 func (m Model) copiarTexto(texto, oque string) tea.Cmd {

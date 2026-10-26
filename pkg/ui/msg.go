@@ -164,11 +164,36 @@ func plural(n int, singular, plur string) string {
 // frase, se não vazia, entra ao final depois de "· " em TintaSuave. Num terminal estreito
 // demais, a frase desce para a linha de baixo, alinhada sob a contagem.
 func Summary(w io.Writer, ok, aviso, erro int, frase string) {
+	SummaryCom(w, []ParteResumo{
+		{fmt.Sprintf("%d ok", ok), CheckOk},
+		{plural(aviso, "aviso", "avisos"), CheckAviso},
+		{plural(erro, "erro", "erros"), CheckErro},
+	}, frase)
+}
+
+// ParteResumo é uma contagem da linha RESUMO de SummaryCom ("2 críticos"), na cor do
+// tipo: Ok, Aviso, Erro ou, no neutro, TintaSuave.
+type ParteResumo struct {
+	Texto string
+	Tipo  TipoCheck
+}
+
+// SummaryCom é Summary com as contagens escolhidas por quem chama, para um relatório que
+// não conta em ok, aviso e erro (as severidades do Sentinel, por exemplo).
+func SummaryCom(w io.Writer, contagens []ParteResumo, frase string) {
 	s := S()
-	partes := []string{
-		s.Ok.Render(fmt.Sprintf("%d ok", ok)),
-		s.Aviso.Render(plural(aviso, "aviso", "avisos")),
-		s.Erro.Render(plural(erro, "erro", "erros")),
+	partes := make([]string, len(contagens))
+	for i, c := range contagens {
+		est := s.TintaSuave
+		switch c.Tipo {
+		case CheckOk:
+			est = s.Ok
+		case CheckAviso:
+			est = s.Aviso
+		case CheckErro:
+			est = s.Erro
+		}
+		partes[i] = est.Render(c.Texto)
 	}
 	sep := s.TintaSuave.Render(" · ")
 	rotulo := "RESUMO  "
@@ -191,6 +216,18 @@ func Summary(w io.Writer, ok, aviso, erro int, frase string) {
 // linhaUnica troca quebras de linha por espaço.
 func linhaUnica(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// dicaDoLog é a dica de depuração da linha "detalhes" de RenderError.
+var dicaDoLog = "rode de novo com --log-level=debug"
+
+// DefinirDicaDoLog troca a dica de depuração que RenderError põe num erro com causa e sem
+// contexto, e devolve a anterior. Um plugin roda em outro processo, aonde o --log-level do
+// core não chega, e aponta o YBY_LOG_LEVEL. Chame no começo do processo, antes de escrever
+// qualquer erro.
+func DefinirDicaDoLog(texto string) (anterior string) {
+	anterior, dicaDoLog = dicaDoLog, texto
+	return anterior
 }
 
 // RenderError formata um YbyError: título com o código à direita, depois as linhas
@@ -257,8 +294,8 @@ func renderErro(e *yerrors.YbyError, largura int) string {
 			pares[i] = fmt.Sprintf("%s=%v", k, e.Context[k])
 		}
 		linha("detalhes", strings.Join(pares, " · "), s.TintaSuave)
-	} else if e.Cause != nil && !strings.Contains(hint, "--log-level=debug") {
-		linha("detalhes", "rode de novo com --log-level=debug", s.TintaSuave)
+	} else if e.Cause != nil && !strings.Contains(hint, "--log-level=debug") && !strings.Contains(hint, "LOG_LEVEL=debug") {
+		linha("detalhes", dicaDoLog, s.TintaSuave)
 	}
 	if e.Code != "" && !codigoAoLado {
 		linha("código", e.Code, s.TintaSuave)

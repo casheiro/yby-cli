@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // alturaCampo é a altura mínima do campo de texto: a linha do prompt e uma para a
@@ -40,8 +42,18 @@ type Config struct {
 	SessionID    string
 	Namespace    string
 	Cluster      string
-	// AIModel é o rótulo do provider no cabeçalho (ex.: "claude-cli").
-	AIModel     string
+	// AIModel é o rótulo do provider no cabeçalho (ex.: "claude-cli"); ModeloIA é o
+	// modelo escolhido no /modelo, que aparece ao lado ("claude-cli · opus"). Vazio, o
+	// provider usa o modelo padrão dele.
+	AIModel  string
+	ModeloIA string
+	// Rascunho é a pergunta que abre escrita no campo, sem enviar (yby bard --pergunta,
+	// o b do Viz): a pessoa revisa e aperta ↵.
+	Rascunho string
+	// Voltar é o instrumento que abriu o Bard (yby bard --voltar, o b do Viz): fora da
+	// resposta, o esc fecha o Bard e volta a ele, e a legenda mostra "esc voltar ao Viz".
+	// Vazio, o esc só interrompe a resposta.
+	Voltar      string
 	SaveMessage func(role, content, sessionID string)
 	// TopK e LimiarRelevancia controlam a busca no Synapstor, como vêm do
 	// bard.yaml (padrões 5 e 0,6 no loadBardConfig). TopK 0 vira 5; limiar 0
@@ -69,8 +81,11 @@ type Config struct {
 
 // Model é o modelo principal do Bubbletea para o Bard.
 type Model struct {
-	viewport    viewport.Model
-	textarea    textarea.Model
+	viewport viewport.Model
+	textarea textarea.Model
+	// medidor é um campo igual ao textarea, na mesma largura, que mede quantas linhas da
+	// tela cada linha do texto ocupa (o LineCount do textarea conta só as do texto).
+	medidor     textarea.Model
 	provider    ai.Provider
 	vectorStore *ai.VectorStore
 	config      Config
@@ -142,11 +157,22 @@ type Model struct {
 	comandoSel string
 	seletor    *seletor
 	pedidos    int
+	// trocas numera as trocas do /modelo (uma escolha nova invalida a criação anterior);
+	// trocando é o "claude-cli · opus" que está sendo criado, para a linha de estado, e
+	// trocaPronta é a criação que chegou durante a resposta e espera o fim da rodada.
+	trocas      int
+	trocando    string
+	trocaPronta *modeloCriadoMsg
 	// novoEstado cria o "procurando" do /modelo (trocado nos testes).
 	novoEstado func(texto string) ui.Estado
 	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
 	// da rodada; fora dela o ? põe o quadro na conversa, como o /ajuda.
 	ajuda bool
+	// rascunhoIntocado diz que o campo ainda tem o rascunho como abriu, sem tecla
+	// nenhuma: a cada largura nova ele volta a mostrar o começo da pergunta.
+	rascunhoIntocado bool
+	// interrompido diz que o Bard fechou pelo ctrl+c: o Run devolve ErrInterrompido.
+	interrompido bool
 	// abertura é o system prompt da abertura, para o /limpar voltar a ele; exportados são
 	// os arquivos que o /exportar gravou nesta execução e pode regravar.
 	abertura struct {
@@ -177,6 +203,43 @@ type ferramentaUsada struct {
 
 // New cria uma nova instância do modelo da TUI.
 func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model {
+	// O histórico rola só com pgup/pgdn e a roda do mouse: as letras são do campo.
+	vp := viewport.New(80, 20)
+	vp.KeyMap = viewport.KeyMap{PageUp: ui.DefaultKeys().Texto.RolarCima, PageDown: ui.DefaultKeys().Texto.RolarBaixo}
+	vp.SetContent("")
+
+	md := &markdownCache{}
+	m := Model{
+		viewport:    vp,
+		textarea:    novoCampo(),
+		medidor:     novoCampo(),
+		provider:    provider,
+		vectorStore: vectorStore,
+		config:      config,
+		state:       stateIdle,
+		markdown:    md.renderizar,
+		agora:       time.Now,
+		fluxo:       NovoFluxo(provider, vectorStore, config),
+		dicaEm:      -1,
+		copiaEm:     -1,
+		copiar:      copiarOSC52,
+		novoSpinner: ui.NovoSpinner,
+		novoEstado:  ui.NovoEstadoCarregando,
+	}
+	m.abertura.prompt, m.abertura.historico = config.SystemPrompt, config.Historico
+	if config.Rascunho != "" {
+		// Só escreve: o envio é do ↵ da pessoa. O campo cresce com as linhas da pergunta
+		// na tela, e a pergunta aparece desde o começo.
+		m.textarea.SetValue(config.Rascunho)
+		m.rascunhoIntocado = true
+		m.ajustarCampo()
+		m.mostrarRascunho()
+	}
+	return m
+}
+
+// novoCampo cria o campo de texto da conversa (o do textarea e o do medidor).
+func novoCampo() textarea.Model {
 	s := ui.S()
 	ta := textarea.New()
 	ta.Placeholder = ""
@@ -196,31 +259,7 @@ func New(provider ai.Provider, vectorStore *ai.VectorStore, config Config) Model
 	})
 	ta.SetHeight(alturaCampo)
 	ta.Focus()
-
-	// O histórico rola só com pgup/pgdn e a roda do mouse: as letras são do campo.
-	vp := viewport.New(80, 20)
-	vp.KeyMap = viewport.KeyMap{PageUp: ui.DefaultKeys().Texto.RolarCima, PageDown: ui.DefaultKeys().Texto.RolarBaixo}
-	vp.SetContent("")
-
-	md := &markdownCache{}
-	m := Model{
-		viewport:    vp,
-		textarea:    ta,
-		provider:    provider,
-		vectorStore: vectorStore,
-		config:      config,
-		state:       stateIdle,
-		markdown:    md.renderizar,
-		agora:       time.Now,
-		fluxo:       NovoFluxo(provider, vectorStore, config),
-		dicaEm:      -1,
-		copiaEm:     -1,
-		copiar:      copiarOSC52,
-		novoSpinner: ui.NovoSpinner,
-		novoEstado:  ui.NovoEstadoCarregando,
-	}
-	m.abertura.prompt, m.abertura.historico = config.SystemPrompt, config.Historico
-	return m
+	return ta
 }
 
 // Init inicializa o modelo do Bubbletea.
@@ -256,6 +295,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.viewport.Width = m.width
 		m.textarea.SetWidth(m.width)
+		m.medidor.SetWidth(m.width)
+		// Na largura nova o texto quebra em outras linhas: o campo muda de altura, e o
+		// rascunho intocado volta a mostrar o começo.
+		m.ajustarCampo()
+		if m.rascunhoIntocado {
+			m.mostrarRascunho()
+		}
 		m.viewport.Height = ui.AlturaCorpoTexto(m.height, m.textarea.Height())
 		m.updateViewport()
 		if noFim {
@@ -301,6 +347,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelosMsg:
 		return m, m.receberModelos(msg)
+	case modeloCriadoMsg:
+		return m, m.receberModeloCriado(msg)
 
 	case limparAvisoMsg:
 		if m.aviso != nil && m.aviso.id == msg.id {
@@ -324,6 +372,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.encerrarRodada(msg)
+		// A troca do /modelo que chegou durante a resposta vale a partir daqui: a resposta
+		// que acabou é do provider antigo e a nota da troca vem depois dela.
+		if t := m.trocaPronta; t != nil {
+			m.trocaPronta, m.trocando = nil, ""
+			m.usarProvider(t.mod.Rotulo, t.modelo, t.provider)
+		}
 		m.updateViewport()
 		return m, nil
 	}
@@ -340,10 +394,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := ui.DefaultKeys()
 	m.aviso = nil
+	m.rascunhoIntocado = false
 	if msg.Type == tea.KeyCtrlC {
+		// ctrl+c sai de qualquer lugar (folha Atalhos): o Run devolve ErrInterrompido, o yby
+		// sai com 130 e quem abriu o Bard (o Viz) fecha também.
 		if m.cancelar != nil {
 			m.cancelar()
 		}
+		m.interrompido = true
 		return m, tea.Quit
 	}
 	if m.saida != nil {
@@ -378,10 +436,18 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.Type == tea.KeyEsc:
 		// esc interrompe a resposta em andamento sem fechar o Bard; o
 		// FimMsg da rodada é que devolve o estado ocioso.
-		if m.state == stateStreaming && m.cancelar != nil && !m.interrompendo {
-			m.interrompendo = true
-			m.cancelar()
-			m.updateViewport()
+		if m.state == stateStreaming {
+			if m.cancelar != nil && !m.interrompendo {
+				m.interrompendo = true
+				m.cancelar()
+				m.updateViewport()
+			}
+			return m, nil
+		}
+		// Fora da resposta, com o Bard aberto por outro instrumento (o b do Viz), o esc
+		// sobe um nível: fecha o Bard, e o yby sai com 0 de volta a ele.
+		if m.config.Voltar != "" {
+			return m, tea.Quit
 		}
 		return m, nil
 
@@ -509,10 +575,15 @@ func (m Model) ultimaPergunta() string {
 	return ""
 }
 
-// ajustarCampo dá ao campo uma linha por linha do texto, entre alturaCampo e
+// ajustarCampo dá ao campo uma linha por linha do texto na tela, entre alturaCampo e
 // alturaMaxCampo, e devolve o resto ao histórico, que segue no fim se já estava.
 func (m *Model) ajustarCampo() {
-	altura := min(max(m.textarea.LineCount(), alturaCampo), alturaMaxCampo)
+	linhas := m.linhasDoCampo()
+	altura := min(max(linhas, alturaCampo), alturaMaxCampo)
+	if linhas <= altura {
+		// O texto cabe inteiro: a vista do campo começa na primeira linha.
+		defer m.vistaDoComeco()
+	}
 	if altura == m.textarea.Height() {
 		m.reposicionarCampo()
 		return
@@ -527,6 +598,53 @@ func (m *Model) ajustarCampo() {
 		m.viewport.GotoBottom()
 	}
 	m.marcarLidas()
+}
+
+// linhasDoCampo conta as linhas que o texto do campo ocupa na tela: cada linha do texto
+// ocupa as linhas em que o textarea a quebra na largura atual. O medidor é um campo igual,
+// na mesma largura, e quebra do mesmo jeito.
+func (m *Model) linhasDoCampo() int {
+	n := 0
+	for _, linha := range strings.Split(m.textarea.Value(), "\n") {
+		m.medidor.SetValue(linha)
+		n += max(m.medidor.LineInfo().Height, 1)
+	}
+	return n
+}
+
+// mostrarRascunho mostra o rascunho desde o começo, para quem abriu o Bard pelo Viz ler a
+// pergunta antes do ↵: o cursor fica no fim quando ela cabe inteira no campo (já na altura
+// nova) e no começo quando não cabe, porque a vista do textarea segue o cursor.
+func (m *Model) mostrarRascunho() {
+	tecla := tea.KeyCtrlEnd
+	if m.linhasDoCampo() > m.textarea.Height() {
+		tecla = tea.KeyCtrlHome
+	}
+	m.textarea, _ = m.textarea.Update(tea.KeyMsg{Type: tecla})
+	m.reposicionarCampo()
+	m.vistaDoComeco()
+}
+
+// maxPassosCursor limita a volta do cursor em vistaDoComeco (uma por linha da tela).
+const maxPassosCursor = 4096
+
+// vistaDoComeco leva a vista do campo à primeira linha quando o texto cabe inteiro nele.
+// O textarea só rola até o cursor: quando o campo cresce (o texto quebrou numa linha nova,
+// ou a janela alargou), a vista guarda o deslocamento da altura antiga e esconde o começo.
+// Sem acesso à vista, o cursor vai ao começo (a vista sobe) e volta aonde estava.
+func (m *Model) vistaDoComeco() {
+	if m.linhasDoCampo() > m.textarea.Height() || strings.HasPrefix(ansi.Strip(m.textarea.View()), ui.G().Prompt) {
+		return // não cabe, ou a primeira linha (a do prompt) já está na vista
+	}
+	info := m.textarea.LineInfo()
+	linha, coluna := m.textarea.Line(), info.StartColumn+info.ColumnOffset
+	m.textarea, _ = m.textarea.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
+	m.reposicionarCampo()
+	for i := 0; m.textarea.Line() < linha && i < maxPassosCursor; i++ {
+		m.textarea.CursorDown()
+	}
+	m.textarea.SetCursor(coluna)
+	m.reposicionarCampo()
 }
 
 // reposicionarCampo leva a vista do campo até a linha do cursor. O textarea só faz
@@ -819,14 +937,31 @@ func (m Model) mensagensNovas() int {
 	return n
 }
 
-// Run inicia a TUI do Bard.
+// ErrInterrompido é o Run que terminou pelo ctrl+c (ou por um SIGINT): o yby sai com 130,
+// como o Viz.
+var ErrInterrompido = errors.New("conversa interrompida")
+
+// Run inicia a TUI do Bard. Devolve ErrInterrompido quando a pessoa sai pelo ctrl+c.
 func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error {
 	model := New(provider, vectorStore, config)
 	// O mouse vem para o Bard por causa da roda; com isso o arraste simples deixa de
 	// selecionar texto, e copiar um trecho pede shift+arraste (Windows Terminal, xterm).
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
-	_, err := p.Run()
-	return err
+	return desfecho(p.Run())
+}
+
+// desfecho é o erro do Run a partir do modelo final do programa.
+func desfecho(final tea.Model, err error) error {
+	if errors.Is(err, tea.ErrInterrupted) {
+		return ErrInterrompido
+	}
+	if err != nil {
+		return err
+	}
+	if m, ok := final.(Model); ok && m.interrompido {
+		return ErrInterrompido
+	}
+	return nil
 }
 
 // classifyIntent classifica a intenção do usuário via IA.

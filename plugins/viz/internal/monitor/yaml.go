@@ -22,6 +22,7 @@ var resourceGVR = map[string]schema.GroupVersionResource{
 	"statefulset": {Group: "apps", Version: "v1", Resource: "statefulsets"},
 	"job":         {Group: "batch", Version: "v1", Resource: "jobs"},
 	"ingress":     {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
+	"event":       {Group: "", Version: "v1", Resource: "events"},
 }
 
 // GetResourceYAML busca qualquer recurso K8s e serializa como YAML
@@ -36,15 +37,18 @@ func GetResourceYAML(config *rest.Config, kind, name, namespace string) (string,
 		return "", fmt.Errorf("falha ao criar client dinâmico: %w", err)
 	}
 
+	ctx, cancelar := context.WithTimeout(context.Background(), prazoDeLeitura)
+	defer cancelar()
+
 	var resource interface{}
 	if namespace != "" {
-		obj, err := dynClient.Resource(gvr).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
+		obj, err := dynClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("falha ao buscar %s '%s': %w", kind, name, err)
 		}
 		resource = obj.Object
 	} else {
-		obj, err := dynClient.Resource(gvr).Get(context.Background(), name, metav1.GetOptions{})
+		obj, err := dynClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("falha ao buscar %s '%s': %w", kind, name, err)
 		}

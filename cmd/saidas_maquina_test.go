@@ -14,7 +14,8 @@ import (
 
 // Goldens das saídas para máquina (export do audit, telemetry export, arquivo do
 // gen-docs): gravados antes da migração para a carta do terminal e conferidos depois,
-// para provar que continuam byte a byte iguais.
+// para provar que continuam byte a byte iguais. A exceção é o cabeçalho do gen-docs, que
+// passou ao português de propósito na T035, junto com o resto da referência.
 
 // eventosAuditGolden são linhas JSONL de ~/.yby/audit.log com um sucesso e uma falha.
 const eventosAuditGolden = `{"timestamp":"2026-10-20T08:15:00Z","action":"authenticate","provider":"aws","identity":"arn:aws:iam::123456789012:user/ana","method":"sso","success":true,"duration":"1.2s"}

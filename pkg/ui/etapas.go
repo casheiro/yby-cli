@@ -21,6 +21,9 @@ const (
 	EtapaFeita
 	// EtapaFalha terminou com erro (✕).
 	EtapaFalha
+	// EtapaPulada terminou sem rodar ou sem resultado, num passo opcional (○, toda em
+	// TintaSuave): ex.: as métricas que o cluster não oferece.
+	EtapaPulada
 )
 
 // Etapa é uma linha da lista de etapas de um processo.
@@ -102,6 +105,8 @@ func Etapas(etapas []Etapa, largura int) string {
 			glifo = s.Negrito.Render(g.Andamento)
 		case EtapaFalha:
 			glifo = s.Erro.Render(g.Falha)
+		case EtapaPulada:
+			glifo = s.TintaSuave.Render(g.Parado)
 		default:
 			glifo = s.TintaSuave.Render(g.Pendente)
 		}

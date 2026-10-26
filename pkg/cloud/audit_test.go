@@ -146,6 +146,31 @@ func TestAuditLogger_ReadEvents_WithSince(t *testing.T) {
 	}
 }
 
+// Uma linha cortada no meio da escrita não trava a leitura: só ela é pulada.
+func TestAuditLogger_ReadEvents_LinhaCortada(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	conteudo := `{"timestamp":"2026-10-25T10:00:00Z","action":"refresh","provider":"aws","identity":"","success":true}` + "\n" +
+		`lixo que não é json` + "\n" +
+		`{"timestamp":"2026-10-25T10:30:00Z","action":"refresh","provider":"gcp","identity":"","success":true}` + "\n" +
+		`{"timestamp":"2026-10-25T11:00:00Z","action":"ref`
+	if err := os.WriteFile(path, []byte(conteudo), 0600); err != nil {
+		t.Fatal(err)
+	}
+	pronto := make(chan []CloudAuditEvent, 1)
+	go func() {
+		events, _ := NewAuditLoggerWithPath(path).ReadEvents(time.Time{})
+		pronto <- events
+	}()
+	select {
+	case events := <-pronto:
+		if len(events) != 2 || events[0].Provider != "aws" || events[1].Provider != "gcp" {
+			t.Fatalf("esperados os 2 eventos inteiros, obtido %+v", events)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ReadEvents não voltou com a última linha cortada")
+	}
+}
+
 func TestAuditLogger_ReadEvents_FileNotFound(t *testing.T) {
 	logger := NewAuditLoggerWithPath("/tmp/audit-inexistente-test.log")
 	events, err := logger.ReadEvents(time.Time{})

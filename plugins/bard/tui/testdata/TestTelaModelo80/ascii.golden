@@ -1,0 +1,24 @@
+* YBY  BARD  INSTR. 03 · ORIENTAÇÃO               staging > default   claude-cli
+--------------------------------------------------------------------------------
+                                                                                
+           /|\                                                                  
+         .' | '.                                                                
+        /   |   \                                                               
+     _  (   |   )  _     ___     ___   _________   ___     ___                  
+    (_)  '._ _.'  (_)    \  \   /  /  |_______  \  \  \   /  /                  
++ MODELO ----------------------------------------------------------------------+
+| * claude-cli                   em uso · modelo padrão do CLI · Claude Code ~ |
+| o claude-cli/sonnet                                                          |
+| o claude-cli/opus                                                            |
+| o claude-cli/haiku                                                           |
+| o gemini-cli                   modelo padrão do CLI · Gemini CLI             |
+| o gemini-cli/gemini-2.5-flash                                                |
+| o gemini-cli/gemini-2.5-pro                                                  |
+| o ollama                       o Ollama não respondeu · llama3 · Ollama (Lo~ |
++------------------------------------------------------------------------------+
+--------------------------------------------------------------------------------
+> esc volta para a conversa                                          3 providers
+                                                                                
+--------------------------------------------------------------------------------
+fora da lista: /modelo provider/modelo         sessão de hoje · nenhuma mensagem
+up/down escolher  enter usar  esc fechar                             ctrl+c sair

@@ -36,7 +36,7 @@ func (g *GCPAdvancedTokenGenerator) GenerateToken(ctx context.Context) (*Token, 
 		args = append(args, "--impersonate-service-account", g.ServiceAccountEmail)
 	}
 
-	out, err := g.Runner.RunCombinedOutput(ctx, "gcloud", args...)
+	out, err := saidaDoCLI(ctx, g.Runner, "gcloud", args...)
 	if err != nil {
 		return nil, fmt.Errorf("gcloud auth print-access-token: %w", err)
 	}

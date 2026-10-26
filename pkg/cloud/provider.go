@@ -76,9 +76,27 @@ type CredentialStatus struct {
 	// Identity é a identidade autenticada (ex: ARN da AWS, email do GCP).
 	Identity string
 
+	// Account é a conta da credencial: o número da conta AWS ou o id da assinatura Azure
+	// (vazio quando o provider não informa).
+	Account string
+
 	// ExpiresAt é o timestamp de expiração do token, nil se não aplicável ou desconhecido.
 	ExpiresAt *time.Time
 
 	// Method descreve o método de autenticação usado (ex: "profile", "service-account").
 	Method string
+}
+
+// DicaDeLogin é a dica de login no CLI do provider: "rode gcloud auth login". Para um
+// provider desconhecido, a frase genérica.
+func DicaDeLogin(provider string) string {
+	switch provider {
+	case "aws":
+		return "rode aws sso login (ou aws configure)"
+	case "azure":
+		return "rode az login"
+	case "gcp":
+		return "rode gcloud auth login"
+	}
+	return "faça o login no CLI do provider"
 }

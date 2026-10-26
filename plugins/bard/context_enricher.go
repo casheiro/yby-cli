@@ -26,37 +26,67 @@ type ClusterContext struct {
 
 // EnrichContext coleta informações do cluster Kubernetes atual.
 // Retorna nil graciosamente se kubectl não estiver disponível ou o cluster estiver offline.
-func EnrichContext(ctx context.Context) *ClusterContext {
-	cc := &ClusterContext{}
+// contexto e namespace, quando dados (yby bard --context, --namespace), trocam o contexto
+// atual do kubeconfig e o namespace dele.
+func EnrichContext(ctx context.Context, contexto, namespace string) *ClusterContext {
+	return enriquecer(func(args ...string) (string, error) { return runKubectl(ctx, args...) }, contexto, namespace)
+}
 
-	// Obter contexto atual do kubectl
-	cluster, err := runKubectl(ctx, "config", "current-context")
-	if err != nil {
-		slog.Debug("kubectl indisponível para context awareness", "erro", err)
-		return nil
+// enriquecer é o EnrichContext com o kubectl dado (os testes trocam o kubectl).
+func enriquecer(rodar rodarKubectl, contexto, namespace string) *ClusterContext {
+	cc := &ClusterContext{}
+	kubectl := func(args ...string) (string, error) {
+		if contexto != "" {
+			args = append([]string{"--context", contexto}, args...)
+		}
+		return rodar(args...)
 	}
-	cc.Cluster = strings.TrimSpace(cluster)
+
+	// O cluster é o contexto dado ou, sem ele, o atual do kubeconfig. O config
+	// current-context ignora o --context e falha num kubeconfig sem contexto atual (o Viz
+	// aberto com --context, como pelo ↵ do yby cloud dashboard): o contexto dado é
+	// conferido pelo nome, no get-contexts.
+	if contexto != "" {
+		if _, err := rodar("config", "get-contexts", contexto, "-o", "name"); err != nil {
+			slog.Debug("contexto do kubeconfig indisponível para context awareness", "contexto", contexto, "erro", err)
+			return nil
+		}
+		cc.Cluster = contexto
+	} else {
+		cluster, err := rodar("config", "current-context")
+		if err != nil {
+			slog.Debug("kubectl indisponível para context awareness", "erro", err)
+			return nil
+		}
+		cc.Cluster = strings.TrimSpace(cluster)
+	}
 
 	// Obter namespace atual
-	ns, err := runKubectl(ctx, "config", "view", "--minify", "--output=jsonpath={..namespace}")
-	if err == nil && strings.TrimSpace(ns) != "" {
+	ns, err := kubectl("config", "view", "--minify", "--output=jsonpath={..namespace}")
+	switch {
+	case namespace != "":
+		cc.Namespace = namespace
+	case err == nil && strings.TrimSpace(ns) != "":
 		cc.Namespace = strings.TrimSpace(ns)
-	} else {
+	default:
 		cc.Namespace = "default"
 	}
 
 	// Listar pods no namespace atual
-	cc.Pods = fetchPods(ctx, cc.Namespace)
+	cc.Pods = fetchPods(kubectl, cc.Namespace)
 
 	// Obter eventos recentes
-	cc.RecentEvents = fetchRecentEvents(ctx, cc.Namespace)
+	cc.RecentEvents = fetchRecentEvents(kubectl, cc.Namespace)
 
 	return cc
 }
 
+// rodarKubectl roda o kubectl no contexto da sessão.
+type rodarKubectl func(args ...string) (string, error)
+
 // fetchPods obtém a lista de pods do namespace especificado.
-func fetchPods(ctx context.Context, namespace string) []PodInfo {
-	output, err := runKubectl(ctx, "get", "pods", "-n", namespace, "-o", "json")
+func fetchPods(kubectl rodarKubectl, namespace string) []PodInfo {
+	output, err := kubectl("get", "pods", "-n", namespace, "-o", "json")
 	if err != nil {
 		return nil
 	}
@@ -100,8 +130,8 @@ func fetchPods(ctx context.Context, namespace string) []PodInfo {
 }
 
 // fetchRecentEvents obtém os 5 eventos mais recentes do namespace.
-func fetchRecentEvents(ctx context.Context, namespace string) []string {
-	output, err := runKubectl(ctx, "get", "events", "-n", namespace,
+func fetchRecentEvents(kubectl rodarKubectl, namespace string) []string {
+	output, err := kubectl("get", "events", "-n", namespace,
 		"--sort-by=.lastTimestamp", "-o", "custom-columns=TYPE:.type,REASON:.reason,MESSAGE:.message",
 		"--no-headers")
 	if err != nil {

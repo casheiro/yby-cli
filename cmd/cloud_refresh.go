@@ -5,6 +5,7 @@ package cmd
 
 import (
 	gocontext "context"
+	"log/slog"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/cloud"
@@ -60,8 +61,13 @@ func runCloudRefresh(cmd *cobra.Command, args []string) error {
 		nomes[i] = p.Name()
 	}
 	col := ui.ColunasPara(nomes...)
+	auditoria := auditoriaCloud()
 	for _, p := range providers {
-		if err := p.RefreshToken(ctx, cloud.ClusterInfo{}); err != nil {
+		err := p.RefreshToken(ctx, cloud.ClusterInfo{})
+		if errLog := auditoria.LogRefresh(p.Name(), "", err == nil, err); errLog != nil {
+			slog.Debug("cloud.refresh.auditoria", "erro", errLog)
+		}
+		if err != nil {
 			ui.CheckCom(w, col, ui.CheckErro, p.Name(), "falhou", err.Error())
 			continue
 		}

@@ -148,42 +148,15 @@ func itemTecla(tecla, acao string) string {
 // "q sair" (tecla Sair do keymap) fica sempre no canto direito. Abaixo de 80 colunas mostra
 // 3 teclas + "? mais"; em qualquer largura, descarta teclas do fim até caber.
 func KeyHints(largura int, teclas ...key.Binding) string {
-	sair := DefaultKeys().Global.Sair
-	ajuda := DefaultKeys().Global.Ajuda
-	compacto := largura < LarguraColuna
+	return legendaDeTeclas(largura, DefaultKeys().Global.Sair, true, teclas...)
+}
 
-	var itens []key.Binding
-	for _, b := range teclas {
-		h := b.Help()
-		if !b.Enabled() || h.Key == "" || h.Desc == "" || h.Key == sair.Help().Key {
-			continue
-		}
-		if compacto && h.Key == ajuda.Help().Key {
-			continue // vira o "? mais" fixo
-		}
-		itens = append(itens, b)
-	}
-	mais := compacto
-	if compacto && len(itens) > 3 {
-		itens = itens[:3]
-	}
-
-	dir := itemTecla(sair.Help().Key, sair.Help().Desc)
-	for {
-		partes := make([]string, 0, len(itens)+1)
-		for _, b := range itens {
-			partes = append(partes, itemTecla(b.Help().Key, b.Help().Desc))
-		}
-		if mais {
-			partes = append(partes, itemTecla(ajuda.Help().Key, "mais"))
-		}
-		esq := strings.Join(partes, "  ")
-		if lipgloss.Width(esq)+2+lipgloss.Width(dir) <= largura || len(itens) == 0 {
-			return linhaEsqDir(esq, dir, largura)
-		}
-		itens = itens[:len(itens)-1]
-		mais = true
-	}
+// TeclasDoPainel devolve as teclas de um painel (o rodapé do detalhe do Viz: "l logs  y yaml
+// e eventos  b perguntar ao Bard"), no formato da legenda mas sem "q sair" nem "? mais";
+// descarta teclas do fim só quando não cabem em largura (o painel não tem o limite de 3
+// teclas da legenda compacta).
+func TeclasDoPainel(largura int, teclas ...key.Binding) string {
+	return montarLegenda(largura, false, key.Binding{}, false, teclas...)
 }
 
 // Partes reúne o conteúdo já renderizado de uma tela para Moldura.
@@ -197,6 +170,12 @@ type Partes struct {
 	Mensagem                      string // frase de status, já com glifo
 	Hora                          time.Time
 	Teclas                        []key.Binding // teclas válidas na tela, em ordem de importância
+	// Sair é a tecla de saída no canto direito da legenda; vazia, "q sair". Nas camadas em
+	// que q é letra ou não sai (campo, menu, ajuda), DefaultKeys().Global.SairForcado.
+	Sair key.Binding
+	// SemAjuda tira o "? mais" da legenda nas camadas em que o ? não abre a ajuda (campo
+	// de texto, confirmação, a própria tela de ajuda).
+	SemAjuda bool
 }
 
 // linhasDe divide s em linhas; string vazia vira nenhuma linha.
@@ -276,10 +255,15 @@ func Moldura(largura, altura int, p Partes) string {
 	for _, l := range linhasDe(p.Filtros) {
 		topo = append(topo, ajustar(l, largura))
 	}
+	sair := p.Sair
+	if sair.Help().Key == "" {
+		sair = DefaultKeys().Global.Sair
+	}
+	legenda := legendaDeTeclas(largura, sair, !p.SemAjuda, p.Teclas...)
 	rodape := []string{
 		Rule(largura),
 		ajustar(StatusLine(largura, p.Mensagem, p.Hora), largura),
-		KeyHints(largura, p.Teclas...),
+		legenda,
 	}
 
 	h := altura - len(topo) - len(rodape)
@@ -304,12 +288,28 @@ func Moldura(largura, altura int, p Partes) string {
 	return strings.Join(todas, "\n")
 }
 
+// LargurasLadoALado devolve as larguras da lista (60%) e do detalhe (40%) no corpo lado a
+// lado de largura células, descontado o fio vertical entre eles: quem desenha a lista e o
+// detalhe usa estas larguras para que nada seja cortado pela moldura.
+func LargurasLadoALado(largura int) (lista, detalhe int) {
+	const sepLargura = 3 // " │ "
+	util := max(0, largura-sepLargura)
+	lista = util * 60 / 100
+	return lista, util - lista
+}
+
+// LimiteDetalheEmpilhado é quantas linhas o detalhe empilhado (abaixo de 120 colunas) pode
+// ocupar num corpo de h linhas: até metade, menos o fio; abaixo de 6 linhas, o corpo todo.
+func LimiteDetalheEmpilhado(h int) int {
+	if h < 6 {
+		return max(h, 0)
+	}
+	return (h - 1) / 2
+}
+
 // ladoALado divide o corpo em lista (60%) e detalhe (40%) com um fio vertical entre eles.
 func ladoALado(lista, detalhe string, largura, h int) []string {
-	const sepLargura = 3 // " │ "
-	util := largura - sepLargura
-	wLista := util * 60 / 100
-	wDetalhe := util - wLista
+	wLista, wDetalhe := LargurasLadoALado(largura)
 	sep := " " + S().Fio.Render(separadorVertical()) + " "
 	esq, dir := bloco(lista, wLista, h), bloco(detalhe, wDetalhe, h)
 	saida := make([]string, h)
@@ -332,7 +332,7 @@ func empilhado(lista, detalhe string, largura, h int) []string {
 		return bloco(detalhe, largura, h)
 	}
 	hDet := len(linhasDe(detalhe))
-	if limite := (h - 1) / 2; hDet > limite {
+	if limite := LimiteDetalheEmpilhado(h); hDet > limite {
 		hDet = limite
 	}
 	if hDet < 1 {

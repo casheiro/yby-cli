@@ -74,7 +74,7 @@ func TestAWSProvider_CLIVersion_Error(t *testing.T) {
 func TestAWSProvider_ValidateCredentials_Valid(t *testing.T) {
 	const callerJSON = `{"UserId":"AIDAI0123456789EXAMPLE","Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/Alice"}`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(callerJSON), nil
 		},
 	}
@@ -96,7 +96,7 @@ func TestAWSProvider_ValidateCredentials_Valid(t *testing.T) {
 
 func TestAWSProvider_ValidateCredentials_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("credenciais inválidas")
 		},
 	}
@@ -115,7 +115,7 @@ func TestAWSProvider_ValidateCredentials_CLIError(t *testing.T) {
 
 func TestAWSProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -135,7 +135,7 @@ func TestAWSProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 func TestAWSProvider_ListClusters(t *testing.T) {
 	callCount := 0
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			callCount++
 			if callCount == 1 {
 				return []byte(`{"clusters":["prod-cluster","staging-cluster"]}`), nil
@@ -180,7 +180,7 @@ func TestAWSProvider_ListClusters(t *testing.T) {
 
 func TestAWSProvider_ListClusters_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`{"clusters":[]}`), nil
 		},
 	}
@@ -196,7 +196,7 @@ func TestAWSProvider_ListClusters_Empty(t *testing.T) {
 
 func TestAWSProvider_ListClusters_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("erro de rede")
 		},
 	}
@@ -210,7 +210,7 @@ func TestAWSProvider_ListClusters_CLIError(t *testing.T) {
 func TestAWSProvider_ListClusters_DescribeError_FallsBack(t *testing.T) {
 	callCount := 0
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			callCount++
 			if callCount == 1 {
 				return []byte(`{"clusters":["my-cluster"]}`), nil
@@ -233,7 +233,7 @@ func TestAWSProvider_ListClusters_DescribeError_FallsBack(t *testing.T) {
 
 func TestAWSProvider_ListClusters_NoRegion(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			// Verifica que --region não está presente quando opts.Region está vazio
 			for _, arg := range args {
 				if arg == "--region" {
@@ -301,7 +301,7 @@ func TestAWSProvider_ConfigureKubeconfig_Error(t *testing.T) {
 func TestAWSProvider_RefreshToken(t *testing.T) {
 	var capturedArgs []string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			capturedArgs = args
 			return []byte(`{"kind":"ExecCredential","apiVersion":"client.authentication.k8s.io/v1beta1"}`), nil
 		},
@@ -325,7 +325,7 @@ func TestAWSProvider_RefreshToken(t *testing.T) {
 
 func TestAWSProvider_RefreshToken_Error(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("token expirado")
 		},
 	}

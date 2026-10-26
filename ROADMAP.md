@@ -29,7 +29,7 @@ Nesta fase, o foco é solidificar a base do CLI, garantindo que ele seja confiá
 
 Com a base sólida, expandiremos as capacidades do Yby para torná-lo um verdadeiro "co-piloto" de infraestrutura.
 
--   **Multi-Cloud (EKS / AKS / GKE):** ✅ Entregue
+-   **Multi-Cloud (EKS / AKS / GKE):** 🧪 Beta (ver "Cloud: sair do beta")
     -   [x] Comandos `yby cloud connect|list|status|refresh` para gerenciar clusters em clouds públicas
     -   [x] Tipos de ambiente `eks`, `aks`, `gke` com token generators SDK e fallback CLI
     -   [x] AutoRefreshTransport para refresh automático de tokens K8s expirados
@@ -43,11 +43,19 @@ Com a base sólida, expandiremos as capacidades do Yby para torná-lo um verdade
     -   [ ] Expansão da arquitetura de plugins para permitir maior modularidade e facilidade de extensão por outras squads.
 -   **Interface Opcional:**
     -   [ ] Desenvolvimento de uma interface Web local (dashboard) opcional para visualização de estado e métricas rápidas.
--   **Cloud — Auth Avançada & Auditoria:** ✅ Entregue
+-   **Cloud — Auth Avançada & Auditoria:** 🧪 Beta (ver "Cloud: sair do beta")
     -   [x] Credential store seguro via OS keychain (go-keyring) com fallback encriptado AES-256-GCM
     -   [x] Auth avançada: SSO/MFA (AWS), device code/interactive/cert/MSI (Azure), WIF/SA impersonation/Connect Gateway (GCP)
     -   [x] Audit log JSONL de operações cloud com rotação 10MB e export json/csv
     -   [x] Dashboard TUI multi-cluster interativo (`yby cloud dashboard`)
+-   **Cloud: sair do beta:**
+    -   Os comandos `yby cloud` foram testados com os CLIs `aws`, `az` e `gcloud` (o `gcloud` real só no que não pede faturamento) e conferidos contra a documentação oficial, mas nunca contra um cluster real. Ficam em beta, marcados assim na ajuda, até passar por estes testes com contas de verdade:
+    -   [ ] `yby cloud connect` e o `get-credentials` reais em EKS, AKS e GKE
+    -   [ ] Plugins de autenticação do kubeconfig: `aws eks get-token`, `kubelogin` e `gke-gcloud-auth-plugin`
+    -   [ ] Token vencendo com o cluster em uso (SSO da AWS com sessão curta) e o `t` do painel
+    -   [ ] Binário `yby-cloud` (SDKs) contra cluster real
+    -   [ ] Do painel ao Viz (`↵`) em cada nuvem
+    -   [ ] Decisões em aberto: login SSO pelo navegador no painel, coluna de nós no painel, `cloud refresh` e `cloud list` saindo com 0 quando tudo falha, validade real dos tokens do GCP pelo CLI (hoje 1 h fixa)
 
 ### Longo Prazo (2027+) - Foco: Ecossistema & Autonomia
 

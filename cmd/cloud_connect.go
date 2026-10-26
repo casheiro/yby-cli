@@ -7,6 +7,7 @@ import (
 	gocontext "context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/cloud"
@@ -107,12 +108,13 @@ func runCloudConnect(cmd *cobra.Command, args []string) error {
 	// Validar credenciais
 	linhaEmAndamento(w, "verificando as credenciais")
 	status, err := provider.ValidateCredentials(ctx)
+	registrarAutenticacao(provider.Name(), status, err)
 	if err != nil || !status.Authenticated {
 		e := errors.New(errors.ErrCodeCloudTokenExpired, "credenciais inválidas para "+provider.Name())
 		if err != nil {
 			e = errors.Wrap(err, errors.ErrCodeCloudTokenExpired, "credenciais inválidas para "+provider.Name())
 		}
-		return e.WithHint("faça o login no CLI do provider e rode yby cloud connect de novo")
+		return e.WithHint(cloud.DicaDeLogin(provider.Name()) + " e depois yby cloud connect de novo")
 	}
 	linhaConnect(w, linhaCheck{ui.CheckOk, "credenciais", "válidas", status.Identity})
 
@@ -238,4 +240,16 @@ func createCloudEnvironment(name string, cluster cloud.ClusterInfo, providerName
 
 	mgr := ybycontext.NewManager(infraRoot)
 	return mgr.AddEnvironment(name, env, "")
+}
+
+// registrarAutenticacao grava no audit log a verificação de credenciais do connect.
+func registrarAutenticacao(provider string, status *cloud.CredentialStatus, err error) {
+	identidade, metodo := "", ""
+	if status != nil {
+		identidade, metodo = status.Identity, status.Method
+	}
+	ok := err == nil && status != nil && status.Authenticated
+	if errLog := auditoriaCloud().LogAuthentication(provider, identidade, metodo, ok, err); errLog != nil {
+		slog.Debug("cloud.connect.auditoria", "erro", errLog)
+	}
 }

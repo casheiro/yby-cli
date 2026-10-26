@@ -11,6 +11,7 @@ import (
 // GeminiCLIProvider implementa o Provider usando o Gemini CLI (gemini).
 type GeminiCLIProvider struct {
 	command string
+	model   string // vazio deixa o CLI escolher o modelo
 }
 
 // NewGeminiCLIProvider cria um provider que usa o Gemini CLI.
@@ -29,6 +30,14 @@ func (p *GeminiCLIProvider) IsAvailable(_ context.Context) bool {
 	return err == nil
 }
 
+// args monta os argumentos do gemini: -p com o prompt e, com modelo escolhido, --model.
+func (p *GeminiCLIProvider) args(prompt string) []string {
+	if p.model == "" {
+		return []string{"-p", prompt}
+	}
+	return []string{"--model", p.model, "-p", prompt}
+}
+
 // GenerateGovernance não é suportado pelo CLI.
 func (p *GeminiCLIProvider) GenerateGovernance(_ context.Context, _ string) (*GovernanceBlueprint, error) {
 	return nil, fmt.Errorf("GenerateGovernance nao suportado pelo %s", p.Name())
@@ -38,7 +47,7 @@ func (p *GeminiCLIProvider) GenerateGovernance(_ context.Context, _ string) (*Go
 func (p *GeminiCLIProvider) Completion(_ context.Context, systemPrompt, userPrompt string) (string, error) {
 	fullPrompt := systemPrompt + "\n\n" + userPrompt
 
-	cmd := exec.Command(p.command, "-p", fullPrompt)
+	cmd := exec.Command(p.command, p.args(fullPrompt)...)
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -75,7 +84,7 @@ func cleanGeminiCLIOutput(output string) string {
 func (p *GeminiCLIProvider) StreamCompletion(_ context.Context, systemPrompt, userPrompt string, out io.Writer) error {
 	fullPrompt := systemPrompt + "\n\n" + userPrompt
 
-	cmd := exec.Command(p.command, "-p", fullPrompt)
+	cmd := exec.Command(p.command, p.args(fullPrompt)...)
 	cmd.Stdout = out
 
 	var stderr strings.Builder

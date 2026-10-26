@@ -32,17 +32,7 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 		return "", fmt.Errorf("sentinel não disponível: %w", err)
 	}
 
-	args := []string{"investigate", pod}
-	if ns := params["namespace"]; ns != "" {
-		args = append(args, "-n", ns)
-	}
-
-	req := plugin.PluginRequest{
-		Hook: "command",
-		Args: args,
-	}
-
-	resp, err := invokePlugin(binaryPath, req)
+	resp, err := invokePlugin(binaryPath, pedidoSentinelInvestigate(pod, params))
 	if err != nil {
 		return "", err
 	}
@@ -57,4 +47,14 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 	}
 
 	return string(formatted), nil
+}
+
+// pedidoSentinelInvestigate é o pedido ao Sentinel para investigar o pod, no cluster e no
+// namespace da sessão quando a IA não diz o namespace.
+func pedidoSentinelInvestigate(pod string, params map[string]string) plugin.PluginRequest {
+	args := []string{"investigate", pod}
+	if ns := namespaceDe(params); ns != "" {
+		args = append(args, "-n", ns)
+	}
+	return pedidoAoPlugin(args)
 }

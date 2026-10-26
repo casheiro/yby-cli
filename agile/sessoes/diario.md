@@ -5,6 +5,29 @@
 
 ---
 
+## 24–25/10/2026 · `feat/tui-viz` → `feat/tui-cloud` → `feat/tui-plugins`
+
+**Feito**
+- Fase 3 (Viz) aprovada e no PR #204 (`6b64dd7`). Release v5.7.0 (core e Bard) publicada por disparo manual do `release.yaml`; PR #205 para a main aberto.
+- CI sem GH_PAT: `release.yaml` chamado pelo `release-pipeline.yaml`, back-merge só com diferença, job da wiki removido (`49e4aae`, PR #206).
+- Fase 4 (Cloud): T029, T030 e o checkpoint (`d93da8e`), PR #207. Correções do cloud contra a documentação oficial e o gcloud real sem faturamento (`30061e1` … `50c9055`).
+- Fase 5: T031–T034, T039 e o checkpoint (`79dd9e5`), PR #208. Cloud em beta (`6486e3f`). T035: CHANGELOG, README, wiki, referência da CLI em português pelo `gen-docs`, prancha marcada como implementada (`5f65fbe`); wiki publicada (`b8dc3f7`) e submódulo apontado (`3ae29eb`).
+
+**Decisões**
+- Sem contas pagas de nuvem: o `yby cloud` fica em beta até o teste com clusters reais (lista no ROADMAP).
+- Login SSO pelo navegador no painel, coluna de nós e saída 0 de `cloud refresh`/`list` ficam para a saída do beta.
+- Quadros do Bard com o rótulo na cor da borda, causa técnica do client-go na linha "causa" e scan sem modo de falha para CI ficam como estão.
+- A referência da wiki passa a ser gerada em português da mesma ajuda do `--help`.
+
+**Pendente**
+- Merges: #206, #205, #204 → #207 → #208.
+- Pendências menores listadas em Atenção no `estado.md`.
+
+**Próximo passo**
+- Release da próxima versão depois dos merges.
+
+---
+
 ## 23/10/2026 (2ª sessão) · `feat/tui-carta`
 
 **Feito**
