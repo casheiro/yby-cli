@@ -5,12 +5,20 @@
 
 ## Estado atual
 
-- **Projeto ativo:** `Carta do terminal (redesign das TUIs e saídas)`
-- **Plano:** `agile/planning/tui-redesign/tasks.md`
-- **Branch:** `feat/notas-release-merges`
-- **Próxima ação:** v5.8.0 publicada (26/10/2026, 43 binários, notas limpas à mão). Escolher a próxima frente entre as pendências menores (lista em Atenção) ou a saída do beta do cloud (`ROADMAP.md`).
-- **Aguardando o usuário:** aprovação e merge do #212 (release v5.8.0 → main) e merge do #213 (notas da release sem merges, hashes curtos e link do CHANGELOG, para as próximas versões).
-- **Atenção:** plano completo (39/39), tudo com push; a wiki foi publicada (`b8dc3f7`) antes da versão com o Viz novo sair. O cloud está em beta (anotação `yby/beta`); o que falta para sair do beta está no `ROADMAP.md`. Desde o #206 a release publica sozinha no merge do PR develop → `release/*`; branches de PR para a develop precisam ser `feat/**` (o check obrigatório só roda nelas). Pendências menores: cabeçalho do Bard sem o modelo vindo do config; providers CLI sem a cadeia de decorators; `sentinel --fix` com erros crus; gofmt acusa `plugins/sentinel/cli/checks/rbac_allowlist.go`; TestHook* do Atlas podem sair do `skip_base`; `yby version` em texto simples; a 72×20 o detalhe por cima do painel cloud fica sem a auditoria. `~/.yby/plugins` do usuário tem plugins falsos de testes antigos, não apagados. Contêiner de teste `yby-viz-k3s` removido em 25/10.
+- **Projeto ativo:** `Correções dos plugins (Bard, Sentinel, Synapstor, Atlas, Viz)`
+- **Plano:** `agile/planning/correcoes-plugins/tasks.md`
+- **Branch:** `feat/correcoes-plugins`
+- **Próxima ação:** depois do merge do #216, do #217 e do #218, rodar `git merge origin/develop` nesta branch e começar pela C01 (CI rodando os testes do Sentinel, do Viz e do Synapstor, em `.github/workflows/feature-pipeline.yaml`).
+- **Aguardando o usuário:** merge, nesta ordem, do #216 (plugin list sem duplicatas), do #217 (pedido grande por arquivo) e do #218 (o Bard recebe os achados do Sentinel e passa `--no-ai` ao scan). Depois deles, o pipeline abre a release v5.8.1; atualizar o yby e os plugins juntos no WSL.
+- **Atenção:**
+  - **Escopo autorizado (26/10/2026):** corrigir tudo o que é erro ou está errado em relação à proposta. Features e perfumaria ficam fora (lista no fim do plano).
+  - **Push e PR:** a cada fase, direto, porque são correções.
+  - **Branch:** esta branch saiu da `feat/bard-relatorio-sentinel` e carrega os commits do #217 e do #218.
+  - **Plano anterior:** o da carta do terminal está completo (39/39) e foi para "Outras frentes".
+  - **Testes locais:** use `scripts/falhas.sh <dir> <saida>` na branch e num worktree da `origin/develop` e compare. Só podem falhar os 12 testes que já falham no Windows: TestAuditLogger_Permissions, TestConfigureDirenv_EnvrcNaoExiste, TestCopyFile_Permissao0600, TestEncryptedFileStore_Permissions, TestEncryptWithSOPS_Success, TestFindInfraRoot_NotFound_MensagemErro, TestGenerateMermaid_PathsAbsolutos, TestGetAssets_PluginComAssetsAbsoluto, TestNewVectorStore_InvalidPath, TestResolveOverridePaths, TestValidateRenderedYAML_SubdirRecursivo, TestWriteEnvFile_FilePermissions.
+  - **Lint local:** o `.golangci.yml` é v1. Crie uma config v2 no scratchpad com `version: "2"`, os linters govet, ineffassign e revive, e o formatter gofmt. Rode com `--new-from-rev HEAD` (ou o commit base), porque sem o revive `exported` desligado aparecem uns 50 avisos antigos.
+  - **Wiki:** a linha do `sentinel scan --no-ai` só entra depois da release (P02).
+  - **Home do usuário:** `~/.yby/plugins` tem plugins falsos de testes antigos, que não devem ser apagados.
 
 ## Ambiente
 
@@ -25,6 +33,7 @@
 
 ## Outras frentes abertas
 
+- Carta do terminal (`agile/planning/tui-redesign/tasks.md`): completa (39/39), v5.8.0 publicada em 26/10/2026. Pendências menores que sobraram foram para o plano de correções (B13, B14, P01) ou para "Fora do escopo" (`yby version`).
 - `feat/multicloud-support`: 5 commits locais com correções para Windows; o PR #200 foi fechado e as correções entraram pela `feat/tui-bard` (v5.7.0). A branch pode ser apagada.
 - Cloud sem cluster real (25/10/2026): decidido não criar contas pagas e deixar o `yby cloud` em beta (`6486e3f`). GCP testada com o gcloud real só no que não exige faturamento (doctor, cloud status/refresh/audit, list com a API desligada, gcloud sem login); contratos de AWS, Azure e GCP conferidos contra a documentação oficial. Nunca testados de verdade: `cloud connect` e `get-credentials` reais, o plugin de autenticação do kubeconfig (gke-gcloud-auth-plugin, kubelogin, aws eks get-token), o token vencendo com o cluster em uso, o `yby-cloud` (SDK) contra cluster. Decisões abertas: `cloud refresh`/`cloud list` saem com 0 mesmo quando tudo falha (o doctor também), e o TTL fixo de 1 h dos tokens GCP pelo CLI (o `config config-helper`, que dá a validade real, não está mais na doc oficial).
 - Testes que falham só no Windows e já falhavam antes (permissões `0600`, caminhos estilo Unix, scripts `#!/bin/sh` como plugins falsos, override de `HOME`). Fora do plano da carta.
