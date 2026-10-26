@@ -28,7 +28,15 @@ type IndexedFile struct {
 	IndexedAt time.Time `json:"indexed_at"`
 }
 
-const manifestFile = ".synapstor/.index_manifest.json"
+// manifestFile mora dentro da pasta do índice (que o .gitignore ignora): manifest e índice
+// andam juntos, e um clone sem índice não herda um manifest que mandaria pular tudo por
+// hash. O chromem ignora arquivos soltos na raiz da pasta persistente.
+const manifestFile = ".synapstor/.index/manifest.json"
+
+// manifestAntigo é onde versões anteriores guardavam o manifest, fora do índice e sem
+// ser ignorado pelo git. Não é mais lido: o manifest antigo conta como vazio, o que
+// refaz o índice uma vez, e é apagado na primeira gravação do novo.
+const manifestAntigo = ".synapstor/.index_manifest.json"
 
 // Indexer manages the knowledge ingestion pipeline
 type Indexer struct {
@@ -88,7 +96,11 @@ func (i *Indexer) saveManifest(m *IndexManifest) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(i.RootDir, manifestFile), data, 0644)
+	if err := os.WriteFile(filepath.Join(i.RootDir, manifestFile), data, 0644); err != nil {
+		return err
+	}
+	_ = os.Remove(filepath.Join(i.RootDir, manifestAntigo))
+	return nil
 }
 
 // tirarDoIndice apaga do vector store os documentos dos arquivos removidos. Devolve

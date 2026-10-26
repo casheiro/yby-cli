@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,5 +232,66 @@ func TestRun_FullRefazIndiceQueNaoAbre(t *testing.T) {
 	}
 	if vs.Count() != 2 {
 		t.Errorf("esperava 2 documentos, obtive %d", vs.Count())
+	}
+}
+
+func TestRun_ManifestFicaDentroDoIndice(t *testing.T) {
+	ctx := context.Background()
+	raiz := projetoComUKIs(t)
+	p := &embeddingsFalsos{nome: "a", dimensao: 128}
+
+	if _, err := NewIndexer(p, raiz).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(raiz, ".synapstor", ".index", "manifest.json")); err != nil {
+		t.Errorf("o manifest mora dentro da pasta do índice, que o git ignora: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(raiz, ".synapstor", ".index_manifest.json")); err == nil {
+		t.Error("o manifest do lugar antigo não pode voltar")
+	}
+
+	// Sem a pasta do índice (clone novo), o manifest some junto e tudo é indexado.
+	if err := os.RemoveAll(filepath.Join(raiz, ".synapstor", ".index")); err != nil {
+		t.Fatal(err)
+	}
+	report, err := NewIndexer(p, raiz).Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.EmbeddingsCreated != 2 || report.FilesSkipped != 0 {
+		t.Errorf("sem o índice, o index refaz tudo: %d indexados, %d pulados", report.EmbeddingsCreated, report.FilesSkipped)
+	}
+}
+
+func TestRun_ManifestAntigoSemIndiceNaoPulaTudo(t *testing.T) {
+	ctx := context.Background()
+	raiz := projetoComUKIs(t)
+	p := &embeddingsFalsos{nome: "a", dimensao: 128}
+
+	// Manifest do lugar antigo, versionado por engano, com os hashes certos e sem índice.
+	idx := NewIndexer(p, raiz)
+	m := &IndexManifest{Files: map[string]IndexedFile{}}
+	for _, nome := range []string{"UKI-1-deploy.md", "UKI-2-backup.md"} {
+		hash, err := fileHash(filepath.Join(raiz, ".synapstor", ".uki", nome))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Files[".synapstor/.uki/"+nome] = IndexedFile{SHA256: hash}
+	}
+	dados, _ := json.Marshal(m)
+	antigo := filepath.Join(raiz, ".synapstor", ".index_manifest.json")
+	if err := os.WriteFile(antigo, dados, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := idx.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.EmbeddingsCreated != 2 || report.FilesSkipped != 0 {
+		t.Errorf("manifest sem índice conta como vazio: %d indexados, %d pulados", report.EmbeddingsCreated, report.FilesSkipped)
+	}
+	if _, err := os.Stat(antigo); err == nil {
+		t.Error("o manifest antigo é apagado depois da migração")
 	}
 }

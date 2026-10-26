@@ -235,7 +235,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - `filepath.ToSlash` no ID, no `source` e nas chaves do manifest;
     - a dica "rode index --full" (`search.go:~108`) passa a ser verdade.
   - **Verificar:** testes.
-- [ ] **Y03 · Manifest sem índice**
+- [x] **Y03 · Manifest sem índice**
   - **Problema:** o `.gitignore` ignora `.synapstor/.index`, mas não `.synapstor/.index_manifest.json`. Num clone com o manifest, o `index` pula tudo por hash (`indexer.go:~175-180`) e o `search` diz "índice vazio".
   - **Fazer:** com a pasta do índice ausente ou `Count()==0`, tratar o manifest como vazio. De preferência, guardar o manifest dentro de `.synapstor/.index/`.
   - **Verificar:** teste.
@@ -678,6 +678,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | Y01 | O `VectorStore` grava com que provider, modelo e dimensão o índice foi feito (`identidade.json`); a busca com outros embeddings devolve `IndiceDeOutroModeloError` com "rode yby synapstor index --full", e o `index` apaga e refaz tudo sozinho quando o modelo muda. | este commit |
 | 26/10/2026 | Y02 | O `--full` apaga e recria o índice, o `index` refaz tudo quando o número de documentos não bate com o manifest (órfãos) e o ID, o `source` e as chaves do manifest usam `/`. | este commit |
+| 26/10/2026 | Y03 | O manifest passou para `.synapstor/.index/manifest.json` (dentro do que o git ignora); o do lugar antigo conta como vazio e é apagado na primeira gravação. | este commit |
 
 ### Fase 4 · Sentinel
 

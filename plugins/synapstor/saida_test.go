@@ -290,8 +290,8 @@ func TestIndexESearch_Golden(t *testing.T) {
 	}
 	conferirGolden(t, "index.golden", saida)
 
-	// o manifest e o índice continuam onde sempre estiveram
-	for _, p := range []string{".index_manifest.json", ".index"} {
+	// o manifest mora dentro da pasta do índice
+	for _, p := range []string{filepath.Join(".index", "manifest.json"), ".index"} {
 		if _, err := os.Stat(filepath.Join(raiz, ".synapstor", p)); err != nil {
 			t.Errorf("%s não foi gravado: %v", p, err)
 		}
@@ -600,7 +600,7 @@ func TestIndex_TodosApagadosLimpaOIndice(t *testing.T) {
 	if !strings.Contains(saida, "tirar os removidos do índice") || !strings.Contains(saida, "3 removidos") {
 		t.Errorf("os 3 UKIs apagados saem do índice:\n%s", saida)
 	}
-	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index_manifest.json"))
+	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index", "manifest.json"))
 	if err != nil || strings.Contains(string(manifest), "UKI-") {
 		t.Errorf("o manifest fica vazio, obtido %s (%v)", manifest, err)
 	}
@@ -621,12 +621,24 @@ func TestIndex_FalhaAoTirarRemovidosAvisaEMantemNoManifest(t *testing.T) {
 	if err := os.Remove(filepath.Join(raiz, ".synapstor", ".uki", "UKI-1761390200-rascunho.md")); err != nil {
 		t.Fatal(err)
 	}
-	// o índice vira um arquivo: o vector store não abre e o removido não sai
+	// o índice ganha uma coleção quebrada (sem metadados): o vector store não abre e o
+	// removido não sai; o manifest, dentro da pasta, continua lá
 	indice := filepath.Join(raiz, ".synapstor", ".index")
-	if err := os.RemoveAll(indice); err != nil {
+	entradas, err := os.ReadDir(indice)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(indice, []byte("x"), 0o644); err != nil {
+	for _, e := range entradas {
+		if e.Name() != "manifest.json" {
+			if err := os.RemoveAll(filepath.Join(indice, e.Name())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(indice, "quebrada"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(indice, "quebrada", "00000000.gob"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	saida, _, err := rodar(t, raiz, "index")
@@ -636,7 +648,7 @@ func TestIndex_FalhaAoTirarRemovidosAvisaEMantemNoManifest(t *testing.T) {
 	if !strings.Contains(saida, "não deu para tirar do índice 1 arquivo apagado") || !strings.Contains(saida, "0 removidos") {
 		t.Errorf("a falha ao tirar o removido aparece como aviso e não conta como removido:\n%s", saida)
 	}
-	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index_manifest.json"))
+	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index", "manifest.json"))
 	if err != nil || !strings.Contains(string(manifest), "UKI-1761390200-rascunho.md") {
 		t.Errorf("o removido que ficou no índice continua no manifest, para a próxima tentativa: %s (%v)", manifest, err)
 	}
