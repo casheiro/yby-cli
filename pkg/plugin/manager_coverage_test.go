@@ -84,6 +84,7 @@ func TestExpandPath_CaminhoRelativo(t *testing.T) {
 func TestDiscover_SemErroComDiretoriosInexistentes(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	// Sem criar .yby/plugins, Discover deve ignorar erros silenciosamente
 	m := NewManager()
@@ -399,6 +400,7 @@ func TestInstall_FileProtocol_PluginJaExisteSemForce(t *testing.T) {
 func TestRemove_ChamaDiscoverQuandoSemPlugins(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	m := NewManager()
 	// plugins está vazio, Remove vai chamar Discover() automaticamente
@@ -412,6 +414,7 @@ func TestRemove_ChamaDiscoverQuandoSemPlugins(t *testing.T) {
 func TestUpdate_ChamaDiscoverQuandoSemPlugins(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	m := NewManager()
 	// plugins está vazio, Update vai chamar Discover() automaticamente
@@ -425,6 +428,7 @@ func TestUpdate_ChamaDiscoverQuandoSemPlugins(t *testing.T) {
 func TestInstall_ChamaDiscoverQuandoSemPlugins(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	m := NewManager()
 	// plugins vazio, Install vai chamar Discover() automaticamente

@@ -1,15 +1,18 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/pkg/services/validate"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mockValidateHelmRunner implementa validate.HelmRunner para testes no cmd.
@@ -37,6 +40,7 @@ func (m *mockValidateHelmRunner) Template(_ context.Context, _, _, _ string) ([]
 func TestValidateCmd_Sucesso(t *testing.T) {
 	original := newValidateService
 	defer func() { newValidateService = original }()
+	defer mockLookPath()()
 
 	newValidateService = func(_ shared.Runner) validate.Service {
 		return validate.NewService(&mockValidateHelmRunner{})
@@ -61,6 +65,7 @@ func TestValidateCmd_Sucesso(t *testing.T) {
 func TestValidateCmd_FalhaLint(t *testing.T) {
 	original := newValidateService
 	defer func() { newValidateService = original }()
+	defer mockLookPath()()
 
 	newValidateService = func(_ shared.Runner) validate.Service {
 		return validate.NewService(&mockValidateHelmRunner{
@@ -88,6 +93,7 @@ func TestValidateCmd_FalhaLint(t *testing.T) {
 func TestValidateCmd_FalhaTemplate(t *testing.T) {
 	original := newValidateService
 	defer func() { newValidateService = original }()
+	defer mockLookPath()()
 
 	newValidateService = func(_ shared.Runner) validate.Service {
 		return validate.NewService(&mockValidateHelmRunner{
@@ -110,4 +116,66 @@ func TestValidateCmd_FalhaTemplate(t *testing.T) {
 	err := validateCmd.RunE(validateCmd, []string{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "template")
+}
+
+func TestRenderValidateReport_Golden(t *testing.T) {
+	casos := []struct {
+		nome      string
+		relatorio *validate.ValidateReport
+	}{
+		{"validate_ok", &validate.ValidateReport{Success: true, Charts: []validate.ChartResult{
+			{Chart: "charts/system", DepsOK: true, LintOK: true, TemplateOK: true},
+			{Chart: "charts/bootstrap", DepsOK: true, LintOK: true, TemplateOK: true},
+		}}},
+		{"validate_falha_template", &validate.ValidateReport{Charts: []validate.ChartResult{
+			{Chart: "charts/system", DepsOK: true, LintOK: true, TemplateOK: true},
+			{Chart: "charts/bootstrap", DepsOK: true, LintOK: true, Error: "falha no template: Error: template failed\nlinha 2\n"},
+		}}},
+		{"validate_falha_lint", &validate.ValidateReport{Charts: []validate.ChartResult{
+			{Chart: "charts/system", DepsOK: true, Error: "falha no lint: exit status 1"},
+			{Chart: "charts/bootstrap", DepsOK: true},
+		}}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			usarSaidaTexto(t, false)
+			var b bytes.Buffer
+			renderValidateReport(&b, c.relatorio)
+			conferirGolden(t, c.nome, b.String())
+			conferirSemRestos(t, b.String())
+		})
+	}
+}
+
+func TestValidateCmd_Sucesso_Resumo(t *testing.T) {
+	usarSaidaTexto(t, false)
+	original := newValidateService
+	defer func() { newValidateService = original }()
+	defer mockLookPath()()
+	newValidateService = func(_ shared.Runner) validate.Service {
+		return validate.NewService(&mockValidateHelmRunner{})
+	}
+
+	b := saidaDoComando(t, validateCmd)
+	assert.NoError(t, validateCmd.RunE(validateCmd, []string{}))
+	saida := b.String()
+
+	assert.Contains(t, saida, "◆ YBY  VALIDATE")
+	assert.Contains(t, saida, "RESUMO  3 ok · 0 avisos · 0 erros  · charts válidos")
+	conferirSemRestos(t, saida)
+}
+
+func TestValidateCmd_SemHelm(t *testing.T) {
+	origLookPath := lookPath
+	defer func() { lookPath = origLookPath }()
+	lookPath = func(file string) (string, error) { return "", fmt.Errorf("não encontrado: %s", file) }
+
+	b := saidaDoComando(t, validateCmd)
+	err := validateCmd.RunE(validateCmd, []string{})
+
+	var yerr *errors.YbyError
+	require.ErrorAs(t, err, &yerr)
+	assert.Equal(t, errors.ErrCodeCmdNotFound, yerr.Code)
+	assert.Contains(t, yerr.Hint, "instale o helm")
+	assert.Empty(t, b.String(), "sem helm, nada da validação é escrito")
 }

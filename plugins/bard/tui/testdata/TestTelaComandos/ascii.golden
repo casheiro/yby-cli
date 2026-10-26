@@ -1,0 +1,29 @@
+* YBY  BARD  INSTR. 03 · ORIENTAÇÃO                                             staging > default   claude-cli
+--------------------------------------------------------------------------------------------------------------
+VOCÊ · 11:51                                                                                                  
+  qual a situação do meu storage?                                                                             
+                                                                                                              
+* BARD · 11:52 · 1 ferramenta · 21 s                                                                          
+  v kubectl get pvc,pv -A · 14 linhas                                                                         
+                                                                                                              
+  O staging tem 6 volumes. Quatro estão em uso e dois sobraram de apps removidos.                             
+                                                                                                              
+  VOLUME           NAMESPACE   TAMANHO  STATUS                                                                
+  data-postgres-0  payments    20Gi     * Bound                                                               
+  redis-data-0     payments    5Gi      * Bound                                                               
++ COMANDOS --------------------------------------------------------------------------------------------------+
+| * /sessões        lista as conversas anteriores e retoma uma delas                                         |
+| o /limpar         começa uma conversa nova; a atual fica salva                                             |
+| o /contexto       mostra o que o Bard sabe: cluster, namespace, notas                                      |
+| o /ferramentas    lista as ferramentas e quais estão disponíveis                                           |
+| o /modelo         troca o provider de IA nesta sessão                                                      |
+| o /copiar         copia a última resposta                                                                  |
+| o /exportar       salva a conversa em markdown no projeto                                                  |
+| o /ajuda          atalhos e exemplos de perguntas                                                          |
++------------------------------------------------------------------------------------------------------------+
+--------------------------------------------------------------------------------------------------------------
+> /                                                                                                 8 comandos
+                                                                                                              
+--------------------------------------------------------------------------------------------------------------
+digite para filtrar · /se mostra só /sessões                                      sessão de hoje · 2 mensagens
+up/down escolher  tab completar  enter executar  esc fechar                                        ctrl+c sair

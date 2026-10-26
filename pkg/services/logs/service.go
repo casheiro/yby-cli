@@ -47,8 +47,8 @@ func (s *logsService) ListPods(ctx context.Context, namespace string) ([]string,
 	out, err := s.runner.RunCombinedOutput(ctx, "kubectl", "get", "pods",
 		"-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeExec, "falha ao listar pods").
-			WithHint(fmt.Sprintf("Verifique se o namespace '%s' existe e se kubectl está configurado.", namespace))
+		return nil, errors.Wrap(shared.ComSaida(err, out), errors.ErrCodeExec, "falha ao listar pods").
+			WithHint(fmt.Sprintf("confira se o namespace %s existe e se o kubectl aponta para o cluster certo", namespace))
 	}
 
 	raw := strings.TrimSpace(string(out))
@@ -65,7 +65,7 @@ func (s *logsService) ListContainers(ctx context.Context, namespace, pod string)
 		"-n", namespace, "-o", "jsonpath={.spec.containers[*].name}")
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("falha ao listar containers do pod '%s'", pod)).
-			WithHint("Verifique se o pod existe e está acessível.")
+			WithHint("confira se o pod existe: kubectl get pods -n " + namespace)
 	}
 
 	raw := strings.TrimSpace(string(out))
@@ -83,7 +83,7 @@ func (s *logsService) GetLogs(ctx context.Context, opts LogOptions) (string, err
 	out, err := s.runner.RunCombinedOutput(ctx, "kubectl", args...)
 	if err != nil {
 		return "", errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("falha ao obter logs do pod '%s'", opts.Pod)).
-			WithHint("Verifique se o pod está em execução com: kubectl get pods -n " + opts.Namespace)
+			WithHint("confira se o pod está rodando: kubectl get pods -n " + opts.Namespace)
 	}
 
 	return string(out), nil
@@ -97,7 +97,7 @@ func (s *logsService) StreamLogs(ctx context.Context, opts LogOptions) error {
 	err := s.runner.Run(ctx, "kubectl", args...)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeExec, fmt.Sprintf("falha ao acompanhar logs do pod '%s'", opts.Pod)).
-			WithHint("O stream pode ter sido interrompido. Verifique a conexão com o cluster.")
+			WithHint("o stream foi interrompido; confira a conexão com o cluster e rode de novo")
 	}
 
 	return nil
@@ -109,7 +109,7 @@ func (s *logsService) DetectNamespace(ctx context.Context, podName string) (stri
 		"--all-namespaces", "-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\t\"}{.metadata.namespace}{\"\\n\"}{end}")
 	if err != nil {
 		return "", errors.Wrap(err, errors.ErrCodeExec, "falha ao buscar pods no cluster").
-			WithHint("Verifique se kubectl está configurado corretamente.")
+			WithHint("confira o acesso ao cluster com yby doctor")
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -129,7 +129,7 @@ func (s *logsService) DetectNamespace(ctx context.Context, podName string) (stri
 	}
 
 	return "", errors.New(errors.ErrCodeValidation, fmt.Sprintf("pod '%s' não encontrado em nenhum namespace", podName)).
-		WithHint("Verifique o nome do pod com: kubectl get pods --all-namespaces")
+		WithHint("confira o nome do pod: kubectl get pods --all-namespaces")
 }
 
 // buildKubectlArgs constrói os argumentos do kubectl logs.

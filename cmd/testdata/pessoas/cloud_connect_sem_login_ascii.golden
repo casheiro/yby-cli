@@ -1,0 +1,8 @@
+* YBY  CLOUD                                       connect · gcp
+
+  + verificando as credenciais
+
+x credenciais inválidas para gcp         ERR_CLOUD_TOKEN_EXPIRED
+  causa     gcloud auth login necessário
+  faça      faça o login no CLI do provider e rode yby cloud connect de novo
+  detalhes  rode de novo com --log-level=debug

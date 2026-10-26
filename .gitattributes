@@ -1,0 +1,9 @@
+# Fins de linha: LF no repositório e na cópia de trabalho em qualquer SO,
+# independente do core.autocrlf de cada máquina. Scripts .sh com CRLF
+# quebram no bash ("/bin/bash^M: bad interpreter").
+* text=auto eol=lf
+
+# Scripts nativos do Windows exigem CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

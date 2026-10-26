@@ -21,8 +21,8 @@ func TestUpgrade_CheckVersion(t *testing.T) {
 	// mas deve reconhecer a flag e tentar executar
 	output := s.RunCLIAllowError(t, "upgrade", "--check")
 
-	// Deve conter "Versão atual" ou indicar erro de rede (ambos são válidos)
-	hasVersionInfo := strings.Contains(output, "Versão atual") || strings.Contains(output, "version")
+	// Deve conter a versão instalada ou indicar erro de rede (ambos são válidos)
+	hasVersionInfo := strings.Contains(output, "instalada") || strings.Contains(output, "disponível")
 	hasNetworkError := strings.Contains(output, "falha") || strings.Contains(output, "release") || strings.Contains(output, "network")
 
 	if !hasVersionInfo && !hasNetworkError {

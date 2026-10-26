@@ -38,7 +38,7 @@ func TestBootstrap_Cluster_Offline(t *testing.T) {
 	t.Logf("Bootstrap Output: %s", output)
 
 	// Then a mensagem de bootstrap deve ser exibida
-	if !strings.Contains(output, "Yby Bootstrap") {
+	if !strings.Contains(output, "BOOTSTRAP CLUSTER") {
 		t.Errorf("Esperava mensagem de bootstrap. Obteve: %s", output)
 	}
 

@@ -87,21 +87,29 @@ func TestCheck_SucessoTotal(t *testing.T) {
 	assert.Contains(t, report.KEDA.Output, "my-scaler")
 
 	assert.True(t, report.Kepler.Available, "Kepler deve estar disponível")
-	assert.Contains(t, report.Kepler.Message, "ATIVO")
+	assert.Equal(t, MensagemKeplerAtivo, report.Kepler.Message)
 }
 
 func TestCheck_NodesFalhando(t *testing.T) {
+	outrasConsultas := 0
+	consulta := func(_ context.Context) (string, error) { outrasConsultas++; return "", nil }
 	inspector := &mockInspector{
 		getNodesFunc: func(_ context.Context) (string, error) {
 			return "", fmt.Errorf("connection refused")
 		},
+		getArgoCDPodsFunc:    consulta,
+		getIngressesFunc:     consulta,
+		getScaledObjectsFunc: consulta,
+		getKeplerPodsFunc:    consulta,
 	}
 
 	svc := NewService(inspector)
 	report := svc.Check(context.Background())
 
 	assert.False(t, report.Nodes.Available, "nodes não devem estar disponíveis quando kubectl falha")
-	assert.Contains(t, report.Nodes.Message, "Erro ao obter nodes")
+	assert.Equal(t, "sem acesso ao cluster", report.Nodes.Message)
+	assert.True(t, report.SemCluster)
+	assert.Zero(t, outrasConsultas, "sem cluster, as demais consultas não devem rodar")
 }
 
 func TestCheck_KeplerRunning(t *testing.T) {
@@ -115,7 +123,7 @@ func TestCheck_KeplerRunning(t *testing.T) {
 	report := svc.Check(context.Background())
 
 	assert.True(t, report.Kepler.Available)
-	assert.Contains(t, report.Kepler.Message, "ATIVO")
+	assert.Equal(t, MensagemKeplerAtivo, report.Kepler.Message)
 }
 
 func TestCheck_KeplerNaoRunning(t *testing.T) {
@@ -129,7 +137,7 @@ func TestCheck_KeplerNaoRunning(t *testing.T) {
 	report := svc.Check(context.Background())
 
 	assert.True(t, report.Kepler.Available)
-	assert.Contains(t, report.Kepler.Message, "não está 'Running'")
+	assert.Contains(t, report.Kepler.Message, "fora do estado Running")
 }
 
 func TestCheck_KeplerNaoEncontrado(t *testing.T) {
@@ -185,7 +193,7 @@ func TestCheck_IngressVazio(t *testing.T) {
 	report := svc.Check(context.Background())
 
 	assert.True(t, report.Ingress.Available)
-	assert.Contains(t, report.Ingress.Message, "Nenhum ingress encontrado")
+	assert.Contains(t, report.Ingress.Message, "nenhum ingress encontrado")
 	assert.Empty(t, report.Ingress.Output)
 }
 
@@ -200,7 +208,7 @@ func TestCheck_IngressErro(t *testing.T) {
 	report := svc.Check(context.Background())
 
 	assert.False(t, report.Ingress.Available, "ingress não deve estar disponível quando GetIngresses falha")
-	assert.Contains(t, report.Ingress.Message, "Erro ao obter ingresses")
+	assert.Contains(t, report.Ingress.Message, "erro ao obter os ingresses")
 }
 
 func TestCheck_ArgoCDNaoEncontrado(t *testing.T) {

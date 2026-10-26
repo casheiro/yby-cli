@@ -1,0 +1,3 @@
+◆ YBY  UP                                       ambiente staging
+  ○ só observação: o sync local fica desligado em staging
+  ○ para atualizar o cluster, faça commit e git push origin main

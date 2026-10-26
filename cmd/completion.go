@@ -42,7 +42,8 @@ PowerShell:
 			return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
 		default:
 			return errors.New(errors.ErrCodeValidation,
-				fmt.Sprintf("shell inválido: %q. Shells suportados: bash, zsh, fish, powershell", args[0]))
+				fmt.Sprintf("shell inválido: %q", args[0])).
+				WithHint("use bash, zsh, fish ou powershell")
 		}
 	},
 }

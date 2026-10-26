@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -137,7 +138,7 @@ func TestRunLocalUp_ErroNoLookPath(t *testing.T) {
 	defer func() { newLocalEnvironmentService = orig }()
 
 	// Cria um mock que retorna serviço com Runner que falha no LookPath
-	newLocalEnvironmentService = func(root string) *environment.EnvironmentService {
+	newLocalEnvironmentService = func(root string, _ io.Writer) *environment.EnvironmentService {
 		mockRunner := &testutil.MockRunner{
 			LookPathFunc: func(file string) (string, error) {
 				return "", fmt.Errorf("k3d não encontrado")
@@ -153,7 +154,7 @@ func TestRunLocalUp_ErroNoLookPath(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := runLocalUp(ctx, "/tmp/test-root")
+	err := runLocalUp(ctx, io.Discard, "/tmp/test-root")
 	assert.Error(t, err, "deveria retornar erro quando k3d não está disponível")
 }
 
@@ -164,7 +165,7 @@ func TestRunLocalUp_ClusterExisteStartFalha(t *testing.T) {
 	orig := newLocalEnvironmentService
 	defer func() { newLocalEnvironmentService = orig }()
 
-	newLocalEnvironmentService = func(root string) *environment.EnvironmentService {
+	newLocalEnvironmentService = func(root string, _ io.Writer) *environment.EnvironmentService {
 		cluster := &mockClusterManager{
 			existsFunc: func(ctx context.Context, name string) (bool, error) {
 				return true, nil
@@ -182,7 +183,7 @@ func TestRunLocalUp_ClusterExisteStartFalha(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := runLocalUp(ctx, ".")
+	err := runLocalUp(ctx, io.Discard, ".")
 	assert.Error(t, err, "deveria retornar erro quando cluster.Start falha")
 }
 
@@ -195,7 +196,7 @@ func TestRunLocalUp_ClusterNaoExisteCriacaoFalha(t *testing.T) {
 
 	t.Setenv("YBY_CLUSTER_NAME", "meu-cluster-custom")
 
-	newLocalEnvironmentService = func(root string) *environment.EnvironmentService {
+	newLocalEnvironmentService = func(root string, _ io.Writer) *environment.EnvironmentService {
 		cluster := &mockClusterManager{
 			existsFunc: func(ctx context.Context, name string) (bool, error) {
 				return false, nil
@@ -213,7 +214,7 @@ func TestRunLocalUp_ClusterNaoExisteCriacaoFalha(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := runLocalUp(ctx, ".")
+	err := runLocalUp(ctx, io.Discard, ".")
 	assert.Error(t, err, "deveria retornar erro quando cluster.Create falha")
 }
 
@@ -228,7 +229,7 @@ func TestRunLocalUp_Sucesso(t *testing.T) {
 	orig := newLocalEnvironmentService
 	defer func() { newLocalEnvironmentService = orig }()
 
-	newLocalEnvironmentService = func(root string) *environment.EnvironmentService {
+	newLocalEnvironmentService = func(root string, _ io.Writer) *environment.EnvironmentService {
 		cluster := &mockClusterManager{
 			existsFunc: func(ctx context.Context, name string) (bool, error) {
 				return true, nil
@@ -256,7 +257,7 @@ func TestRunLocalUp_Sucesso(t *testing.T) {
 		cancel()
 	}()
 
-	err := runLocalUp(ctx, t.TempDir())
+	err := runLocalUp(ctx, io.Discard, t.TempDir())
 	assert.NoError(t, err, "runLocalUp deveria completar com sucesso")
 }
 
@@ -270,7 +271,7 @@ func TestRunLocalUp_Sucesso_ComClusterName(t *testing.T) {
 	defer func() { newLocalEnvironmentService = orig }()
 
 	var clusterNameCapturado string
-	newLocalEnvironmentService = func(root string) *environment.EnvironmentService {
+	newLocalEnvironmentService = func(root string, _ io.Writer) *environment.EnvironmentService {
 		cluster := &mockClusterManager{
 			existsFunc: func(ctx context.Context, name string) (bool, error) {
 				clusterNameCapturado = name
@@ -298,7 +299,7 @@ func TestRunLocalUp_Sucesso_ComClusterName(t *testing.T) {
 		cancel()
 	}()
 
-	err := runLocalUp(ctx, t.TempDir())
+	err := runLocalUp(ctx, io.Discard, t.TempDir())
 	assert.NoError(t, err)
 	assert.Equal(t, "custom-cluster", clusterNameCapturado,
 		"deveria usar o nome de cluster da variável YBY_CLUSTER_NAME")
@@ -309,6 +310,6 @@ func TestRunLocalUp_Sucesso_ComClusterName(t *testing.T) {
 // ========================================================
 
 func TestNewLocalEnvironmentServiceFactory_Default(t *testing.T) {
-	svc := newLocalEnvironmentService("/tmp/test")
+	svc := newLocalEnvironmentService("/tmp/test", io.Discard)
 	assert.NotNil(t, svc, "newLocalEnvironmentService deveria retornar um serviço não-nil")
 }

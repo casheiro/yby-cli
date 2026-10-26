@@ -61,7 +61,7 @@ func TestDoctorService_Run(t *testing.T) {
 	}
 
 	// docker info success
-	mockRunner.On("Run", ctx, "docker", []string{"info"}).Return(nil)
+	mockRunner.On("RunCombinedOutput", ctx, "docker", []string{"info"}).Return([]byte(nil), nil)
 
 	// Ferramentas opcionais
 	mockRunner.On("LookPath", "kubeseal").Return("/usr/bin/kubeseal", nil)
@@ -69,12 +69,12 @@ func TestDoctorService_Run(t *testing.T) {
 	mockRunner.On("LookPath", "age").Return("/usr/bin/age", nil)
 
 	// kubectl get nodes success
-	mockRunner.On("Run", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return(nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return([]byte(nil), nil)
 
 	// CRDs success
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return(nil)
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return(nil)
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return(nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return([]byte(nil), nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return([]byte(nil), nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return([]byte(nil), nil)
 
 	// Cloud CLIs não instalados (cloud.Detect usa LookPath)
 	mockRunner.On("LookPath", "aws").Return("", errors.New("not found"))
@@ -128,14 +128,14 @@ func TestDoctor_NoCloudProviders(t *testing.T) {
 	for _, tool := range tools {
 		mockRunner.On("LookPath", tool).Return("/usr/bin/"+tool, nil)
 	}
-	mockRunner.On("Run", ctx, "docker", []string{"info"}).Return(nil)
+	mockRunner.On("RunCombinedOutput", ctx, "docker", []string{"info"}).Return([]byte(nil), nil)
 	mockRunner.On("LookPath", "kubeseal").Return("/usr/bin/kubeseal", nil)
 	mockRunner.On("LookPath", "sops").Return("/usr/bin/sops", nil)
 	mockRunner.On("LookPath", "age").Return("/usr/bin/age", nil)
-	mockRunner.On("Run", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return(nil)
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return(nil)
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return(nil)
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return(nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return([]byte(nil), nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return([]byte(nil), nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return([]byte(nil), nil)
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return([]byte(nil), nil)
 
 	// Cloud CLIs não instalados
 	mockRunner.On("LookPath", "aws").Return("", errors.New("not found"))
@@ -173,11 +173,11 @@ func TestDoctorService_Failures(t *testing.T) {
 	mockRunner.On("LookPath", "sops").Return("", errors.New("not found"))
 	mockRunner.On("LookPath", "age").Return("", errors.New("not found"))
 
-	mockRunner.On("Run", ctx, "docker", []string{"info"}).Return(errors.New("permission denied"))
-	mockRunner.On("Run", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return(errors.New("connection refused"))
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return(errors.New("not found"))
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return(errors.New("not found"))
-	mockRunner.On("Run", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return(errors.New("not found"))
+	mockRunner.On("RunCombinedOutput", ctx, "docker", []string{"info"}).Return([]byte(nil), errors.New("permission denied"))
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"--insecure-skip-tls-verify", "get", "nodes"}).Return([]byte(nil), errors.New("connection refused"))
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "servicemonitors.monitoring.coreos.com"}).Return([]byte(nil), errors.New("not found"))
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "clusterissuers.cert-manager.io"}).Return([]byte(nil), errors.New("not found"))
+	mockRunner.On("RunCombinedOutput", ctx, "kubectl", []string{"get", "crd", "scaledobjects.keda.sh"}).Return([]byte(nil), errors.New("not found"))
 
 	// Cloud CLIs não instalados
 	mockRunner.On("LookPath", "aws").Return("", errors.New("not found"))

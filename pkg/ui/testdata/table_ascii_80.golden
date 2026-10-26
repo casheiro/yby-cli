@@ -1,0 +1,6 @@
+NOME                   STATUS              PRONTOS  IDADE  NÓ                   
+api-gateway-7d9f8b6c~  * Running               1/1     3d  ip-10-0-1-23.internal
+pagamentos-configura~  x CrashLoopBackOff      0/1    12m  ip-10-0-2-77.internal
+fila-mensageria        ! Pending               0/1     4s  -                    
+migração-banco         v Completed             0/1     2d  ip-10-0-1-23.internal
+worker-parado          o Parado                0/0     9d  -                    

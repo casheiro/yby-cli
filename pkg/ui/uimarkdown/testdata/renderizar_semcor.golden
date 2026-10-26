@@ -1,0 +1,56 @@
+[1mVOLUMES DO[0m[1m STAGING[0m
+
+O staging tem [1m6 volumes[0m. Quatro estão em uso e dois sobraram de apps[0m
+removidos.
+Os nomes vêm do [1mkubectl get pvc,pv -A[0m.[0m
+
+VOLUME           NAMESPACE     TAMANHO  STATUS
+data-postgres-0  payments         20Gi  ● Bound
+pvc-3f1a9c2e     sem dono          8Gi  ▲ Released
+worker           jobs | batch      1Gi  ✕ CrashLoopBackOff
+
+Se não precisar dos dados:
+
+┌ COMANDO · c copia ───────────────────────────────────────────────────┐
+│ kubectl delete pv pvc-3f1a9c2e pvc-91cd04b7                          │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌ COMANDO · c copia ───────────────────────────────────────────────────┐
+│ kubectl -n monitoring patch deployment grafana --type=json           │
+│ -p='[{"op":"replace","path":"/spec/replicas","value":3}]'            │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌ [1mYAML[0m ────────────────────────────────────────────────────────────────┐[0m
+│ kind: PersistentVolume                                               │
+│     spec: {}                                                         │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌ [1mCÓDIGO[0m ──────────────────────────────────────────────────────────────┐[0m
+│ sem linguagem                                                        │
+└──────────────────────────────────────────────────────────────────────┘
+
+RECURSO       Deployment/api
+PROBLEMA      O container roda como root e não define securityContext no
+              values.yaml do chart
+RECOMENDAÇÃO  Defina securityContext.runAsNonRoot e resources.limits no
+              values.yaml antes do próximo deploy
+
+RECURSO       Service/web
+RECOMENDAÇÃO  ▲ Pending
+
+[1mPRÓXIMOS[0m[1m PASSOS[0m
+
+[1mANTES DE[0m[1m APAGAR[0m
+
+─ confira o [3mdono[0m de cada volume[0m
+✓ backup feito
+◇ apagar
+
+1. rode o comando
+2. veja [1ma doc[0m [4mhttps://kubernetes.io[0m
+
+│ volumes Released não voltam sozinhos
+
+────────────────────────────────────────────────────────────────────────
+
+fim [9mvelho[0m

@@ -1,0 +1,6 @@
+◆ YBY  ENV                                           ativo local
+
+     AMBIENTE  TIPO    DESCRIÇÃO
+  ◆  local     local   cluster k3d na máquina
+     prod      eks     produção
+     staging   remote  homologação

@@ -9,7 +9,7 @@ Feature: Plano de Correção e Validação de Fluxos Críticos
     Then o comando deve finalizar com sucesso
     And o arquivo ".yby/environments.yaml" deve existir
     And o arquivo "config/values-local.yaml" deve existir
-    And a saída deve conter "Projeto inicializado com sucesso"
+    And a saída deve conter "próximo passo: yby env list"
 
   Scenario: Suporte a Monorepo (infra subdir)
     Given que eu estou em um diretório limpo
@@ -18,11 +18,11 @@ Feature: Plano de Correção e Validação de Fluxos Críticos
     And eu entro no diretório "infra"
     And eu executo o comando "yby dev"
     Then o comando deve validar os parâmetros
-    And a saída deve conter "(Contexto: local)"
+    And a saída deve conter "ambiente local"
 
   Scenario: Bootstrap VPS sem .env (flags explicitas)
     Given que eu estou em um diretório limpo
     When eu executo o comando "yby bootstrap vps --host 127.0.0.1 --user root"
     Then o comando deve validar os parâmetros
-    And a saída deve conter "Yby Bootstrap - Provisionamento de VPS"
+    And a saída deve conter "BOOTSTRAP VPS"
     And a saída deve conter "root@127.0.0.1"

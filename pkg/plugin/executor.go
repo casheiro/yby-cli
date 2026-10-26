@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
@@ -175,10 +178,41 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// O ctrl+c chega ao plugin, que está no mesmo grupo do terminal e decide o que
+	// fazer; o core só espera ele sair, para repassar o código dele.
+	interrupcoes := make(chan os.Signal, 1)
+	signal.Notify(interrupcoes, os.Interrupt)
+	defer signal.Stop(interrupcoes)
+
 	// Execute
 	if err := cmd.Run(); err != nil {
+		var saida *exec.ExitError
+		if errors.As(err, &saida) {
+			if saida.ExitCode() > 0 {
+				return &SaidaDoPlugin{Codigo: saida.ExitCode(), causa: err}
+			}
+			// Morto por sinal (ex.: o ctrl+c num plugin que não o trata): ExitCode() é -1
+			// e o código segue a convenção do shell, 128 + o número do sinal.
+			if ws, ok := saida.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				return &SaidaDoPlugin{Codigo: 128 + int(ws.Signal()), causa: err}
+			}
+		}
 		return ybyerrors.Wrap(err, ybyerrors.ErrCodePlugin, "execução interativa do plugin falhou")
 	}
 
 	return nil
 }
+
+// SaidaDoPlugin é o fim de um plugin interativo com código de saída diferente de zero.
+// O plugin já escreveu o próprio erro no stderr: quem chama sai com Codigo sem escrever
+// outro.
+type SaidaDoPlugin struct {
+	Codigo int
+	causa  error
+}
+
+func (s *SaidaDoPlugin) Error() string {
+	return fmt.Sprintf("o plugin saiu com o código %d", s.Codigo)
+}
+
+func (s *SaidaDoPlugin) Unwrap() error { return s.causa }

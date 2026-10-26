@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/knights-analytics/hugot"
 	"github.com/knights-analytics/hugot/backends"
@@ -36,6 +40,86 @@ func (p *LocalEmbeddingProvider) Name() string {
 // IsAvailable sempre retorna true — embeddings locais estão sempre disponíveis.
 func (p *LocalEmbeddingProvider) IsAvailable(_ context.Context) bool {
 	return true
+}
+
+const (
+	localEmbeddingModelID = "sentence-transformers/all-MiniLM-L6-v2"
+	// localEmbeddingModelDir segue o nome usado pelo hugot.DownloadModel,
+	// para reaproveitar modelos já baixados por versões anteriores.
+	localEmbeddingModelDir = "sentence-transformers_all-MiniLM-L6-v2"
+)
+
+// localEmbeddingFiles são os arquivos do repositório HuggingFace lidos pelo
+// pipeline de feature extraction do hugot. Todos são salvos na raiz do
+// diretório do modelo; tokenizer.json vem por último e marca download completo.
+var localEmbeddingFiles = []string{
+	"config.json",
+	"special_tokens_map.json",
+	"tokenizer_config.json",
+	"vocab.txt",
+	"onnx/model.onnx",
+	"tokenizer.json",
+}
+
+// huggingFaceEndpoint retorna a URL base do HuggingFace Hub, respeitando
+// HF_ENDPOINT (mirrors corporativos).
+func huggingFaceEndpoint() string {
+	if endpoint := os.Getenv("HF_ENDPOINT"); endpoint != "" {
+		return strings.TrimSuffix(endpoint, "/")
+	}
+	return "https://huggingface.co"
+}
+
+// downloadLocalEmbeddingModel baixa os arquivos do modelo direto para dest.
+// Não usa o cache do HuggingFace (hugot.DownloadModel), que cria symlinks e
+// falha no Windows sem privilégio de administrador ou Modo de Desenvolvedor.
+func downloadLocalEmbeddingModel(ctx context.Context, endpoint, dest string) error {
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return fmt.Errorf("falha ao criar diretório do modelo: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Minute}
+	for _, file := range localEmbeddingFiles {
+		url := fmt.Sprintf("%s/%s/resolve/main/%s", endpoint, localEmbeddingModelID, file)
+		target := filepath.Join(dest, path.Base(file))
+		if err := downloadFile(ctx, client, url, target); err != nil {
+			return fmt.Errorf("falha ao baixar %s: %w", file, err)
+		}
+	}
+	return nil
+}
+
+// downloadFile baixa url para target via arquivo temporário, para que um
+// download interrompido não deixe um arquivo truncado no lugar do final.
+func downloadFile(ctx context.Context, client *http.Client, url, target string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status HTTP %d", resp.StatusCode)
+	}
+
+	tmp := target + ".part"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, target)
 }
 
 // getModelDir retorna o diretório onde o modelo é armazenado.
@@ -67,22 +151,14 @@ func (p *LocalEmbeddingProvider) initPipeline() error {
 		return fmt.Errorf("falha ao criar sessão hugot: %w", err)
 	}
 
-	// Verificar se modelo já foi baixado
-	modelPath := filepath.Join(modelDir, "all-MiniLM-L6-v2")
-	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		slog.Info("Baixando modelo de embedding local (all-MiniLM-L6-v2, ~22MB)...")
-		opts := hugot.NewDownloadOptions()
-		opts.OnnxFilePath = "onnx/model.onnx"
-		downloadedPath, dlErr := hugot.DownloadModel(
-			"sentence-transformers/all-MiniLM-L6-v2",
-			modelDir,
-			opts,
-		)
-		if dlErr != nil {
+	// Verificar se modelo já foi baixado (tokenizer.json é o último arquivo baixado)
+	modelPath := filepath.Join(modelDir, localEmbeddingModelDir)
+	if _, err := os.Stat(filepath.Join(modelPath, "tokenizer.json")); os.IsNotExist(err) {
+		slog.Info("Baixando modelo de embedding local (all-MiniLM-L6-v2, ~90MB)...")
+		if dlErr := downloadLocalEmbeddingModel(context.Background(), huggingFaceEndpoint(), modelPath); dlErr != nil {
 			_ = session.Destroy()
 			return fmt.Errorf("falha ao baixar modelo: %w", dlErr)
 		}
-		modelPath = downloadedPath
 	}
 
 	// Criar pipeline de feature extraction

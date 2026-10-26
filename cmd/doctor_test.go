@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/services/doctor"
@@ -33,112 +32,6 @@ func capturarStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// --- Testes de printResult ---
-
-func TestPrintResult_Success(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "kubectl",
-		Status:  true,
-		Message: "/usr/bin/kubectl",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "kubectl")
-	assert.Contains(t, saida, "/usr/bin/kubectl")
-}
-
-func TestPrintResult_Failure(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "helm",
-		Status:  false,
-		Message: "versão incompatível",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "helm")
-	assert.Contains(t, saida, "versão incompatível")
-}
-
-func TestPrintResult_Memory_Success(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "Memória",
-		Status:  true,
-		Message: "16000000 kB",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "Memória")
-	assert.Contains(t, saida, "16000000 kB")
-}
-
-func TestPrintResult_Memory_Failure(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "Memória",
-		Status:  false,
-		Message: "Verificação detalhada ignorada (OS não Linux)",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "Verificação detalhada ignorada")
-}
-
-func TestPrintResult_Docker_Missing(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "docker",
-		Status:  false,
-		Message: "Erro de permissão ou não rodando",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "docker")
-	assert.Contains(t, saida, "Erro de permissão")
-}
-
-func TestPrintResult_Ausente(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "kubeseal",
-		Status:  false,
-		Message: "Ausente (CRD não instalado)",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "kubeseal")
-	assert.Contains(t, saida, "Ausente")
-}
-
-func TestPrintResult_NaoEncontrado(t *testing.T) {
-	res := doctor.CheckResult{
-		Name:    "argocd",
-		Status:  false,
-		Message: "Não encontrado",
-	}
-
-	saida := capturarStdout(t, func() {
-		printResult(res)
-	})
-
-	assert.Contains(t, saida, "argocd")
-	assert.Contains(t, saida, "Não encontrado")
-}
-
 // --- mockDoctorService implementa doctor.Service ---
 
 type mockDoctorService struct {
@@ -149,13 +42,9 @@ func (m *mockDoctorService) Run(_ context.Context) *doctor.DoctorReport {
 	return m.report
 }
 
-// --- Testes do comando doctor ---
-
-func TestDoctorCmd_ComMock_TodosSaudaveis(t *testing.T) {
-	original := newDoctorService
-	defer func() { newDoctorService = original }()
-
-	relatorio := &doctor.DoctorReport{
+// relatorioSaudavel tem todas as verificações passando.
+func relatorioSaudavel() *doctor.DoctorReport {
+	return &doctor.DoctorReport{
 		System: []doctor.CheckResult{
 			{Name: "Memória", Status: true, Message: "16000000 kB"},
 		},
@@ -163,6 +52,7 @@ func TestDoctorCmd_ComMock_TodosSaudaveis(t *testing.T) {
 			{Name: "kubectl", Status: true, Message: "/usr/bin/kubectl"},
 			{Name: "helm", Status: true, Message: "/usr/bin/helm"},
 			{Name: "docker", Status: true, Message: "Daemon acessível"},
+			{Name: "SOPS", Status: true, Message: "/usr/bin/sops", Opcional: true},
 		},
 		Cluster: []doctor.CheckResult{
 			{Name: "Conexão", Status: true, Message: "OK"},
@@ -171,29 +61,16 @@ func TestDoctorCmd_ComMock_TodosSaudaveis(t *testing.T) {
 			{Name: "Prometheus Operator", Status: true, Message: "Instalado"},
 			{Name: "Cert-Manager", Status: true, Message: "Instalado"},
 		},
+		Cloud: []doctor.CheckResult{
+			{Name: "aws", Status: true, Message: "CLI 2.17.0 instalado"},
+			{Name: "aws credenciais", Status: true, Message: "Autenticado como arn:aws:iam::123:user/ana"},
+		},
 	}
-
-	newDoctorService = func(r shared.Runner) doctor.Service {
-		return &mockDoctorService{report: relatorio}
-	}
-
-	saida := capturarStdout(t, func() {
-		_ = doctorCmd.RunE(doctorCmd, []string{})
-	})
-
-	assert.Contains(t, saida, "Memória")
-	assert.Contains(t, saida, "16000000 kB")
-	assert.Contains(t, saida, "kubectl")
-	assert.Contains(t, saida, "helm")
-	assert.Contains(t, saida, "Prometheus Operator")
-	assert.Contains(t, saida, "Instalado")
 }
 
-func TestDoctorCmd_ComMock_ComFalhas(t *testing.T) {
-	original := newDoctorService
-	defer func() { newDoctorService = original }()
-
-	relatorio := &doctor.DoctorReport{
+// relatorioComFalhas mistura erro, aviso e itens opcionais ausentes.
+func relatorioComFalhas() *doctor.DoctorReport {
+	return &doctor.DoctorReport{
 		System: []doctor.CheckResult{
 			{Name: "Memória", Status: false, Message: "Verificação detalhada ignorada (OS não Linux)"},
 		},
@@ -201,27 +78,94 @@ func TestDoctorCmd_ComMock_ComFalhas(t *testing.T) {
 			{Name: "kubectl", Status: false, Message: "Não encontrado"},
 			{Name: "helm", Status: true, Message: "/usr/bin/helm"},
 			{Name: "docker", Status: false, Message: "Erro de permissão ou não rodando"},
+			{Name: "Sealed Secrets", Status: false, Message: "Não encontrado (opcional)", Opcional: true},
 		},
 		Cluster: []doctor.CheckResult{
-			{Name: "Conexão", Status: false, Message: "Falha ao conectar. Dica: Verifique seu KUBECONFIG."},
+			{Name: "Conexão", Status: false, Message: "confira o KUBECONFIG ou se o cluster está no ar"},
 		},
 		CRDs: []doctor.CheckResult{
 			{Name: "Prometheus Operator", Status: false, Message: "Ausente (CRD não instalado)"},
 		},
+		Cloud: []doctor.CheckResult{
+			{Name: "Cloud Providers", Status: true, Message: "Nenhum provider cloud detectado"},
+		},
+	}
+}
+
+func TestRenderDoctorReport_Golden(t *testing.T) {
+	casos := []struct {
+		nome      string
+		relatorio *doctor.DoctorReport
+		ascii     bool
+	}{
+		{"doctor_saudavel", relatorioSaudavel(), false},
+		{"doctor_falhas", relatorioComFalhas(), false},
+		{"doctor_falhas_ascii", relatorioComFalhas(), true},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			usarSaidaTexto(t, c.ascii)
+			var b bytes.Buffer
+			renderDoctorReport(&b, c.relatorio, quandoGolden)
+			conferirGolden(t, c.nome, b.String())
+			conferirSemRestos(t, b.String())
+		})
+	}
+}
+
+func TestRenderDoctorReport_CRDsSemCluster(t *testing.T) {
+	usarSaidaTexto(t, false)
+	relatorio := &doctor.DoctorReport{
+		Cluster: []doctor.CheckResult{{Name: "Conexão", Status: false, Message: "Cluster indisponível"}},
+		CRDs:    []doctor.CheckResult{{Name: "KEDA", Status: false, Message: "Ausente (CRD não instalado)"}},
 	}
 
+	var b bytes.Buffer
+	renderDoctorReport(&b, relatorio, quandoGolden)
+
+	assert.Contains(t, b.String(), "▲ conexão")
+	assert.Contains(t, b.String(), "Cluster indisponível")
+	// sem cluster, a ausência do CRD não conta como aviso
+	assert.Contains(t, b.String(), "○ KEDA")
+	assert.Contains(t, b.String(), "RESUMO  0 ok · 1 aviso · 0 erros\n")
+}
+
+func TestRenderDoctorReport_Resumo(t *testing.T) {
+	usarSaidaTexto(t, false)
+
+	var b bytes.Buffer
+	renderDoctorReport(&b, relatorioSaudavel(), quandoGolden)
+	assert.Contains(t, b.String(), "· ambiente pronto")
+
+	b.Reset()
+	renderDoctorReport(&b, relatorioComFalhas(), quandoGolden)
+	assert.Contains(t, b.String(), "2 erros  · corrija os erros antes do yby up")
+}
+
+func TestFormatarMemoria(t *testing.T) {
+	assert.Equal(t, "15,3 GB", formatarMemoria("16000000 kB"))
+	assert.Equal(t, "512 MB", formatarMemoria("512 MB"))
+	assert.Equal(t, "abc kB", formatarMemoria("abc kB"))
+}
+
+// --- Testes do comando doctor ---
+
+func TestDoctorCmd_ComMock_EscreveRelatorio(t *testing.T) {
+	usarSaidaTexto(t, false)
+	original := newDoctorService
+	defer func() { newDoctorService = original }()
 	newDoctorService = func(r shared.Runner) doctor.Service {
-		return &mockDoctorService{report: relatorio}
+		return &mockDoctorService{report: relatorioSaudavel()}
 	}
 
-	saida := capturarStdout(t, func() {
-		_ = doctorCmd.RunE(doctorCmd, []string{})
-	})
+	b := saidaDoComando(t, doctorCmd)
+	assert.NoError(t, doctorCmd.RunE(doctorCmd, []string{}))
+	saida := b.String()
 
-	assert.Contains(t, saida, "Não encontrado")
-	assert.Contains(t, saida, "Falha ao conectar")
-	assert.Contains(t, saida, "Ausente")
-	assert.Contains(t, saida, "Verificação detalhada ignorada")
+	assert.Contains(t, saida, "◆ YBY  DOCTOR")
+	assert.Contains(t, saida, "24/10 09:30")
+	assert.Contains(t, saida, "✓ kubectl")
+	assert.Contains(t, saida, "/usr/bin/kubectl")
 }
 
 func TestDoctorCmd_Estrutura(t *testing.T) {
@@ -229,51 +173,4 @@ func TestDoctorCmd_Estrutura(t *testing.T) {
 	assert.NotEmpty(t, doctorCmd.Short)
 	assert.NotEmpty(t, doctorCmd.Long)
 	assert.NotEmpty(t, doctorCmd.Example)
-}
-
-func TestDoctorCmd_ConectividadeSucesso(t *testing.T) {
-	original := newDoctorService
-	defer func() { newDoctorService = original }()
-
-	relatorio := &doctor.DoctorReport{
-		System:  []doctor.CheckResult{},
-		Tools:   []doctor.CheckResult{},
-		Cluster: []doctor.CheckResult{{Name: "Conexão", Status: true, Message: "OK"}},
-		CRDs:    []doctor.CheckResult{},
-	}
-
-	newDoctorService = func(r shared.Runner) doctor.Service {
-		return &mockDoctorService{report: relatorio}
-	}
-
-	saida := capturarStdout(t, func() {
-		_ = doctorCmd.RunE(doctorCmd, []string{})
-	})
-
-	// Quando conectividade OK, não deve mostrar "Falha ao conectar"
-	assert.False(t, strings.Contains(saida, "Falha ao conectar"),
-		"não deve mostrar mensagem de falha quando conectividade está OK")
-}
-
-func TestDoctorCmd_ConectividadeFalha(t *testing.T) {
-	original := newDoctorService
-	defer func() { newDoctorService = original }()
-
-	relatorio := &doctor.DoctorReport{
-		System:  []doctor.CheckResult{},
-		Tools:   []doctor.CheckResult{},
-		Cluster: []doctor.CheckResult{{Name: "Conexão", Status: false, Message: "Cluster indisponível"}},
-		CRDs:    []doctor.CheckResult{},
-	}
-
-	newDoctorService = func(r shared.Runner) doctor.Service {
-		return &mockDoctorService{report: relatorio}
-	}
-
-	saida := capturarStdout(t, func() {
-		_ = doctorCmd.RunE(doctorCmd, []string{})
-	})
-
-	assert.Contains(t, saida, "Falha ao conectar")
-	assert.Contains(t, saida, "Cluster indisponível")
 }

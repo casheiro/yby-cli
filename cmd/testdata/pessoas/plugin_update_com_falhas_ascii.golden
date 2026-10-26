@@ -1,0 +1,8 @@
+* YBY  PLUGIN                                             update
+
+  x atlas       falhou    falha ao baixar a release do plugin atlas: 404 Not Found
+  v bard        atualizado
+  x naoexiste   falhou    plugin 'naoexiste' não encontrado
+
+x 2 plugins de 3 não foram atualizados                ERR_PLUGIN
+  faça      confira as linhas acima; rode de novo com --log-level=debug para detalhes

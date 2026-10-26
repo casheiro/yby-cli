@@ -4,9 +4,10 @@ import "context"
 
 // CheckResult representa o resultado de uma verificação individual.
 type CheckResult struct {
-	Name    string
-	Status  bool
-	Message string
+	Name     string
+	Status   bool
+	Message  string
+	Opcional bool // a falha não compromete o ambiente (ex.: ferramenta de uma estratégia de secrets)
 }
 
 // DoctorReport agrupa os resultados de todas as verificações.

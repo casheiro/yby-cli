@@ -38,7 +38,7 @@ func TestInitUpdate_PreservesUserChanges(t *testing.T) {
 	)
 
 	// 4. Verificar que o update executou (não bloqueou por "projeto já inicializado")
-	if strings.Contains(output, "já inicializado") && strings.Contains(output, "--force") {
+	if strings.Contains(output, "já tem um projeto Yby") && strings.Contains(output, "--force") {
 		t.Fatalf("--update não deveria ser bloqueado por detecção de init duplo, obteve: %s", output)
 	}
 

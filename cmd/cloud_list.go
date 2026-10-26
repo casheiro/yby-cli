@@ -6,11 +6,12 @@ package cmd
 import (
 	gocontext "context"
 	"fmt"
+	"io"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/casheiro/yby-cli/pkg/cloud"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -30,9 +31,16 @@ func init() {
 	cloudListCmd.Flags().String("region", "", "Filtrar por região")
 }
 
+// falhaProviderCloud é um provider que não respondeu à listagem.
+type falhaProviderCloud struct {
+	provider string
+	err      error
+}
+
 func runCloudList(cmd *cobra.Command, args []string) error {
 	ctx := gocontext.Background()
 	runner := &shared.RealRunner{}
+	w := cmd.OutOrStdout()
 
 	providerFlag, _ := cmd.Flags().GetString("provider")
 	regionFlag, _ := cmd.Flags().GetString("region")
@@ -40,64 +48,73 @@ func runCloudList(cmd *cobra.Command, args []string) error {
 	var providers []cloud.CloudProvider
 
 	if providerFlag != "" {
-		p := cloud.GetProvider(runner, strings.ToLower(providerFlag))
+		p := obterProviderCloud(runner, strings.ToLower(providerFlag))
 		if p == nil {
-			return fmt.Errorf("provider '%s' não encontrado. Valores aceitos: aws, azure, gcp", providerFlag)
+			return erroProviderDesconhecido(providerFlag)
 		}
 		if !p.IsAvailable(ctx) {
-			return fmt.Errorf("CLI do provider '%s' não está instalado", providerFlag)
+			return erroCLICloudAusente(providerFlag)
 		}
 		providers = []cloud.CloudProvider{p}
 	} else {
-		providers = cloud.Detect(ctx, runner)
+		providers = detectarProvidersCloud(ctx, runner)
 		if len(providers) == 0 {
-			fmt.Println(grayStyle.Render("Nenhum CLI de cloud provider detectado."))
-			fmt.Println(grayStyle.Render("Instale aws-cli, az-cli ou gcloud para começar."))
+			tituloComando(w, "cloud", "list")
+			ui.Check(w, ui.CheckNeutro, "nenhum CLI de cloud detectado · instale aws, az ou gcloud", "", "")
 			return nil
 		}
 	}
 
 	opts := cloud.ListOptions{Region: regionFlag}
-	totalClusters := 0
-
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NOME\tPROVIDER\tREGIÃO\tVERSÃO K8S\tSTATUS")
-	fmt.Fprintln(w, "----\t--------\t------\t----------\t------")
-
+	var clusters []cloud.ClusterInfo
+	var falhas []falhaProviderCloud
 	for _, p := range providers {
-		clusters, err := p.ListClusters(ctx, opts)
+		lista, err := p.ListClusters(ctx, opts)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "%sFalha ao listar clusters de %s: %v\n",
-				warningStyle.Render(""), p.Name(), err)
+			falhas = append(falhas, falhaProviderCloud{p.Name(), err})
 			continue
 		}
-
-		for _, c := range clusters {
-			version := c.Version
-			if version == "" {
-				version = "-"
-			}
-			status := c.Status
-			if status == "" {
-				status = "-"
-			}
-			region := c.Region
-			if region == "" {
-				region = "-"
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				c.Name, c.Provider, region, version, status)
-			totalClusters++
-		}
+		clusters = append(clusters, lista...)
 	}
 
-	w.Flush()
-
-	if totalClusters == 0 {
-		fmt.Println(grayStyle.Render("\nNenhum cluster encontrado."))
-	} else {
-		fmt.Printf("\nTotal: %d cluster(s)\n", totalClusters)
-	}
-
+	renderCloudList(w, cmd.ErrOrStderr(), clusters, falhas)
 	return nil
+}
+
+// renderCloudList escreve a lista de clusters em colunas, com o total no título, e os
+// providers que falharam como avisos no fim, em werr: quem filtra a lista por pipe
+// recebe só a tabela.
+func renderCloudList(w, werr io.Writer, clusters []cloud.ClusterInfo, falhas []falhaProviderCloud) {
+	tituloComando(w, "cloud", "list · "+contagem(len(clusters), "cluster", "clusters"))
+
+	if len(clusters) == 0 {
+		ui.Check(w, ui.CheckNeutro, "nenhum cluster encontrado", "", "")
+	} else {
+		ouTraco := func(s string) string {
+			if s == "" {
+				return "-"
+			}
+			return s
+		}
+		linhas := make([]ui.Linha, len(clusters))
+		for i, c := range clusters {
+			linhas[i] = ui.Linha{Celulas: []string{c.Name, c.Provider, ouTraco(c.Region), ouTraco(c.Version), ouTraco(c.Status)}}
+		}
+		ui.Listagem(w, []ui.Coluna{
+			{Titulo: "nome"},
+			{Titulo: "provider", Prioridade: 2},
+			{Titulo: "região", Prioridade: 3},
+			{Titulo: "versão k8s", Prioridade: 4},
+			{Titulo: "status", Prioridade: 1},
+		}, linhas)
+	}
+
+	if len(falhas) > 0 {
+		fmt.Fprintln(werr)
+		linhas := make([]linhaCheck, len(falhas))
+		for i, f := range falhas {
+			linhas[i] = linhaCheck{ui.CheckAviso, f.provider, "falhou", mensagemDoErro(f.err)}
+		}
+		checksAlinhados(werr, linhas...)
+	}
 }

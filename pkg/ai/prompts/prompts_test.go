@@ -119,6 +119,7 @@ func TestGet_OverrideFromGlobal(t *testing.T) {
 	// Salva e restaura HOME
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 	defer os.Setenv("HOME", origHome)
 
 	// Muda para um diretório sem override de projeto

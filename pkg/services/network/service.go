@@ -3,15 +3,21 @@ package network
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 
 	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/pkg/ui"
 	"golang.org/x/sync/errgroup"
 )
 
 type DefaultAccessService struct {
 	Network   ClusterNetworkManager
 	Container LocalContainerManager
+	// Saida recebe os endereços, as credenciais e o token para as pessoas; nil usa
+	// os.Stdout.
+	Saida io.Writer
 }
 
 func NewAccessService(network ClusterNetworkManager, container LocalContainerManager) *DefaultAccessService {
@@ -21,40 +27,54 @@ func NewAccessService(network ClusterNetworkManager, container LocalContainerMan
 	}
 }
 
+// colunasAcesso alinha nome do serviço, endereço e credenciais.
+var colunasAcesso = ui.Colunas{Nome: 15, Versao: 24}
+
 func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) error {
+	w := s.Saida
+	if w == nil {
+		w = os.Stdout
+	}
+	linha := func(tipo ui.TipoCheck, nome, endereco, nota string) {
+		ui.CheckCom(w, colunasAcesso, tipo, nome, endereco, nota)
+	}
+
 	targetContext := opts.TargetContext
 	if targetContext == "" {
 		var err error
 		targetContext, err = s.Network.GetCurrentContext()
 		if err != nil {
-			return fmt.Errorf("Erro ao detectar contexto atual: %v", err)
+			return fmt.Errorf("falha ao detectar o contexto atual: %v", err)
 		}
-		slog.Info("Contexto detectado automaticamente", "contexto", targetContext)
+		slog.Debug("Contexto detectado automaticamente", "contexto", targetContext)
 	} else {
-		slog.Info("Contexto definido via flag", "contexto", targetContext)
+		slog.Debug("Contexto definido via flag", "contexto", targetContext)
 	}
+	ui.Section(w, "túneis")
+	linha(ui.CheckNeutro, "contexto", targetContext, "")
 
 	g, gctx := errgroup.WithContext(ctx)
 
 	// 1. Argo CD
 	argoPwd, err := s.getArgoPassword(gctx, targetContext)
 	if err != nil {
-		slog.Warn("Argo CD: não foi possível obter senha", "error", err)
+		slog.Debug("Argo CD: não foi possível obter senha", "error", err)
+		linha(ui.CheckAviso, "argo cd", "sem túnel", "não deu para ler a senha inicial do admin")
 	} else {
-		slog.Info("Conectando Argo CD")
+		slog.Debug("Conectando Argo CD")
 		s.Network.KillPortForward("8085")
 		g.Go(func() error {
 			return retry.DoWithDefault(gctx, func() error {
 				return s.Network.PortForward(gctx, targetContext, "argocd", "svc/argocd-server", "8085:80")
 			})
 		})
-		fmt.Printf("   -> Argo CD: http://localhost:8085 (admin / %s)\n", argoPwd)
+		linha(ui.CheckOk, "argo cd", "http://localhost:8085", "admin / "+argoPwd)
 	}
 
 	// 2. MinIO
 	minioSvc, minioNs := s.findMinioService(gctx, targetContext)
 	if minioSvc != "" {
-		slog.Info("MinIO detectado, conectando", "namespace", minioNs, "service", minioSvc)
+		slog.Debug("MinIO detectado, conectando", "namespace", minioNs, "service", minioSvc)
 		s.Network.KillPortForward("9000")
 		s.Network.KillPortForward("9001")
 		g.Go(func() error {
@@ -80,50 +100,53 @@ func (s *DefaultAccessService) Run(ctx context.Context, opts AccessOptions) erro
 			pass = "***"
 		}
 
-		fmt.Printf("   -> MinIO API: http://localhost:9000\n")
-		fmt.Printf("   -> MinIO Console: http://localhost:9001 (%s / %s)\n", user, pass)
+		linha(ui.CheckOk, "minio api", "http://localhost:9000", "")
+		linha(ui.CheckOk, "minio console", "http://localhost:9001", user+" / "+pass)
 	} else {
-		slog.Info("MinIO não detectado")
+		slog.Debug("MinIO não detectado")
+		linha(ui.CheckNeutro, "minio", "não encontrado", "")
 	}
 
 	// 3. Prometheus & Grafana
 	promSvc, promNs := s.findPrometheusService(gctx, targetContext)
 	if promSvc != "" {
-		slog.Info("Prometheus detectado, conectando", "namespace", promNs, "service", promSvc)
+		slog.Debug("Prometheus detectado, conectando", "namespace", promNs, "service", promSvc)
 		s.Network.KillPortForward("9090")
 		g.Go(func() error {
 			return retry.DoWithDefault(gctx, func() error {
 				return s.Network.PortForward(gctx, targetContext, promNs, "svc/"+promSvc, "9090:9090")
 			})
 		})
+		linha(ui.CheckOk, "prometheus", "http://localhost:9090", "")
 
-		slog.Info("Iniciando Grafana Local via Docker")
+		slog.Debug("Iniciando Grafana Local via Docker")
 		if s.Container.IsAvailable() {
 			if err := s.Container.StartGrafana(gctx); err != nil {
-				slog.Warn("Falha ao iniciar Grafana Docker", "error", err)
+				slog.Debug("Falha ao iniciar Grafana Docker", "error", err)
+				linha(ui.CheckAviso, "grafana", "não subiu", "o container do Docker falhou · --log-level=debug mostra o erro")
 			} else {
-				fmt.Println("   -> Grafana: http://localhost:3001 (admin/admin)")
-				fmt.Println("      (Dados persistidos no volume 'yby-grafana-data')")
+				linha(ui.CheckOk, "grafana", "http://localhost:3001", "admin / admin · volume yby-grafana-data")
 			}
 		} else {
-			slog.Warn("Docker não disponível no PATH, Grafana local não será iniciado")
+			linha(ui.CheckNeutro, "grafana", "sem docker", "o grafana local precisa do Docker no PATH")
 		}
 	} else {
-		slog.Warn("Prometheus não encontrado, Grafana local não será iniciado")
+		linha(ui.CheckNeutro, "prometheus", "não encontrado", "sem ele o grafana local não sobe")
 	}
 
 	// 4. Token Headlamp
 	token, err := s.Network.CreateToken(gctx, targetContext, "kube-system", "admin-user", "24h")
 	if err == nil {
-		fmt.Println("\nToken Headlamp (copie abaixo):")
-		fmt.Println(token)
+		ui.Section(w, "token do headlamp")
+		fmt.Fprintln(w, "  "+ui.S().Tinta.Render(token))
 		slog.Debug("token gerado", "token_preview", maskToken(token))
 	}
 
-	slog.Info("Túneis ativos, pressione Ctrl+C para encerrar")
+	fmt.Fprintln(w)
+	linha(ui.CheckNeutro, "ctrl+c encerra os túneis", "", "")
 
 	if err := g.Wait(); err != nil && err != context.Canceled {
-		return fmt.Errorf("Erro nos túneis: %w", err)
+		return fmt.Errorf("falha nos túneis: %w", err)
 	}
 
 	return nil

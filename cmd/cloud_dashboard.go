@@ -16,6 +16,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Estilos antigos que só o dashboard ainda usa: saíram do style.go e somem quando o
+// dashboard for redesenhado com pkg/ui na fase 4 (T029).
+var (
+	primaryColor   = lipgloss.Color("#7D56F4")
+	secondaryColor = lipgloss.Color("#04B575")
+	warningColor   = lipgloss.Color("#FFB000")
+	errorColor     = lipgloss.Color("#FF3B30")
+
+	crossStyle = lipgloss.NewStyle().Foreground(errorColor).SetString("❌ ")
+	grayStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6E6E6E"))
+)
+
 var cloudDashboardCmd = &cobra.Command{
 	Use:     "dashboard",
 	Short:   "Dashboard interativo de clusters cloud",

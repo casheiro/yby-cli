@@ -31,6 +31,7 @@ func TestFetchKubeconfig_FetchFileError(t *testing.T) {
 func TestFetchKubeconfig_ClusterNameFromEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("CLUSTER_NAME", "meu-cluster-custom")
 
 	runner := &testutil.MockRunner{
@@ -70,6 +71,7 @@ users:
 func TestFetchKubeconfig_DefaultClusterName(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("CLUSTER_NAME", "")
 
 	runner := &testutil.MockRunner{
@@ -100,6 +102,7 @@ kind: Config
 func TestFetchKubeconfig_HostReplacement(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	t.Setenv("CLUSTER_NAME", "test-replace")
 
 	runner := &testutil.MockRunner{

@@ -1,0 +1,10 @@
+◆ YBY  UPGRADE                                       linux/amd64
+  ○ instalada   v5.6.0
+  ▲ disponível  v5.6.1
+
+  ✓ download   yby_v5.6.1_linux_amd64.tar.gz               2,4 s
+  ✕ checksum
+
+✕ checksum do download não confere                ERR_VALIDATION
+  faça      o download veio corrompido ou alterado; rode yby upgrade de novo
+  detalhes  esperado=<sha256> · obtido=<sha256>

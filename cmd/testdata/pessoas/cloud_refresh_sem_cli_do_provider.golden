@@ -1,0 +1,3 @@
+
+✕ CLI do provider 'azure' não está instalado  ERR_CLOUD_CLI_MISSING
+  faça      instale o CLI do provider (aws, az ou gcloud) e confira com yby doctor

@@ -485,59 +485,6 @@ func TestBuildContext_OfflineMode(t *testing.T) {
 	}
 }
 
-func TestBuildContext_Interactive_Mock(t *testing.T) {
-	// Mock dos wrappers de prompt
-	origInput := askInput
-	origSelect := askSelect
-	origConfirm := askConfirm
-	origMultiSelect := askMultiSelect
-	defer func() {
-		askInput = origInput
-		askSelect = origSelect
-		askConfirm = origConfirm
-		askMultiSelect = origMultiSelect
-	}()
-
-	askSelect = func(title string, options []string, defaultVal string) (string, error) {
-		if title == "Selecione a Topologia de Ambientes:" {
-			return "complete", nil
-		}
-		if title == "Selecione o Padrão de Workflow (CI/CD):" {
-			return "trunkbased", nil
-		}
-		return defaultVal, nil
-	}
-	askInput = func(title, defaultVal string) (string, error) {
-		if title == "Nome do Projeto (Slug para K8s):" {
-			return "mocked-project", nil
-		}
-		return defaultVal, nil
-	}
-	askMultiSelect = func(title string, options []string, defaults []string) ([]string, error) {
-		return []string{"Kepler (Eficiência Energética)"}, nil
-	}
-	askConfirm = func(title string, defaultVal bool) (bool, error) {
-		return true, nil
-	}
-
-	opts := &InitOptions{
-		NonInteractive: false,
-		Topology:       "", // Triggers interactive
-	}
-
-	ctx, _ := buildContext(opts)
-
-	if ctx.Topology != "complete" {
-		t.Errorf("Topology = %s, want complete (mocked)", ctx.Topology)
-	}
-	if ctx.ProjectName != "mocked-project" {
-		t.Errorf("ProjectName = %s, want mocked-project (mocked)", ctx.ProjectName)
-	}
-	if !ctx.EnableKepler {
-		t.Error("EnableKepler should be true (mocked)")
-	}
-}
-
 // --- Casos adicionais para aumentar cobertura ---
 
 func TestDeriveProjectName_CasosExtras(t *testing.T) {
@@ -691,8 +638,8 @@ func TestBuildContext_NonInteractive_SemGitRepoSemProjectName(t *testing.T) {
 		t.Fatal("Esperado erro quando git-repo e project-name estão faltando no modo não-interativo")
 	}
 
-	if !contains(err.Error(), "--project-name OR --git-repo") {
-		t.Errorf("Mensagem deveria mencionar '--project-name OR --git-repo', obtido: %s", err.Error())
+	if !contains(err.Error(), "--project-name ou --git-repo") {
+		t.Errorf("Mensagem deveria mencionar '--project-name ou --git-repo', obtido: %s", err.Error())
 	}
 }
 

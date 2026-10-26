@@ -1,0 +1,5 @@
+
+✕ formato de data inválido em --since             ERR_VALIDATION
+  causa     parsing time "01/04/2026" as "2006-01-02": cannot parse "01/04/2026" as "2006"
+  faça      use o formato AAAA-MM-DD, ex.: --since 2026-04-01
+  detalhes  rode de novo com --log-level=debug

@@ -1,0 +1,23 @@
+◆ YBY  INIT                                          24/10 09:30
+
+PROJETO
+  ✓ nome          loja
+  ✓ destino       infra
+  ✓ topologia     standard       local · prod
+  ✓ workflow      gitflow
+  ▲ ambiente      local          hom não existe na topologia standard
+  ▲ plugins       hook context   plugin atlas não respondeu
+
+ARQUIVOS
+  ✓ scaffold      gerado
+  ✓ ia            ollama         Fintech · risco alto
+  ✓ ia            gerado         .synapstor/governanca.md
+  ✓ local         values         infra/config/values-local.yaml
+  ✓ prod          values         infra/config/values-prod.yaml
+  ✓ manifest      salvo          infra/.yby/project.yaml
+
+VALIDAÇÃO
+  ▲ system        com problema   lint falhou: values.yaml inválido
+  ○ yby validate mostra os detalhes
+
+RESUMO  10 ok · 3 avisos · 0 erros  · próximo passo: yby env list

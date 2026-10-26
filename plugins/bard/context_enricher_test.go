@@ -74,7 +74,7 @@ func TestBuildSystemPrompt_ComClusterContext(t *testing.T) {
 		Namespace: "default",
 	}
 
-	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, nil, cc)
+	prompt := buildSystemPrompt(nil, BardConfig{}, nil, cc)
 
 	if !strings.Contains(prompt, "k3d-test") {
 		t.Error("prompt deveria conter informação do cluster")
@@ -83,7 +83,7 @@ func TestBuildSystemPrompt_ComClusterContext(t *testing.T) {
 
 // TestBuildSystemPrompt_SemClusterContext verifica prompt sem cluster context.
 func TestBuildSystemPrompt_SemClusterContext(t *testing.T) {
-	prompt := buildSystemPrompt(nil, BardConfig{MaxTokens: 32000}, nil)
+	prompt := buildSystemPrompt(nil, BardConfig{}, nil)
 
 	if strings.Contains(prompt, "Estado Atual do Cluster") {
 		t.Error("prompt não deveria conter contexto de cluster quando nil")

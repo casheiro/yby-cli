@@ -1,0 +1,4 @@
+◆ YBY  ENV                                                   use
+
+  ✓ ambiente    ativo       staging
+  ▲ kubectl     sem trocar  contexto staging: no context exists with the name: "staging"

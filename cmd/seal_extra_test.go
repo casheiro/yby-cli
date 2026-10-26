@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -170,21 +169,6 @@ func TestSealCmd_LongDescription(t *testing.T) {
 // ========================================================
 // sealCmd.Run — testes de fluxo com mocks
 // ========================================================
-
-func captureOutput(f func()) string {
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	f()
-
-	w.Close()
-	os.Stdout = old
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	return buf.String()
-}
 
 // mockSealDeps configura lookPath, sealPrompt e newSecretsService para testes do seal.
 func mockSealDeps(runner *testutil.MockRunner, fs *testutil.MockFilesystem) func() {
@@ -359,13 +343,13 @@ func TestSealCmd_Success(t *testing.T) {
 		return filepath.Join(tmpDir, "sealed-secret-test.yaml"), nil
 	}
 
-	output := captureOutput(func() {
-		_ = sealCmd.RunE(sealCmd, []string{})
-	})
+	b := saidaDoComando(t, sealCmd)
+	_ = sealCmd.RunE(sealCmd, []string{})
+	output := b.String()
 
-	assert.Contains(t, output, "Gerando Secret",
+	assert.Contains(t, output, "gerando o Secret default/test-secret",
 		"Deveria mostrar mensagem de geração")
-	assert.Contains(t, output, "Selando com Kubeseal",
+	assert.Contains(t, output, "selando com o kubeseal",
 		"Deveria mostrar mensagem de selagem")
 }
 
@@ -401,11 +385,11 @@ func TestSealCmd_SaveFileSuccess(t *testing.T) {
 		return savedPath, nil
 	}
 
-	output := captureOutput(func() {
-		_ = sealCmd.RunE(sealCmd, []string{})
-	})
+	b := saidaDoComando(t, sealCmd)
+	_ = sealCmd.RunE(sealCmd, []string{})
+	output := b.String()
 
-	assert.Contains(t, output, "SealedSecret salvo em",
+	assert.Contains(t, output, "SealedSecret  salvo",
 		"Deveria confirmar salvamento do arquivo")
 	assert.Contains(t, output, savedPath,
 		"Deveria mostrar o caminho do arquivo salvo")

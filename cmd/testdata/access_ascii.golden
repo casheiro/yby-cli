@@ -1,0 +1,16 @@
+* YBY  ACCESS                                        24/10 09:30
+
+TÚNEIS
+  o contexto       k3d-yby-local
+  v argo cd        http://localhost:8085   admin / Xk2p9sQ
+  v minio api      http://localhost:9000
+  v minio console  http://localhost:9001   minio / minio123
+  v prometheus     http://localhost:9090
+  v grafana        http://localhost:3001   admin / admin · volume yby-grafana-data
+
+TOKEN DO HEADLAMP
+  eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3RlIn0.e30.assinatura
+
+  o ctrl+c encerra os túneis
+
+  o túneis encerrados

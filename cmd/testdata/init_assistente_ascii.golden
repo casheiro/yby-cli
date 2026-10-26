@@ -1,0 +1,119 @@
+== projeto
+
+*---o---o---o---o---o  01/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ ONDE CRIAR O PROJETO
+ caminho relativo ou absoluto
+ > .
+ REPOSITÓRIO GIT
+ https:// ou git@; vazio para configurar depois
+ >
+ NOME DO PROJETO
+ slug do Kubernetes: minúsculas, números e hífens
+ > yby-project
+
+enter continuar  shift+tab voltar  esc cancelar
+== projeto (nome)
+
+*---o---o---o---o---o  01/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ ONDE CRIAR O PROJETO
+ caminho relativo ou absoluto
+ > .
+ REPOSITÓRIO GIT
+ https:// ou git@; vazio para configurar depois
+ > https://github.com/acme/loja.git
+ NOME DO PROJETO
+ slug do Kubernetes: minúsculas, números e hífens
+ > loja
+
+enter continuar  shift+tab voltar  esc cancelar
+== ambientes
+
+*===*---o---o---o---o  02/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ TOPOLOGIA DE AMBIENTES
+   single · só local
+ * standard · local e prod
+   complete · local, dev, staging e prod
+ WORKFLOW DE CI/CD
+   essential · um pipeline enxuto
+   gitflow · feature, release e main
+   trunkbased · deploy contínuo da main
+
+enter continuar  shift+tab voltar  esc cancelar
+== cluster
+
+*===*===*---o---o---o  03/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ DOMÍNIO BASE DO CLUSTER
+ > yby.local
+ E-MAIL DO ADMIN E DOS CERTIFICADOS
+ > admin@yby.local
+
+enter continuar  shift+tab voltar  esc cancelar
+== módulos
+
+*===*===*===*---o---o  04/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ MÓDULOS ADICIONAIS
+ space marca, enter continua
+ * [o] Kepler · eficiência energética
+   [o] MinIO · object storage local
+   [o] KEDA · autoscaling por eventos
+   [o] Metrics Server · observabilidade
+ INCLUIR DEVCONTAINER?
+ gera a pasta .devcontainer/
+
+   Sim    Não
+
+enter continuar  shift+tab voltar  esc cancelar
+== ia
+
+*===*===*===*===*---o  05/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ ATIVAR O ASSISTENTE DE IA (SYNAPSTOR E GOVERNANÇA)?
+
+   Sim    Não
+
+enter continuar  shift+tab voltar  esc cancelar
+== ia (detalhes)
+
+*===*===*===*===*---o  05/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ PROVEDOR DE IA
+ * auto
+   ollama
+   gemini
+   openai
+ DESCREVA O PROJETO
+ em linguagem natural; a IA gera a governança a partir dela
+ >
+
+enter continuar  shift+tab voltar  esc cancelar
+== revisão
+
+*===*===*===*===*===*  06/06
+PROJETO · AMBIENTES · CLUSTER · MÓDULOS · IA · REVISÃO
+
+ GERAR O PROJETO?
+ destino       .
+ nome          loja
+ repositório   https://github.com/acme/loja.git
+ ambientes     standard · local · prod
+ workflow      gitflow
+ cluster       yby.local · admin@yby.local
+ módulos       Kepler
+ devcontainer  sim
+ ia            ligada
+
+   Gerar    Cancelar
+
+enter continuar  shift+tab voltar  esc cancelar

@@ -1,0 +1,10 @@
+◆ YBY  BOOTSTRAP VPS                                esta máquina
+  ✓ requisitos mínimos   7812 MB de memória                0,3 s
+  ✕ sistema e dependências                             1 min 4 s
+    Reading package lists...
+    E: Unable to locate package iptables-persistent
+
+✕ falha na etapa sistema e dependências          ERR_EXEC_FAILED
+  causa     exit status 100
+  faça      veja a saída do script acima, corrija e rode yby bootstrap vps de novo
+  detalhes  rode de novo com --log-level=debug

@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
@@ -135,6 +134,7 @@ func TestDiscoverPlugins_EmptyDir(t *testing.T) {
 	// Usa diretório temporário vazio como HOME para que o Manager não encontre plugins
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	cmd := &cobra.Command{Use: "test-root"}
 	pm := newRootPluginManager()
@@ -148,6 +148,7 @@ func TestDiscoverPlugins_EmptyDir(t *testing.T) {
 func TestDiscoverPlugins_WithPlugins(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	// Cria plugin fake com hook "command"
 	createFakePlugin(t, dir, "meu-plugin", "Plugin de teste", []string{"command"})
@@ -172,6 +173,7 @@ func TestDiscoverPlugins_WithPlugins(t *testing.T) {
 func TestDiscoverPlugins_PluginWithDescription(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	createFakePlugin(t, dir, "desc-plugin", "Descrição customizada do plugin", []string{"command"})
 
@@ -194,6 +196,7 @@ func TestDiscoverPlugins_PluginWithDescription(t *testing.T) {
 func TestDiscoverPlugins_PluginSemDescricao(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	createFakePlugin(t, dir, "nodesc-plugin", "", []string{"command"})
 
@@ -214,6 +217,7 @@ func TestDiscoverPlugins_PluginSemDescricao(t *testing.T) {
 func TestDiscoverPlugins_PluginCollision(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	// Cria plugin com nome que colide com comando existente
 	createFakePlugin(t, dir, "existente", "Plugin colidindo", []string{"command"})
@@ -240,6 +244,7 @@ func TestDiscoverPlugins_PluginCollision(t *testing.T) {
 func TestDiscoverPlugins_PluginNoCommandHook(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	// Plugin que só suporta hook "context", não "command"
 	createFakePlugin(t, dir, "context-only", "Plugin sem command", []string{"context"})
@@ -260,6 +265,7 @@ func TestDiscoverPlugins_DiscoverError(t *testing.T) {
 	// não deve registrar nenhum comando e não deve entrar em pânico
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	// HOME/.yby/plugins não existe — Discover retorna nil mas ListPlugins fica vazia
 
 	cmd := &cobra.Command{Use: "test-root"}
@@ -270,65 +276,4 @@ func TestDiscoverPlugins_DiscoverError(t *testing.T) {
 
 	assert.Equal(t, initialCount, len(cmd.Commands()),
 		"nenhum comando deveria ser registrado quando Discover não encontra plugins")
-}
-
-// ========================================================
-// handleExecutionError — testes do handler de erros
-// ========================================================
-
-func TestHandleExecutionError_YbyError(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "info"
-
-	yerr := errors.New(errors.ErrCodeValidation, "campo obrigatório ausente")
-
-	// Não deve entrar em pânico
-	assert.NotPanics(t, func() {
-		handleExecutionError(yerr)
-	})
-}
-
-func TestHandleExecutionError_YbyError_Debug(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "debug"
-
-	yerr := errors.New(errors.ErrCodeIO, "falha ao ler arquivo").
-		WithContext("path", "/tmp/test.yaml")
-
-	// Não deve entrar em pânico e deve usar formato verboso %+v
-	assert.NotPanics(t, func() {
-		handleExecutionError(yerr)
-	})
-}
-
-func TestHandleExecutionError_RegularError(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "info"
-
-	regularErr := fmt.Errorf("erro genérico inesperado")
-
-	// Não deve entrar em pânico
-	assert.NotPanics(t, func() {
-		handleExecutionError(regularErr)
-	})
-}
-
-func TestHandleExecutionError_WrappedYbyError(t *testing.T) {
-	origLogLevel := logLevelFlag
-	defer func() { logLevelFlag = origLogLevel }()
-
-	logLevelFlag = "info"
-
-	baseErr := fmt.Errorf("conexão recusada")
-	yerr := errors.Wrap(baseErr, errors.ErrCodeNetworkTimeout, "timeout na conexão SSH")
-
-	assert.NotPanics(t, func() {
-		handleExecutionError(yerr)
-	})
 }

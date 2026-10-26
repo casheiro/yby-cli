@@ -1,0 +1,9 @@
+◆ YBY  ENV                                         dump · padrão
+
+VARIÁVEIS YBY_*
+  ○ nenhuma variável YBY_* no ambiente
+
+LEGENDA
+  YBY_ENV          define o modo (local, staging, prod); sem ele, local se configurado
+  YBY_GIT_REPOURL  injetado em git.repoURL
+  YBY_K3D_AGENTS   configura o cluster local

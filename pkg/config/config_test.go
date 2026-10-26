@@ -11,6 +11,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 	ResetGlobal()
 	// Usar HOME temporário para não ler ~/.yby/config.yaml do usuário
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
 	// Limpa env vars que podem interferir
 	for _, key := range []string{"YBY_AI_PROVIDER", "YBY_AI_MODEL", "YBY_AI_LANGUAGE", "YBY_LOG_LEVEL", "YBY_LOG_FORMAT", "YBY_TELEMETRY_ENABLED"} {
 		t.Setenv(key, "")
@@ -109,6 +110,7 @@ telemetry:
 
 	// Override HOME para o viper encontrar o arquivo
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	cfg, err := Load()
 	if err != nil {
@@ -157,6 +159,8 @@ log:
 	}
 
 	t.Setenv("HOME", tmpHome)
+
+	t.Setenv("USERPROFILE", tmpHome)
 	// Env var deve sobrescrever o arquivo
 	t.Setenv("YBY_AI_PROVIDER", "openai")
 	t.Setenv("YBY_AI_LANGUAGE", "fr-FR")
@@ -185,6 +189,7 @@ func TestLoad_MissingFileUsesDefaults(t *testing.T) {
 	// Aponta HOME para diretório vazio (sem .yby/config.yaml)
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	// Limpa env vars
 	for _, key := range []string{"YBY_AI_PROVIDER", "YBY_AI_MODEL", "YBY_AI_LANGUAGE", "YBY_LOG_LEVEL", "YBY_LOG_FORMAT", "YBY_TELEMETRY_ENABLED"} {
@@ -291,6 +296,8 @@ ai:
 
 	t.Setenv("HOME", tmpHome)
 
+	t.Setenv("USERPROFILE", tmpHome)
+
 	_, err := Load()
 	if err == nil {
 		t.Error("Load() deveria retornar erro para provider inválido")
@@ -306,6 +313,7 @@ func TestLoadOnce_RetornaConfig(t *testing.T) {
 
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	cfg := LoadOnce()
 	if cfg == nil {
@@ -325,6 +333,7 @@ func TestGet_RetornaConfig(t *testing.T) {
 
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	cfg := Get()
 	if cfg == nil {

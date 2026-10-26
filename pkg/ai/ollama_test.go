@@ -437,3 +437,35 @@ func TestOllamaProvider_EmbedDocuments_LargeBatch(t *testing.T) {
 	assert.Len(t, results, 75)
 	assert.Equal(t, 75, batchCount, "deveria ter feito 75 requests (batch de 1)")
 }
+
+func TestNormalizeOllamaHost(t *testing.T) {
+	tests := []struct {
+		entrada  string
+		esperado string
+	}{
+		{"0.0.0.0:11434", "http://localhost:11434"},
+		{"0.0.0.0", "http://localhost:11434"},
+		{":11434", "http://localhost:11434"},
+		{"[::]:11434", "http://localhost:11434"},
+		{"meuservidor", "http://meuservidor:11434"},
+		{"meuservidor:8080", "http://meuservidor:8080"},
+		{"http://localhost:11434", "http://localhost:11434"},
+		{"http://localhost:11434/", "http://localhost:11434"},
+		{"https://ollama.exemplo.com", "https://ollama.exemplo.com"},
+		{"http://0.0.0.0:11434", "http://localhost:11434"},
+		{"  127.0.0.1:11434  ", "http://127.0.0.1:11434"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.entrada, func(t *testing.T) {
+			assert.Equal(t, tt.esperado, normalizeOllamaHost(tt.entrada))
+		})
+	}
+}
+
+func TestOllamaProvider_ping_URLInvalida(t *testing.T) {
+	p := &OllamaProvider{}
+	// URL sem esquema e com ":" no primeiro segmento não passa no parse;
+	// antes o erro era ignorado e client.Do(nil) causava panic.
+	assert.False(t, p.ping(context.Background(), "0.0.0.0:11434"))
+}

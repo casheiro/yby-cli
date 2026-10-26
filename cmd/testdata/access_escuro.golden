@@ -1,0 +1,16 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  ACCESS[0m                                        [38;2;161;147;121m24/10 09:30[0m
+
+[38;2;161;147;121mTÚNEIS[0m
+  [38;2;161;147;121m○ contexto       k3d-yby-local[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181margo cd        http://localhost:8085   admin / Xk2p9sQ[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mminio api      http://localhost:9000[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mminio console  http://localhost:9001   minio / minio123[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mprometheus     http://localhost:9090[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mgrafana        http://localhost:3001   admin / admin · volume yby-grafana-data[0m
+
+[38;2;161;147;121mTOKEN DO HEADLAMP[0m
+  [38;2;221;208;181meyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3RlIn0.e30.assinatura[0m
+
+  [38;2;161;147;121m○ ctrl+c encerra os túneis[0m
+
+  [38;2;161;147;121m○ túneis encerrados[0m

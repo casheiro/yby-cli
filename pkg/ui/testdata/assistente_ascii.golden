@@ -1,0 +1,33 @@
+== nome
+
+*---o---o---o  01/04
+NOME · TIPO · EXTRAS · FIM
+
+ NOME DO PROJETO
+ > yby-project
+
+enter continuar  shift+tab voltar  esc cancelar
+== tipo
+
+*===*---o---o  02/04
+NOME · TIPO · EXTRAS · FIM
+
+ TOPOLOGIA
+ * single
+   standard
+   complete
+
+enter continuar  shift+tab voltar  esc cancelar
+== extras
+
+*===*===*---o  03/04
+NOME · TIPO · EXTRAS · FIM
+
+ MÓDULOS
+ * [o] kepler
+   [o] minio
+ DETALHAR?
+
+   Sim    Não
+
+enter continuar  shift+tab voltar  esc cancelar

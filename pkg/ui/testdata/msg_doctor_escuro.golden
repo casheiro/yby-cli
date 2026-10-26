@@ -1,0 +1,9 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  DOCTOR[0m                                        [38;2;161;147;121m23/10 12:10[0m
+
+[38;2;161;147;121mFERRAMENTAS[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mdocker      27.3[0m
+  [38;2;217;174;95m▲[0m [38;2;221;208;181mhelm        3.12      recomendado 3.14 ou mais · yby setup atualiza[0m
+  [38;2;217;131;97m✕[0m [38;2;221;208;181mkubectl     ausente   winget install Kubernetes.kubectl[0m
+  [38;2;161;147;121m○ az          ausente   opcional[0m
+
+[38;2;161;147;121mRESUMO[0m  [38;2;167;188;113m4 ok[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 aviso[0m[38;2;161;147;121m · [0m[38;2;217;131;97m1 erro[0m  [38;2;161;147;121m· o erro impede yby up[0m

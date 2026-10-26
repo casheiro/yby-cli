@@ -66,5 +66,5 @@ func TestSetupCmd_InvalidProfile(t *testing.T) {
 
 	err := setupCmd.RunE(setupCmd, []string{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Perfil inválido")
+	assert.Contains(t, err.Error(), "perfil inválido")
 }

@@ -1,0 +1,5 @@
+
+x falha ao validar integridade dos ambientes  ERR_CONFIG_INVALID
+  causa     arquivo de ambientes não encontrado (<manifesto>). Execute 'yby init' primeiro
+  faça      entre na pasta do projeto ou crie um com yby init
+  detalhes  rode de novo com --log-level=debug

@@ -1,9 +1,36 @@
 package logger
 
 import (
+	"bytes"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 )
+
+func TestDesviar(t *testing.T) {
+	anterior := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(anterior) })
+	InitGlobal(Config{Level: "info", Format: "text"})
+
+	var b bytes.Buffer
+	restaurar := Desviar(&b)
+	slog.Info("durante as etapas", "fase", "argo cd")
+	slog.Debug("abaixo do nível")
+	restaurar()
+	restaurar() // restaurar duas vezes é seguro
+	slog.Info("depois de restaurar")
+
+	if !strings.Contains(b.String(), `msg="durante as etapas" fase="argo cd"`) {
+		t.Errorf("o log desviado deveria manter o formato: %q", b.String())
+	}
+	if strings.Contains(b.String(), "abaixo do nível") || strings.Contains(b.String(), "depois de restaurar") {
+		t.Errorf("o desvio mantém o nível e acaba ao restaurar: %q", b.String())
+	}
+	if saida.w != os.Stderr {
+		t.Error("restaurar deveria voltar o log para o os.Stderr")
+	}
+}
 
 func TestParseLevel_Debug(t *testing.T) {
 	if ParseLevel("debug") != slog.LevelDebug {

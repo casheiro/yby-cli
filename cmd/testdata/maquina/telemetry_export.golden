@@ -1,0 +1,2 @@
+{"name":"up","duration_ms":3812,"success":true,"timestamp":"2026-10-20T08:15:00Z"}
+{"name":"doctor","duration_ms":120,"success":false,"error":"kubectl ausente","timestamp":"2026-10-21T14:40:05Z"}

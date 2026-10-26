@@ -1,0 +1,21 @@
+[
+  {
+    "timestamp": "2026-10-20T08:15:00Z",
+    "action": "authenticate",
+    "provider": "aws",
+    "identity": "arn:aws:iam::123456789012:user/ana",
+    "method": "sso",
+    "success": true,
+    "duration": "1.2s"
+  },
+  {
+    "timestamp": "2026-10-21T14:40:05Z",
+    "action": "refresh",
+    "provider": "gcp",
+    "identity": "ana@empresa.com.br",
+    "cluster": "prod-gke",
+    "region": "us-central1",
+    "success": false,
+    "error": "token expirado, rode gcloud auth login"
+  }
+]
