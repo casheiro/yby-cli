@@ -426,7 +426,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** coerência com o `scan --no-ai`; é o que o Bard precisa no B12.
   - **Fazer:** parar na coleta e devolver os dados brutos (status, eventos resumidos, fim dos logs) no JSON.
   - **Verificar:** testes.
-- [ ] **S13 · OPA compila uma vez**
+- [x] **S13 · OPA compila uma vez**
   - **Problema:** `rego.New`+`Eval` por recurso (`backends/opa.go:~469-476`) e ClusterRoles listados duas vezes.
   - **Fazer:** `PrepareForEval` por política e listar uma vez só.
   - **Verificar:** testes existentes; benchmark simples.
@@ -684,6 +684,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S10 | Investigate checa a saúde antes do cache (Succeeded saudável, reinício só vale se for de menos de 2 h), lê logs por contêiner com Previous, chave de cache com contexto, UID e reinícios, e eventos resumidos | este commit |
 | 26/10/2026 | S11 | Investigate redige logs, eventos e métricas e o scan redige os achados com o pkg/redacao antes da IA; o pkg/redacao passou a redigir o value de env com name sensível e o valor de ConfigMap no kubectl describe | este commit |
 | 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
+| 26/10/2026 | S13 | O OPA compila cada política Rego uma vez (PrepareForEval em cache) e lista os ClusterRoles uma só vez por scan, mantendo as falhas em FalhaParcial | este commit |
 | 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
 
 ### Fase 5 · Atlas

@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 
 	"github.com/open-policy-agent/opa/v1/rego"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -261,13 +263,14 @@ func (o *OPABackend) IsAvailable() bool {
 // As falhas vão para o log de depuração, nunca para a tela: quem chama decide como
 // mostrá-las.
 func (o *OPABackend) ScanCluster(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error) {
+	clusterRoles := novaListaClusterRoles(ctx, client)
 	politicas := []struct {
 		nome  string
 		rodar func() ([]Finding, error)
 	}{
 		{"cluster-admin", func() ([]Finding, error) { return o.scanClusterAdmin(ctx, client) }},
-		{"acesso a secrets", func() ([]Finding, error) { return o.scanSecretsAccess(ctx, client, namespace) }},
-		{"wildcards", func() ([]Finding, error) { return o.scanWildcard(ctx, client) }},
+		{"acesso a secrets", func() ([]Finding, error) { return o.scanSecretsAccess(ctx, client, namespace, clusterRoles) }},
+		{"wildcards", func() ([]Finding, error) { return o.scanWildcard(ctx, client, clusterRoles) }},
 		{"default-deny", func() ([]Finding, error) { return o.scanDefaultDeny(ctx, client, namespace) }},
 	}
 
@@ -329,16 +332,16 @@ func (o *OPABackend) scanClusterAdmin(ctx context.Context, client kubernetes.Int
 }
 
 // scanSecretsAccess avalia a política de acesso a secrets contra ClusterRoles e Roles.
-func (o *OPABackend) scanSecretsAccess(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error) {
+func (o *OPABackend) scanSecretsAccess(ctx context.Context, client kubernetes.Interface, namespace string, clusterRoles listaClusterRoles) ([]Finding, error) {
 	var findings []Finding
 
 	// ClusterRoles
-	clusterRoles, err := client.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
+	itensCR, err := clusterRoles()
 	if err != nil {
-		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
+		return nil, err
 	}
 
-	for _, role := range clusterRoles.Items {
+	for _, role := range itensCR {
 		input := roleToInput("ClusterRole", role.Name, "", role.Rules)
 		violations, err := evaluatePolicy(ctx, regoSecretsAccessPolicy, input)
 		if err != nil {
@@ -389,14 +392,14 @@ func (o *OPABackend) scanSecretsAccess(ctx context.Context, client kubernetes.In
 }
 
 // scanWildcard avalia a política de wildcard contra ClusterRoles.
-func (o *OPABackend) scanWildcard(ctx context.Context, client kubernetes.Interface) ([]Finding, error) {
-	clusterRoles, err := client.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
+func (o *OPABackend) scanWildcard(ctx context.Context, client kubernetes.Interface, clusterRoles listaClusterRoles) ([]Finding, error) {
+	itensCR, err := clusterRoles()
 	if err != nil {
-		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
+		return nil, err
 	}
 
 	var findings []Finding
-	for _, role := range clusterRoles.Items {
+	for _, role := range itensCR {
 		input := roleToInput("ClusterRole", role.Name, "", role.Rules)
 		violations, err := evaluatePolicy(ctx, regoWildcardPolicy, input)
 		if err != nil {
@@ -465,15 +468,45 @@ type opaViolation struct {
 	severity string
 }
 
-// evaluatePolicy avalia uma política Rego contra o input fornecido e retorna as violações.
-func evaluatePolicy(ctx context.Context, policy string, input interface{}) ([]opaViolation, error) {
-	r := rego.New(
+// politicasPreparadas guarda cada política já compilada, indexada pelo texto Rego:
+// compilar o módulo custa muito mais que avaliá-lo, e o mesmo módulo avalia todos os
+// recursos de um scan.
+var politicasPreparadas = struct {
+	sync.Mutex
+	m map[string]*rego.PreparedEvalQuery
+}{m: map[string]*rego.PreparedEvalQuery{}}
+
+// compilacoesRego conta as compilações de módulos Rego (os testes conferem o cache).
+var compilacoesRego atomic.Int64
+
+// prepararPolitica compila a política na primeira vez e devolve a consulta preparada
+// nas seguintes.
+func prepararPolitica(ctx context.Context, policy string) (*rego.PreparedEvalQuery, error) {
+	politicasPreparadas.Lock()
+	defer politicasPreparadas.Unlock()
+	if q, ok := politicasPreparadas.m[policy]; ok {
+		return q, nil
+	}
+	compilacoesRego.Add(1)
+	q, err := rego.New(
 		rego.Query("data.sentinel.violation"),
 		rego.Module("policy.rego", policy),
-		rego.Input(input),
-	)
+	).PrepareForEval(ctx)
+	if err != nil {
+		return nil, err
+	}
+	politicasPreparadas.m[policy] = &q
+	return &q, nil
+}
 
-	rs, err := r.Eval(ctx)
+// evaluatePolicy avalia uma política Rego contra o input fornecido e retorna as violações.
+func evaluatePolicy(ctx context.Context, policy string, input interface{}) ([]opaViolation, error) {
+	q, err := prepararPolitica(ctx, policy)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao avaliar política Rego: %w", err)
+	}
+
+	rs, err := q.Eval(ctx, rego.EvalInput(input))
 	if err != nil {
 		return nil, fmt.Errorf("falha ao avaliar política Rego: %w", err)
 	}
@@ -635,4 +668,31 @@ func stringSliceToInterface(ss []string) []interface{} {
 		result[i] = s
 	}
 	return result
+}
+
+// listaClusterRoles devolve os ClusterRoles do cluster; a primeira chamada lista e as
+// seguintes reaproveitam o resultado (ou a falha).
+type listaClusterRoles func() ([]rbacv1.ClusterRole, error)
+
+// novaListaClusterRoles lista os ClusterRoles uma única vez por scan, para as políticas de
+// secrets e de wildcard. Se a listagem falhar, as duas recebem a mesma falha e continuam
+// aparecendo em FalhaParcial.
+func novaListaClusterRoles(ctx context.Context, client kubernetes.Interface) listaClusterRoles {
+	var (
+		itens []rbacv1.ClusterRole
+		err   error
+		feito bool
+	)
+	return func() ([]rbacv1.ClusterRole, error) {
+		if !feito {
+			feito = true
+			lista, e := client.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
+			if e != nil {
+				err = fmt.Errorf("falha ao listar ClusterRoles: %w", e)
+			} else {
+				itens = lista.Items
+			}
+		}
+		return itens, err
+	}
 }

@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 
+	"github.com/open-policy-agent/opa/v1/rego"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -502,4 +504,69 @@ func TestScanCluster_FalhaParcial(t *testing.T) {
 	if len(findings) != 2 {
 		t.Errorf("os achados do default-deny (ingress e egress) valem, obtido %+v", findings)
 	}
+}
+
+// clusterRolesFalsos devolve n ClusterRoles com wildcard e acesso a secrets.
+func clusterRolesFalsos(n int) []runtime.Object {
+	var objs []runtime.Object
+	for i := 0; i < n; i++ {
+		objs = append(objs, &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("papel-%d", i)},
+			Rules: []rbacv1.PolicyRule{
+				{Verbs: []string{"*"}, Resources: []string{"secrets"}, APIGroups: []string{""}},
+			},
+		})
+	}
+	return objs
+}
+
+// TestScanCluster_ListaClusterRolesUmaVez: wildcards e acesso a secrets usam a mesma
+// listagem de ClusterRoles.
+func TestScanCluster_ListaClusterRolesUmaVez(t *testing.T) {
+	client := fake.NewSimpleClientset(clusterRolesFalsos(3)...)
+	listagens := 0
+	client.PrependReactor("list", "clusterroles", func(k8stesting.Action) (bool, runtime.Object, error) {
+		listagens++
+		return false, nil, nil
+	})
+
+	if _, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments"); err != nil {
+		t.Fatalf("ScanCluster: %v", err)
+	}
+	if listagens != 1 {
+		t.Errorf("ClusterRoles listados %d vezes, esperava 1", listagens)
+	}
+}
+
+// TestScanCluster_CompilaCadaPoliticaUmaVez: o módulo Rego é preparado uma vez por
+// política, não uma vez por recurso avaliado.
+func TestScanCluster_CompilaCadaPoliticaUmaVez(t *testing.T) {
+	limparPoliticasPreparadas()
+	antes := compilacoesRego.Load()
+	client := fake.NewSimpleClientset(clusterRolesFalsos(50)...)
+
+	if _, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments"); err != nil {
+		t.Fatalf("ScanCluster: %v", err)
+	}
+	if got := compilacoesRego.Load() - antes; got > 4 {
+		t.Errorf("%d compilações para 50 ClusterRoles, esperava no máximo uma por política (4)", got)
+	}
+}
+
+// BenchmarkScanCluster mede o scan com 500 ClusterRoles.
+func BenchmarkScanCluster(b *testing.B) {
+	client := fake.NewSimpleClientset(clusterRolesFalsos(500)...)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// limparPoliticasPreparadas esvazia o cache de políticas preparadas.
+func limparPoliticasPreparadas() {
+	politicasPreparadas.Lock()
+	defer politicasPreparadas.Unlock()
+	politicasPreparadas.m = map[string]*rego.PreparedEvalQuery{}
 }
