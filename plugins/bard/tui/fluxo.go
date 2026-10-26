@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
@@ -225,12 +226,15 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 			return
 		}
 		usadas = append(usadas, ferramenta.Name)
-		saida := res.saida
+		// A saída de toda ferramenta (logs, describe, achados do Sentinel, tools
+		// externas) e o erro dela, que costuma trazer a saída junto, passam pela
+		// redação antes do prompt. O "↵ ver" mostra o mesmo texto que a IA recebeu.
+		saida := redacao.Redigir(res.saida)
 		msg := EtapaMsg{Etapa: EtapaFerramenta, Rotulo: rotulo, Estado: ui.EtapaFeita, Nota: alvo, Duracao: time.Since(t0), Saida: saida}
 		if res.err != nil {
-			saida = fmt.Sprintf("Erro: %v", res.err)
+			saida = redacao.Redigir(fmt.Sprintf("Erro: %v", res.err))
 			msg.Estado = ui.EtapaFalha
-			msg.Nota = primeiraLinha(res.err.Error())
+			msg.Nota = primeiraLinha(redacao.Redigir(res.err.Error()))
 			msg.Saida = saida
 		}
 		e.etapa(msg)

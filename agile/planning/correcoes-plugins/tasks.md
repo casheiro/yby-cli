@@ -150,7 +150,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `tui/fluxo.go:~232` refaz `entradaFinal` a partir de `entrada` e descarta o bloco de notas montado em `~183-186`.
   - **Fazer:** compor as notas e o resultado da ferramenta.
   - **Verificar:** teste do `Fluxo` com tool + Synapstor falsos: o prompt tem os dois.
-- [ ] **B06 · Secrets e dados sensíveis não vão à IA**
+- [x] **B06 · Secrets e dados sensíveis não vão à IA**
   - **Problema:** `kubectl_get` aceita `resource` e `output_format` livres (`tools/kubectl_get.go`), então `get secrets -o yaml` vai inteiro à IA. O `sanitizeContent` só roda no histórico e no `/exportar` (`history.go:~182`, `comandos_acoes.go:~367`). Logs também vão crus.
   - **Fazer:**
     - bloquear `secret(s)` com `-o json|yaml|jsonpath|go-template` (ou redigir `data`/`stringData`);
@@ -675,6 +675,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B08 | `ai.ErroRetentavel` classifica o erro (429/502/503, rede, stream cortado, YbyError de timeout); o `RetryProvider` e o `Fluxo` deixam de repetir o resto (chave inválida, modelo inexistente, ERR_TOKEN_LIMIT, config, falha de CLI). | este commit |
 | 26/10/2026 | B10 | Providers claude-cli e gemini-cli levam o prompt pelo stdin (`claude -p` sem texto; `gemini -p` com instrução curta), rodam com `CommandContext` e `WaitDelay`, limitam o stderr no erro e o stream do gemini perde as linhas "Loaded cached credentials". | este commit |
 | 26/10/2026 | B03 | O classificador recebe todos os intents com o esquema de parâmetros e o cluster/namespace da sessão (sem a regra do "default"), lê JSON no meio do texto e número como texto, registra falhas em debug, e o Fluxo não executa ferramenta sem os parâmetros obrigatórios; registry em ordem estável. | este commit |
+| 26/10/2026 | B06 | A saída e o erro de toda ferramenta passam pelo `pkg/redacao` no `Fluxo` (prompt e "↵ ver"); o `kubectl_get` lista só em wide ou name (sem yaml, json, jsonpath, go-template em nenhum recurso, Secrets inclusive); resource, name, pod, namespace e tail da IA são conferidos antes do kubectl e do Sentinel, e valor com "-" no começo não vira flag. | este commit |
 
 ### Fase 3 · Synapstor
 

@@ -26,6 +26,9 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 	if pod == "" {
 		return "", fmt.Errorf("parâmetro 'pod' é obrigatório")
 	}
+	if err := conferirParams(params, "pod", "namespace", "tail"); err != nil {
+		return "", err
+	}
 
 	args := []string{"logs", pod}
 

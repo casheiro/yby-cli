@@ -20,6 +20,9 @@ func init() {
 }
 
 func executeKubectlEvents(ctx context.Context, params map[string]string) (string, error) {
+	if err := conferirParams(params, "namespace"); err != nil {
+		return "", err
+	}
 	args := []string{"get", "events", "--sort-by=.lastTimestamp"}
 
 	if ns := namespaceDe(params); ns != "" {

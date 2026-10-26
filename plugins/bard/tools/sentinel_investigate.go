@@ -26,6 +26,9 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 	if pod == "" {
 		return "", fmt.Errorf("parâmetro 'pod' é obrigatório")
 	}
+	if err := conferirParams(params, "pod", "namespace"); err != nil {
+		return "", err
+	}
 
 	binaryPath, err := discoverPluginBinary("sentinel")
 	if err != nil {

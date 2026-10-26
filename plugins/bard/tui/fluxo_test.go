@@ -793,6 +793,44 @@ func TestFluxo_FerramentaMantemNotasDoSynapstor(t *testing.T) {
 	}
 }
 
+// A saída de toda ferramenta, e o erro dela, passa pela redação antes de ir ao
+// provider e à tela ("↵ ver" mostra o que a IA recebeu).
+func TestFluxo_SaidaDaFerramentaRedigida(t *testing.T) {
+	isolarHome(t)
+	casos := []struct {
+		nome  string
+		saida string
+		err   error
+	}{
+		{"saída", "token=abcdefghijklmnopqrstuvwxyz123\nDB_PASSWORD: hunter2\nStatus: Running", nil},
+		{"erro", "", errors.New("kubectl falhou\ntoken=abcdefghijklmnopqrstuvwxyz123\nDB_PASSWORD: hunter2")},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			p := &provedorFalso{
+				intencao: `{"intent":"investigate_pod","params":{"pod":"worker-1"},"direct":false}`,
+				trechos:  []string{"ok"},
+			}
+			chamadas := 0
+			f := fluxoDeTeste(p)
+			ferramenta := ferramentaDeTeste(c.saida, c.err, &chamadas)
+			f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
+
+			eventos := coletar(t, f.Iniciar(context.Background(), 1, "investiga"), nil)
+
+			final := ultimaEtapa(t, eventos, EtapaFerramenta)
+			for _, texto := range []string{p.ultimaEntrada(), final.Saida, final.Nota} {
+				if strings.Contains(texto, "abcdefghijklmnopqrstuvwxyz123") || strings.Contains(texto, "hunter2") {
+					t.Errorf("segredo da ferramenta vazou: %q", texto)
+				}
+			}
+			if !strings.Contains(p.ultimaEntrada(), "[REDIGIDO]") {
+				t.Errorf("o prompt deveria levar a marca da redação: %q", p.ultimaEntrada())
+			}
+		})
+	}
+}
+
 func TestFluxo_ObrigatorioFaltandoNaoExecuta(t *testing.T) {
 	isolarHome(t)
 	p := &provedorFalso{
