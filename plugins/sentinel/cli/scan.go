@@ -266,8 +266,8 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		return c, nil
 	}
 
-	// 4. Recomendações via IA
-	if provider := provedorDeIA(ctx); provider != nil {
+	// 4. Recomendações via IA (o --no-ai as pula: o Bard, que chama o scan, já é a IA)
+	if provider := provedorDeIA(ctx); provider != nil && !op.semIA {
 		prog.Iniciar("recomendações da IA")
 		findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
 		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))

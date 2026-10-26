@@ -45,6 +45,6 @@ func TestSentinel_PedidoNoClusterDaSessao(t *testing.T) {
 	assert.Equal(t, []string{"investigate", "worker-1", "-n", "kube-system", "-o", "json"}, req.Args, "o namespace da IA vale")
 
 	req = pedidoSentinelScan(map[string]string{})
-	assert.Equal(t, []string{"scan", "-n", "payments", "-o", "json"}, req.Args)
+	assert.Equal(t, []string{"scan", "-n", "payments", "-o", "json", "--no-ai"}, req.Args)
 	assert.Equal(t, "k3d-yby-local", req.Context["infra"].(map[string]interface{})["kube_context"])
 }
