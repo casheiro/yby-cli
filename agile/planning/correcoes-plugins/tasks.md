@@ -67,7 +67,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - fazer o mesmo no `release-pipeline.yaml`, se ele também rodar testes;
     - conferir se o runner Linux passa nos testes, que até hoje só rodaram no Windows.
   - **Verificar:** o check do PR mostra os três pacotes rodando.
-- [ ] **C02 · Lint do Sentinel de verdade e gofmt** ✓
+- [x] **C02 · Lint do Sentinel de verdade e gofmt** ✓
   - **Problema:** `.golangci.yml` tem `exclude-dirs: plugins/sentinel/cli`, o que anula o passo "Lint K8s" do pipeline. O gofmt acusa `plugins/sentinel/cli/checks/rbac_allowlist.go` e `plugins/synapstor/internal/scanner/scanner_test.go`.
   - **Fazer:** tirar o exclude, corrigir o que o lint apontar no Sentinel e rodar `gofmt -w` nos dois arquivos.
   - **Verificar:** `golangci-lint run --build-tags k8s plugins/sentinel/cli/...` limpo, com a config v1 do CI. Localmente, migrar uma cópia da config: v2, com o revive `exported` desligado, `exclude-use-default` e os mesmos linters.
@@ -657,6 +657,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | C02 | O `.golangci.yml` deixa de excluir o Sentinel e exclui só a pasta `test/` da raiz; o pipeline ganha lint do Viz e do Synapstor; gofmt nos dois arquivos. Validado com o golangci-lint v1.64.8 do CI (GOTOOLCHAIN=go1.26.1). | este commit |
 
 ### Fase 1 · Contratos
 

@@ -64,6 +64,14 @@ jobs:
         run: golangci-lint run --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
         timeout-minutes: 15
 
+      - name: 🔍 Lint Viz (módulo próprio)
+        working-directory: plugins/viz
+        run: golangci-lint run --timeout=5m ./...
+
+      - name: 🔍 Lint Synapstor (módulo próprio)
+        working-directory: plugins/synapstor
+        run: golangci-lint run --timeout=5m ./...
+
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6.2.1
         with:
