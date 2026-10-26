@@ -32,17 +32,17 @@ func TestSentinel_PedidoNoClusterDaSessao(t *testing.T) {
 
 	DefinirKube("", "")
 	req := pedidoSentinelInvestigate("worker-1", map[string]string{})
-	assert.Equal(t, []string{"investigate", "worker-1"}, req.Args)
+	assert.Equal(t, []string{"investigate", "worker-1", "-o", "json"}, req.Args)
 	assert.Nil(t, req.Context, "sem sessão, valem o contexto e o namespace do kubeconfig")
 
 	DefinirKube("k3d-yby-local", "payments")
 	req = pedidoSentinelInvestigate("worker-1", map[string]string{})
 	assert.Equal(t, "command", req.Hook)
-	assert.Equal(t, []string{"investigate", "worker-1", "-n", "payments"}, req.Args)
+	assert.Equal(t, []string{"investigate", "worker-1", "-n", "payments", "-o", "json"}, req.Args)
 	assert.Equal(t, map[string]interface{}{"infra": map[string]interface{}{"kube_context": "k3d-yby-local", "namespace": "payments"}}, req.Context)
 
 	req = pedidoSentinelInvestigate("worker-1", map[string]string{"namespace": "kube-system"})
-	assert.Equal(t, []string{"investigate", "worker-1", "-n", "kube-system"}, req.Args, "o namespace da IA vale")
+	assert.Equal(t, []string{"investigate", "worker-1", "-n", "kube-system", "-o", "json"}, req.Args, "o namespace da IA vale")
 
 	req = pedidoSentinelScan(map[string]string{})
 	assert.Equal(t, []string{"scan", "-n", "payments", "-o", "json"}, req.Args)
