@@ -40,13 +40,14 @@ func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, err
 		Roots:      []string{root},
 	}
 
+	filtro := novoFiltro(root, ignores)
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Verificar diretórios ignorados
-		if ShouldIgnore(path, ignores) {
+		// Verificar diretórios ignorados (pelo caminho relativo à raiz) e o .gitignore
+		if filtro.pular(path, d) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -553,11 +554,12 @@ var k8sExcludeNames = map[string]bool{
 func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 	// 1. Coletar todos os arquivos relevantes
 	var allFiles []string
+	filtro := novoFiltro(rootPath, ignores)
 	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if ShouldIgnore(path, ignores) {
+		if filtro.pular(path, d) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -654,10 +656,8 @@ func classifyFiles(files []string) map[string][]string {
 				continue
 			}
 
-			// Excluir arquivos encriptados por SOPS
-			if isSopsEncrypted(f) {
-				continue
-			}
+			// Arquivos encriptados por SOPS são descartados pelo K8sAnalyzer,
+			// que já lê o arquivo.
 
 			result["k8s"] = append(result["k8s"], f)
 		}
@@ -686,18 +686,6 @@ func isInsideHelmTemplates(filePath string, helmChartDirs map[string]bool) bool 
 		dir = parent
 	}
 	return false
-}
-
-// isSopsEncrypted verifica se um arquivo YAML está encriptado por SOPS.
-// Detecta a presença de markers SOPS (ENC[AES256_GCM,...] ou campo sops:).
-func isSopsEncrypted(filePath string) bool {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return false
-	}
-	content := string(data)
-	// SOPS encripta valores com ENC[AES256_GCM,...] e adiciona metadata sops: no final
-	return strings.Contains(content, "ENC[AES256_GCM,") || strings.Contains(content, "sops:\n")
 }
 
 // detectPackageJsonRelations detecta relações a partir de dependências locais em package.json.

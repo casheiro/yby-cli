@@ -503,7 +503,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prefixar o ID com o diretório;
     - extrair referências `tipo.nome.`/`module.x.` por regex.
   - **Verificar:** fixture e golden.
-- [ ] **A09 · Varredura: ignorados, `.gitignore` e caminho relativo**
+- [x] **A09 · Varredura: ignorados, `.gitignore` e caminho relativo**
   - **Problema:**
     - só `node_modules`, `vendor`, `.git`, `.idea` e `.vscode` são ignorados (`main.go:~155`);
     - `ShouldIgnore` testa os segmentos do caminho **absoluto** (`discovery/scanner.go:~18-28`): um projeto dentro de `.../vendor/proj` não acha nada;
@@ -689,6 +689,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A12 | ScanInfra e o analyzer de compose ordenam recursos e relações (diagrama determinístico), goldens do GenerateInfraMermaid e o atlas compilado uma só vez nos testes (pacote de ~72 s para ~8 s) | este commit |
 | 26/10/2026 | A11 | `relSlash` (ToSlash) em todos os analyzers e no scanner, Kustomize/Helm com `path`, e o blueprint sai com caminhos relativos (`Component.Path`, `Roots=["."]`, `RootPath="."`) | este commit |
 | 26/10/2026 | A05 | Service passa a selecionar só workloads (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob) pelos labels do template do pod e no mesmo namespace | este commit |
+| 26/10/2026 | A09 | Varredura testa o caminho relativo à raiz, ignora também dist/build/target/.venv/.next/.terraform/coverage/__pycache__, respeita o .gitignore via `git ls-files` (com fallback sem git), lê cada YAML uma vez e reconhece SOPS com CRLF | este commit |
 
 ### Fase 6 · Viz
 

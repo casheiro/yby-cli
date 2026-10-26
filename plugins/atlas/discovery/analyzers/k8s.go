@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -88,6 +89,12 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 		relPath = filePath
 	}
 
+	// Arquivo encriptado por SOPS: não há topologia legível nele.
+	if sopsEncriptado(content) {
+		slog.Debug("pulando arquivo encriptado por SOPS", "file", filePath)
+		return nil, nil
+	}
+
 	docs := splitYAMLDocuments(content)
 	var resources []parsedResource
 
@@ -97,8 +104,14 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 			continue
 		}
 
+		// Um só parse por documento: o nó alimenta o manifesto e os dados brutos.
+		var no yaml.Node
+		if err := yaml.Unmarshal([]byte(doc), &no); err != nil {
+			slog.Debug("documento YAML inválido, pulando", "file", filePath, "error", err)
+			continue
+		}
 		var manifest k8sManifest
-		if err := yaml.Unmarshal([]byte(doc), &manifest); err != nil {
+		if err := no.Decode(&manifest); err != nil {
 			slog.Debug("documento YAML inválido, pulando", "file", filePath, "error", err)
 			continue
 		}
@@ -126,7 +139,7 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 
 		// Parsear dados brutos para extração de relações
 		var raw map[string]interface{}
-		_ = yaml.Unmarshal([]byte(doc), &raw)
+		_ = no.Decode(&raw)
 
 		resource := InfraResource{
 			Kind:      manifest.Kind,
@@ -144,6 +157,15 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 	}
 
 	return resources, nil
+}
+
+// marcaSops casa o campo sops: de topo que o SOPS acrescenta, com LF ou CRLF.
+var marcaSops = regexp.MustCompile(`(?m)^sops:[ \t]*\r?$`)
+
+// sopsEncriptado diz se o conteúdo é de um arquivo encriptado por SOPS
+// (valores ENC[AES256_GCM,...] ou o campo sops: de metadados).
+func sopsEncriptado(content string) bool {
+	return strings.Contains(content, "ENC[AES256_GCM,") || marcaSops.MatchString(content)
 }
 
 // splitYAMLDocuments divide um conteúdo YAML em documentos individuais,

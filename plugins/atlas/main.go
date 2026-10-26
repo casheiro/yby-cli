@@ -151,9 +151,6 @@ func falhaJSON(saida, erros io.Writer, err error) int {
 	return 1
 }
 
-// ignoradosPadrao são as pastas que o Atlas nunca percorre.
-var ignoradosPadrao = []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
-
 // scanProject executa a descoberta de componentes no diretório atual,
 // aplicando configuração externa quando disponível.
 func scanProject() (*discovery.Blueprint, error) {
@@ -163,7 +160,7 @@ func scanProject() (*discovery.Blueprint, error) {
 	}
 
 	cfg := loadConfig()
-	ignores := append([]string(nil), ignoradosPadrao...)
+	ignores := append([]string(nil), discovery.IgnoradosPadrao...)
 	var rules []discovery.Rule
 	if cfg != nil {
 		if len(cfg.Ignores) > 0 {
@@ -258,7 +255,7 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	defer parar()
 
 	prog.Iniciar("procurar a infraestrutura")
-	ignores := append([]string(nil), ignoradosPadrao...)
+	ignores := append([]string(nil), discovery.IgnoradosPadrao...)
 	cfg, errCfg := lerConfig()
 	if cfg != nil && len(cfg.Ignores) > 0 {
 		ignores = append(ignores, cfg.Ignores...)
