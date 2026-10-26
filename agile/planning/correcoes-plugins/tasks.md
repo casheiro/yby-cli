@@ -5,22 +5,47 @@
 > **Escopo (decisão do usuário, 26/10/2026):** corrigir **tudo o que é erro ou está errado em relação à proposta do plugin**. Ficam de fora **features novas e perfumaria**, que estão na seção "Fora do escopo" no fim deste arquivo. Na dúvida entre "conserto" e "feature", vale a pergunta: o plugin promete isso (ajuda, README, CLAUDE.md, nome da flag) e não entrega? Se sim, é conserto.
 > **Verificação geral:** `go test ./pkg/... ./plugins/bard/... ./plugins/atlas/... ./cmd/...` + `go test -tags k8s ./plugins/sentinel/...` + `(cd plugins/viz && go test ./...)` + `(cd plugins/synapstor && go test ./...)` + lint. Compare com a develop usando `falhas.sh`: só podem falhar os 12 testes que já falham no Windows (lista em `agile/sessoes/estado.md`).
 
+## Decisões do usuário (26/10/2026, 2ª sessão)
+
+- **Contexto dos plugins (K01):** todo plugin recebe o contexto barato, montado sem rodar nada: `environment`, `infra` (kube_context, namespace e o caminho do kube_config do ambiente) e `values`, lidos do `.yby/environments.yaml`. Os hooks dos outros plugins, o overview, o backlog e o UKIIndex vão só para quem declarar `consome_contexto`.
+- **Ambiente sem `-c` (K01/V02):** o `infra` do ambiente só vale quando o ambiente foi pedido (`-c`/`--context` ou `YBY_ENV`). Sem isso, Viz e Sentinel continuam no current-context do kubeconfig, como a ajuda promete. O `current` do environments.yaml não muda o `yby viz` nem o `yby sentinel` puros.
+- **Embeddings locais (Y06):** modelo multilíngue quantizado (paraphrase-multilingual-MiniLM-L12-v2 ou multilingual-e5-small em int8, ~120 MB), se o hugot em Go puro carregar o formato. Se não carregar, a tarefa fica `[!]` e o usuário é avisado.
+- **Formato de UKI (Y07):** a especificação é traduzida para PT-BR (tipos `decisao`, `regra`, `padrao`, `metrica`…; status `ativo`, `rascunho`…), com frontmatter e datas preenchidas pelo código. O nome continua `UKI-<timestamp>-slug.md` em `.synapstor/.uki/`, com subpastas por domínio aceitas. O parser lê também o formato antigo em negrito.
+- **Execução em ondas e trilhas paralelas**, cada trilha numa branch `feat/correcoes-<trilha>` e num worktree próprio, com um PR por trilha. Detalhe na seção "Ondas" abaixo.
+
+## Ondas
+
+A conferência de 26/10/2026 (um agente por fase, só leitura) mapeou os arquivos de cada tarefa. As trilhas não disputam arquivos entre si; o que é compartilhado foi para a onda 0.
+
+| Onda | Trilha (branch) | Tarefas, nesta ordem | Depende de |
+|---|---|---|---|
+| 0 | base (`feat/correcoes-plugins`) | C02, C01, R01, K01 | — |
+| 1 | sentinel (`feat/correcoes-sentinel`) | S10, S11, S12, S02, S13, S09, S03, S05, S06, S08, S07, S04, S01, S14, S15 | onda 0 |
+| 1 | viz (`feat/correcoes-viz`) | V01, V06, V03, V05, V07 (benchmarks), V04, V07 (o resto), V02 | onda 0 |
+| 1 | atlas (`feat/correcoes-atlas`) | A12, A11, A05, A09, A01, A06, A07, A04, A08, A03, A02, A10, A13 | onda 0; A10 depois do B10 |
+| 1 | synapstor (`feat/correcoes-synapstor`) | Y01, Y02, Y03, Y09, Y04, Y05, Y06, Y07, Y08, Y10, Y11, Y12, Y13 | onda 0 |
+| 1 | bard (`feat/correcoes-bard`) | B05, B08, B10, B03, B06, B04, B01, B09, B11, B14, B13, B02 | onda 0 |
+| 2 | contratos (`feat/correcoes-contratos`) | K02, K04, B07, B12, K03, e o lado do Bard no Y01, Y04 e Y05 | merge das trilhas da onda 1 |
+| 3 | fecho | P01, P03, P02 | onda 2 e a release |
+
+**Arquivos quentes entre trilhas** (merge com cuidado): `pkg/ai/prompts/defaults.go` (B03, B11, K03, Y07, Y08, Y13, A02, A10, cada um no seu prompt), `pkg/ai/factory.go` (B13 e B14 no `GetProvider`; Y01 e Y06 no `GetEmbeddingProvider`), `CLAUDE.md`.
+
 ## Como retomar
 
 Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
-1. A próxima tarefa é a primeira `[~]`. Se não houver nenhuma, é a primeira `[ ]` na ordem deste arquivo.
+1. A próxima tarefa de cada trilha é a primeira `[~]` dela. Se não houver nenhuma, é a primeira `[ ]` na ordem da tabela "Ondas".
 2. **Cada tarefa:**
    - escreva primeiro um teste que falhe sem a correção (quando der) e confira que ele falha;
    - corrija;
    - rode o "Verificar" da tarefa;
-   - faça **um commit** `fix(<plugin>): …` com o código, a caixa `[x]` e uma linha no Histórico.
-3. **Ao fechar uma fase:** rode a verificação geral, faça push e abra o PR para a `develop`. É correção, então push e PR vão direto, sem perguntar. Continue na mesma branch depois de trazer a develop (`git merge origin/develop`).
-4. **Antes de começar:** os PRs #216, #217 e #218 precisam estar mergeados, ou esta branch tem de carregá-los (ela saiu da `feat/bard-relatorio-sentinel`, que tem o #217 e o #218). Depois do merge deles, `git merge origin/develop`.
+   - faça **um commit** `fix(<plugin>): …` com o código, a caixa `[x]` e uma linha na tabela da fase no Histórico (uma tabela por fase, para as trilhas não conflitarem).
+3. **Ao fechar uma trilha:** rode a verificação geral, faça push e abra o PR para a `develop`. É correção, então push e PR vão direto, sem perguntar.
+4. **Antes de começar uma onda,** a anterior tem de estar mergeada; as trilhas saem da `origin/develop`.
 
 **Legenda:** `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqueada (motivo no Histórico) · `[-]` descartada (motivo no Histórico)
 
-**Branch:** `feat/correcoes-plugins`. Precisa ser `feat/**`, porque só nessas branches roda o check obrigatório "🧪 Validate Go Code". Um PR por fase.
+**Branches:** sempre `feat/**`, porque só nessas branches roda o check obrigatório "🧪 Validate Go Code". Um PR por trilha.
 
 **Regras deste repo que valem aqui:**
 - Tudo em PT-BR.
@@ -46,10 +71,16 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `.golangci.yml` tem `exclude-dirs: plugins/sentinel/cli`, o que anula o passo "Lint K8s" do pipeline. O gofmt acusa `plugins/sentinel/cli/checks/rbac_allowlist.go` e `plugins/synapstor/internal/scanner/scanner_test.go`.
   - **Fazer:** tirar o exclude, corrigir o que o lint apontar no Sentinel e rodar `gofmt -w` nos dois arquivos.
   - **Verificar:** `golangci-lint run --build-tags k8s plugins/sentinel/cli/...` limpo, com a config v1 do CI. Localmente, migrar uma cópia da config: v2, com o revive `exported` desligado, `exclude-use-default` e os mesmos linters.
+  - **Conferência (26/10):** o v1 não pula o diretório passado como argumento, então o exclude anula só os subpacotes do Sentinel. Viz e Synapstor nunca são lintados no CI: acrescentar `golangci-lint run` dentro de cada módulo. A regex `test` do exclude-dirs também tira o `pkg/testutil`: trocar por `^test/`, corrigindo o que aparecer.
+- [ ] **R01 · Pacote de redação compartilhado** (novo, saiu do B06 e do S11)
+  - **Problema:** `sanitizeContent` (`plugins/bard/history.go:~18-51`) está no `package main` do Bard, e nem o `plugins/bard/tools` nem o Sentinel conseguem importar. Faltam padrões para JWT, credencial em URL, `Authorization:` genérico, AWS secret key e bloco PEM.
+  - **Fazer:** pacote-folha `pkg/redacao` (só `regexp` e `strings`), com `Redigir(string) string`; o Bard passa a usá-lo no histórico e no `/exportar`. Os usos novos ficam com o B06 e o S11.
+  - **Verificar:** testes de tabela com cada padrão e com texto que não pode ser redigido (ex.: `KEYCLOAK_URL=https://kc`).
 
 ### Fase 1 · Contratos entre os plugins e contexto
 
 - [ ] **K01 · Separar "fornece contexto" de "consome contexto"** ✓
+  - **Conferência (26/10), que muda o Fazer:** o Sentinel consome contexto (`plugins/sentinel/cli/main.go:~120-131` lê `Infra.Namespace`/`KubeContext`; `pkg/plugin/sdk/sdk_k8s.go:~23-26` monta o client com `Infra`), e o V02 quer o mesmo para o Viz. Os dois declaram só `command` e hoje não recebem nada: `yby -c staging sentinel scan` ignora o ambiente. Pela decisão do usuário: (1) todo plugin recebe o contexto barato (`environment`, `infra` com o caminho do kube_config, `values`), só quando o ambiente foi pedido por `-c` ou `YBY_ENV`; (2) o caro só com `consome_contexto`; (3) o `yby init` (`cmd/init.go:~229`) continua usando o hook `context` como fornecedor; (4) `ExecuteContextHook` com contexto do chamador, e não `context.Background()`. Testes do manager com o processo auxiliar `GO_WANT_HELPER_PROCESS` (`pkg/plugin/executor_test.go`), que roda no Windows.
   - **Problema:** em `pkg/plugin/manager.go:~275-316`, quem declara o hook `context` recebe o contexto inteiro (`GetCoreContext` + os hooks de todos os plugins). Só o Atlas e o Synapstor declaram, e nenhum dos dois usa o `req.Context` (`plugins/atlas/main.go:~82`, `plugins/synapstor/main.go:~38-45`). Por isso todo `yby atlas …` e `yby synapstor …`, até o `--help`, varre o repo e manda mais de 128 KB a quem descarta. Foi a origem do E2BIG do #217.
   - **Fazer:**
     - campo novo no manifesto (ex.: `consome_contexto bool`, com JSON estável); `needsContext` passa a olhar esse campo e não o hook;
@@ -70,6 +101,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** o Bard declara só `command`, então `ctxData` chega nil (`plugins/bard/main.go:~120-128`) e a seção "Technical Blueprint (Atlas)" do system prompt (`main.go:~290-296`) sai sempre "Nenhum blueprint disponível."
   - **Fazer:** tirar a seção morta; o blueprint chega pela ferramenta (K02). Se o resumo for pequeno e barato, dá para pedir ao Atlas um resumo compacto e em cache na abertura. Decida pelo custo medido.
   - **Verificar:** o system prompt não promete o que não tem; teste do prompt.
+  - **Conferência (26/10):** as seções "Project Overview" e "Backlog & Debt" do `buildSystemPrompt` também estão mortas (leem chaves no topo; os dados viriam em `ctxData["data"]`). Manter o placeholder `{{blueprint_json_summary}}` vazio, por compatibilidade com overrides. Não pedir resumo ao Atlas na abertura.
 - [ ] **K04 · Testes de contrato entre os plugins**
   - **Problema:** os bugs do Sentinel (PR #218), do K02 e do B05 passaram com a suíte verde porque os fixtures inventam formatos.
   - **Fazer:** goldens em `testdata` gerados por quem escreve (o Sentinel grava o JSON do scan e do investigate; o Atlas grava o blueprint) e lidos pelos testes de quem consome (as tools do Bard). Um teste de cada lado: o escritor confere que o golden está atual (com `-update`) e o leitor o consome.
@@ -113,6 +145,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - `exec.CommandContext` com timeout;
     - parâmetros passados por env ou escapados, nunca interpolados crus no `sh -c`.
   - **Verificar:** `loader_test.go` confere `Intents` e a precedência; teste de que o parâmetro `"; rm -rf ~"` não executa nada.
+  - **Conferência (26/10):** entra também o override de prompt do projeto: `prompts.Get` lê `.yby/prompts/bard.*.txt` do diretório atual (`pkg/ai/prompts/prompts.go:~28`), e um repo clonado reescreve o system prompt sem confiança. No Windows não há `sh` sem o Git Bash: rodar sem shell (argv com os parâmetros inteiros) ou recusar com mensagem clara, nunca interpolar.
 - [ ] **B05 · Notas do Synapstor somem quando uma tool roda** ✓
   - **Problema:** `tui/fluxo.go:~232` refaz `entradaFinal` a partir de `entrada` e descarta o bloco de notas montado em `~183-186`.
   - **Fazer:** compor as notas e o resultado da ferramenta.
@@ -124,6 +157,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - restringir `output_format` a vazio, `wide` e `name`;
     - aplicar `sanitizeContent` à saída de toda tool antes do prompt.
   - **Verificar:** testes.
+  - **Conferência (26/10):** usa o `pkg/redacao` do R01. Entra também a injeção de flag: valores da IA que começam com `-` viram flags do kubectl em todas as `kubectl_*` (`--as=system:admin`, `--raw=…`); validar nomes e recursos. O bloqueio cobre `secret`, `secrets` e `sec`.
 - [ ] **B07 · Orçamento de tamanho do que vai à IA**
   - **Problema:** nada limita o tamanho:
     - blueprint com `MarshalIndent`;
@@ -142,6 +176,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `tui/fluxo.go:~239-261` tenta de novo qualquer erro por 30 s. Por dentro, o `RetryProvider` (`pkg/ai/retry_provider.go`) já tenta 429/502/503 por até 2 min. Chave inválida, modelo inexistente e ERR_TOKEN_LIMIT mostram "tentando de novo" quatro vezes.
   - **Fazer:** o `Fluxo` reusa a classificação de erro do `pkg/ai` e marca como permanente o resto, incluindo YbyError de config e de token.
   - **Verificar:** teste com erro permanente: uma tentativa só.
+  - **Conferência (26/10):** o `RetryProvider` (`pkg/ai/retry_provider.go:~105-130`) repete qualquer erro que não seja `APIError`, inclusive o ERR_TOKEN_LIMIT do `TokenAwareProvider`: 2 min de espera antes do erro. Corrigir a classificação no `pkg/ai` primeiro. Os testes que usam `errors.New` esperando nova tentativa (`direto_test.go`, `fluxo_test.go`) passam a usar `APIError`.
 - [ ] **B09 · Subprocessos com contexto e prazo**
   - **Problema:** `invokePlugin` usa `exec.Command` sem ctx (`tools/plugin_helper.go`), e o esc durante um scan deixa o Sentinel rodando. O `EnrichContext` usa `context.Background()` (`main.go:~207,225`) e chama o kubectl em sequência sem `--request-timeout` (`context_enricher.go:~159`), então com o cluster fora do ar a TUI demora a abrir.
   - **Fazer:** `exec.CommandContext` nas tools; `--request-timeout=5s` e prazo total de ~5 s no enriquecimento.
@@ -188,6 +223,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o `index` refaz tudo sozinho quando mudar;
     - `search` e Bard com erro claro: "o índice foi feito com X; rode yby synapstor index --full".
   - **Verificar:** teste com provider falso de dimensão configurável.
+  - **Conferência (26/10):** a identidade do índice (provider, modelo e dimensão) mora no `VectorStore` de `pkg/ai`, e não só no manifest do Synapstor, porque o Bard precisa dela para o erro claro. O Ollama sem config usa o primeiro modelo do `/api/tags`, e o `Name()` não traz o modelo: expor o modelo efetivo pelos decorators. O lado do Bard (mensagem em `tui/fluxo.go`) fica na onda 2.
 - [ ] **Y02 · `--full` refaz de verdade; órfãos; IDs com `/`**
   - **Problema:**
     - o `--full` só regrava pelo mesmo ID (`indexer.go:~175`) e nunca limpa, e só sai do índice o que está no manifest (`indexer.go:~217-224`);
@@ -215,6 +251,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o Bard injeta só o trecho e o caminho, com teto (B07);
     - ignorar `_Footer.md`/`_Sidebar.md`.
   - **Verificar:** testes do split e do corte.
+  - **Conferência (26/10):** apagar os trechos do arquivo (por `source`) antes de readicionar, senão um UKI que encolhe deixa trechos órfãos. O resumo do `index` passa a contar trechos e arquivos. A injeção no Bard (`tui/fluxo.go`) fica na onda 2.
 - [ ] **Y06 · Embeddings: dizer qual é, avisar o download e usar modelo que entende PT-BR**
   - **Problema:** `GetEmbeddingProvider` nunca devolve nil, então `semEmbeddings` e as checagens de nil (`comandos.go:~46-50,152-155`, `search.go:~87-90`) nunca rodam. Sem Ollama, tudo "funciona" com o all-MiniLM-L6-v2, que só entende inglês, contra UKIs em PT-BR. O primeiro uso baixa ~90 MB só com `slog.Info`.
   - **Fazer:**
@@ -302,6 +339,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - erros pelo `pkg/errors`.
     - Se isso ficar grande demais, o mínimo honesto é desligar o `--fix` com mensagem clara e registrar.
   - **Verificar:** testes com fake clientset e owner chain; dry-run no servidor com o reactor do fake.
+  - **Conferência (26/10):** os achados do Polaris já vêm no controlador (Deployment/x), e o `validator.ResultMessage` tem `Mutations`, que podem gerar os patches `polaris/*`; o achado precisa guardar o contêiner. A cadeia de donos serve aos checks internos. Com o Polaris achando algo, hoje o `--fix` não gera patch nenhum. O `Prompter` está em `cmd/`: usar a confirmação do `pkg/ui`.
 - [ ] **S02 · Polaris no contexto e kubeconfig do yby**
   - **Problema:** `backends/polaris.go:~58,81-92` monta o cliente dinâmico com as regras padrão do kubeconfig, ignorando `Infra.KubeContext`/`KubeConfig` e o token cloud que o `sdk.GetKubeClient` respeita (`pkg/plugin/sdk/sdk_k8s.go`). Um mesmo scan mistura dois clusters.
   - **Fazer:** expor `sdk.GetRestConfig()` e montar os dois clientes a partir dele.
@@ -327,6 +365,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o resto do cluster vai para `--scope cluster`, o que conserta a promessa "achados só do namespace pedido" da wiki;
     - campo `scope` no achado.
   - **Verificar:** testes com fake.
+  - **Conferência (26/10):** os checks internos `rbac_cluster_admin`, `rbac_wildcard` e `rbac_secrets_access` também olham o cluster todo; os checks RBAC do Polaris (`clusterrolebinding*`) passam o filtro de `polaris.go:~117`. O OPA não avalia RoleBindings (cluster-admin dado por RoleBinding passa), o wildcard ignora Roles e a mensagem diz sempre "ClusterRole".
 - [ ] **S05 · Severidade e categoria reais do Polaris**
   - **Problema:** a categoria é fixa em "pod-security" (`polaris.go:~190`) e danger/warning viram crítico/alto (`~203-211`), descartando `ResultMessage.Category` (Security, Efficiency, Reliability). "Defina a priority class" sai como alto em segurança; "tag da imagem", como crítico.
   - **Fazer:**
@@ -401,6 +440,8 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Verificar:** teste.
 
 ### Fase 5 · Atlas
+
+> **Conferência (26/10):** os analyzers ficam em `plugins/atlas/discovery/analyzers/*.go`, e não em `plugins/atlas/analysis/` (lá estão só `diagram.go`, `cycles.go`, `metrics.go` e `diff.go`). O A12 (ordem determinística e goldens) e o A11 (`ToSlash`, caminhos relativos) vêm primeiro, porque os outros verificam por golden e mexem nos mesmos IDs. O A10 precisa reescrever o prompt `AtlasRefine` para manter os IDs do rascunho, senão quase toda resposta válida seria recusada.
 
 - [ ] **A01 · Relações falsas e duplicadas no blueprint**
   - **Problema:**
@@ -520,6 +561,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `plugins/viz/main.go:~95` usa só `req.Args` e descarta `req.Context`, onde vem `infra.kube_context`/`infra.namespace` do ambiente (`-c`/`YBY_ENV`). `yby -c staging viz` abre no current-context.
   - **Fazer:** sem `--context`/`-n` explícitos, usar os do pedido. Contexto inexistente → `ContextoInexistenteError`.
   - **Verificar:** teste em `args_test.go`.
+  - **Conferência (26/10):** o Viz nunca recebe contexto (declara só `command`); com o K01, passa a receber o `infra` quando o ambiente for pedido. O cloud dashboard (`cmd/cloud_painel_viz.go:~141`) passa `--context` explícito, e esse caminho não pode regredir.
 - [ ] **V03 · O relógio não faz LIST à toa**
   - **Problema:** todo tick lê a aba ativa (`ui/model.go:~496-497`) e descarta o resultado quando o watch cobre (`~527-532`). Na aba Pods, `GetPods` chama `fetchPodMetrics` (`monitor/client.go:~165-213`), que busca as métricas do cluster todo, nunca mostradas, e calculadas só com o primeiro contêiner.
   - **Fazer:** com a aba vigiada, o sinal de conexão vira `Discovery().ServerVersion()` ou o estado do watch; tirar `fetchPodMetrics` do `GetPods` (apagar, já que não aparece na tela).
@@ -531,6 +573,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Events limitados (N mais recentes ou última hora);
     - medir com benchmark antes e depois.
   - **Verificar:** benchmark (V07) e testes da aba ConfigMaps.
+  - **Conferência (26/10):** a contagem da aba Eventos tem de continuar exata, como o CLAUDE.md promete. Se os benchmarks do V07 não mostrarem problema de memória nos Events, não limitar; o transform não descarta objetos. O tamanho do ConfigMap é calculado no transform, antes de esvaziar `Data`.
 - [ ] **V05 · Leituras com prazo; retry sem erro permanente; mensagem certa para falta de permissão**
   - **Problema:**
     - os `Get*` usam `context.Background()` (`monitor/client.go`) sem timeout no `rest.Config`, e o tick só se reagenda quando a leitura volta (`ui/model.go:~543-544`);
@@ -601,6 +644,51 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ## Histórico
 
+Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges não conflitam.
+
+### Plano
+
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
-| 26/10/2026 | — | Plano criado a partir da revisão dos cinco plugins (um agente por plugin, achados graves conferidos no código). | (este commit) |
+| 26/10/2026 | — | Plano criado a partir da revisão dos cinco plugins (um agente por plugin, achados graves conferidos no código). | 27d6461 |
+| 26/10/2026 | — | Conferência das 71 tarefas no código (7 agentes, só leitura), decisões do usuário, ondas e trilhas paralelas, R01 novo e notas de conferência. | (este commit) |
+
+### Fase 0 · CI e base
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 1 · Contratos
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 2 · Bard
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 3 · Synapstor
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 4 · Sentinel
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 5 · Atlas
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 6 · Viz
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
+
+### Fase 7 · Pendências
+
+| Data | Tarefa | O que foi feito | Commit |
+|---|---|---|---|
