@@ -225,6 +225,7 @@ func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
 	pod := Pod{
 		Name:       p.Name,
 		Namespace:  p.Namespace,
+		UID:        string(p.UID),
 		Status:     statusDoPod(p),
 		CPU:        "N/A",
 		Memory:     "N/A",
@@ -333,6 +334,7 @@ func deploymentDeK8s(d *appsv1.Deployment) Deployment {
 	return Deployment{
 		Name:        d.Name,
 		Namespace:   d.Namespace,
+		UID:         string(d.UID),
 		Replicas:    replicas,
 		Ready:       d.Status.ReadyReplicas,
 		Available:   d.Status.AvailableReplicas,
@@ -375,6 +377,7 @@ func serviceDeK8s(s *corev1.Service) Service {
 	return Service{
 		Name:      s.Name,
 		Namespace: s.Namespace,
+		UID:       string(s.UID),
 		Type:      string(s.Spec.Type),
 		ClusterIP: s.Spec.ClusterIP,
 		Ports:     ports,
@@ -451,6 +454,7 @@ func statefulSetDeK8s(s *appsv1.StatefulSet) StatefulSet {
 	return StatefulSet{
 		Name:        s.Name,
 		Namespace:   s.Namespace,
+		UID:         string(s.UID),
 		Replicas:    replicas,
 		Ready:       s.Status.ReadyReplicas,
 		Atualizados: s.Status.UpdatedReplicas,
@@ -501,6 +505,7 @@ func jobDeK8s(j *batchv1.Job) Job {
 	return Job{
 		Name:        j.Name,
 		Namespace:   j.Namespace,
+		UID:         string(j.UID),
 		Completions: completions,
 		Active:      j.Status.Active,
 		Succeeded:   j.Status.Succeeded,
@@ -551,6 +556,7 @@ func ingressDeK8s(ing *networkingv1.Ingress) Ingress {
 	return Ingress{
 		Name:      ing.Name,
 		Namespace: ing.Namespace,
+		UID:       string(ing.UID),
 		Class:     class,
 		Hosts:     strings.Join(hosts, ", "),
 		Paths:     strings.Join(paths, ", "),
@@ -594,6 +600,7 @@ func configMapDeK8s(cm *corev1.ConfigMap) ConfigMap {
 	return ConfigMap{
 		Name:      cm.Name,
 		Namespace: cm.Namespace,
+		UID:       string(cm.UID),
 		Keys:      len(cm.Data) + len(cm.BinaryData),
 		DataSize:  dataSize,
 		CriadoEm:  cm.CreationTimestamp.Time,

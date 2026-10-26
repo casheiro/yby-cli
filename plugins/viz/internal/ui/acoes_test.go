@@ -485,3 +485,27 @@ func TestTelaAcoes(t *testing.T) {
 		})
 	}
 }
+
+// TestAcao_ExcluirMandaOUIDDaLinha: o UID do objeto da linha chega à API como
+// precondição da exclusão; o homônimo recriado (UID outro) não é apagado.
+func TestAcao_ExcluirMandaOUIDDaLinha(t *testing.T) {
+	cs := fake.NewClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "loja"}})
+	var uid string
+	cs.PrependReactor("delete", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if p := a.(k8stesting.DeleteAction).GetDeleteOptions().Preconditions; p != nil && p.UID != nil {
+			uid = string(*p.UID)
+		}
+		return true, nil, nil
+	})
+	m := NewModel(&clientComAcesso{MockClient: &MockClient{}, cs: cs})
+	alvo := m.alvoDaLinha("pod", itemLista{nome: "api-0", namespace: "loja", obj: monitor.Pod{Name: "api-0", Namespace: "loja", UID: "uid-do-pod"}})
+	if alvo.uid != "uid-do-pod" {
+		t.Fatalf("alvo.uid = %q", alvo.uid)
+	}
+	if r := fazer(m.client, acaoExcluir, alvo, 0); r.falha {
+		t.Fatalf("falhou: %+v", r)
+	}
+	if uid != "uid-do-pod" {
+		t.Errorf("a API recebeu o UID %q", uid)
+	}
+}

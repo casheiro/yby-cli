@@ -553,7 +553,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 6 · Viz
 
-- [ ] **V01 · Exclusão com propagação e UID** ✓
+- [x] **V01 · Exclusão com propagação e UID** ✓
   - **Problema:** `plugins/viz/internal/monitor/actions.go:~29-41` usa `metav1.DeleteOptions{}` em tudo. Job em `batch/v1` deixa os pods órfãos, e a tela promete "O Job e os pods dele somem" (`ui/actions.go:~571`). O alvo é guardado só pelo nome (`ui/actions.go:~108`), então um pod de StatefulSet recriado durante a confirmação é apagado.
   - **Fazer:** `PropagationPolicy: Background` e `Preconditions{UID}`, guardando o UID no alvo (os tipos do monitor ainda não guardam).
   - **Verificar:** teste com reactor do fake conferindo as opções.
@@ -691,6 +691,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | V01 | Exclusão com propagação em segundo plano (Job não deixa pods órfãos) e precondição de UID guardado no alvo da ação | este commit |
 
 ### Fase 7 · Pendências
 
