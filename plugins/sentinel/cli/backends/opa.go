@@ -255,42 +255,43 @@ func (o *OPABackend) IsAvailable() bool {
 	return true
 }
 
-// ScanCluster escaneia o cluster avaliando políticas Rego contra recursos K8s.
+// ScanCluster escaneia o cluster avaliando políticas Rego contra recursos K8s. Quando
+// nenhuma política consegue ler o cluster (fora do ar, sem permissão), devolve a primeira
+// falha; quando só algumas falham, devolve os achados das outras e uma *FalhaParcial.
+// As falhas vão para o log de depuração, nunca para a tela: quem chama decide como
+// mostrá-las.
 func (o *OPABackend) ScanCluster(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error) {
+	politicas := []struct {
+		nome  string
+		rodar func() ([]Finding, error)
+	}{
+		{"cluster-admin", func() ([]Finding, error) { return o.scanClusterAdmin(ctx, client) }},
+		{"acesso a secrets", func() ([]Finding, error) { return o.scanSecretsAccess(ctx, client, namespace) }},
+		{"wildcards", func() ([]Finding, error) { return o.scanWildcard(ctx, client) }},
+		{"default-deny", func() ([]Finding, error) { return o.scanDefaultDeny(ctx, client, namespace) }},
+	}
+
 	var findings []Finding
-
-	// 1. Avaliar política de cluster-admin em ClusterRoleBindings
-	clusterAdminFindings, err := o.scanClusterAdmin(ctx, client)
-	if err != nil {
-		slog.Warn("opa: falha ao escanear cluster-admin", "error", err)
-	} else {
-		findings = append(findings, clusterAdminFindings...)
+	var falhas []string
+	var primeira error
+	for _, p := range politicas {
+		achados, err := p.rodar()
+		if err != nil {
+			slog.Debug("opa: a política não rodou", "politica", p.nome, "erro", err)
+			falhas = append(falhas, p.nome)
+			if primeira == nil {
+				primeira = err
+			}
+			continue
+		}
+		findings = append(findings, achados...)
 	}
-
-	// 2. Avaliar política de acesso a secrets em ClusterRoles e Roles
-	secretsFindings, err := o.scanSecretsAccess(ctx, client, namespace)
-	if err != nil {
-		slog.Warn("opa: falha ao escanear acesso a secrets", "error", err)
-	} else {
-		findings = append(findings, secretsFindings...)
+	switch {
+	case len(falhas) == len(politicas):
+		return nil, primeira
+	case len(falhas) > 0:
+		return findings, &FalhaParcial{Falhas: falhas, Causa: primeira}
 	}
-
-	// 3. Avaliar política de wildcard em ClusterRoles
-	wildcardFindings, err := o.scanWildcard(ctx, client)
-	if err != nil {
-		slog.Warn("opa: falha ao escanear wildcards", "error", err)
-	} else {
-		findings = append(findings, wildcardFindings...)
-	}
-
-	// 4. Avaliar política de default-deny em NetworkPolicies
-	defaultDenyFindings, err := o.scanDefaultDeny(ctx, client, namespace)
-	if err != nil {
-		slog.Warn("opa: falha ao escanear default-deny", "error", err)
-	} else {
-		findings = append(findings, defaultDenyFindings...)
-	}
-
 	return findings, nil
 }
 
@@ -307,7 +308,7 @@ func (o *OPABackend) scanClusterAdmin(ctx context.Context, client kubernetes.Int
 
 		violations, err := evaluatePolicy(ctx, regoClusterAdminPolicy, input)
 		if err != nil {
-			slog.Warn("opa: falha ao avaliar política cluster-admin", "binding", binding.Name, "error", err)
+			slog.Debug("opa: falha ao avaliar política cluster-admin", "binding", binding.Name, "error", err)
 			continue
 		}
 
@@ -341,7 +342,7 @@ func (o *OPABackend) scanSecretsAccess(ctx context.Context, client kubernetes.In
 		input := roleToInput("ClusterRole", role.Name, "", role.Rules)
 		violations, err := evaluatePolicy(ctx, regoSecretsAccessPolicy, input)
 		if err != nil {
-			slog.Warn("opa: falha ao avaliar política secrets", "role", role.Name, "error", err)
+			slog.Debug("opa: falha ao avaliar política secrets", "role", role.Name, "error", err)
 			continue
 		}
 		for _, v := range violations {
@@ -367,7 +368,7 @@ func (o *OPABackend) scanSecretsAccess(ctx context.Context, client kubernetes.In
 		input := roleToInput("Role", role.Name, namespace, role.Rules)
 		violations, err := evaluatePolicy(ctx, regoSecretsAccessPolicy, input)
 		if err != nil {
-			slog.Warn("opa: falha ao avaliar política secrets", "role", role.Name, "error", err)
+			slog.Debug("opa: falha ao avaliar política secrets", "role", role.Name, "error", err)
 			continue
 		}
 		for _, v := range violations {
@@ -399,7 +400,7 @@ func (o *OPABackend) scanWildcard(ctx context.Context, client kubernetes.Interfa
 		input := roleToInput("ClusterRole", role.Name, "", role.Rules)
 		violations, err := evaluatePolicy(ctx, regoWildcardPolicy, input)
 		if err != nil {
-			slog.Warn("opa: falha ao avaliar política wildcard", "role", role.Name, "error", err)
+			slog.Debug("opa: falha ao avaliar política wildcard", "role", role.Name, "error", err)
 			continue
 		}
 		for _, v := range violations {

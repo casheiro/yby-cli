@@ -15,7 +15,7 @@ import (
 // ("aws sts get-caller-identity"); o resto falha.
 func runnerPorComando(saidas map[string]string) *testutil.MockRunner {
 	return &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, nome string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, nome string, args ...string) ([]byte, error) {
 			cmd := nome + " " + strings.Join(args, " ")
 			for prefixo, saida := range saidas {
 				if strings.HasPrefix(cmd, prefixo) {

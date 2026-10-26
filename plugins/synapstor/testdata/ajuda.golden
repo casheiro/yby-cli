@@ -1,0 +1,27 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  SYNAPSTOR[0m                                           [38;2;161;147;121majuda[0m
+
+  [38;2;221;208;181mGestão de conhecimento do projeto: transforma texto e código em UKIs (unidades de conhecimento em markdown, em .synapstor/.uki), indexa os UKIs com embeddings para a busca semântica e o Bard, e confere a qualidade e a idade de cada um.[0m
+
+[38;2;161;147;121mUSO[0m
+  [38;2;221;208;181myby synapstor <comando> [flags][0m
+
+[38;2;161;147;121mCOMANDOS[0m
+  [38;2;221;208;181mcapture "texto"    [0m[38;2;161;147;121mestrutura o texto num UKI usando IA[0m
+  [38;2;221;208;181mstudy "tópico"     [0m[38;2;161;147;121mlê o código sobre o tópico e documenta num UKI usando IA[0m
+  [38;2;221;208;181msearch "consulta"  [0m[38;2;161;147;121mbusca semântica nos UKIs indexados[0m
+  [38;2;221;208;181mindex              [0m[38;2;161;147;121mindexa os UKIs com embeddings (só o que mudou)[0m
+  [38;2;221;208;181mquality            [0m[38;2;161;147;121mdá uma nota de 0 a 100 a cada UKI[0m
+  [38;2;221;208;181mdecay              [0m[38;2;161;147;121maponta os UKIs sem atividade no git há mais de 90 dias[0m
+  [38;2;221;208;181mexport             [0m[38;2;161;147;121mexporta os UKIs para Docusaurus, Obsidian ou markdown[0m
+
+[38;2;161;147;121mEXEMPLOS[0m
+  [38;2;221;208;181myby synapstor capture "o deploy do payments passa pelo Argo CD com sync automático"[0m
+  [38;2;221;208;181myby synapstor study "port-forward"[0m
+  [38;2;221;208;181myby synapstor index[0m
+  [38;2;221;208;181myby synapstor search "como fazer rollback" --top-k 3[0m
+  [38;2;221;208;181myby synapstor export --format obsidian[0m
+
+[38;2;161;147;121mFLAGS[0m
+  [38;2;221;208;181m-h, --help  [0m[38;2;161;147;121mmostra esta ajuda[0m
+
+  [38;2;161;147;121myby synapstor <comando> --help mostra os detalhes de cada um[0m

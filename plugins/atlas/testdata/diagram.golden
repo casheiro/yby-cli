@@ -1,0 +1,16 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  ATLAS[0m                                      [38;2;161;147;121mdiagram · full[0m
+
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mprocurar a infraestrutura[0m   [38;2;161;147;121m3 recursos[0m                 [38;2;161;147;121m1,5 s[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mmontar o diagrama[0m   [38;2;161;147;121m3 nós · 2 relações[0m                 [38;2;161;147;121m1,5 s[0m
+  [38;2;161;147;121m○[0m [38;2;221;208;181mrefinar com a IA[0m   [38;2;161;147;121mdesligado com --no-ai[0m               [38;2;161;147;121m1,5 s[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mgravar o diagrama[0m                                      [38;2;161;147;121m1,5 s[0m
+
+[38;2;161;147;121mDIAGRAMA[0m
+  [38;2;161;147;121marquivo       [0m[38;2;221;208;181m.yby/atlas-diagram.mmd[0m
+  [38;2;161;147;121mrecursos      [0m[38;2;221;208;181m3 de 3 no diagrama[0m
+  [38;2;161;147;121mrelações      [0m[38;2;221;208;181m2[0m
+  [38;2;161;147;121manalisadores  [0m[38;2;221;208;181mhelm[0m
+  [38;2;161;147;121mnível         [0m[38;2;221;208;181mfull[0m
+
+[38;2;161;147;121mPARA VER[0m
+  [38;2;161;147;121m1. [0m[38;2;221;208;181mabra o arquivo em https://mermaid.live ou na extensão Mermaid do VS Code[0m

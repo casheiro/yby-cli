@@ -153,7 +153,7 @@ func TestTeclado_AcoesEmX(t *testing.T) {
 	esperarTela(t, tm, "8 pods")
 	enviar(tm, "2", "x")
 	esperarTela(t, tm, "AÇÕES · Deployment worker", "◆ r  reiniciar", "◇ s  escalar…", "hoje 2 réplicas",
-		"◇ c  copiar nome", "◇ d  excluir…", "pede confirmação", "↵ escolher", "esc fechar")
+		"◇ b  perguntar ao Bard", "por que está 0/2", "◇ c  copiar nome", "◇ d  excluir…", "pede confirmação", "↵ escolher", "esc fechar")
 	enviar(tm, "s")
 	esperarTela(t, tm, "ESCALAR DEPLOYMENT", "Quantas réplicas?", "↵ escalar")
 	// esc sobe um nível: da confirmação para o menu, do menu para a lista.
@@ -165,11 +165,11 @@ func TestTeclado_AcoesEmX(t *testing.T) {
 		t.Fatalf("o esc deveria fechar o menu: etapa %d, alvo %q", m.acao.etapa, m.acao.alvo.nome)
 	}
 
-	// Nós e eventos só copiam o nome.
+	// Nós e eventos só perguntam ao Bard e copiam o nome.
 	tm = abrirViz(t, vizDeTeste(t))
 	enviar(tm, "5", "x")
-	esperarTela(t, tm, "AÇÕES · Node ip-10-0-1-5", "◆ c  copiar nome")
-	if m := fecharViz(t, tm); len(acoesDoTipo(m.acao.alvo.kind)) != 1 {
+	esperarTela(t, tm, "AÇÕES · Node ip-10-0-1-5", "◆ b  perguntar ao Bard", "explicar o estado", "◇ c  copiar nome")
+	if m := fecharViz(t, tm); len(acoesDoTipo(m.acao.alvo.kind)) != 2 {
 		t.Fatalf("nós: %v", acoesDoTipo(m.acao.alvo.kind))
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/cobra/doc"
 )
 
 // genDocsCmd represents the gen-docs command
@@ -39,18 +38,11 @@ var genDocsCmd = &cobra.Command{
 		}
 		defer f.Close()
 
-		// Write Header (o conteúdo do arquivo gerado não muda; o emoji vai por escape)
-		if _, err := f.WriteString("# \U0001F4D6 CLI Reference\n\n"); err != nil {
+		cabecalho := "# Referência da CLI\n\nTodos os comandos do yby, com a mesma ajuda de `yby <comando> --help`.\n\n"
+		if _, err := f.WriteString(cabecalho); err != nil {
 			return errors.Wrap(err, errors.ErrCodeIO, "falha ao gravar a documentação").
 				WithHint("confira se a pasta de destino pode ser gravada")
 		}
-		if _, err := f.WriteString("Referência completa de todos os comandos do Yby CLI.\n\n"); err != nil {
-			return errors.Wrap(err, errors.ErrCodeIO, "falha ao gravar a documentação").
-				WithHint("confira se a pasta de destino pode ser gravada")
-		}
-
-		// Disable AutoGen tag globally
-		rootCmd.DisableAutoGenTag = true
 
 		if err := writeCommandDocs(f, rootCmd); err != nil {
 			return errors.Wrap(err, errors.ErrCodeExec, "falha ao gerar a documentação").
@@ -64,36 +56,98 @@ var genDocsCmd = &cobra.Command{
 	},
 }
 
+// writeCommandDocs grava a seção de cmd e, depois, a de cada subcomando visível. A seção
+// sai da mesma ajudaDe do --help: descrição (com a nota de beta), uso, apelidos,
+// exemplos, flags e subcomandos, em português.
 func writeCommandDocs(f *os.File, cmd *cobra.Command) error {
-	// Generate markdown for current command
-	// We capture stdout/buffer? No, GenMarkdown writes to a writer.
-
-	// Create a header for the command
-	// We want to skip "See Warning" or similar if possible, but standard GenMarkdown is fine.
-
-	// Custom link handler for single-page navigation
-	linkHandler := func(s string) string {
-		// yby_init.md -> #yby-init
-		return "#" + strings.ReplaceAll(strings.TrimSuffix(s, ".md"), "_", "-")
-	}
-
-	if err := doc.GenMarkdownCustom(cmd, f, linkHandler); err != nil {
+	if _, err := f.WriteString(secaoDeReferencia(cmd)); err != nil {
 		return err
 	}
-	if _, err := f.WriteString("\n---\n\n"); err != nil {
-		return err
-	}
-
-	// Recurse children
-	for _, c := range cmd.Commands() {
-		if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {
-			continue
-		}
+	for _, c := range subcomandosDocumentados(cmd) {
 		if err := writeCommandDocs(f, c); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// subcomandosDocumentados são os subcomandos que ganham seção na referência.
+func subcomandosDocumentados(cmd *cobra.Command) []*cobra.Command {
+	var subs []*cobra.Command
+	for _, c := range cmd.Commands() {
+		if c.IsAvailableCommand() && !c.IsAdditionalHelpTopicCommand() {
+			subs = append(subs, c)
+		}
+	}
+	return subs
+}
+
+// secaoDeReferencia monta a seção Markdown de um comando.
+func secaoDeReferencia(cmd *cobra.Command) string {
+	a := ajudaDe(cmd)
+	var b strings.Builder
+	b.WriteString("## " + a.Comando + "\n\n")
+	if d := strings.TrimSpace(a.Descricao); d != "" {
+		b.WriteString(d + "\n\n")
+	}
+	if len(a.Uso) > 0 {
+		b.WriteString("**Uso**\n\n```\n" + strings.Join(a.Uso, "\n") + "\n```\n\n")
+	}
+	if len(a.Apelidos) > 0 {
+		b.WriteString("**Apelidos:** `" + strings.Join(a.Apelidos, "`, `") + "`\n\n")
+	}
+	if ex := semRecuoComum(a.Exemplos); ex != "" {
+		b.WriteString("**Exemplos**\n\n```bash\n" + ex + "\n```\n\n")
+	}
+	tabelaDeFlags(&b, "Flags", a.Flags)
+	tabelaDeFlags(&b, "Flags globais", a.Globais)
+	if subs := subcomandosDocumentados(cmd); len(subs) > 0 {
+		b.WriteString("**Comandos**\n\n")
+		for _, c := range subs {
+			ancora := strings.ReplaceAll(c.CommandPath(), " ", "-")
+			b.WriteString("* [" + c.CommandPath() + "](#" + ancora + ") — " + descricaoCurta(c) + "\n")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("---\n\n")
+	return b.String()
+}
+
+// tabelaDeFlags escreve as flags numa tabela; a barra vertical das descrições é escapada.
+func tabelaDeFlags(b *strings.Builder, titulo string, flags []ui.Termo) {
+	if len(flags) == 0 {
+		return
+	}
+	b.WriteString("**" + titulo + "**\n\n| Flag | Descrição |\n| :--- | :--- |\n")
+	for _, t := range flags {
+		descricao := strings.ReplaceAll(t.Descricao, "|", `\|`)
+		b.WriteString("| `" + strings.TrimSpace(t.Nome) + "` | " + descricao + " |\n")
+	}
+	b.WriteString("\n")
+}
+
+// semRecuoComum tira o recuo que todas as linhas do bloco têm em comum (os exemplos do
+// cobra vêm recuados com dois espaços).
+func semRecuoComum(bloco string) string {
+	linhas := strings.Split(strings.Trim(strings.ReplaceAll(bloco, "\r", ""), "\n"), "\n")
+	recuo := -1
+	for _, l := range linhas {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if n := len(l) - len(strings.TrimLeft(l, " \t")); recuo < 0 || n < recuo {
+			recuo = n
+		}
+	}
+	if recuo < 0 {
+		return ""
+	}
+	for i, l := range linhas {
+		if len(l) >= recuo {
+			linhas[i] = strings.TrimRight(l[recuo:], " \t")
+		}
+	}
+	return strings.Join(linhas, "\n")
 }
 
 func init() {

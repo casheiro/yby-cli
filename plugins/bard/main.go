@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
@@ -95,7 +94,7 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		respond(plugin.PluginManifest{
 			Name:        "bard",
 			Version:     "1.0.0",
-			Description: "Assistente IA interativo com tool calling, TUI e integracao cross-plugin",
+			Description: "Assistente de IA do cluster: conversa, ferramentas e diagnóstico",
 			Hooks:       []string{"command"},
 		})
 		return nil
@@ -103,28 +102,26 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		// Modo visual (tema, ASCII, sem cor) antes de qualquer saída, em todos os modos.
 		configurarModoVisual(os.Getenv)
 
-		// Parsear flags
-		var promptMsg string
-		for i, arg := range req.Args {
-			if arg == "--help" || arg == "-h" || arg == "help" {
-				printBardHelp(os.Stdout)
-				return nil
-			}
-			if arg == "-p" || arg == "--prompt" {
-				promptMsg = strings.TrimSpace(strings.Join(req.Args[i+1:], " "))
-				if promptMsg == "" {
-					prepararStderr()
-					return semPergunta()
-				}
-				break
-			}
+		opcoes, err := lerArgs(req.Args)
+		switch {
+		case err != nil:
+			prepararStderr()
+			return err
+		case opcoes.ajuda:
+			ui.EscreverAjuda(os.Stdout, ajudaBard())
+			return nil
+		case opcoes.temPrompt && opcoes.prompt == "":
+			prepararStderr()
+			return semPergunta()
+		}
+		// O kubectl das ferramentas segue o cluster pedido (--context, --namespace).
+		tools.DefinirKube(opcoes.contexto, opcoes.namespace)
+
+		if opcoes.temPrompt {
+			return runOneShot(req.Context, opcoes.prompt)
 		}
 
-		if promptMsg != "" {
-			return runOneShot(req.Context, promptMsg)
-		}
-
-		return startChat(req.Context)
+		return startChat(req.Context, opcoes)
 	default:
 		return nil
 	}
@@ -165,36 +162,6 @@ func runBatchMode(ctxData map[string]interface{}) error {
 	return d.lote(ctx, entradaLote)
 }
 
-func printBardHelp(w io.Writer) {
-	fmt.Fprint(w, `Bard: assistente de IA para infraestrutura Kubernetes
-
-Uso: yby bard [flags]
-
-O Bard entende o pedido e executa as ferramentas do Yby (sentinel, atlas,
-kubectl) quando preciso; a IA interpreta os resultados.
-
-Flags:
-  -p, --prompt "pergunta"            responde uma pergunta e sai
-
-Modos de uso:
-  yby bard                           conversa na TUI (precisa de um terminal)
-  yby bard -p "lista os pods"        uma pergunta, resposta no stdout
-  echo "pergunta" | yby bard         uma pergunta por linha do stdin
-
-Fora da TUI, só a resposta vai para o stdout; as etapas (num terminal) e os
-erros vão para o stderr.
-
-Ferramentas integradas:
-  sentinel scan/investigate          auditoria de segurança e investigação de pods
-  kubectl get/logs/events/describe   consultas somente leitura ao cluster
-  atlas blueprint                    topologia da infraestrutura
-
-Ferramentas externas (YAML):
-  ~/.yby/tools/*.yaml                do usuário
-  .yby/tools/*.yaml                  do projeto
-`)
-}
-
 // semProvider é o erro de quando nenhum provider de IA responde.
 func semProvider() error {
 	return yerrors.New(yerrors.ErrCodeConfig, "nenhum provider de IA disponível").
@@ -214,10 +181,14 @@ func semTerminal() error {
 		WithHint(`use yby bard -p "pergunta" ou mande as perguntas pelo stdin`)
 }
 
-func startChat(ctxData map[string]interface{}) error {
+func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 	// Sem terminal na entrada, as perguntas vêm do stdin (batch). Com terminal na entrada
 	// e não na saída, nada abre: a TUI desenharia no pipe.
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		if opcoes.pergunta != "" {
+			prepararStderr()
+			return rascunhoSemTerminal()
+		}
 		return runBatchMode(ctxData)
 	}
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -247,7 +218,7 @@ func startChat(ctxData map[string]interface{}) error {
 	bardCfg := loadBardConfig()
 
 	// 3. Enriquecer contexto do cluster (non-fatal)
-	clusterCtx := EnrichContext(ctx)
+	clusterCtx := EnrichContext(ctx, opcoes.contexto, opcoes.namespace)
 
 	// 4. Gerar SessionID para esta sessão interativa
 	sessionID := time.Now().Format("20060102-150405")
@@ -275,14 +246,39 @@ func startChat(ctxData map[string]interface{}) error {
 		Sanitizar:     sanitizeContent,
 		Historico:     contarHistorico(history),
 	}
-	if clusterCtx != nil {
-		tuiConfig.Namespace = clusterCtx.Namespace
-		tuiConfig.Cluster = clusterCtx.Cluster
-	}
+	aplicarCluster(&tuiConfig, clusterCtx, opcoes)
+	tuiConfig.Rascunho, tuiConfig.Voltar = opcoes.pergunta, opcoes.voltar
 	tuiConfig.Contexto = infoContexto(vectorStore, embProvider, storePath, cwd, tuiConfig.Cluster)
 	resolverTerminal()
 	defer logDaConversa()()
-	return tui.Run(provider, vectorStore, tuiConfig)
+	return saidaDaConversa(tui.Run(provider, vectorStore, tuiConfig))
+}
+
+// codigoCtrlC é o código do Bard interrompido pelo ctrl+c (128 + SIGINT), como no -p, no
+// batch e no Viz.
+const codigoCtrlC = 130
+
+// saidaDaConversa é o erro do startChat a partir do da TUI: o ctrl+c sai com 130 sem
+// escrever nada, e o Viz que abriu o Bard (b) fecha também.
+func saidaDaConversa(err error) error {
+	if errors.Is(err, tui.ErrInterrompido) {
+		return saidaSilenciosa{codigo: codigoCtrlC}
+	}
+	return err
+}
+
+// aplicarCluster põe no cabeçalho o cluster ▸ namespace lido do kubectl; o --context e o
+// --namespace valem mesmo quando o kubectl não responde (o Viz sabe onde está).
+func aplicarCluster(c *tui.Config, cc *ClusterContext, opcoes opcoesBard) {
+	if cc != nil {
+		c.Cluster, c.Namespace = cc.Cluster, cc.Namespace
+	}
+	if opcoes.contexto != "" {
+		c.Cluster = opcoes.contexto
+	}
+	if opcoes.namespace != "" {
+		c.Namespace = opcoes.namespace
+	}
 }
 
 // buildSystemPrompt constrói o system prompt enriquecido com contexto e histórico.

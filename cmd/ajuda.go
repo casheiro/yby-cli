@@ -39,6 +39,9 @@ func ajudaDe(c *cobra.Command) ui.Ajuda {
 	if a.Descricao == "" {
 		a.Descricao = c.Short
 	}
+	if nota := notaBeta(c); nota != "" {
+		a.Descricao += "\n\n" + nota
+	}
 	if c.Name() == "help" && strings.HasPrefix(c.Long, "Help provides help") {
 		a.Descricao = "Mostra a ajuda de qualquer comando: " + c.Root().Name() + " help <comando>"
 	}
@@ -80,7 +83,24 @@ func descricaoCurta(c *cobra.Command) string {
 	if c.Name() == "help" && c.Short == "Help about any command" {
 		return "Mostra a ajuda de um comando"
 	}
+	if c.Annotations[anotacaoBeta] != "" {
+		return c.Short + " (beta)"
+	}
 	return c.Short
+}
+
+// anotacaoBeta marca um comando em beta; o valor é a nota que a ajuda dele e a dos
+// subcomandos mostram depois da descrição.
+const anotacaoBeta = "yby/beta"
+
+// notaBeta devolve a nota de beta de c ou do primeiro ancestral marcado.
+func notaBeta(c *cobra.Command) string {
+	for ; c != nil; c = c.Parent() {
+		if nota := c.Annotations[anotacaoBeta]; nota != "" {
+			return nota
+		}
+	}
+	return ""
 }
 
 // tiposDeFlag traduz o nome do valor que o pflag mostra ao lado da flag.

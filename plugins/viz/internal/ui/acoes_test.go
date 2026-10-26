@@ -200,8 +200,8 @@ func TestAcao_EscalarValidaONumero(t *testing.T) {
 // excluir apaga cada tipo que o menu oferece (o ingress também).
 func TestAcao_MenuContextual(t *testing.T) {
 	quer := map[ResourceTab]string{
-		TabPods: "c d", TabDeployments: "r s c d", TabStatefulSets: "r s c d", TabServices: "c d", TabNodes: "c",
-		TabJobs: "c d", TabIngresses: "c d", TabConfigMaps: "c d", TabEvents: "c",
+		TabPods: "b c d", TabDeployments: "r s b c d", TabStatefulSets: "r s b c d", TabServices: "b c d", TabNodes: "b c",
+		TabJobs: "b c d", TabIngresses: "b c d", TabConfigMaps: "b c d", TabEvents: "b c",
 	}
 	for tab, q := range quer {
 		var letras []string
@@ -255,7 +255,7 @@ func TestAcao_CopiarNome(t *testing.T) {
 		t.Fatalf("copiado %q, resultado %#v", copiado, res)
 	}
 	m.copiar = func(string) error { return fmt.Errorf("sem terminal") }
-	_, cmd = teclas(t, m, "x", "enter")
+	_, cmd = teclas(t, m, "x", "j", "enter")
 	if res := cmd().(resultadoAcaoMsg); !res.falha || !strings.Contains(res.texto, "sem terminal") {
 		t.Fatalf("falha ao copiar: %#v", res)
 	}

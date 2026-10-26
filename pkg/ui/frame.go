@@ -152,10 +152,11 @@ func KeyHints(largura int, teclas ...key.Binding) string {
 }
 
 // TeclasDoPainel devolve as teclas de um painel (o rodapé do detalhe do Viz: "l logs  y yaml
-// e eventos"), no formato da legenda mas sem "q sair" nem "? mais"; descarta teclas do fim
-// até caber em largura.
+// e eventos  b perguntar ao Bard"), no formato da legenda mas sem "q sair" nem "? mais";
+// descarta teclas do fim só quando não cabem em largura (o painel não tem o limite de 3
+// teclas da legenda compacta).
 func TeclasDoPainel(largura int, teclas ...key.Binding) string {
-	return legendaDeTeclas(largura, key.Binding{}, false, teclas...)
+	return montarLegenda(largura, false, key.Binding{}, false, teclas...)
 }
 
 // Partes reúne o conteúdo já renderizado de uma tela para Moldura.

@@ -63,11 +63,7 @@ func ollamaRouterHandlerFull(tagsHandler, generateHandler, embedHandler, embeddi
 func tagsOK(modelName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp := ollamaTagsResponse{
-			Models: []struct {
-				Name string `json:"name"`
-			}{
-				{Name: modelName},
-			},
+			Models: []ollamaModelo{{Name: modelName}},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)

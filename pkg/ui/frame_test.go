@@ -382,4 +382,9 @@ func TestTeclasDoPainel(t *testing.T) {
 	if got := strings.TrimRight(TeclasDoPainel(16, k.Logs, k.Yaml, k.Eventos), " "); got != "l logs  y yaml" {
 		t.Errorf("teclas do painel estreito: %q", got)
 	}
+	// O painel tem menos de 80 colunas, mas não é a legenda compacta: as quatro teclas da
+	// folha VizPods ficam quando cabem.
+	if got := strings.TrimRight(TeclasDoPainel(53, k.Logs, k.Yaml, k.Eventos, k.Bard), " "); got != "l logs  y yaml  e eventos  b perguntar ao Bard" {
+		t.Errorf("teclas do painel do pod: %q", got)
+	}
 }

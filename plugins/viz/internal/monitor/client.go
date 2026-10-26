@@ -42,11 +42,17 @@ type Client interface {
 type K8sClient struct {
 	clientset  kubernetes.Interface
 	restConfig *rest.Config
+	kubeconfig string // o arquivo pedido no --kubeconfig (vazio: KUBECONFIG ou ~/.kube/config)
 	contexto   string // contexto atual do kubeconfig
 	namespace  string // namespace do contexto atual (vazio: todos)
 	lerLog     lerLog // lê o log de um contêiner; nil usa lerLogs (os testes trocam)
 	// intervaloLote é o tempo entre lotes do watch; zero usa intervaloDoLote.
 	intervaloLote time.Duration
+}
+
+// Kubeconfig devolve o arquivo pedido no --kubeconfig (vazio: o padrão do kubectl).
+func (c *K8sClient) Kubeconfig() string {
+	return c.kubeconfig
 }
 
 // Contexto devolve o nome do contexto do kubeconfig em uso (vazio se não há).
@@ -132,7 +138,7 @@ func NovoK8sClient(c Conexao) (*K8sClient, error) {
 	}
 	slog.Debug("viz: conectando ao cluster", "kubeconfig", regras.GetLoadingPrecedence(), "contexto", contexto, "namespace", namespace, "servidor", config.Host)
 
-	return &K8sClient{clientset: clientset, restConfig: config, contexto: contexto, namespace: namespace}, nil
+	return &K8sClient{clientset: clientset, restConfig: config, kubeconfig: c.Kubeconfig, contexto: contexto, namespace: namespace}, nil
 }
 
 // podMetricsResult representa a resposta da API de métricas de pods.

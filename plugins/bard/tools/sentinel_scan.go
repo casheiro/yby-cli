@@ -26,24 +26,23 @@ func executeSentinelScan(ctx context.Context, params map[string]string) (string,
 		return "", fmt.Errorf("sentinel nao disponivel (paths tentados: %w)", err)
 	}
 
-	args := []string{"scan"}
-	if ns := params["namespace"]; ns != "" {
-		args = append(args, "-n", ns)
-	}
-	args = append(args, "-o", "json")
-
-	req := plugin.PluginRequest{
-		Hook: "command",
-		Args: args,
-	}
-
-	resp, err := invokePlugin(binaryPath, req)
+	resp, err := invokePlugin(binaryPath, pedidoSentinelScan(params))
 	if err != nil {
 		return "", err
 	}
 
 	// Formatar resultado como texto legível
 	return formatScanResults(resp.Data), nil
+}
+
+// pedidoSentinelScan é o pedido ao Sentinel para o scan, no cluster e no namespace da
+// sessão quando a IA não diz o namespace.
+func pedidoSentinelScan(params map[string]string) plugin.PluginRequest {
+	args := []string{"scan"}
+	if ns := namespaceDe(params); ns != "" {
+		args = append(args, "-n", ns)
+	}
+	return pedidoAoPlugin(append(args, "-o", "json"))
 }
 
 // formatScanResults converte os dados do scan em texto legível.

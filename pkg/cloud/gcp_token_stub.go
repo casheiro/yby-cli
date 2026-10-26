@@ -19,7 +19,7 @@ type GCPTokenGenerator struct {
 // GenerateToken gera um token GCP executando `gcloud auth print-access-token` via CLI.
 // Como o comando não retorna expiração explícita, usa TTL de 1 hora.
 func (g *GCPTokenGenerator) GenerateToken(ctx context.Context) (*Token, error) {
-	out, err := g.Runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token")
+	out, err := saidaDoCLI(ctx, g.Runner, "gcloud", "auth", "print-access-token")
 	if err != nil {
 		return nil, fmt.Errorf("gcloud auth print-access-token: %w", err)
 	}

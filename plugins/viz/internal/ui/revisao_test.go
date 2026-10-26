@@ -405,7 +405,9 @@ func TestAjuda_InterrogacaoMostraTodasAsTeclas(t *testing.T) {
 	m, _ = teclas(t, m, "2")
 	linhas := strings.Split(ansi.Strip(m.View()), "\n")
 	legenda := strings.Join(strings.Fields(linhas[len(linhas)-1]), " ")
-	if legenda != "↑↓ mover ↵ abrir / buscar f filtrar x ações n namespace ? ajuda q sair" {
+	// abaixo de 120 colunas o painel não está ao lado: o b dele vem para a
+	// legenda da lista quando cabe inteiro
+	if legenda != "↑↓ mover ↵ abrir / buscar f filtrar x ações n namespace b perguntar ao Bard ? ajuda q sair" {
 		t.Errorf("legenda dos Deployments: %q", legenda)
 	}
 	m.width = 72
@@ -415,7 +417,7 @@ func TestAjuda_InterrogacaoMostraTodasAsTeclas(t *testing.T) {
 	m.width = 100
 	m, _ = teclas(t, m, "?")
 	tela := ansi.Strip(m.View())
-	for _, quer := range []string{"TECLAS · DEPLOYMENTS", "EM TODA TUI", "LISTA · DEPLOYMENTS", "r reiniciar · s escalar · c copiar nome · d excluir",
+	for _, quer := range []string{"TECLAS · DEPLOYMENTS", "EM TODA TUI", "LISTA · DEPLOYMENTS", "r reiniciar · s escalar · b perguntar ao Bard · c copiar nome · d excluir",
 		"filtrar por label", "trocar de aba", "ctrl+c", "sai (só no nível de cima)", "esc fechar", "ctrl+c sair"} {
 		if !strings.Contains(tela, quer) {
 			t.Errorf("a ajuda deveria ter %q:\n%s", quer, tela)

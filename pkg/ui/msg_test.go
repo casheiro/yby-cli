@@ -114,6 +114,18 @@ func TestMsgSummaryPlural(t *testing.T) {
 	}
 }
 
+func TestMsgSummaryCom(t *testing.T) {
+	usarTema(t, true, termenv.TrueColor, false)
+	var b bytes.Buffer
+	SummaryCom(&b, []ParteResumo{{"2 críticos", CheckErro}, {"1 alto", CheckAviso}, {"3 baixos", CheckNeutro}}, "")
+	s := S()
+	esperado := "\n" + s.Rotulo.Render("RESUMO") + "  " + s.Erro.Render("2 críticos") + s.TintaSuave.Render(" · ") +
+		s.Aviso.Render("1 alto") + s.TintaSuave.Render(" · ") + s.TintaSuave.Render("3 baixos") + "\n"
+	if b.String() != esperado {
+		t.Errorf("saída inesperada:\n%q\nesperado:\n%q", b.String(), esperado)
+	}
+}
+
 func TestCheckColunaEstourada(t *testing.T) {
 	usarTema(t, true, termenv.Ascii, false)
 	var b bytes.Buffer
@@ -174,6 +186,19 @@ func TestRenderErrorVariacoes(t *testing.T) {
 	out = RenderError(yerrors.New(yerrors.ErrCodeCmdNotFound, "falhou"))
 	if strings.Contains(out, "detalhes") {
 		t.Errorf("sem causa não deveria haver detalhes:\n%s", out)
+	}
+	// num plugin, a dica aponta o YBY_LOG_LEVEL, e um hint que já o traz não ganha a linha
+	anterior := DefinirDicaDoLog("rode de novo com YBY_LOG_LEVEL=debug")
+	out = RenderError(yerrors.Wrap(stderrors.New("boom"), yerrors.ErrCodeCmdNotFound, "falhou"))
+	if !strings.Contains(out, "  detalhes  rode de novo com YBY_LOG_LEVEL=debug\n") || strings.Contains(out, "--log-level") {
+		t.Errorf("a dica de depuração trocada não vale:\n%s", out)
+	}
+	out = RenderError(yerrors.Wrap(stderrors.New("boom"), yerrors.ErrCodeCmdNotFound, "falhou").WithHint("rode com YBY_LOG_LEVEL=debug"))
+	if strings.Contains(out, "detalhes") {
+		t.Errorf("detalhes repete a dica do hint:\n%s", out)
+	}
+	if DefinirDicaDoLog(anterior) != "rode de novo com YBY_LOG_LEVEL=debug" {
+		t.Error("DefinirDicaDoLog devolve a dica anterior")
 	}
 	// causa YbyError aninhada: mensagens encadeadas, sem o prefixo [CODE]
 	interno := yerrors.Wrap(stderrors.New("arquivo ausente"), yerrors.ErrCodePlugin, "origem não encontrada")

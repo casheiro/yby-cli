@@ -1,0 +1,26 @@
+◆ YBY  SENTINEL        investigate · payments/worker-5d8b6-q7tvn
+
+  ✓ logs   1 linha                 1,5 s
+  ✓ eventos   1 evento             1,5 s
+  ○ métricas   indisponíveis       1,5 s
+  ✓ análise da IA   falso          1,5 s
+
+┌ DIAGNÓSTICO ─────────────────────────┐
+│ O worker não encontra o banco de     │
+│ dados                                │
+│                                      │
+│ DB_HOST aponta para localhost; o     │
+│ contêiner sai com código 1 ao abrir  │
+│ a conexão e o kubelet o reinicia a   │
+│ cada 30 s.                           │
+│                                      │
+│ confiança  ━━━━━━━━━━━━━━━━┄┄┄┄  82% │
+└──────────────────────────────────────┘
+
+┌ SUGESTÃO DE CORREÇÃO ────────────────┐
+│ Aponte DB_HOST para o Service do     │
+│ Postgres no namespace payments.      │
+└──────────────────────────────────────┘
+
+COMANDO SUGERIDO
+  kubectl -n payments set env deploy/worker DB_HOST=postgres.payments.svc

@@ -176,14 +176,3 @@ func TestPluginResponse_ComErro(t *testing.T) {
 		t.Error("data deve ser nil quando há erro")
 	}
 }
-
-// TestPrintHelp_NaoPanica verifica que printHelp não causa panic.
-func TestPrintHelp_NaoPanica(t *testing.T) {
-	// printHelp() escreve em stdout; verificar que não causa panic
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("printHelp() causou panic: %v", r)
-		}
-	}()
-	printHelp()
-}

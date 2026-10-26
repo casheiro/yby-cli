@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/testutil"
@@ -74,7 +75,7 @@ func TestGCPProvider_CLIVersion_Error(t *testing.T) {
 func TestGCPProvider_ValidateCredentials_Active(t *testing.T) {
 	const authJSON = `[{"account":"alice@example.com","status":"ACTIVE"},{"account":"bob@example.com","status":""}]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(authJSON), nil
 		},
 	}
@@ -97,7 +98,7 @@ func TestGCPProvider_ValidateCredentials_Active(t *testing.T) {
 func TestGCPProvider_ValidateCredentials_NoActive(t *testing.T) {
 	const authJSON = `[{"account":"alice@example.com","status":""}]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(authJSON), nil
 		},
 	}
@@ -113,7 +114,7 @@ func TestGCPProvider_ValidateCredentials_NoActive(t *testing.T) {
 
 func TestGCPProvider_ValidateCredentials_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`[]`), nil
 		},
 	}
@@ -129,7 +130,7 @@ func TestGCPProvider_ValidateCredentials_Empty(t *testing.T) {
 
 func TestGCPProvider_ValidateCredentials_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("não autenticado")
 		},
 	}
@@ -148,7 +149,7 @@ func TestGCPProvider_ValidateCredentials_CLIError(t *testing.T) {
 
 func TestGCPProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -171,7 +172,7 @@ func TestGCPProvider_ListClusters(t *testing.T) {
 		{"name":"staging-gke","location":"us-east1","currentMasterVersion":"1.28.5-gke.1000","status":"RUNNING"}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -208,7 +209,7 @@ func TestGCPProvider_ListClusters_ProjetoDoSelfLink(t *testing.T) {
 		{"name":"sem-link","location":"us-east1","status":"RUNNING"}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -225,28 +226,33 @@ func TestGCPProvider_ListClusters_ProjetoDoSelfLink(t *testing.T) {
 	}
 }
 
+// A região filtra a lista: entram os clusters regionais e os zonais dela, e o gcloud
+// lista todas as locations (com --region traria só os regionais).
 func TestGCPProvider_ListClusters_WithRegion(t *testing.T) {
 	var capturedArgs []string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			capturedArgs = args
-			return []byte(`[]`), nil
+			return []byte(`[{"name":"regional","location":"us-central1"},{"name":"zonal","location":"us-central1-a"},
+				{"name":"outra","location":"us-east1-b"},{"name":"parecida","location":"us-central10"}]`), nil
 		},
 	}
 	p := &gcpProvider{runner: runner}
-	_, err := p.ListClusters(context.Background(), ListOptions{Project: "proj", Region: "us-central1"})
+	clusters, err := p.ListClusters(context.Background(), ListOptions{Project: "proj", Region: "us-central1"})
 	if err != nil {
 		t.Fatalf("ListClusters() error = %v, want nil", err)
 	}
-	// Verifica --region us-central1
-	regionFound := false
-	for i, arg := range capturedArgs {
-		if arg == "--region" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "us-central1" {
-			regionFound = true
-		}
+	var nomes []string
+	for _, c := range clusters {
+		nomes = append(nomes, c.Name)
 	}
-	if !regionFound {
-		t.Errorf("--region us-central1 não encontrado nos args: %v", capturedArgs)
+	if strings.Join(nomes, ",") != "regional,zonal" {
+		t.Errorf("clusters = %v, quer regional e zonal", nomes)
+	}
+	for _, arg := range capturedArgs {
+		if arg == "--region" || arg == "--location" || arg == "--zone" {
+			t.Errorf("a região vai no filtro, não no gcloud: %v", capturedArgs)
+		}
 	}
 	// Verifica --project proj
 	projectFound := false
@@ -262,7 +268,7 @@ func TestGCPProvider_ListClusters_WithRegion(t *testing.T) {
 
 func TestGCPProvider_ListClusters_NoProjectNoRegion(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
 			// Verifica que --project e --region não estão presentes
 			for _, arg := range args {
 				if arg == "--project" || arg == "--region" {
@@ -281,7 +287,7 @@ func TestGCPProvider_ListClusters_NoProjectNoRegion(t *testing.T) {
 
 func TestGCPProvider_ListClusters_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`[]`), nil
 		},
 	}
@@ -297,7 +303,7 @@ func TestGCPProvider_ListClusters_Empty(t *testing.T) {
 
 func TestGCPProvider_ListClusters_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("erro de rede")
 		},
 	}
@@ -335,15 +341,15 @@ func TestGCPProvider_ConfigureKubeconfig(t *testing.T) {
 	if !nameFound {
 		t.Errorf("prod-gke não encontrado nos args: %v", capturedArgs)
 	}
-	// Verifica --region us-central1
+	// Verifica --location us-central1 (aceita zona e região)
 	regionFound := false
 	for i, arg := range capturedArgs {
-		if arg == "--region" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "us-central1" {
+		if arg == "--location" && i+1 < len(capturedArgs) && capturedArgs[i+1] == "us-central1" {
 			regionFound = true
 		}
 	}
 	if !regionFound {
-		t.Errorf("--region us-central1 não encontrado nos args: %v", capturedArgs)
+		t.Errorf("--location us-central1 não encontrado nos args: %v", capturedArgs)
 	}
 	// Verifica --project my-project
 	projectFound := false
@@ -373,7 +379,7 @@ func TestGCPProvider_ConfigureKubeconfig_Error(t *testing.T) {
 func TestGCPProvider_RefreshToken(t *testing.T) {
 	var capturedCmd string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, cmd string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, cmd string, _ ...string) ([]byte, error) {
 			capturedCmd = cmd
 			return []byte("ya29.a0...token"), nil
 		},
@@ -390,7 +396,7 @@ func TestGCPProvider_RefreshToken(t *testing.T) {
 
 func TestGCPProvider_RefreshToken_Error(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("token expirado")
 		},
 	}

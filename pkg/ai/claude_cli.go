@@ -11,6 +11,7 @@ import (
 // ClaudeCLIProvider implementa o Provider usando o Claude Code CLI (claude -p).
 type ClaudeCLIProvider struct {
 	command string
+	model   string // vazio deixa o CLI escolher o modelo
 }
 
 // NewClaudeCLIProvider cria um provider que usa o Claude Code CLI.
@@ -29,6 +30,15 @@ func (p *ClaudeCLIProvider) IsAvailable(_ context.Context) bool {
 	return err == nil
 }
 
+// args monta os argumentos do claude: -p com o prompt e, com modelo escolhido, --model
+// (o CLI aceita os apelidos sonnet, opus e haiku e os nomes completos).
+func (p *ClaudeCLIProvider) args(prompt string) []string {
+	if p.model == "" {
+		return []string{"-p", prompt}
+	}
+	return []string{"--model", p.model, "-p", prompt}
+}
+
 // GenerateGovernance não é suportado pelo CLI.
 func (p *ClaudeCLIProvider) GenerateGovernance(_ context.Context, _ string) (*GovernanceBlueprint, error) {
 	return nil, fmt.Errorf("GenerateGovernance nao suportado pelo %s", p.Name())
@@ -38,7 +48,7 @@ func (p *ClaudeCLIProvider) GenerateGovernance(_ context.Context, _ string) (*Go
 func (p *ClaudeCLIProvider) Completion(_ context.Context, systemPrompt, userPrompt string) (string, error) {
 	fullPrompt := systemPrompt + "\n\n" + userPrompt
 
-	cmd := exec.Command(p.command, "-p", fullPrompt)
+	cmd := exec.Command(p.command, p.args(fullPrompt)...)
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -59,7 +69,7 @@ func (p *ClaudeCLIProvider) Completion(_ context.Context, systemPrompt, userProm
 func (p *ClaudeCLIProvider) StreamCompletion(_ context.Context, systemPrompt, userPrompt string, out io.Writer) error {
 	fullPrompt := systemPrompt + "\n\n" + userPrompt
 
-	cmd := exec.Command(p.command, "-p", fullPrompt)
+	cmd := exec.Command(p.command, p.args(fullPrompt)...)
 	cmd.Stdout = out
 
 	var stderr strings.Builder

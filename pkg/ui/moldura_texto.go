@@ -86,8 +86,13 @@ func KeyHintsCom(largura int, sair key.Binding, teclas ...key.Binding) string {
 // letra ou fecha a camada), o "? mais" nunca aparece: quando não cabe, as teclas do fim
 // somem sem aviso.
 func legendaDeTeclas(largura int, sair key.Binding, comMais bool, teclas ...key.Binding) string {
+	return montarLegenda(largura, largura < LarguraColuna, sair, comMais, teclas...)
+}
+
+// montarLegenda implementa legendaDeTeclas; compacto (a janela abaixo de 80 colunas)
+// guarda só 3 teclas. Um painel é estreito numa janela larga: ele não é compacto.
+func montarLegenda(largura int, compacto bool, sair key.Binding, comMais bool, teclas ...key.Binding) string {
 	ajuda := DefaultKeys().Global.Ajuda
-	compacto := largura < LarguraColuna
 
 	var itens []key.Binding
 	for _, b := range teclas {

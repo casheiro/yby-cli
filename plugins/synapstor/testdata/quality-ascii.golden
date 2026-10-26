@@ -1,0 +1,9 @@
+* [1mYBY  SYNAPSTOR[0m                                quality · 3 UKIs
+
+NOTAS
+  v Deploy com Argo CD  82/100
+  ! Charts do Helm      45/100   sem exemplos e metadados
+  x Rascunho de redis   0/100    sem contexto, exemplos, seções, links e metadados · texto curto
+
+RESUMO  1 bom · 1 a melhorar · 1 fraco  · média 42/100
+  pasta  .synapstor/.uki

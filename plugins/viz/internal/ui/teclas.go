@@ -166,6 +166,8 @@ func (m Model) teclaLista(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.abrirQuadroDaSelecao(quadroYAML)
 	case key.Matches(k, l.Eventos):
 		return m.abrirQuadroDaSelecao(quadroEventos)
+	case key.Matches(k, l.Bard):
+		return m.perguntarAoBard()
 	}
 	m.actionFeedback = m.avisoTeclaAntiga(k.String())
 	return m, nil

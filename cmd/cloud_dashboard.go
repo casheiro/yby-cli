@@ -106,7 +106,7 @@ func (c clusterPainel) chave() string {
 func fontesReais(runner shared.Runner) fontesPainel {
 	return fontesPainel{
 		ler: func(ctx gocontext.Context) leituraPainel {
-			return lerClouds(ctx, runner, ambientesCloud(), cloud.NewAuditLogger(), time.Now())
+			return lerClouds(ctx, runner, ambientesCloud(), auditoriaCloud(), time.Now())
 		},
 		renovar: func(ctx gocontext.Context, c clusterPainel) error {
 			p := obterProviderCloud(runner, c.info.Provider)
@@ -114,11 +114,11 @@ func fontesReais(runner shared.Runner) fontesPainel {
 				return erroProviderDesconhecido(c.info.Provider)
 			}
 			err := p.RefreshToken(ctx, c.info)
-			registrarRenovacao(cloud.NewAuditLogger(), c, time.Now(), err)
+			registrarRenovacao(auditoriaCloud(), c, time.Now(), err)
 			return err
 		},
 		auditoria: func() []cloud.CloudAuditEvent {
-			return lerAuditoria(cloud.NewAuditLogger(), time.Now())
+			return lerAuditoria(auditoriaCloud(), time.Now())
 		},
 		contextos: contextosDoKubeconfig,
 		abrirViz:  abrirVizPeloManager,

@@ -1,0 +1,12 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  SYNAPSTOR[0m                                         [38;2;161;147;121mcapture[0m
+
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mestruturar com a IA[0m   [38;2;161;147;121mfalso[0m                            [38;2;161;147;121m1,5 s[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mconferir a resposta[0m                                    [38;2;161;147;121m1,5 s[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mgravar o UKI[0m                                           [38;2;161;147;121m1,5 s[0m
+
+[38;2;161;147;121mUKI GRAVADO[0m
+  [38;2;161;147;121mtítulo   [0m[38;2;221;208;181mRollback do payments[0m
+  [38;2;161;147;121marquivo  [0m[38;2;221;208;181m.synapstor/.uki/UKI-1761390300-rollback.md[0m
+
+[38;2;161;147;121mPRÓXIMO PASSO[0m
+  [38;2;161;147;121m1. [0m[38;2;221;208;181myby synapstor index põe o UKI na busca e no Bard[0m

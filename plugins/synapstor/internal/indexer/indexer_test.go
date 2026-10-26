@@ -144,8 +144,9 @@ func TestRun_SemArquivos(t *testing.T) {
 	if report.FilesScanned != 0 {
 		t.Errorf("esperado 0 arquivos escaneados, obtido %d", report.FilesScanned)
 	}
-	if report.Duration <= 0 {
-		t.Error("esperado Duration positivo")
+	// sem arquivos, a volta é rápida o bastante para o relógio do Windows medir 0
+	if report.Duration < 0 {
+		t.Error("esperado Duration não negativo")
 	}
 }
 

@@ -1,16 +1,34 @@
 package cloud
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
 // Os CLIs das clouds (aws, az, gcloud) dizem o motivo da falha na saída, e o código de
 // saída sozinho ("exit status 255") não ajuda ninguém. erroDoCLI junta ao erro a última
 // linha útil da saída, para a frase da linha de estado, o toast e o audit log contarem o
 // motivo (ex.: o SSO vencido da AWS).
+
+// saidaDoCLI roda o CLI e devolve só o stdout: os avisos que ele escreve no stderr
+// ("WARNING: …" do az, o aviso de atualização do gcloud) não entram no JSON nem no token.
+// Na falha, devolve também o stderr (o runner real o guarda no ExitError), para o
+// erroDoCLI achar a linha de erro.
+func saidaDoCLI(ctx context.Context, runner shared.Runner, nome string, args ...string) ([]byte, error) {
+	out, err := runner.RunStdinOutput(ctx, "", nome, args...)
+	var ee *exec.ExitError
+	if err != nil && errors.As(err, &ee) && len(ee.Stderr) > 0 {
+		out = append(append(out, '\n'), ee.Stderr...)
+	}
+	return out, err
+}
 
 // maxSaidaNoErro é o tamanho máximo, em caracteres, da linha da saída levada ao erro.
 const maxSaidaNoErro = 240
@@ -31,30 +49,52 @@ func erroDoCLI(comando string, saida []byte, err error) error {
 	return fmt.Errorf("%s: %w", comando, err)
 }
 
-// linhaUtilDaSaida é a última linha não vazia da saída que não é pedaço de JSON (a saída é
-// a combinada, e o stdout pode ter vindo antes do erro), sem segredos e aparada.
+// linhaDeErro casa com a linha em que o CLI diz o motivo: "ERROR: (gcloud.auth.print-access-token)
+// You do not currently have an active account selected." do gcloud, "ERROR: …" do az e
+// "An error occurred (…)" e "Error when …" da aws. O gcloud escreve depois dela a ajuda
+// ("Please run: … to select an already authenticated account to use."), que não diz nada.
+var linhaDeErro = regexp.MustCompile(`^(?:ERROR:|[Ee]rror\b|An error occurred\b)`)
+
+// ruidoDoGcloud é o começo da linha de erro do gcloud que repete o comando e o envelope da
+// resposta da API: "ERROR: (gcloud.container.clusters.list) ResponseError: code=403, message=".
+var ruidoDoGcloud = regexp.MustCompile(`^ERROR: \(gcloud\.[^)]*\)\s*(?:ResponseError: code=\d+, message=)?`)
+
+// linhaUtilDaSaida é a última linha de erro da saída ou, sem ela, a última linha não vazia
+// que não é pedaço de JSON (a saída é a combinada, e o stdout pode ter vindo antes do erro),
+// sem segredos e aparada.
 func linhaUtilDaSaida(saida []byte) string {
 	linhas := strings.Split(strings.ReplaceAll(string(saida), "\r\n", "\n"), "\n")
+	l := ""
 	for i := len(linhas) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(linhas[i])
-		if l == "" || pedacoDeJSON(l) {
+		atual := strings.TrimSpace(linhas[i])
+		if atual == "" || pedacoDeJSON(atual) {
 			continue
 		}
-		l = segredosNaSaida.ReplaceAllStringFunc(l, func(s string) string {
-			m := segredosNaSaida.FindStringSubmatch(s)
-			for _, prefixo := range m[1:] {
-				if prefixo != "" {
-					return prefixo + "***"
-				}
-			}
-			return "***"
-		})
-		if utf8.RuneCountInString(l) > maxSaidaNoErro {
-			l = string([]rune(l)[:maxSaidaNoErro-1]) + "…"
+		if l == "" {
+			l = atual
 		}
-		return l
+		if linhaDeErro.MatchString(atual) {
+			l = atual
+			break
+		}
 	}
-	return ""
+	if l == "" {
+		return ""
+	}
+	l = ruidoDoGcloud.ReplaceAllString(l, "")
+	l = segredosNaSaida.ReplaceAllStringFunc(l, func(s string) string {
+		m := segredosNaSaida.FindStringSubmatch(s)
+		for _, prefixo := range m[1:] {
+			if prefixo != "" {
+				return prefixo + "***"
+			}
+		}
+		return "***"
+	})
+	if utf8.RuneCountInString(l) > maxSaidaNoErro {
+		l = string([]rune(l)[:maxSaidaNoErro-1]) + "…"
+	}
+	return l
 }
 
 // pedacoDeJSON diz se a linha é parte de um JSON impresso (chaves, colchetes, "campo": valor).

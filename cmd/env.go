@@ -196,7 +196,7 @@ func renderEnvShow(w io.Writer, name string, env *ybycontext.Environment, creden
 	}
 	fmt.Fprintln(w)
 	if !credenciais.Authenticated {
-		checksAlinhados(w, linhaCheck{ui.CheckErro, "credenciais", "inválidas", "faça o login no CLI do provider"})
+		checksAlinhados(w, linhaCheck{ui.CheckErro, "credenciais", "inválidas", cloud.DicaDeLogin(env.Cloud.Provider)})
 		return
 	}
 	linhas := []linhaCheck{{ui.CheckOk, "credenciais", "válidas", credenciais.Identity}}

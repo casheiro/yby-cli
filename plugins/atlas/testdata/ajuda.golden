@@ -1,0 +1,19 @@
+[38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  ATLAS[0m                                               [38;2;161;147;121majuda[0m
+
+  [38;2;221;208;181mScanner de topologia da infraestrutura do projeto: lê charts do Helm, manifests do Kubernetes, docker-compose, Kustomize e Terraform e desenha as relações entre eles num diagrama Mermaid.[0m
+
+[38;2;161;147;121mUSO[0m
+  [38;2;221;208;181myby atlas <comando> [flags][0m
+
+[38;2;161;147;121mCOMANDOS[0m
+  [38;2;221;208;181mdiagram  [0m[38;2;161;147;121mgera o diagrama da topologia em .yby/atlas-diagram.mmd[0m
+
+[38;2;161;147;121mEXEMPLOS[0m
+  [38;2;221;208;181myby atlas diagram[0m
+  [38;2;221;208;181myby atlas diagram --detail full[0m
+  [38;2;221;208;181myby atlas diagram --no-ai[0m
+
+[38;2;161;147;121mFLAGS[0m
+  [38;2;221;208;181m-h, --help  [0m[38;2;161;147;121mmostra esta ajuda[0m
+
+  [38;2;161;147;121myby atlas <comando> --help mostra os detalhes de cada um[0m

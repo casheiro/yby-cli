@@ -159,3 +159,19 @@ func TestSemCor_MantemNegritoEReverse(t *testing.T) {
 		t.Errorf("Negrito perdido: %q", e.Negrito.Render("x"))
 	}
 }
+
+// Fora do terminal (pipe, arquivo), NO_COLOR não força o perfil ANSI: o negrito e o
+// Reverse virariam escape no meio do texto.
+func TestConfigurar_SemCorForaDoTerminalSemEscape(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	SaidaNoTerminal = func() bool { return false }
+	Configurar(Opcoes{SemCor: true})
+	if p := lipgloss.ColorProfile(); p != termenv.Ascii {
+		t.Errorf("perfil = %v, quer Ascii fora do terminal", p)
+	}
+	var b strings.Builder
+	Title(&b, "cloud", "status")
+	if strings.Contains(b.String(), "\x1b[") {
+		t.Errorf("escape na saída fora do terminal: %q", b.String())
+	}
+}

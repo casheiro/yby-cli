@@ -35,7 +35,7 @@ const comandoViz = "yby viz"
 // manifesto é o manifesto do Viz.
 var manifesto = PluginManifest{
 	Name:        "viz",
-	Description: "Observabilidade visual no terminal (Dashboards TUI)",
+	Description: "Painel do cluster ao vivo no terminal",
 	Version:     "1.0.0",
 	Hooks:       []string{"command"},
 }

@@ -20,7 +20,7 @@
 O **Yby CLI** não é apenas um wrapper de comandos. Ele é um **Assistente Estratégico** que orbita o ciclo de vida da sua infraestrutura, fornecendo:
 
 1.  🚀 **Bootstrap Platform**: Entrega um cluster de produção "batteries-included" em minutos (VPS -> K3s -> ArgoCD -> Monitoring).
-2.  ☁️ **Multi-Cloud**: Conecta e gerencia clusters em AWS EKS, Azure AKS e GCP GKE com refresh automático de credenciais.
+2.  ☁️ **Multi-Cloud** (beta): Conecta e gerencia clusters em AWS EKS, Azure AKS e GCP GKE com refresh automático de credenciais.
 3.  🛡️ **Guardian (Governança)**: Garante padrões de arquitetura e segurança desde o Day 0.
 4.  🤖 **Intelligence Layer**: Usa IA (Ollama, Claude, Gemini, OpenAI, Bedrock) para diagnosticar problemas (`sentinel`), documentar arquitetura (`atlas`) e gerir conhecimento (`synapstor`).
 5.  💻 **Developer Experience**: Abstrai a complexidade do ambiente local sem esconder a realidade do Kubernetes.
@@ -66,13 +66,32 @@ yby bootstrap   # Provisiona o cluster (Local ou VPS)
 ```
 
 ### 2. Operação Assistida (Day 1+)
-Seu pod falhou? Pergunte ao Sentinel:
+Acompanhe o cluster ao vivo no Viz, com os problemas primeiro:
 ```bash
-yby sentinel investigate pod-xyz -n production
-# 🤖 Sentinel: "Detectei OOMKilled. Seu limite de memória é 128Mi, mas o pico foi 256Mi."
+yby viz
 ```
 
-### 3. Multi-Cloud (EKS / AKS / GKE)
+![yby viz: pods com o detalhe ao lado](docs/assets/telas/viz-pods.png)
+
+Seu pod falhou? Pergunte ao Sentinel:
+```bash
+yby sentinel investigate worker-748cf7f544-9htmh -n payments
+```
+
+![yby sentinel investigate: diagnóstico com a confiança e o comando sugerido](docs/assets/telas/sentinel-investigate.png)
+
+Ou converse com o Bard, que roda as ferramentas por você (no Viz, `b` abre o Bard já com a pergunta sobre o recurso selecionado):
+```bash
+yby bard
+```
+
+![yby bard: resposta com a ferramenta usada e o comando sugerido](docs/assets/telas/bard-conversa.png)
+
+> **Modo visual:** o tema segue o terminal. Force com `YBY_THEME=dark` ou `YBY_THEME=light`, use `YBY_ASCII=1` em terminais sem Unicode e `NO_COLOR=1` para tirar as cores (ou `ui.theme` e `ui.ascii` no `~/.yby/config.yaml`).
+
+### 3. Multi-Cloud (EKS / AKS / GKE) · beta
+> **Beta:** testado com os CLIs `aws`, `az` e `gcloud` e conferido contra a documentação oficial, mas ainda não contra clusters reais. O que falta validar está no [ROADMAP](./ROADMAP.md). Relate problemas nas [issues](https://github.com/casheiro/yby-cli/issues).
+
 Conecte clusters de qualquer cloud pública com auth avançada:
 ```bash
 # Conectar a cluster cloud (interativo)
@@ -96,6 +115,8 @@ yby cloud dashboard
 # Auditoria de operações cloud
 yby cloud audit --since 24h --export json
 ```
+
+![yby cloud dashboard: clusters com a validade dos tokens](docs/assets/telas/cloud-painel.png)
 
 **Auth avançada:** SSO/MFA (AWS), device code/interactive/certificado/MSI (Azure), Workload Identity Federation/SA impersonation/Connect Gateway (GCP). Credential store seguro via OS keychain com fallback encriptado. Audit log JSONL para compliance.
 
@@ -157,6 +178,10 @@ A documentação completa está na nossa **Wiki**:
 - **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
 - **[Enterprise Overrides](docs/wiki/Enterprise-Overrides.md)**: Customizacao para ambientes corporativos.
 - **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
+- **[Plugins](docs/wiki/Plugins.md)**: Bard, Viz, Sentinel, Synapstor e Atlas, com as teclas de cada TUI.
+- **[Operations](docs/wiki/Operations.md)**: Operação do dia a dia, clusters cloud e solução de problemas.
+- **[CLI Reference](docs/wiki/CLI-Reference.md)**: Todos os comandos e flags.
+- **[CHANGELOG](CHANGELOG.md)**: Teclas e comportamentos que mudaram entre versões.
 
 ---
 

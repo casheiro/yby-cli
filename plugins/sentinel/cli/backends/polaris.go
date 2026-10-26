@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sort"
 
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/kube"
@@ -93,6 +94,11 @@ func buildDynamicClient() (dynamic.Interface, error) {
 // mapPolarisResults converte os resultados da auditoria Polaris para o formato
 // unificado de findings do Sentinel.
 // Agrupa por check — cada check aparece uma vez com a lista de recursos afetados.
+// Só entram os recursos do namespace pedido (e os sem namespace, como um ClusterRole):
+// o Polaris pode trazer controllers de outros namespaces mesmo com cfg.Namespace. A
+// ordem é determinística: o recurso que representa o check é o primeiro em ordem
+// alfabética, e os findings saem em ordem de check e severidade, para duas rodadas
+// iguais darem a mesma tela.
 func mapPolarisResults(auditData validator.AuditData, namespace string) []Finding {
 	// Agrupar: checkID+severity → lista de recursos afetados
 	type checkGroup struct {
@@ -101,16 +107,17 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		message        string
 		recommendation string
 		resources      map[string]bool
+		// primeiro é o recurso de onde vêm a mensagem e a recomendação: o primeiro em
+		// ordem alfabética, para não depender da ordem dos maps do Polaris.
+		primeiro string
 	}
 	groups := make(map[string]*checkGroup) // chave: checkID+severity
 
 	for _, result := range auditData.Results {
-		resource := fmt.Sprintf("%s/%s", result.Kind, result.Name)
-		resultNamespace := result.Namespace
-		if resultNamespace == "" {
-			resultNamespace = namespace
+		if result.Namespace != "" && namespace != "" && result.Namespace != namespace {
+			continue
 		}
-		_ = resultNamespace
+		resource := fmt.Sprintf("%s/%s", result.Kind, result.Name)
 
 		// Coletar checks falhados de todos os níveis (controlador, pod, container)
 		collectChecks := func(checkID string, msg validator.ResultMessage) {
@@ -130,8 +137,11 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 					message:        msg.Message,
 					recommendation: formatRecommendation(msg.Details),
 					resources:      make(map[string]bool),
+					primeiro:       resource,
 				}
 				groups[key] = g
+			} else if resource < g.primeiro || (resource == g.primeiro && msg.Message < g.message) {
+				g.primeiro, g.message, g.recommendation = resource, msg.Message, formatRecommendation(msg.Details)
 			}
 			g.resources[resource] = true
 		}
@@ -151,14 +161,22 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		}
 	}
 
+	chaves := make([]string, 0, len(groups))
+	for k := range groups {
+		chaves = append(chaves, k)
+	}
+	sort.Strings(chaves)
+
 	// Converter grupos em findings — 1 finding por check
 	var findings []Finding
-	for _, g := range groups {
-		// Listar recursos afetados
-		var resources []string
+	for _, k := range chaves {
+		g := groups[k]
+		// Listar recursos afetados, em ordem
+		resources := make([]string, 0, len(g.resources))
 		for r := range g.resources {
 			resources = append(resources, r)
 		}
+		sort.Strings(resources)
 
 		resourceStr := resources[0]
 		if len(resources) > 1 {

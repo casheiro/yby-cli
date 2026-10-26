@@ -529,14 +529,37 @@ func duasLinhas(l string, largura int) []string {
 	return partes
 }
 
-// teclasDoPainel são as teclas do rodapé do painel ao lado: logs (pods),
-// yaml e eventos.
-func teclasDoPainel(kind string) []key.Binding {
+// teclasDoPainel são as teclas do painel, na ordem da prancha VizPods: logs
+// (pods), yaml, eventos e perguntar ao Bard. Com largura > 0 (o rodapé do
+// painel ao lado), quando as quatro não cabem, o b fica "b Bard": a ligação
+// com o Bard não some do painel por causa do texto comprido dela.
+func teclasDoPainel(kind string, largura int) []key.Binding {
 	l := mapa().Lista
+	teclas := []key.Binding{l.Yaml, l.Eventos, l.Bard}
 	if kind == "pod" {
-		return []key.Binding{l.Logs, l.Yaml, l.Eventos}
+		teclas = []key.Binding{l.Logs, l.Yaml, l.Eventos, l.Bard}
 	}
-	return []key.Binding{l.Yaml, l.Eventos}
+	if largura > 0 && larguraDaLegenda(teclas) > largura {
+		h := l.Bard.Help()
+		curta := key.NewBinding(key.WithKeys(l.Bard.Keys()...), key.WithHelp(h.Key, "Bard"))
+		teclas[len(teclas)-1] = curta
+	}
+	return teclas
+}
+
+// larguraDaLegenda é a largura, em células, das teclas lado a lado como a
+// legenda as mostra ("l logs  y yaml"): tecla, espaço, ação e 2 espaços entre
+// elas.
+func larguraDaLegenda(teclas []key.Binding) int {
+	total := 0
+	for i, t := range teclas {
+		h := t.Help()
+		if i > 0 {
+			total += 2
+		}
+		total += lipgloss.Width(h.Key) + 1 + lipgloss.Width(h.Desc)
+	}
+	return total
 }
 
 // camposMinimos é quantos campos o painel guarda quando falta espaço (no pod,
@@ -603,7 +626,7 @@ func (m Model) painel(largura, altura int, comTeclas bool) string {
 	interno, espaco := largura-4, altura-2
 	var rodape string
 	if comTeclas && espaco >= 2 {
-		rodape = yui.TeclasDoPainel(interno, teclasDoPainel(d.kind)...)
+		rodape = yui.TeclasDoPainel(interno, teclasDoPainel(d.kind, interno)...)
 		espaco--
 	}
 	var campos []string
