@@ -23,7 +23,7 @@ jobs:
         with:
           ref: "develop"
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v4.1.0
@@ -92,7 +92,7 @@ jobs:
         if: steps.versioning.outputs.continue == 'true'
         id: create_release_pr
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ steps.versioning.outputs.release_version }}
         run: |
           RELEASE_BRANCH="release/$RELEASE_VERSION"
