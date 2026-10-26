@@ -24,8 +24,8 @@ A conferência de 26/10/2026 (um agente por fase, só leitura) mapeou os arquivo
 | 1 | viz (`feat/correcoes-viz`) | V01, V06, V03, V05, V07 (benchmarks), V04, V07 (o resto), V02 | onda 0 |
 | 1 | atlas (`feat/correcoes-atlas`) | A12, A11, A05, A09, A01, A06, A07, A04, A08, A03, A02, A10, A13 | onda 0; A10 depois do B10 |
 | 1 | synapstor (`feat/correcoes-synapstor`) | Y01, Y02, Y03, Y09, Y04, Y05, Y06, Y07, Y08, Y10, Y11, Y12, Y13 | onda 0 |
-| 1 | bard (`feat/correcoes-bard`) | B05, B08, B10, B03, B06, B04, B01, B09, B11, B14, B13, B02 | onda 0 |
-| 2 | contratos (`feat/correcoes-contratos`) | K02, K04, B07, B12, K03, e o lado do Bard no Y01, Y04 e Y05 | merge das trilhas da onda 1 |
+| 1 | bard (`feat/correcoes-bard`) | B05, B08, B10, B03, B06, B04, B01, B09, B11, B14, B13 | onda 0 |
+| 2 | contratos (`feat/correcoes-contratos`) | K02, K04, B07, B02, B12, K03, e o lado do Bard no Y01, Y04 e Y05 (inclusive o corte de relevância num lugar só) | merge das trilhas da onda 1 |
 | 3 | fecho | P01, P03, P02 | onda 2 e a release |
 
 **Arquivos quentes entre trilhas** (merge com cuidado): `pkg/ai/prompts/defaults.go` (B03, B11, K03, Y07, Y08, Y13, A02, A10, cada um no seu prompt), `pkg/ai/factory.go` (B13 e B14 no `GetProvider`; Y01 e Y06 no `GetEmbeddingProvider`), `CLAUDE.md`.
