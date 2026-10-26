@@ -112,28 +112,59 @@ func (i *Indexer) tirarDoIndice(ctx context.Context, storePath string, arquivos 
 	return removidos, falhas
 }
 
-// refazerSeOutroModelo apaga o índice quando ele foi feito com outros embeddings que não
-// os do provider de agora (ou com um modelo que não ficou registrado), e diz se apagou.
-// Sem conseguir abrir o índice, não decide nada: as etapas seguintes dizem o que houve.
-func (i *Indexer) refazerSeOutroModelo(ctx context.Context, storePath string) (bool, error) {
+// refazerSeNecessario apaga o índice e diz se apagou. Apaga quando: o --full foi pedido;
+// ele foi feito com outros embeddings que não os do provider de agora (ou com um modelo
+// que não ficou registrado); ou o número de documentos não bate com o manifest (cada
+// arquivo vira um documento), o que denuncia órfãos sem entrada no manifest ou arquivos
+// que o manifest dá como indexados e não estão no índice.
+// Sem conseguir abrir o índice, só o --full decide: apaga a pasta; sem ele, as etapas
+// seguintes dizem o que houve.
+func (i *Indexer) refazerSeNecessario(ctx context.Context, storePath string, arquivosNoManifest int) (bool, error) {
 	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
 	if err != nil {
 		slog.Debug("não deu para abrir o índice para conferir o modelo", "erro", err)
-		return false, nil
+		if !i.FullReindex {
+			return false, nil
+		}
+		// Com --full o índice que não abre (arquivo truncado, coleção sem metadados) é
+		// apagado inteiro: é o único conserto possível.
+		et := i.etapas()
+		et.Iniciar("apagar o índice antigo")
+		if rerr := os.RemoveAll(storePath); rerr != nil {
+			et.Falhar("")
+			return false, fmt.Errorf("não deu para apagar o índice antigo: %w", rerr)
+		}
+		et.Concluir("--full")
+		et.Avisar("o índice não abria; apagado e refeito do zero")
+		return true, nil
 	}
+	motivo, aviso := "", ""
 	err = vs.Conferir(ctx)
 	var outro *ai.IndiceDeOutroModeloError
-	if !errors.As(err, &outro) {
+	switch {
+	case errors.As(err, &outro):
+		motivo = "outros embeddings"
+		aviso = "índice refeito do zero: era de " + outro.FeitoCom() + ", agora " + outro.Atual.String()
+	case err != nil:
 		return false, err
+	case i.FullReindex:
+		motivo = "--full"
+	case vs.Count() != arquivosNoManifest:
+		motivo = "índice fora do manifest"
+		aviso = "o índice não bate com o manifest (" + plural(vs.Count(), "documento", "documentos") + " para " + plural(arquivosNoManifest, "arquivo", "arquivos") + "); refeito do zero"
+	default:
+		return false, nil
 	}
 	et := i.etapas()
 	et.Iniciar("apagar o índice antigo")
 	if err := vs.Recriar(); err != nil {
 		et.Falhar("")
-		return false, fmt.Errorf("não deu para apagar o índice feito com outros embeddings: %w", err)
+		return false, fmt.Errorf("não deu para apagar o índice antigo: %w", err)
 	}
-	et.Concluir("outros embeddings")
-	et.Avisar("índice refeito do zero: era de " + outro.FeitoCom() + ", agora " + outro.Atual.String())
+	et.Concluir(motivo)
+	if aviso != "" {
+		et.Avisar(aviso)
+	}
 	return true, nil
 }
 
@@ -184,9 +215,9 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		return report, nil
 	}
 
-	// 2.5. Índice feito com outros embeddings não se mistura com os de agora: refaz tudo.
+	// 2.5. --full, índice de outros embeddings ou fora do manifest: apaga e refaz tudo.
 	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
-	refeito, err := i.refazerSeOutroModelo(ctx, storePath)
+	refeito, err := i.refazerSeNecessario(ctx, storePath, len(manifest.Files))
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +239,8 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	var allIDs []string
 
 	for _, path := range files {
-		relPath, _ := filepath.Rel(i.RootDir, path)
+		rel, _ := filepath.Rel(i.RootDir, path)
+		relPath := filepath.ToSlash(rel)
 		hash, err := fileHash(path)
 		if err != nil {
 			continue

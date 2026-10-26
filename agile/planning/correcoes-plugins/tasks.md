@@ -224,7 +224,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - `search` e Bard com erro claro: "o índice foi feito com X; rode yby synapstor index --full".
   - **Verificar:** teste com provider falso de dimensão configurável.
   - **Conferência (26/10):** a identidade do índice (provider, modelo e dimensão) mora no `VectorStore` de `pkg/ai`, e não só no manifest do Synapstor, porque o Bard precisa dela para o erro claro. O Ollama sem config usa o primeiro modelo do `/api/tags`, e o `Name()` não traz o modelo: expor o modelo efetivo pelos decorators. O lado do Bard (mensagem em `tui/fluxo.go`) fica na onda 2.
-- [ ] **Y02 · `--full` refaz de verdade; órfãos; IDs com `/`**
+- [x] **Y02 · `--full` refaz de verdade; órfãos; IDs com `/`**
   - **Problema:**
     - o `--full` só regrava pelo mesmo ID (`indexer.go:~175`) e nunca limpa, e só sai do índice o que está no manifest (`indexer.go:~217-224`);
     - neste repo há 183 trechos antigos de docs que não existem mais;
@@ -677,6 +677,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | Y01 | O `VectorStore` grava com que provider, modelo e dimensão o índice foi feito (`identidade.json`); a busca com outros embeddings devolve `IndiceDeOutroModeloError` com "rode yby synapstor index --full", e o `index` apaga e refaz tudo sozinho quando o modelo muda. | este commit |
+| 26/10/2026 | Y02 | O `--full` apaga e recria o índice, o `index` refaz tudo quando o número de documentos não bate com o manifest (órfãos) e o ID, o `source` e as chaves do manifest usam `/`. | este commit |
 
 ### Fase 4 · Sentinel
 
