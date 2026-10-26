@@ -50,20 +50,28 @@ type direto struct {
 	rodadas          int
 }
 
+// enriquecerCluster lê o cluster da sessão; os testes trocam por um falso.
+var enriquecerCluster = EnrichContext
+
 // novoDireto prepara o provider, o system prompt e a busca no Synapstor e liga o
 // direto ao stdout e ao stderr do processo. Quem chama já rodou prepararStderr.
-func novoDireto(ctx context.Context, ctxData map[string]interface{}) (*direto, error) {
+func novoDireto(ctx context.Context, ctxData map[string]interface{}, opcoes opcoesBard) (*direto, error) {
 	tools.LoadExternalTools()
 	provider := obterProvider(ctx)
 	if provider == nil {
 		return nil, semProvider()
 	}
 	bardCfg := loadBardConfig()
-	fluxo := tui.NovoFluxo(provider, abrirMemoria(ctx), tui.Config{
-		SystemPrompt:     buildSystemPrompt(ctxData, bardCfg, nil),
+	// O cluster e o namespace da sessão (--context, -n ou o do kubeconfig) vão ao
+	// classificador, como na TUI.
+	clusterCtx := enriquecerCluster(ctx, opcoes.contexto, opcoes.namespace)
+	cfg := tui.Config{
+		SystemPrompt:     buildSystemPrompt(ctxData, bardCfg, nil, clusterCtx),
 		TopK:             bardCfg.TopK,
 		LimiarRelevancia: bardCfg.RelevanceThreshold,
-	})
+	}
+	aplicarCluster(&cfg, clusterCtx, opcoes)
+	fluxo := tui.NovoFluxo(provider, abrirMemoria(ctx), cfg)
 	return &direto{
 		fluxo:    fluxo,
 		saida:    os.Stdout,

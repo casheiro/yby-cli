@@ -25,15 +25,11 @@ func Get(name string) *Tool {
 	return registry[name]
 }
 
-// All retorna todas as ferramentas registradas.
+// All retorna todas as ferramentas registradas, por nome.
 func All() []*Tool {
 	mu.RLock()
 	defer mu.RUnlock()
-	result := make([]*Tool, 0, len(registry))
-	for _, t := range registry {
-		result = append(result, t)
-	}
-	return result
+	return ordenadas()
 }
 
 // FormatToolsPrompt gera a descrição das ferramentas disponíveis para injeção no system prompt.
@@ -51,7 +47,7 @@ func FormatToolsPrompt() string {
 	sb.WriteString("```json\n{\"tool\": \"nome_da_ferramenta\", \"params\": {\"chave\": \"valor\"}}\n```\n\n")
 	sb.WriteString("Só use ferramentas quando necessário. Responda diretamente quando possível.\n\n")
 
-	for _, tool := range registry {
+	for _, tool := range ordenadas() {
 		sb.WriteString(fmt.Sprintf("### %s\n", tool.Name))
 		sb.WriteString(fmt.Sprintf("%s\n", tool.Description))
 		if len(tool.Parameters) > 0 {
@@ -74,7 +70,7 @@ func FormatToolsPrompt() string {
 func FindByIntent(intent string) *Tool {
 	mu.RLock()
 	defer mu.RUnlock()
-	for _, tool := range registry {
+	for _, tool := range ordenadas() {
 		for _, i := range tool.Intents {
 			if i == intent {
 				return tool

@@ -117,7 +117,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `tui/model.go:~670` chama `m.fluxo.Iniciar(ctx, m.rodada, input)` só com a pergunta, e o `Fluxo` (`tui/fluxo.go`) monta o prompt só com `entrada` e um `SystemPrompt` fixo. O histórico de sessões anteriores entra (`main.go:~231-234`), mas a sessão atual não.
   - **Fazer:** o `Fluxo` recebe as últimas N trocas da sessão, com orçamento de tokens (B07), e as usa na resposta e no classificador. Vale também para o batch.
   - **Verificar:** teste do `Fluxo` com duas rodadas: a segunda pergunta ("e os logs dele?") chega ao provider falso com a primeira troca.
-- [ ] **B03 · Classificador: namespace da sessão, esquema de parâmetros e validação**
+- [x] **B03 · Classificador: namespace da sessão, esquema de parâmetros e validação**
   - **Problema:**
     - o prompt manda usar "default" quando não há namespace (`pkg/ai/prompts/defaults.go:~169`), e `namespaceDe` prefere o parâmetro da IA ao da sessão (`tools/kube.go:~21-26`);
     - o classificador recebe só `intent: descrição` (`tui/model.go:~968-1003`), sem os nomes dos parâmetros nem o cluster/namespace da sessão;
@@ -674,6 +674,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B05 | Com ferramenta, o prompt final mantém o bloco de notas do Synapstor antes do resultado da ferramenta; teste do `Fluxo` com busca e tool falsas. | este commit |
 | 26/10/2026 | B08 | `ai.ErroRetentavel` classifica o erro (429/502/503, rede, stream cortado, YbyError de timeout); o `RetryProvider` e o `Fluxo` deixam de repetir o resto (chave inválida, modelo inexistente, ERR_TOKEN_LIMIT, config, falha de CLI). | este commit |
 | 26/10/2026 | B10 | Providers claude-cli e gemini-cli levam o prompt pelo stdin (`claude -p` sem texto; `gemini -p` com instrução curta), rodam com `CommandContext` e `WaitDelay`, limitam o stderr no erro e o stream do gemini perde as linhas "Loaded cached credentials". | este commit |
+| 26/10/2026 | B03 | O classificador recebe todos os intents com o esquema de parâmetros e o cluster/namespace da sessão (sem a regra do "default"), lê JSON no meio do texto e número como texto, registra falhas em debug, e o Fluxo não executa ferramenta sem os parâmetros obrigatórios; registry em ordem estável. | este commit |
 
 ### Fase 3 · Synapstor
 

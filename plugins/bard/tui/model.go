@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
-
-	"encoding/json"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
@@ -964,17 +963,9 @@ func desfecho(final tea.Model, err error) error {
 	return nil
 }
 
-// classifyIntent classifica a intenção do usuário via IA.
-func classifyIntent(ctx context.Context, provider ai.Provider, input string) *tools.IntentResult {
-	allTools := tools.All()
-	var intentList strings.Builder
-	for _, t := range allTools {
-		if len(t.Intents) > 0 {
-			fmt.Fprintf(&intentList, "- %s: %s\n", t.Intents[0], t.Description)
-		}
-	}
-	intentList.WriteString("- direct: responder diretamente sem executar ferramenta\n")
-
+// classifyIntent classifica a intenção do usuário via IA. Falha do provider ou
+// resposta ilegível viram resposta direta, com o motivo no log de debug.
+func classifyIntent(ctx context.Context, provider ai.Provider, input, cluster, namespace string) *tools.IntentResult {
 	classifyPrompt := prompts.Get("bard.classify")
 	if classifyPrompt == "" {
 		classifyPrompt = `Classifique a intencao. Responda APENAS JSON:
@@ -982,23 +973,31 @@ func classifyIntent(ctx context.Context, provider ai.Provider, input string) *to
 Se nao precisa de ferramenta: {"intent":"direct","params":{},"direct":true}`
 	}
 
-	userPrompt := fmt.Sprintf("Intencoes:\n%s\nUsuario: %s", intentList.String(), input)
+	userPrompt := fmt.Sprintf("Intencoes:\n%sSessao: %s\nUsuario: %s",
+		tools.DescreverIntents(), descreverSessao(cluster, namespace), input)
 
 	result, err := provider.Completion(ctx, classifyPrompt, userPrompt)
 	if err != nil {
+		slog.Debug("classificador falhou; respondendo direto", "erro", err)
 		return &tools.IntentResult{Direct: true}
 	}
 
-	var intent tools.IntentResult
-	clean := strings.TrimSpace(result)
-	clean = strings.TrimPrefix(clean, "```json")
-	clean = strings.TrimPrefix(clean, "```")
-	clean = strings.TrimSuffix(clean, "```")
-	clean = strings.TrimSpace(clean)
-
-	if err := json.Unmarshal([]byte(clean), &intent); err != nil {
+	intent, err := tools.ParseIntent(result)
+	if err != nil {
+		slog.Debug("resposta do classificador ilegível; respondendo direto", "erro", err, "resposta", result)
 		return &tools.IntentResult{Direct: true}
 	}
+	return intent
+}
 
-	return &intent
+// descreverSessao diz ao classificador o cluster e o namespace da sessão.
+func descreverSessao(cluster, namespace string) string {
+	cluster = strings.TrimSpace(cluster)
+	if cluster == "" {
+		cluster = "contexto atual do kubeconfig"
+	}
+	if strings.TrimSpace(namespace) == "" {
+		return fmt.Sprintf("cluster %s, sem namespace fixo (omita namespace se o usuario nao disser)", cluster)
+	}
+	return fmt.Sprintf("cluster %s, namespace %s (omita namespace se o usuario nao disser outro)", cluster, namespace)
 }

@@ -100,6 +100,7 @@ type Fluxo struct {
 	TopK         int
 	Limiar       float64 // score mínimo de uma nota para entrar no contexto
 	Namespace    string  // namespace da sessão; fica fora da nota da ferramenta
+	Cluster      string  // contexto do cluster da sessão; vai ao classificador
 	// BuscarFerramenta resolve a ferramenta de uma intenção; nil usa o registry.
 	BuscarFerramenta func(intent string) *tools.Tool
 	Retry            retry.Options
@@ -113,6 +114,7 @@ func NovoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config)
 		TopK:         config.TopK,
 		Limiar:       config.LimiarRelevancia,
 		Namespace:    config.Namespace,
+		Cluster:      config.Cluster,
 		Retry:        retryPadrao,
 	}
 	// Um *VectorStore nil dentro da interface não seria nil; só atribui se existir.
@@ -188,7 +190,7 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 	// 2. Intenção
 	t0 = time.Now()
 	e.etapa(EtapaMsg{Etapa: EtapaIntencao, Rotulo: rotuloIntencao, Estado: ui.EtapaAtual})
-	intent, ok := esperar(ctx, func() *tools.IntentResult { return classifyIntent(ctx, f.Provider, entrada) })
+	intent, ok := esperar(ctx, func() *tools.IntentResult { return classifyIntent(ctx, f.Provider, entrada, f.Cluster, f.Namespace) })
 	if !ok || ctx.Err() != nil {
 		e.etapaForcada(interrompida(EtapaIntencao, rotuloIntencao, time.Since(t0)))
 		fim(nil)
@@ -211,6 +213,9 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		t0 = time.Now()
 		e.etapa(EtapaMsg{Etapa: EtapaFerramenta, Rotulo: rotulo, Estado: ui.EtapaAtual, Nota: alvo})
 		res, ok := esperar(ctx, func() resultadoFerramenta {
+			if faltam := ferramenta.Faltando(intent.Params); len(faltam) > 0 {
+				return resultadoFerramenta{err: fmt.Errorf("faltou o parâmetro obrigatório %s para %s: peça ao usuário que informe", strings.Join(faltam, ", "), ferramenta.Name)}
+			}
 			saida, err := ferramenta.Execute(ctx, intent.Params)
 			return resultadoFerramenta{saida: saida, err: err}
 		})

@@ -166,7 +166,8 @@ Se a mensagem nao requer nenhuma ferramenta (ex: pergunta conceitual, saudacao),
 
 Regras:
 - Extraia namespace, pod name, resource type dos parametros quando mencionados
-- Se nao especificado, use "default" para namespace
+- Preencha os parametros listados em cada intencao; os marcados com * sao obrigatorios
+- Se o usuario nao disser o namespace, omita o parametro namespace: vale o da sessao
 - intent deve ser EXATAMENTE um dos nomes listados
 - Responda APENAS o JSON, sem explicacoes`
 

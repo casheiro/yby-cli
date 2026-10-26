@@ -792,3 +792,61 @@ func TestFluxo_FerramentaMantemNotasDoSynapstor(t *testing.T) {
 		t.Errorf("o prompt deveria ter a saída da ferramenta e as notas: %q", entrada)
 	}
 }
+
+func TestFluxo_ObrigatorioFaltandoNaoExecuta(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{
+		intencao: `{"intent":"investigate_pod","params":{"namespace":"payments"},"direct":false}`,
+		trechos:  []string{"Qual pod?"},
+	}
+	chamadas := 0
+	f := fluxoDeTeste(p)
+	ferramenta := ferramentaDeTeste("saída", nil, &chamadas)
+	f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
+
+	eventos := coletar(t, f.Iniciar(context.Background(), 1, "investiga"), nil)
+
+	if chamadas != 0 {
+		t.Fatalf("a ferramenta não deveria rodar sem o pod, rodou %d", chamadas)
+	}
+	e := ultimaEtapa(t, eventos, EtapaFerramenta)
+	if e.Estado != ui.EtapaFalha || !strings.Contains(e.Saida, "pod") {
+		t.Errorf("esperava falha clara citando o pod: %+v", e)
+	}
+}
+
+// capturaClassificador guarda o que o classificador recebeu.
+type capturaClassificador struct {
+	*provedorFalso
+	sistema, usuario string
+}
+
+func (c *capturaClassificador) Completion(_ context.Context, sistema, usuario string) (string, error) {
+	c.sistema, c.usuario = sistema, usuario
+	return `{"intent":"direct","params":{},"direct":true}`, nil
+}
+
+func TestClassifyIntent_PromptTemSessaoEEsquema(t *testing.T) {
+	salvas := tools.All()
+	tools.Reset()
+	t.Cleanup(func() {
+		tools.Reset()
+		for _, s := range salvas {
+			tools.Register(s)
+		}
+	})
+	tools.Register(&tools.Tool{Name: "kubectl_logs", Description: "Logs", Intents: []string{"pod_logs", "view_logs"},
+		Parameters: []tools.ToolParam{{Name: "pod", Required: true}, {Name: "tail"}}})
+	c := &capturaClassificador{provedorFalso: &provedorFalso{}}
+
+	classifyIntent(context.Background(), c, "logs do api", "prod", "payments")
+
+	for _, esperado := range []string{"pod_logs", "view_logs", "pod*", "tail", "prod", "payments"} {
+		if !strings.Contains(c.usuario, esperado) {
+			t.Errorf("falta %q no prompt:\n%s", esperado, c.usuario)
+		}
+	}
+	if strings.Contains(strings.ToLower(c.usuario+c.sistema), "default") {
+		t.Errorf("o prompt não deve mandar usar default:\n%s\n%s", c.sistema, c.usuario)
+	}
+}

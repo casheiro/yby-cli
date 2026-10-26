@@ -351,7 +351,7 @@ func TestNovoDireto_SemProvider(t *testing.T) {
 	anterior := obterProvider
 	obterProvider = func(context.Context) ai.Provider { return nil }
 	t.Cleanup(func() { obterProvider = anterior })
-	_, err := novoDireto(context.Background(), nil)
+	_, err := novoDireto(context.Background(), nil, opcoesBard{})
 	var ye *yerrors.YbyError
 	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeConfig {
 		t.Fatalf("esperava ERR_CONFIG, veio %v", err)
@@ -594,4 +594,30 @@ func TestProcesso_SemProviderSemCorNoPipe(t *testing.T) {
 		t.Errorf("stderr inesperado:\n%s", erros)
 	}
 	semControle(t, "stderr", erros)
+}
+
+func TestNovoDireto_ClusterENamespaceDaSessao(t *testing.T) {
+	isolarModoVisual(t, "")
+	antProvider, antCluster := obterProvider, enriquecerCluster
+	obterProvider = func(context.Context) ai.Provider { return &iaFalsa{} }
+	enriquecerCluster = func(_ context.Context, contexto, namespace string) *ClusterContext {
+		return &ClusterContext{Cluster: "atual", Namespace: "default"}
+	}
+	t.Cleanup(func() { obterProvider, enriquecerCluster = antProvider, antCluster })
+
+	d, err := novoDireto(context.Background(), nil, opcoesBard{contexto: "prod", namespace: "payments"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.fluxo.Cluster != "prod" || d.fluxo.Namespace != "payments" {
+		t.Errorf("fluxo com %q/%q, esperava prod/payments", d.fluxo.Cluster, d.fluxo.Namespace)
+	}
+
+	d, err = novoDireto(context.Background(), nil, opcoesBard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.fluxo.Cluster != "atual" || d.fluxo.Namespace != "default" {
+		t.Errorf("sem flags, fluxo com %q/%q, esperava atual/default", d.fluxo.Cluster, d.fluxo.Namespace)
+	}
 }
