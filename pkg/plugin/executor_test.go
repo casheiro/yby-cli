@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +47,11 @@ func TestHelperProcess(t *testing.T) {
 	}
 
 	cmd := args[0]
+	// Plugin de verdade numa pasta qualquer, para os testes do Discover.
+	if strings.HasPrefix(filepath.Base(cmd), "yby-plugin-manifesto") {
+		fmt.Fprint(os.Stdout, `{"data": {"name": "manifesto", "version": "1.0.0", "hooks": ["command"]}}`)
+		return
+	}
 	// Handle fake commands based on what the test expects
 	switch cmd {
 	case "/path/to/success-plugin":
