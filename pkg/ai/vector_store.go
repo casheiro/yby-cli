@@ -241,6 +241,14 @@ func (vs *VectorStore) Search(ctx context.Context, query string, topK int) ([]Un
 		return nil, &IndiceDeOutroModeloError{Indice: *vs.identidade, Atual: atual}
 	}
 
+	// O chromem recusa nResults maior que o número de documentos (inclusive com a coleção vazia).
+	if total := vs.collection.Count(); topK > total {
+		topK = total
+	}
+	if topK <= 0 {
+		return nil, nil
+	}
+
 	// Search
 	results, err := vs.collection.QueryEmbedding(ctx, queryVector, topK, nil, nil)
 	if err != nil {
