@@ -40,8 +40,9 @@ var (
 	_ LeitorDeDetalhe = (*RetryClient)(nil)
 )
 
-// prazoDeLeitura limita cada leitura do detalhe: sem ele, um kubelet que não
-// responde deixaria o painel lendo para sempre (o rest.Config não tem timeout).
+// prazoDeLeitura limita cada leitura (listas, detalhe e YAML): sem ele, um
+// servidor ou um kubelet que não responde deixaria a aba ou o painel lendo
+// para sempre (o rest.Config não tem timeout, para não cortar o watch).
 const prazoDeLeitura = 10 * time.Second
 
 // limiteDeBytesDoLog corta a leitura do log: 100 linhas de JSON enorme ou de
@@ -60,7 +61,7 @@ func (c *K8sClient) EventosDoObjeto(kind, nome, namespace string, limite int) ([
 		seletor["involvedObject.kind"] = kind
 	}
 	opts := metav1.ListOptions{FieldSelector: seletor.String()}
-	ctx, cancelar := context.WithTimeout(context.Background(), prazoDeLeitura)
+	ctx, cancelar := c.contextoDeLeitura()
 	defer cancelar()
 	list, err := c.clientset.CoreV1().Events(namespace).List(ctx, opts)
 	if err != nil {
@@ -87,7 +88,7 @@ func (c *K8sClient) LogsDoPod(nome, namespace, conteiner string, linhas int64) (
 			return lerLogs(ctx, c.clientset, namespace, pod, conteiner, linhas, anterior)
 		}
 	}
-	ctx, cancelar := context.WithTimeout(context.Background(), prazoDeLeitura)
+	ctx, cancelar := c.contextoDeLeitura()
 	defer cancelar()
 	logs, err := ler(ctx, namespace, nome, conteiner, linhas, false)
 	if err == nil && strings.TrimSpace(logs) != "" {

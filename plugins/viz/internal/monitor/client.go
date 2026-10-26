@@ -47,6 +47,8 @@ type K8sClient struct {
 	lerLog     lerLog // lê o log de um contêiner; nil usa lerLogs (os testes trocam)
 	// intervaloLote é o tempo entre lotes do watch; zero usa intervaloDoLote.
 	intervaloLote time.Duration
+	// prazo limita cada leitura (listas, eventos e logs do detalhe); zero usa prazoDeLeitura.
+	prazo time.Duration
 }
 
 // Kubeconfig devolve o arquivo pedido no --kubeconfig (vazio: o padrão do kubectl).
@@ -170,6 +172,24 @@ func (c *K8sClient) Sondar() error {
 	return nil
 }
 
+// contextoDeLeitura é o contexto de uma leitura, com o prazo do client. O
+// prazo vai em cada leitura, e não no Timeout do rest.Config, que cortaria
+// também o watch dos informers.
+func (c *K8sClient) contextoDeLeitura() (context.Context, context.CancelFunc) {
+	prazo := c.prazo
+	if prazo <= 0 {
+		prazo = prazoDeLeitura
+	}
+	return context.WithTimeout(context.Background(), prazo)
+}
+
+// ErroDeCredencial diz se a leitura falhou ao obter a credencial pelo plugin
+// exec do kubeconfig (aws, kubelogin, gke-gcloud-auth-plugin): o client-go não
+// tipa esse erro, só escreve "getting credentials: …" na mensagem.
+func ErroDeCredencial(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "getting credentials: ")
+}
+
 // GetPods lista pods com filtros opcionais de namespace e label.
 func (c *K8sClient) GetPods(filter ListFilter) ([]Pod, error) {
 	opts := metav1.ListOptions{}
@@ -177,7 +197,9 @@ func (c *K8sClient) GetPods(filter ListFilter) ([]Pod, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().Pods(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Pods(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
@@ -274,7 +296,9 @@ func (c *K8sClient) GetDeployments(filter ListFilter) ([]Deployment, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.AppsV1().Deployments(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.AppsV1().Deployments(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar deployments: %w", err)
 	}
@@ -314,7 +338,9 @@ func (c *K8sClient) GetServices(filter ListFilter) ([]Service, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().Services(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Services(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar services: %w", err)
 	}
@@ -354,7 +380,9 @@ func (c *K8sClient) GetNodes(filter ListFilter) ([]Node, error) {
 	if filter.LabelSelector != "" {
 		opts.LabelSelector = filter.LabelSelector
 	}
-	list, err := c.clientset.CoreV1().Nodes().List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Nodes().List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar nodes: %w", err)
 	}
@@ -394,7 +422,9 @@ func (c *K8sClient) GetStatefulSets(filter ListFilter) ([]StatefulSet, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.AppsV1().StatefulSets(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.AppsV1().StatefulSets(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar statefulsets: %w", err)
 	}
@@ -433,7 +463,9 @@ func (c *K8sClient) GetJobs(filter ListFilter) ([]Job, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.BatchV1().Jobs(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.BatchV1().Jobs(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar jobs: %w", err)
 	}
@@ -484,7 +516,9 @@ func (c *K8sClient) GetIngresses(filter ListFilter) ([]Ingress, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.NetworkingV1().Ingresses(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.NetworkingV1().Ingresses(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar ingresses: %w", err)
 	}
@@ -533,7 +567,9 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().ConfigMaps(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().ConfigMaps(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar configmaps: %w", err)
 	}
@@ -603,7 +639,9 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().Events(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Events(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar eventos: %w", err)
 	}

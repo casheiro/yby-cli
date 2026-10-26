@@ -574,7 +574,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - medir com benchmark antes e depois.
   - **Verificar:** benchmark (V07) e testes da aba ConfigMaps.
   - **Conferência (26/10):** a contagem da aba Eventos tem de continuar exata, como o CLAUDE.md promete. Se os benchmarks do V07 não mostrarem problema de memória nos Events, não limitar; o transform não descarta objetos. O tamanho do ConfigMap é calculado no transform, antes de esvaziar `Data`.
-- [ ] **V05 · Leituras com prazo; retry sem erro permanente; mensagem certa para falta de permissão**
+- [x] **V05 · Leituras com prazo; retry sem erro permanente; mensagem certa para falta de permissão**
   - **Problema:**
     - os `Get*` usam `context.Background()` (`monitor/client.go`) sem timeout no `rest.Config`, e o tick só se reagenda quando a leitura volta (`ui/model.go:~543-544`);
     - o `RetryClient` repete Forbidden/NotFound 3 vezes (`retry_client.go:~45-52`);
@@ -694,6 +694,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | V01 | Exclusão com propagação em segundo plano (Job não deixa pods órfãos) e precondição de UID guardado no alvo da ação | este commit |
 | 26/10/2026 | V06 | `LogsDoPod` avisa quando o log é da execução anterior (quadro e painel dizem), leitura com `LimitBytes` de 1 MiB e YAML sem `managedFields` nem last-applied | este commit |
 | 26/10/2026 | V03 | Com a aba vigiada o tique só sonda `/version` (`monitor.Sondador`) em vez de listar; `fetchPodMetrics` e `Pod.CPU`/`Memory` removidos | este commit |
+| 26/10/2026 | V05 | Listas com prazo de 10 s por contexto (sem `rest.Config.Timeout`), `RetryClient` sem repetir Forbidden/Unauthorized/NotFound/Invalid/credencial exec/prazo, aba negada com "sem permissão para listar X …" sem reconectar e sem LIST no relógio, e dica `yby cloud refresh` para a credencial exec | este commit |
 
 ### Fase 7 · Pendências
 
