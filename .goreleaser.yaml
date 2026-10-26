@@ -187,17 +187,14 @@ snapshot:
 changelog:
   sort: asc
   groups:
-    - title: Features
+    - title: Novidades
       regexp: "^.*feat((\\([\\w\\-\\.]+\\))?|!)?:"
       order: 0
-    - title: "Bug Fixes"
+    - title: Correções
       regexp: "^.*fix((\\([\\w\\-\\.]+\\))?|!)?:"
       order: 1
-    - title: Others
+    - title: Outros
       order: 999
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^typo:"
+      - '^(docs|test|chore|typo)(\([\w\-\.]+\))?:'

@@ -2,7 +2,7 @@
 
 As notas completas de cada versão, geradas a partir dos commits, ficam nas [releases do GitHub](https://github.com/casheiro/yby-cli/releases). Aqui ficam as mudanças que pedem atenção de quem já usa o yby: teclas que mudaram, códigos de saída e comportamentos novos.
 
-## Próxima versão: carta do terminal (Viz, Cloud e plugins)
+## v5.8.0: carta do terminal (Viz, Cloud e plugins)
 
 ### Viz (`yby viz`)
 
