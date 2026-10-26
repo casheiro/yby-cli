@@ -152,7 +152,7 @@ var backupKeysCmd = &cobra.Command{
 	Use:   "backup [file]",
 	Short: "Backup da chave mestre do Sealed Secrets",
 	Long: `Faz backup da chave privada do Sealed Secrets (cuidado!).
-Salva em: bootstrap/sealed-secrets-backup.yaml (default) ou no caminho especificado.`,
+Salva em: bootstrap/sealed-secrets-backup.yaml (padrão) ou no caminho especificado.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		root, err := FindInfraRoot()
 		if err != nil {
@@ -193,7 +193,7 @@ var restoreKeysCmd = &cobra.Command{
 	Use:   "restore [file]",
 	Short: "Restaura chave mestre do Sealed Secrets",
 	Long: `Aplica um backup de chave mestre e reinicia o controller.
-Default file: bootstrap/sealed-secrets-backup.yaml`,
+Arquivo padrão: bootstrap/sealed-secrets-backup.yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		w := cmd.OutOrStdout()
 		tituloComando(w, "secret", "restore")

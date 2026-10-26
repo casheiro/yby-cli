@@ -331,3 +331,37 @@ func TestProgressoFalhaNoTerminalTiraAsPendentes(t *testing.T) {
 		t.Errorf("a próxima etapa deveria aparecer: %q", b.String())
 	}
 }
+
+func TestProgressoPular(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	var b bytes.Buffer
+	p := progressoDeTeste(&b, false, "logs", "métricas", "análise")
+	p.Iniciar("logs")
+	p.Concluir("1 linha")
+	p.Iniciar("métricas")
+	p.Pular("indisponíveis")
+	p.Iniciar("análise")
+	p.Concluir("")
+
+	linhas := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+	if len(linhas) != 3 {
+		t.Fatalf("esperava as três etapas, uma vez cada:\n%s", b.String())
+	}
+	if !strings.HasPrefix(linhas[1], "  ○ métricas   indisponíveis") {
+		t.Errorf("a etapa pulada sai com ○ e a nota: %q", linhas[1])
+	}
+	if !strings.HasPrefix(linhas[2], "  ✓ análise") {
+		t.Errorf("depois de pular, o comando segue: %q", linhas[2])
+	}
+	if e := p.Etapas(); e[1].Estado != EtapaPulada {
+		t.Errorf("estado da etapa pulada = %v", e[1].Estado)
+	}
+}
+
+func TestEtapasPuladaASCII(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, true)
+	got := Etapas([]Etapa{{Rotulo: "métricas", Estado: EtapaPulada, Nota: "indisponíveis"}}, 0)
+	if !strings.HasPrefix(got, "o métricas") || strings.Contains(got, "○") {
+		t.Errorf("no modo ASCII a etapa pulada usa o glifo de parado: %q", got)
+	}
+}

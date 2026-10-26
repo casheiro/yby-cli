@@ -3,12 +3,20 @@
 package backends
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // TestOPABackendName verifica que o nome do backend é "opa".
@@ -37,10 +45,10 @@ func TestEvaluateClusterAdminPolicy(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name       string
-		input      map[string]interface{}
-		wantCount  int
-		wantMsg    string
+		name      string
+		input     map[string]interface{}
+		wantCount int
+		wantMsg   string
 	}{
 		{
 			name: "binding suspeita deve gerar violação",
@@ -447,5 +455,51 @@ func TestScanClusterWithFakeClient(t *testing.T) {
 	}
 	if !foundDefaultDeny {
 		t.Error("finding opa/netpol_default_deny não encontrado")
+	}
+}
+
+// TestScanCluster_ClusterForaDoAr: com toda leitura do cluster falhando, o OPA devolve a
+// falha (e nenhum achado) em vez de "0 achados", e não escreve nada no log acima do debug.
+func TestScanCluster_ClusterForaDoAr(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("*", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("dial tcp 127.0.0.1:6443: connect: connection refused")
+	})
+	var log bytes.Buffer
+	anterior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(anterior) })
+
+	findings, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments")
+	if err == nil || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("esperava a falha do cluster, obtido %v (%d achados)", err, len(findings))
+	}
+	var parcial *FalhaParcial
+	if errors.As(err, &parcial) || len(findings) != 0 {
+		t.Errorf("nenhuma política rodou: é a falha comum, sem achados: %v, %+v", err, findings)
+	}
+	if log.Len() > 0 {
+		t.Errorf("as falhas ficam no log de depuração:\n%s", log.String())
+	}
+}
+
+// TestScanCluster_FalhaParcial: sem permissão para os ClusterRoles, as outras políticas
+// rodam, os achados delas valem e o erro diz quais ficaram de fora.
+func TestScanCluster_FalhaParcial(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("list", "clusterroles", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, "", errors.New("RBAC"))
+	})
+
+	findings, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments")
+	var parcial *FalhaParcial
+	if !errors.As(err, &parcial) {
+		t.Fatalf("esperava *FalhaParcial, obtido %v", err)
+	}
+	if strings.Join(parcial.Falhas, ",") != "acesso a secrets,wildcards" || !apierrors.IsForbidden(parcial) {
+		t.Errorf("falhas inesperadas: %+v", parcial)
+	}
+	if len(findings) != 2 {
+		t.Errorf("os achados do default-deny (ingress e egress) valem, obtido %+v", findings)
 	}
 }

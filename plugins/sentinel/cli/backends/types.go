@@ -4,17 +4,19 @@ package backends
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 )
 
 // Finding representa um achado de seguranca unificado de qualquer backend.
 type Finding struct {
-	ID             string `json:"id"`              // ex: "polaris/runAsRootAllowed", "opa/rbac_cluster_admin"
-	Source         string `json:"source"`           // "polaris", "opa", "trivy"
-	Severity       string `json:"severity"`         // "critical", "high", "medium", "low", "info"
-	Category       string `json:"category"`         // "pod-security", "rbac", "network", "image", "config"
-	Resource       string `json:"resource"`         // "Deployment/api-server"
+	ID             string `json:"id"`       // ex: "polaris/runAsRootAllowed", "opa/rbac_cluster_admin"
+	Source         string `json:"source"`   // "polaris", "opa", "trivy"
+	Severity       string `json:"severity"` // "critical", "high", "medium", "low", "info"
+	Category       string `json:"category"` // "pod-security", "rbac", "network", "image", "config"
+	Resource       string `json:"resource"` // "Deployment/api-server"
 	Namespace      string `json:"namespace"`
 	Message        string `json:"message"`
 	Recommendation string `json:"recommendation"`
@@ -29,3 +31,19 @@ type SecurityBackend interface {
 	// ScanCluster escaneia um namespace de um cluster ativo.
 	ScanCluster(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error)
 }
+
+// FalhaParcial é o erro de um backend que rodou só parte das verificações: os achados
+// devolvidos junto com ele valem, e Falhas diz quais verificações ficaram de fora (o
+// RBAC do usuário pode não deixar listar ClusterRoles, por exemplo). Causa é a primeira
+// falha. Quando nenhuma verificação roda, o backend devolve a falha comum, não esta.
+type FalhaParcial struct {
+	Falhas []string
+	Causa  error
+}
+
+func (f *FalhaParcial) Error() string {
+	return fmt.Sprintf("%s não rodaram: %v", strings.Join(f.Falhas, ", "), f.Causa)
+}
+
+// Unwrap devolve a primeira falha.
+func (f *FalhaParcial) Unwrap() error { return f.Causa }

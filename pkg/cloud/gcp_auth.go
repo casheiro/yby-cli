@@ -65,7 +65,7 @@ func (g *GCPAdvancedTokenGenerator) generateFromCredentialsFile(ctx context.Cont
 
 // generateWithImpersonation gera token via SA impersonation usando gcloud CLI.
 func (g *GCPAdvancedTokenGenerator) generateWithImpersonation(ctx context.Context) (*Token, error) {
-	out, err := g.Runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token",
+	out, err := saidaDoCLI(ctx, g.Runner, "gcloud", "auth", "print-access-token",
 		"--impersonate-service-account", g.ServiceAccountEmail)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao impersonar SA %s: %w", g.ServiceAccountEmail, err)

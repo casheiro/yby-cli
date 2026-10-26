@@ -72,9 +72,9 @@ func TestAzureProvider_CLIVersion_Error(t *testing.T) {
 }
 
 func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
-	const accountJSON = `{"user":{"name":"alice@example.com","type":"user"},"state":"Enabled"}`
+	const accountJSON = `{"id":"00000000-0000-0000-0000-000000000001","user":{"name":"alice@example.com","type":"user"},"state":"Enabled"}`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(accountJSON), nil
 		},
 	}
@@ -89,6 +89,9 @@ func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
 	if status.Identity != "alice@example.com" {
 		t.Errorf("Identity = %q, want %q", status.Identity, "alice@example.com")
 	}
+	if status.Account != "00000000-0000-0000-0000-000000000001" {
+		t.Errorf("Account = %q, want o id da assinatura", status.Account)
+	}
 	if status.Method != "az-cli" {
 		t.Errorf("Method = %q, want %q", status.Method, "az-cli")
 	}
@@ -96,7 +99,7 @@ func TestAzureProvider_ValidateCredentials_Valid(t *testing.T) {
 
 func TestAzureProvider_ValidateCredentials_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("não autenticado")
 		},
 	}
@@ -115,7 +118,7 @@ func TestAzureProvider_ValidateCredentials_CLIError(t *testing.T) {
 
 func TestAzureProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -132,13 +135,14 @@ func TestAzureProvider_ValidateCredentials_InvalidJSON(t *testing.T) {
 	}
 }
 
+// A versão é a que roda (currentKubernetesVersion); sem ela, a pedida (kubernetesVersion).
 func TestAzureProvider_ListClusters(t *testing.T) {
 	const listJSON = `[
-		{"name":"prod-aks","location":"eastus","resourceGroup":"rg-prod","kubernetesVersion":"1.29.0","powerState":{"code":"Running"}},
+		{"name":"prod-aks","location":"eastus","resourceGroup":"rg-prod","kubernetesVersion":"1.29","currentKubernetesVersion":"1.29.0","powerState":{"code":"Running"}},
 		{"name":"staging-aks","location":"westus2","resourceGroup":"rg-staging","kubernetesVersion":"1.28.5","powerState":{"code":"Running"}}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -159,6 +163,9 @@ func TestAzureProvider_ListClusters(t *testing.T) {
 	if clusters[0].Version != "1.29.0" {
 		t.Errorf("clusters[0].Version = %q, want %q", clusters[0].Version, "1.29.0")
 	}
+	if clusters[1].Version != "1.28.5" {
+		t.Errorf("clusters[1].Version = %q, want %q", clusters[1].Version, "1.28.5")
+	}
 	if clusters[0].Status != "Running" {
 		t.Errorf("clusters[0].Status = %q, want %q", clusters[0].Status, "Running")
 	}
@@ -173,7 +180,7 @@ func TestAzureProvider_ListClusters_RegionFilter(t *testing.T) {
 		{"name":"staging-aks","location":"westus2","resourceGroup":"rg-staging","kubernetesVersion":"1.28.5","powerState":{"code":"Running"}}
 	]`
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(listJSON), nil
 		},
 	}
@@ -192,7 +199,7 @@ func TestAzureProvider_ListClusters_RegionFilter(t *testing.T) {
 
 func TestAzureProvider_ListClusters_Empty(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte(`[]`), nil
 		},
 	}
@@ -208,7 +215,7 @@ func TestAzureProvider_ListClusters_Empty(t *testing.T) {
 
 func TestAzureProvider_ListClusters_CLIError(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("erro de rede")
 		},
 	}
@@ -221,7 +228,7 @@ func TestAzureProvider_ListClusters_CLIError(t *testing.T) {
 
 func TestAzureProvider_ListClusters_InvalidJSON(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return []byte("não é json"), nil
 		},
 	}
@@ -286,7 +293,7 @@ func TestAzureProvider_ConfigureKubeconfig_Error(t *testing.T) {
 func TestAzureProvider_RefreshToken(t *testing.T) {
 	var capturedCmd string
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, cmd string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, cmd string, _ ...string) ([]byte, error) {
 			capturedCmd = cmd
 			return []byte(`{"accessToken":"eyJ...","expiresOn":"2026-04-08 12:00:00.000000"}`), nil
 		},
@@ -303,7 +310,7 @@ func TestAzureProvider_RefreshToken(t *testing.T) {
 
 func TestAzureProvider_RefreshToken_Error(t *testing.T) {
 	runner := &testutil.MockRunner{
-		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		RunStdinOutputFunc: func(_ context.Context, _ string, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("token expirado")
 		},
 	}

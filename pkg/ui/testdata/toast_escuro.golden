@@ -1,3 +1,4 @@
 [38;2;167;188;113m✓[0m [38;2;221;208;181mDeployment api reiniciado · 3 réplicas[0m
 [38;2;217;174;95m▲[0m [38;2;221;208;181mtoken expira em 4 min[0m
 [38;2;217;131;97m✕[0m [38;2;221;208;181msem permissão para escalar · RBAC[0m
+[38;2;217;131;97m✕[0m [38;2;221;208;181msem permissão para escalar[0m[38;2;221;208;181m · [0m[38;2;161;147;121mRBAC[0m

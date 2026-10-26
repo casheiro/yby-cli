@@ -144,6 +144,10 @@ func (p *Progresso) Concluir(nota string) { p.encerrar(EtapaFeita, nota) }
 // Se outra etapa começar depois, elas voltam.
 func (p *Progresso) Falhar(nota string) { p.encerrar(EtapaFalha, nota) }
 
+// Pular encerra a etapa atual sem sucesso nem erro (○): um passo opcional que não trouxe
+// nada (ex.: métricas indisponíveis). O comando segue, e as pendentes continuam na tela.
+func (p *Progresso) Pular(nota string) { p.encerrar(EtapaPulada, nota) }
+
 func (p *Progresso) encerrar(estado EstadoEtapa, nota string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -310,7 +314,7 @@ func (p *Progresso) terminar(estado EstadoEtapa, nota string, agora time.Time) {
 
 func (p *Progresso) primeiraNaoFinal() int {
 	for i, e := range p.etapas {
-		if e.Estado != EtapaFeita && e.Estado != EtapaFalha {
+		if e.Estado != EtapaFeita && e.Estado != EtapaFalha && e.Estado != EtapaPulada {
 			return i
 		}
 	}

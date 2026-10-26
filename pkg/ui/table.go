@@ -19,6 +19,9 @@ type Coluna struct {
 	Min, Max   int // Max <= 0 significa sem limite
 	Prioridade int
 	Direita    bool // alinha o conteúdo à direita
+	// Nome marca a coluna que leva o negrito na linha selecionada. Sem nenhuma marcada,
+	// vale a primeira coluna visível.
+	Nome bool
 }
 
 // Linha é uma linha de dados. As células podem conter ANSI (por exemplo, de Status).
@@ -98,11 +101,26 @@ func Tabela(colunas []Coluna, linhas []Linha, selecionada, largura int) string {
 		}
 		switch {
 		case sel:
-			// Nome (primeira coluna) em negrito; o resto na tinta invertida sem negrito.
+			// Nome (a coluna marcada com Nome, ou a primeira) em negrito; o resto na tinta
+			// invertida sem negrito.
 			resto := s.Selecionado.Bold(false)
-			linha := s.Selecionado.Render(partes[0])
-			for _, p := range partes[1:] {
-				linha += resto.Render(sep + p)
+			var linha string
+			if marcadas := colunasDoNome(colunas, visiveis); len(marcadas) == 0 {
+				linha = s.Selecionado.Render(partes[0])
+				for _, p := range partes[1:] {
+					linha += resto.Render(sep + p)
+				}
+			} else {
+				for i, p := range partes {
+					if i > 0 {
+						linha += resto.Render(sep)
+					}
+					if marcadas[i] {
+						linha += s.Selecionado.Render(p)
+					} else {
+						linha += resto.Render(p)
+					}
+				}
 			}
 			saida = append(saida, linha+resto.Render(strings.Repeat(" ", max(0, largura-lipgloss.Width(linha)))))
 		case l.Concluida:
@@ -115,6 +133,31 @@ func Tabela(colunas []Coluna, linhas []Linha, selecionada, largura int) string {
 		}
 	}
 	return strings.Join(saida, "\n")
+}
+
+// colunasDoNome diz, por posição entre as visíveis, quais colunas têm Nome marcado.
+func colunasDoNome(colunas []Coluna, visiveis []int) map[int]bool {
+	marcadas := map[int]bool{}
+	for i, idx := range visiveis {
+		if colunas[idx].Nome {
+			marcadas[i] = true
+		}
+	}
+	return marcadas
+}
+
+// LargurasDasColunas devolve a largura que Tabela daria a cada coluna (0 para as que
+// somem), para quem precisa ajustar o conteúdo de uma célula à coluna antes de desenhar.
+func LargurasDasColunas(colunas []Coluna, linhas []Linha, largura int) []int {
+	saida := make([]int, len(colunas))
+	if len(colunas) == 0 || largura <= 0 {
+		return saida
+	}
+	visiveis, larguras := ajustarColunas(colunas, linhas, largura)
+	for i, idx := range visiveis {
+		saida[idx] = larguras[i]
+	}
+	return saida
 }
 
 // celula ajusta txt a exatamente w células (trunca com reticências ou preenche).

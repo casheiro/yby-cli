@@ -69,8 +69,8 @@ func (m Model) contexto() string {
 	if len(caminho) > 0 {
 		partes = append(partes, ui.CaminhoContexto(caminho...))
 	}
-	if m.config.AIModel != "" {
-		partes = append(partes, ui.S().TintaSuave.Render(m.config.AIModel))
+	if ia := m.rotuloIA(); ia != "" {
+		partes = append(partes, ui.S().TintaSuave.Render(ia))
 	}
 	return strings.Join(partes, "   ")
 }
@@ -169,6 +169,9 @@ func (m Model) mensagemEstado() string {
 	if m.state == stateStreaming {
 		return m.estadoTrabalho()
 	}
+	if m.trocando != "" {
+		return s.TintaSuave.Render("trocando para " + m.trocando + g.Reticencias)
+	}
 	f := m.ultimoFim
 	switch {
 	case f == nil:
@@ -232,7 +235,21 @@ func (m Model) teclas() []key.Binding {
 	// pergunta iria pela metade; a legenda mostra a tecla que chega (ver novaLinha).
 	quebra := k.Texto.NovaLinha
 	quebra.SetHelp(ui.RotuloTecla("ctrl+j"), quebra.Help().Desc)
-	return []key.Binding{k.Texto.Enviar, quebra, comandos, editar, rolar, ajuda}
+	return []key.Binding{k.Texto.Enviar, m.teclaVoltar(), quebra, comandos, editar, rolar, ajuda}
+}
+
+// teclaVoltar é o "esc voltar ao Viz" do Bard aberto por outro instrumento; sem ele, a
+// tecla fica desligada e some da legenda.
+func (m Model) teclaVoltar() key.Binding {
+	return teclaVoltarA(m.config.Voltar)
+}
+
+// teclaVoltarA é o esc que fecha o Bard e volta ao instrumento dado.
+func teclaVoltarA(instrumento string) key.Binding {
+	voltar := ui.DefaultKeys().Global.Voltar
+	voltar.SetHelp(voltar.Help().Key, "voltar ao "+instrumento)
+	voltar.SetEnabled(instrumento != "")
+	return voltar
 }
 
 // renderizarMensagem devolve o bloco de uma mensagem, terminado por uma linha em branco.

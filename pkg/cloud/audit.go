@@ -1,6 +1,8 @@
 package cloud
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -143,16 +145,26 @@ func (a *AuditLogger) ReadEvents(since time.Time) ([]CloudAuditEvent, error) {
 		return nil, err
 	}
 
+	// Uma linha por evento. Uma linha cortada (processo morto no meio da escrita, disco
+	// cheio) ou corrompida é pulada sozinha; as outras continuam valendo.
 	var events []CloudAuditEvent
-	decoder := json.NewDecoder(bytesReader(data))
-	for decoder.More() {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 0, 64*1024), maxAuditFileSize)
+	for scanner.Scan() {
+		linha := bytes.TrimSpace(scanner.Bytes())
+		if len(linha) == 0 {
+			continue
+		}
 		var event CloudAuditEvent
-		if err := decoder.Decode(&event); err != nil {
+		if err := json.Unmarshal(linha, &event); err != nil {
 			continue
 		}
 		if !event.Timestamp.Before(since) {
 			events = append(events, event)
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return events, err
 	}
 
 	return events, nil
@@ -222,24 +234,4 @@ func (a *AuditLogger) rotateIfNeeded() error {
 		return nil
 	}
 	return os.Rename(a.filePath, a.filePath+".1")
-}
-
-// bytesReader cria um io.Reader a partir de bytes, compatível com json.NewDecoder para JSONL.
-func bytesReader(data []byte) io.Reader {
-	return &jsonlReader{data: data, pos: 0}
-}
-
-// jsonlReader implementa io.Reader para decodificação JSONL.
-type jsonlReader struct {
-	data []byte
-	pos  int
-}
-
-func (r *jsonlReader) Read(p []byte) (n int, err error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
 }

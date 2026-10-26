@@ -108,7 +108,7 @@ func init() {
 	initCmd.Flags().StringVar(&opts.Workflow, "workflow", "", "Padrão de Workflow: essential, gitflow, trunkbased")
 	initCmd.Flags().BoolVar(&opts.IncludeDevContainer, "include-devcontainer", false, "Gerar configuração .devcontainer")
 	initCmd.Flags().BoolVar(&opts.IncludeCI, "include-ci", true, "Habilitar geração de CI/CD")
-	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo Offline: Pula verificações de Git remoto e usa defaults locais")
+	initCmd.Flags().BoolVar(&opts.Offline, "offline", false, "Modo offline: pula as verificações do Git remoto e usa os padrões locais")
 	initCmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "Modo Não-Interativo: Falha se argumentos obrigatórios estiverem faltando (Ideal para VPS/CI)")
 	initCmd.Flags().BoolVar(&opts.Force, "force", false, "Sobrescrever projeto existente sem confirmação")
 	initCmd.Flags().BoolVar(&opts.Update, "update", false, "Atualiza scaffold preservando alterações do usuário")

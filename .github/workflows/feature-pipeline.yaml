@@ -24,6 +24,11 @@ jobs:
         with:
           go-version: "1.26"  # Resolve para última patch release (security fixes automáticos)
 
+      - name: 🛡️ Guarda do visual (pkg/ui)
+        # Falha se aparecer emoji de status ou cor do lipgloss montada à mão fora do pkg/ui, em todos os
+        # módulos (raiz, plugins/viz, plugins/synapstor). Exceções em pkg/ui/guarda/guarda.go.
+        run: go test -count=1 -v -run TestGuarda ./pkg/ui/guarda/
+
       - name: 🏃 Run Tests
         run: |
           set -e
@@ -74,7 +79,7 @@ jobs:
 
       - name: ↪️ Create Pull Request (Feature -> Develop)
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.ref_name }}
         run: |
           # Extrai um título limpo a partir do nome da branch

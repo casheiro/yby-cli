@@ -9,8 +9,9 @@ import (
 	"github.com/casheiro/yby-cli/pkg/retry"
 )
 
-// providerFactory é uma função que cria um provider dado um contexto.
-type providerFactory func(ctx context.Context) Provider
+// providerFactory é uma função que cria um provider dado um contexto e um modelo
+// (vazio usa o modelo do config ou o padrão do provider).
+type providerFactory func(ctx context.Context, model string) Provider
 
 // registeredProviders armazena factories de providers registrados via init() (ex: build tags).
 var registeredProviders = map[string]providerFactory{}
@@ -92,36 +93,54 @@ func getProviderPriority() []string {
 
 // createProvider cria e retorna um provider pelo nome, se disponível.
 func createProvider(ctx context.Context, name string) Provider {
+	return createProviderWithModel(ctx, name, "")
+}
+
+// createProviderWithModel cria o provider pelo nome com o modelo dado, se disponível. Com
+// modelo vazio, cada provider usa o do config ou o seu padrão. Os decorators são os
+// mesmos nos dois casos: os CLIs seguem sem eles.
+func createProviderWithModel(ctx context.Context, name, model string) Provider {
 	switch name {
 	case "ollama":
 		p := NewOllamaProvider()
+		if model != "" {
+			p.Model, p.modelConfigured = model, true
+		}
 		if p.IsAvailable(ctx) {
 			return wrapProvider(p, p.Model)
 		}
 	case "gemini":
 		p := NewGeminiProvider()
+		if p != nil && model != "" {
+			p.Model = model
+		}
 		if p != nil && p.IsAvailable(ctx) {
 			return wrapProvider(p, p.Model)
 		}
 	case "openai":
 		p := NewOpenAIProvider()
+		if p != nil && model != "" {
+			p.Model = model
+		}
 		if p != nil && p.IsAvailable(ctx) {
 			return wrapProvider(p, p.Model)
 		}
 	case "claude-cli":
 		p := NewClaudeCLIProvider()
+		p.model = model
 		if p.IsAvailable(ctx) {
 			return p
 		}
 	case "gemini-cli":
 		p := NewGeminiCLIProvider()
+		p.model = model
 		if p.IsAvailable(ctx) {
 			return p
 		}
 	default:
 		// Verificar providers registrados via build tags (ex: bedrock com tag aws)
 		if factory, ok := registeredProviders[name]; ok {
-			return factory(ctx)
+			return factory(ctx, model)
 		}
 	}
 	return nil

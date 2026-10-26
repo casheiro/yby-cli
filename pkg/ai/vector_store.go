@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 
@@ -14,6 +15,9 @@ type VectorStore struct {
 	db         *chromem.DB
 	collection *chromem.Collection
 	provider   Provider
+	// AoAvancar, se definida, recebe quantos documentos de AddDocuments já têm embedding;
+	// o VectorStore não escreve na tela.
+	AoAvancar func(feitos, total int)
 }
 
 // NewVectorStore creates or opens a vector store at the specified path.
@@ -54,7 +58,7 @@ func (vs *VectorStore) AddDocuments(ctx context.Context, documents []string, met
 	}
 
 	total := len(documents)
-	fmt.Printf("Gerando embeddings para %d documentos usando %s...\n", total, vs.provider.Name())
+	slog.Debug("gerando embeddings", "documentos", total, "provider", vs.provider.Name())
 
 	// Gerar embeddings um por um com progresso
 	const embBatchSize = 1
@@ -67,16 +71,15 @@ func (vs *VectorStore) AddDocuments(ctx context.Context, documents []string, met
 		}
 		batch := documents[i:end]
 
-		fmt.Printf("\r  [%d/%d] documentos processados...", min(end, total), total)
-
 		batchVectors, err := vs.provider.EmbedDocuments(ctx, batch)
 		if err != nil {
-			fmt.Println()
 			return fmt.Errorf("falha ao gerar embeddings (doc %d-%d): %w", i+1, end, err)
 		}
 		vectors = append(vectors, batchVectors...)
+		if vs.AoAvancar != nil {
+			vs.AoAvancar(end, total)
+		}
 	}
-	fmt.Printf("\r  [%d/%d] documentos processados.   \n", total, total)
 
 	if len(vectors) != len(documents) {
 		return fmt.Errorf("mismatch: %d documentos mas %d vetores gerados", len(documents), len(vectors))

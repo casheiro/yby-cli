@@ -28,7 +28,10 @@ func usarTema(t *testing.T, escuro bool, perfil termenv.Profile, ascii bool) {
 	escuroAnterior := lipgloss.HasDarkBackground()
 	perfilAnterior := lipgloss.ColorProfile()
 	opcoesAnteriores := Atual()
+	terminalAnterior := SaidaNoTerminal
+	SaidaNoTerminal = func() bool { return true }
 	t.Cleanup(func() {
+		SaidaNoTerminal = terminalAnterior
 		Configurar(opcoesAnteriores)
 		// Configurar não desfaz tema/perfil forçados; restaura-os explicitamente.
 		lipgloss.SetHasDarkBackground(escuroAnterior)

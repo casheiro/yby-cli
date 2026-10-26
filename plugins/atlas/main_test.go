@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,6 +19,9 @@ import (
 func helperBuildAtlas(t *testing.T) string {
 	t.Helper()
 	binPath := filepath.Join(t.TempDir(), "atlas")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
 	cmd := exec.Command("go", "build", "-o", binPath, ".")
 	cmd.Dir = filepath.Join(projectRoot(t), "plugins", "atlas")
 	out, err := cmd.CombinedOutput()
@@ -387,8 +392,8 @@ func TestHookCommand_SubcomandoDiagram(t *testing.T) {
 
 	outStr := string(output)
 
-	if !strings.Contains(outStr, "Diagrama gerado com sucesso") {
-		t.Errorf("output deve conter mensagem de sucesso, obtido: %s", outStr)
+	if !strings.Contains(outStr, "DIAGRAMA") || !strings.Contains(outStr, "gravar o diagrama") {
+		t.Errorf("output deve conter a etapa e a seção do diagrama, obtido: %s", outStr)
 	}
 
 	if !strings.Contains(outStr, ".yby/atlas-diagram.mmd") {
@@ -434,7 +439,7 @@ func TestHookCommand_SubcomandoDiagramSemInfra(t *testing.T) {
 	}
 
 	outStr := string(output)
-	if !strings.Contains(outStr, "Nenhuma topologia") {
+	if !strings.Contains(outStr, "nenhuma topologia") {
 		t.Errorf("deveria informar que nenhuma topologia foi encontrada, obtido: %s", outStr)
 	}
 }
@@ -453,12 +458,13 @@ func TestHookCommand_SemSubcomando(t *testing.T) {
 	outStr := string(output)
 
 	// Agora sem subcomando exibe help em vez de erro
-	if !strings.Contains(outStr, "Atlas") || !strings.Contains(outStr, "Subcomandos") {
+	if !strings.Contains(outStr, "YBY  ATLAS") || !strings.Contains(outStr, "COMANDOS") {
 		t.Errorf("esperado help quando sem subcomando, obtido: %s", outStr)
 	}
 }
 
-// TestHookCommand_SubcomandoInvalido verifica que subcomando inválido retorna erro.
+// TestHookCommand_SubcomandoInvalido verifica que subcomando inválido sai com 1 e o erro
+// no stderr, no formato do ui.WriteError (o hook command escreve para pessoas).
 func TestHookCommand_SubcomandoInvalido(t *testing.T) {
 	binPath := helperBuildAtlas(t)
 
@@ -467,16 +473,19 @@ func TestHookCommand_SubcomandoInvalido(t *testing.T) {
 
 	cmd := exec.Command(binPath)
 	cmd.Stdin = bytes.NewReader(reqJSON)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
-	output, _ := cmd.Output()
-
-	var resp plugin.PluginResponse
-	if err := json.Unmarshal(output, &resp); err != nil {
-		t.Fatalf("resposta não é JSON válido: %v", err)
+	output, err := cmd.Output()
+	var saida *exec.ExitError
+	if !errors.As(err, &saida) || saida.ExitCode() != 1 {
+		t.Fatalf("esperado código de saída 1, obtido %v", err)
 	}
-
-	if resp.Error == "" {
-		t.Error("esperado erro para subcomando inválido")
+	if len(output) != 0 {
+		t.Errorf("nada no stdout, obtido %q", output)
+	}
+	if !strings.Contains(stderr.String(), "ERR_VALIDATION") || !strings.Contains(stderr.String(), "yby atlas --help") {
+		t.Errorf("erro fora do formato do ui.WriteError: %s", stderr.String())
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
 	tea "github.com/charmbracelet/bubbletea"
@@ -428,7 +429,7 @@ func TestComandos_ModeloTroca(t *testing.T) {
 	if m.seletor == nil || len(m.seletor.itens) != 2 || m.seletor.marcado != 0 {
 		t.Fatalf("os providers detectados, com o atual marcado: %+v", m.seletor)
 	}
-	if tela := ansi.Strip(m.View()); !strings.Contains(tela, "claude-cli") || !strings.Contains(tela, "falso · em uso") || !strings.Contains(tela, "2 providers") {
+	if tela := ansi.Strip(m.View()); !strings.Contains(tela, "claude-cli") || !strings.Contains(tela, "em uso · modelo padrão do CLI · falso") || !strings.Contains(tela, "2 providers") {
 		t.Errorf("lista de providers:\n%s", tela)
 	}
 	// Uma detecção antiga não mexe na lista.
@@ -463,6 +464,236 @@ func TestComandos_ModeloTroca(t *testing.T) {
 	}
 	if tela := ansi.Strip(m.View()); !strings.Contains(tela, "✕ nenhum provider openai disponível") || strings.Contains(tela, "MODELO") {
 		t.Errorf("o aviso de falha deveria estar na linha de estado:\n%s", tela)
+	}
+}
+
+// modelosDeExemplo são três providers detectados: o claude-cli com os apelidos (o CLI
+// escolhe o padrão), o Ollama com três modelos baixados e o gemini-cli sem troca de
+// modelo. ComModelo segue a regra de cada um sem chamar IA, como a factory: um modelo fora
+// da lista volta com o erro e a dica, o claude-cli aceita os IDs claude-* e o Ollama
+// devolve "llama3" como "llama3:latest". criados guarda o provider criado para cada
+// "rótulo/modelo".
+func modelosDeExemplo(criados map[string]*provedorFalso) (claude, ollama *provedorFalso, lista []Modelo) {
+	claude, ollama = &provedorFalso{}, &provedorFalso{}
+	criar := func(rotulo string, modelos []string, aceita func(string) bool) func(context.Context, string) (ai.Provider, string, error) {
+		return func(_ context.Context, modelo string) (ai.Provider, string, error) {
+			for _, m := range modelos {
+				if strings.EqualFold(m, modelo) || strings.EqualFold(m, modelo+":latest") || aceita(modelo) {
+					if aceita(modelo) {
+						m = modelo
+					}
+					p := &provedorFalso{}
+					criados[rotulo+"/"+m] = p
+					return p, m, nil
+				}
+			}
+			return nil, "", ybyerrors.New(ybyerrors.ErrCodeValidation, "o "+rotulo+" não tem o modelo "+modelo).
+				WithHint("Modelos conhecidos do " + rotulo + ": " + strings.Join(modelos, ", "))
+		}
+	}
+	apelidos := []string{"sonnet", "opus", "haiku"}
+	locais := []string{"qwen2.5:7b", "llama3:latest", "hf.co/autor/modelo:Q4"}
+	lista = []Modelo{
+		{Rotulo: "claude-cli", Provider: claude, Modelos: apelidos,
+			ComModelo: criar("claude-cli", apelidos, func(m string) bool { return strings.HasPrefix(m, "claude-") })},
+		{Rotulo: "ollama", Provider: ollama, Padrao: "qwen2.5:7b", Modelos: locais,
+			ComModelo: criar("ollama", locais, func(string) bool { return false })},
+		{Rotulo: "gemini-cli", Provider: &provedorFalso{}},
+	}
+	return claude, ollama, lista
+}
+
+// pedirComando digita o comando, entrega a detecção e roda a troca que ela pedir. Só a
+// criação do provider é rodada: o comando de um aviso é o tique que o apaga.
+func pedirComando(t *testing.T, m Model, texto string) Model {
+	t.Helper()
+	m.aviso = nil
+	m, cmd := teclarModelo(t, m, append(teclasDe(texto), teclaEnter)...)
+	m, cmd = rodarComando(t, m, cmd)
+	if m.aviso != nil || cmd == nil {
+		return m
+	}
+	msg, ok := cmd().(modeloCriadoMsg)
+	if !ok {
+		t.Fatalf("%s: a troca deveria criar o provider", texto)
+	}
+	atualizado, _ := m.Update(msg)
+	return atualizado.(Model)
+}
+
+func TestComandos_ModeloListaOsModelos(t *testing.T) {
+	semCores(t)
+	claude, _, lista := modelosDeExemplo(map[string]*provedorFalso{})
+	m := telaDeTeste(t, Config{SessionID: "20261024-100000", AIModel: "claude-cli"}, "10:00")
+	m.config.Modelos = func(context.Context) []Modelo { return lista }
+	m.provider, m.fluxo.Provider = claude, claude
+
+	m, cmd := teclarModelo(t, m, append(teclasDe("/modelo"), teclaEnter)...)
+	m, _ = rodarComando(t, m, cmd)
+	var nomes []string
+	for _, it := range m.seletor.itens {
+		nomes = append(nomes, it.nome)
+	}
+	esperado := []string{"claude-cli", "claude-cli/sonnet", "claude-cli/opus", "claude-cli/haiku", "ollama", "ollama/llama3:latest",
+		"ollama/hf.co/autor/modelo:Q4", "gemini-cli"}
+	if !reflect.DeepEqual(nomes, esperado) {
+		t.Fatalf("providers e modelos agrupados:\n%v", nomes)
+	}
+	if m.seletor.marcado != 0 {
+		t.Errorf("o provider da sessão abre marcado: %d", m.seletor.marcado)
+	}
+	tela := ansi.Strip(m.View())
+	for _, trecho := range []string{
+		"◆ claude-cli", "em uso · modelo padrão do CLI · falso", "◇ claude-cli/opus",
+		"qwen2.5:7b · falso", "◇ ollama/llama3:latest", "3 providers", textoDicaModelo,
+	} {
+		if !strings.Contains(tela, trecho) {
+			t.Errorf("falta %q na lista:\n%s", trecho, tela)
+		}
+	}
+}
+
+func TestComandos_ModeloTrocaOModelo(t *testing.T) {
+	semCores(t)
+	criados := map[string]*provedorFalso{}
+	claude, ollama, lista := modelosDeExemplo(criados)
+	m := telaDeTeste(t, Config{SessionID: "20261024-100000", AIModel: "claude-cli"}, "10:00")
+	m.config.Modelos = func(context.Context) []Modelo { return lista }
+	m.provider, m.fluxo.Provider = claude, claude
+
+	// ↵ no claude-cli/opus: o provider é criado fora do Update e a troca vem na mensagem.
+	m, cmd := teclarModelo(t, m, append(teclasDe("/modelo"), teclaEnter)...)
+	m, _ = rodarComando(t, m, cmd)
+	m, cmd = teclarModelo(t, m, tea.KeyMsg{Type: tea.KeyDown}, tea.KeyMsg{Type: tea.KeyDown}, teclaEnter)
+	if m.seletor != nil || m.config.ModeloIA != "" {
+		t.Fatalf("a troca espera o provider ser criado: %q", m.config.ModeloIA)
+	}
+	if tela := ansi.Strip(m.View()); !strings.Contains(tela, "trocando para claude-cli · opus…") {
+		t.Errorf("enquanto o provider é criado, a linha de estado diz a troca:\n%s", tela)
+	}
+	m, _ = rodarComando(t, m, cmd)
+	opus := criados["claude-cli/opus"]
+	if opus == nil || m.provider != ai.Provider(opus) || m.fluxo.Provider != ai.Provider(opus) {
+		t.Fatalf("a sessão passa para o provider com o modelo: %v", criados)
+	}
+	if m.config.AIModel != "claude-cli" || m.config.ModeloIA != "opus" {
+		t.Errorf("provider e modelo da sessão: %q %q", m.config.AIModel, m.config.ModeloIA)
+	}
+	if ultima := m.messages[len(m.messages)-1]; ultima.content != "modelo trocado para claude-cli · opus" {
+		t.Errorf("a troca fica na conversa: %+v", ultima)
+	}
+	if primeira := strings.SplitN(ansi.Strip(m.View()), "\n", 2)[0]; !strings.HasSuffix(strings.TrimSpace(primeira), "claude-cli · opus") {
+		t.Errorf("o cabeçalho mostra o modelo na hora: %q", primeira)
+	}
+	if tela := ansi.Strip(m.View()); strings.Contains(tela, "trocando para") {
+		t.Errorf("com o provider criado, a linha de estado não diz mais a troca:\n%s", tela)
+	}
+	// O /contexto e o /exportar levam o provider com o modelo.
+	if q := ansi.Strip(renderizarQuadro(m.quadroContexto(m.agora()), 100)); !strings.Contains(q, "claude-cli · opus") {
+		t.Errorf("o /contexto mostra o modelo da sessão:\n%s", q)
+	}
+	if md, _ := m.markdownConversa(); !strings.Contains(md, "claude-cli · opus") {
+		t.Errorf("o /exportar leva o modelo da sessão:\n%s", md)
+	}
+
+	// Reaberta, a lista marca o modelo em uso.
+	m, cmd = teclarModelo(t, m, append(teclasDe("/modelo"), teclaEnter)...)
+	m, _ = rodarComando(t, m, cmd)
+	if it := m.seletor.itens[m.seletor.marcado]; it.nome != "claude-cli/opus" || it.descricao != "em uso" {
+		t.Errorf("o modelo em uso abre marcado: %+v", it)
+	}
+	m, _ = teclarModelo(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+
+	// /modelo <modelo> troca no provider da sessão.
+	m = pedirComando(t, m, "/modelo haiku")
+	if m.config.ModeloIA != "haiku" || m.provider != ai.Provider(criados["claude-cli/haiku"]) {
+		t.Errorf("/modelo haiku: %q", m.config.ModeloIA)
+	}
+	// O mesmo modelo de novo só avisa.
+	m = pedirComando(t, m, "/modelo claude-cli/HAIKU")
+	if m.aviso == nil || !m.aviso.ok || m.aviso.texto != "a sessão já usa claude-cli · haiku" {
+		t.Errorf("o modelo que já está em uso: %+v", m.aviso)
+	}
+	// /modelo <modelo> que só outro provider tem troca os dois; "llama3" é o
+	// "llama3:latest" do Ollama, e a sessão guarda o nome que ele conhece.
+	m = pedirComando(t, m, "/modelo llama3")
+	if m.config.AIModel != "ollama" || m.config.ModeloIA != "llama3:latest" {
+		t.Errorf("/modelo llama3: %q %q", m.config.AIModel, m.config.ModeloIA)
+	}
+	if !strings.Contains(m.contexto(), "ollama · llama3:latest") {
+		t.Errorf("cabeçalho: %q", m.contexto())
+	}
+	m = pedirComando(t, m, "/modelo ollama/llama3")
+	if m.aviso == nil || !m.aviso.ok || m.aviso.texto != "a sessão já usa ollama · llama3:latest" {
+		t.Errorf("llama3 é o modelo em uso: %+v", m.aviso)
+	}
+	// Um nome com barra que não começa por um provider é um modelo (os do Hugging Face no
+	// Ollama).
+	m = pedirComando(t, m, "/modelo hf.co/autor/modelo:Q4")
+	if m.config.AIModel != "ollama" || m.config.ModeloIA != "hf.co/autor/modelo:Q4" {
+		t.Errorf("/modelo hf.co/autor/modelo:Q4: %q %q %+v", m.config.AIModel, m.config.ModeloIA, m.aviso)
+	}
+	// O padrão do Ollama é o provider detectado, sem criar outro.
+	m = pedirComando(t, m, "/modelo ollama/qwen2.5:7b")
+	if m.config.ModeloIA != "" || m.provider != ai.Provider(ollama) || criados["ollama/qwen2.5:7b"] != nil {
+		t.Errorf("o modelo padrão usa o provider detectado: %q", m.config.ModeloIA)
+	}
+	if ultima := m.messages[len(m.messages)-1]; ultima.content != "modelo trocado para o padrão do ollama" {
+		t.Errorf("volta ao padrão: %+v", ultima)
+	}
+	// /modelo <provider> volta ao provider com o modelo padrão.
+	m = pedirComando(t, m, "/modelo claude-cli")
+	if m.config.AIModel != "claude-cli" || m.config.ModeloIA != "" || m.provider != ai.Provider(claude) {
+		t.Errorf("/modelo claude-cli: %q %q", m.config.AIModel, m.config.ModeloIA)
+	}
+	if ultima := m.messages[len(m.messages)-1]; ultima.content != "provider trocado para claude-cli" {
+		t.Errorf("troca de provider: %+v", ultima)
+	}
+	if !strings.HasSuffix(m.contexto(), "claude-cli") {
+		t.Errorf("sem modelo escolhido, o cabeçalho mostra só o provider: %q", m.contexto())
+	}
+}
+
+func TestComandos_ModeloInvalido(t *testing.T) {
+	semCores(t)
+	claude, _, lista := modelosDeExemplo(map[string]*provedorFalso{})
+	m := telaDeTeste(t, Config{SessionID: "20261024-100000", AIModel: "claude-cli"}, "10:00")
+	m.config.Modelos = func(context.Context) []Modelo { return lista }
+	m.provider, m.fluxo.Provider = claude, claude
+
+	for _, caso := range []struct{ pedido, aviso string }{
+		{"/modelo claude-cli/gpt-9", "o claude-cli não tem o modelo gpt-9"},
+		{"/modelo xpto", "o claude-cli não tem o modelo xpto"},
+		{"/modelo openai", "nenhum provider openai disponível"},
+		{"/modelo openai/gpt-4o", "nenhum provider openai disponível"},
+		{"/modelo gemini-cli/gemini-2.5-pro", "o gemini-cli não troca de modelo"},
+	} {
+		m = pedirComando(t, m, caso.pedido)
+		if m.aviso == nil || m.aviso.ok || m.aviso.texto != caso.aviso {
+			t.Errorf("%s: %+v", caso.pedido, m.aviso)
+		}
+		if tela := ansi.Strip(m.View()); !strings.Contains(tela, "✕ "+caso.aviso) {
+			t.Errorf("%s: o aviso vai para a linha de estado:\n%s", caso.pedido, tela)
+		}
+		if m.config.AIModel != "claude-cli" || m.config.ModeloIA != "" || m.provider != ai.Provider(claude) {
+			t.Errorf("%s: a sessão continua no claude-cli: %q %q", caso.pedido, m.config.AIModel, m.config.ModeloIA)
+		}
+	}
+
+	// A recusa traz a dica do provider numa nota da conversa, que não corta.
+	m = pedirComando(t, m, "/modelo claude-cli/gpt-9")
+	if ultima := m.messages[len(m.messages)-1]; ultima.role != "nota" ||
+		ultima.content != "o claude-cli não tem o modelo gpt-9. Modelos conhecidos do claude-cli: sonnet, opus, haiku" {
+		t.Errorf("a dica do provider vai para a conversa: %+v", ultima)
+	}
+	if tela := ansi.Strip(m.View()); !strings.Contains(tela, "Modelos conhecidos do claude-cli: sonnet, opus, haiku") {
+		t.Errorf("a dica aparece na tela:\n%s", tela)
+	}
+
+	// Uma criação de uma escolha antiga não troca nada.
+	atualizado, _ := m.Update(modeloCriadoMsg{troca: m.trocas - 1, mod: lista[0], modelo: "opus", provider: &provedorFalso{}})
+	if m = atualizado.(Model); m.config.ModeloIA != "" {
+		t.Errorf("a criação antiga deveria ser descartada: %q", m.config.ModeloIA)
 	}
 }
 
@@ -508,7 +739,7 @@ func TestComandos_ModeloSemDeteccao(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{SessionID: "20261024-100000"}, "10:00")
 	m, _ = teclarModelo(t, m, append(teclasDe("/modelo"), teclaEnter)...)
-	if m.seletor != nil || m.aviso == nil || m.aviso.texto != "a troca de provider não está disponível" {
+	if m.seletor != nil || m.aviso == nil || m.aviso.texto != "a troca de modelo não está disponível" {
 		t.Errorf("sem detecção: %+v", m.aviso)
 	}
 	m.config.Modelos = func(context.Context) []Modelo { return nil }
@@ -866,7 +1097,7 @@ func TestQuadroLista_NegritoSoNoNome(t *testing.T) {
 // TestQuadroAjuda_TeclasDoKeymap: as teclas do /ajuda vêm dos mesmos bindings da legenda.
 func TestQuadroAjuda_TeclasDoKeymap(t *testing.T) {
 	semCores(t)
-	q := quadroAjuda(true)
+	q := quadroAjuda(true, "")
 	var linhas []string
 	for _, l := range q.linhas {
 		linhas = append(linhas, ansi.Strip(l.chave)+" | "+ansi.Strip(l.valor))
@@ -879,7 +1110,7 @@ func TestQuadroAjuda_TeclasDoKeymap(t *testing.T) {
 			t.Errorf("a ajuda deveria ter %q:\n%s", trecho, texto)
 		}
 	}
-	if len(quadroAjuda(false).linhas) != len(q.linhas)-len(exemplosPerguntas)-1 {
+	if len(quadroAjuda(false, "").linhas) != len(q.linhas)-len(exemplosPerguntas)-1 {
 		t.Error("sem exemplos, só as teclas")
 	}
 }

@@ -86,7 +86,7 @@ func linhasStatusProvider(p statusProviderCloud, quando time.Time) []linhaCheck 
 		linhas = append(linhas, linhaCheck{ui.CheckNeutro, "cli", p.versao, ""})
 	}
 	if p.err != nil || p.status == nil || !p.status.Authenticated {
-		nota := "faça o login no CLI do provider"
+		nota := cloud.DicaDeLogin(p.nome)
 		if p.err != nil {
 			nota = p.err.Error()
 		}

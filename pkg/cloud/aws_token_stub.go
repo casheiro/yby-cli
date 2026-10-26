@@ -30,7 +30,7 @@ type awsEKSToken struct {
 // GenerateToken gera um token EKS executando `aws eks get-token` via CLI.
 func (g *AWSTokenGenerator) GenerateToken(ctx context.Context) (*Token, error) {
 	slog.Debug("usando fallback CLI para token EKS (build sem tag aws)")
-	out, err := g.Runner.RunCombinedOutput(ctx, "aws", "eks", "get-token", "--cluster-name", g.Cluster, "--output", "json")
+	out, err := saidaDoCLI(ctx, g.Runner, "aws", "eks", "get-token", "--cluster-name", g.Cluster, "--output", "json")
 	if err != nil {
 		return nil, fmt.Errorf("aws eks get-token: %w", err)
 	}

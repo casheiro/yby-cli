@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
 // IndexManifest rastreia o estado de indexação de cada arquivo.
@@ -32,13 +34,31 @@ type Indexer struct {
 	Provider    ai.Provider
 	RootDir     string
 	FullReindex bool
+	// Etapas recebe o andamento (procurar documentos, tirar os removidos, gerar
+	// embeddings); o indexador não escreve na tela.
+	Etapas shared.Etapas
 }
 
 func NewIndexer(provider ai.Provider, rootDir string) *Indexer {
 	return &Indexer{
 		Provider: provider,
 		RootDir:  rootDir,
+		Etapas:   shared.EtapasMudas{},
 	}
+}
+
+func (i *Indexer) etapas() shared.Etapas {
+	if i.Etapas == nil {
+		return shared.EtapasMudas{}
+	}
+	return i.Etapas
+}
+
+func plural(n int, singular, plur string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plur)
 }
 
 // loadManifest carrega o manifest de indexação do disco.
@@ -70,6 +90,27 @@ func (i *Indexer) saveManifest(m *IndexManifest) error {
 	return os.WriteFile(filepath.Join(i.RootDir, manifestFile), data, 0644)
 }
 
+// tirarDoIndice apaga do vector store os documentos dos arquivos removidos. Devolve
+// quantos saíram e quais ficaram por causa de erro; o detalhe do erro vai para o log.
+func (i *Indexer) tirarDoIndice(ctx context.Context, storePath string, arquivos []string) (int, []string) {
+	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
+	if err != nil {
+		slog.Debug("não deu para abrir o índice para tirar os removidos", "erro", err)
+		return 0, arquivos
+	}
+	removidos := 0
+	var falhas []string
+	for _, relPath := range arquivos {
+		if err := vs.DeleteByMetadata(ctx, map[string]string{"source": relPath}); err != nil {
+			slog.Debug("não deu para tirar o arquivo do índice", "arquivo", relPath, "erro", err)
+			falhas = append(falhas, relPath)
+			continue
+		}
+		removidos++
+	}
+	return removidos, falhas
+}
+
 // fileHash calcula o hash SHA-256 de um arquivo.
 func fileHash(path string) (string, error) {
 	data, err := os.ReadFile(path)
@@ -84,6 +125,7 @@ func fileHash(path string) (string, error) {
 type IndexReport struct {
 	FilesScanned      int
 	FilesSkipped      int
+	FilesRemoved      int
 	ChunksGenerated   int
 	EmbeddingsCreated int
 	Duration          time.Duration
@@ -93,22 +135,28 @@ type IndexReport struct {
 func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	start := time.Now()
 	report := &IndexReport{}
+	et := i.etapas()
 
 	// 1. Coletar arquivos
+	et.Iniciar("procurar documentos")
 	files, err := i.scanFiles()
 	if err != nil {
+		et.Falhar("")
 		return nil, err
 	}
 
 	report.FilesScanned = len(files)
-
-	if len(files) == 0 {
-		report.Duration = time.Since(start)
-		return report, nil
-	}
+	et.Concluir(plural(len(files), "arquivo", "arquivos"))
 
 	// 2. Carregar manifest para indexação incremental
 	manifest := i.loadManifest()
+
+	// Sem documentos e sem nada indexado antes, não há o que fazer. Com o manifest
+	// cheio, segue para tirar do índice os documentos que foram apagados.
+	if len(files) == 0 && len(manifest.Files) == 0 {
+		report.Duration = time.Since(start)
+		return report, nil
+	}
 	newManifest := &IndexManifest{Files: make(map[string]IndexedFile)}
 
 	// 3. Processar arquivos -> chunks
@@ -175,11 +223,17 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		}
 	}
 	if len(removedFiles) > 0 {
-		vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
-		if err == nil {
-			for _, relPath := range removedFiles {
-				_ = vs.DeleteByMetadata(ctx, map[string]string{"source": relPath})
-			}
+		et.Iniciar("tirar os removidos do índice")
+		removidos, falhas := i.tirarDoIndice(ctx, storePath, removedFiles)
+		// Os que não saíram do índice ficam no manifest, para a próxima indexação
+		// tentar de novo.
+		for _, relPath := range falhas {
+			newManifest.Files[relPath] = manifest.Files[relPath]
+		}
+		report.FilesRemoved = removidos
+		et.Concluir(plural(removidos, "arquivo", "arquivos"))
+		if len(falhas) > 0 {
+			et.Avisar("não deu para tirar do índice " + plural(len(falhas), "arquivo apagado", "arquivos apagados") + "; a próxima indexação tenta de novo")
 		}
 	}
 
@@ -193,13 +247,18 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	}
 
 	// 5. Inicializar Vector Store
+	et.Iniciar("gerar embeddings")
 	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
 	if err != nil {
+		et.Falhar("")
 		return nil, fmt.Errorf("falha ao inicializar vector store: %w", err)
 	}
 
+	vs.AoAvancar = func(feitos, total int) { et.Avancar(float64(feitos) / float64(total)) }
+
 	// 6. Indexar
 	if err := vs.AddDocuments(ctx, allChunks, allMetadatas, allIDs); err != nil {
+		et.Falhar("")
 		return nil, err
 	}
 
@@ -207,8 +266,10 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 
 	// 7. Salvar manifest atualizado
 	if err := i.saveManifest(newManifest); err != nil {
+		et.Falhar("")
 		return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)
 	}
+	et.Concluir(plural(len(allChunks), "documento", "documentos"))
 
 	report.Duration = time.Since(start)
 	return report, nil

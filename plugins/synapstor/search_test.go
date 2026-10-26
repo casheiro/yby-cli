@@ -1,13 +1,19 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
 // TestParseSearchArgs_QuerySimples verifica extração de query sem flags.
 func TestParseSearchArgs_QuerySimples(t *testing.T) {
-	query, topK := parseSearchArgs([]string{"kubernetes", "deploy"})
+	query, topK, err := parseSearchArgs([]string{"kubernetes", "deploy"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if query != "kubernetes deploy" {
 		t.Errorf("query esperada 'kubernetes deploy', obtida %q", query)
 	}
@@ -18,7 +24,10 @@ func TestParseSearchArgs_QuerySimples(t *testing.T) {
 
 // TestParseSearchArgs_ComTopK verifica extração de --top-k separado.
 func TestParseSearchArgs_ComTopK(t *testing.T) {
-	query, topK := parseSearchArgs([]string{"argo", "cd", "--top-k", "10"})
+	query, topK, err := parseSearchArgs([]string{"argo", "cd", "--top-k", "10"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if query != "argo cd" {
 		t.Errorf("query esperada 'argo cd', obtida %q", query)
 	}
@@ -29,7 +38,10 @@ func TestParseSearchArgs_ComTopK(t *testing.T) {
 
 // TestParseSearchArgs_ComTopKInline verifica extração de --top-k=N.
 func TestParseSearchArgs_ComTopKInline(t *testing.T) {
-	query, topK := parseSearchArgs([]string{"helm", "--top-k=3", "charts"})
+	query, topK, err := parseSearchArgs([]string{"helm", "--top-k=3", "charts"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if query != "helm charts" {
 		t.Errorf("query esperada 'helm charts', obtida %q", query)
 	}
@@ -38,71 +50,34 @@ func TestParseSearchArgs_ComTopKInline(t *testing.T) {
 	}
 }
 
-// TestParseSearchArgs_TopKInvalido verifica que --top-k inválido usa padrão.
+// TestParseSearchArgs_TopKInvalido verifica que --top-k sem número válido é erro de
+// validação com hint, em vez de cair no padrão calado.
 func TestParseSearchArgs_TopKInvalido(t *testing.T) {
-	query, topK := parseSearchArgs([]string{"busca", "--top-k", "abc"})
-	if query != "busca" {
-		t.Errorf("query esperada 'busca', obtida %q", query)
-	}
-	if topK != defaultTopK {
-		t.Errorf("topK esperado %d (padrão), obtido %d", defaultTopK, topK)
-	}
-}
-
-// TestParseSearchArgs_TopKZero verifica que --top-k=0 usa padrão.
-func TestParseSearchArgs_TopKZero(t *testing.T) {
-	_, topK := parseSearchArgs([]string{"busca", "--top-k", "0"})
-	if topK != defaultTopK {
-		t.Errorf("topK esperado %d (padrão para valor <= 0), obtido %d", defaultTopK, topK)
+	for _, args := range [][]string{
+		{"busca", "--top-k", "abc"},
+		{"busca", "--top-k", "0"},
+		{"busca", "--top-k=-2"},
+		{"busca", "--top-k"},
+	} {
+		_, _, err := parseSearchArgs(args)
+		var ye *yerrors.YbyError
+		if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeValidation || ye.GetHint() == "" {
+			t.Errorf("%v: esperado ERR_VALIDATION com hint, obtido %v", args, err)
+		}
 	}
 }
 
 // TestParseSearchArgs_SemArgs verifica query vazia sem argumentos.
 func TestParseSearchArgs_SemArgs(t *testing.T) {
-	query, topK := parseSearchArgs([]string{})
+	query, topK, err := parseSearchArgs([]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if query != "" {
 		t.Errorf("query esperada vazia, obtida %q", query)
 	}
 	if topK != defaultTopK {
 		t.Errorf("topK esperado %d, obtido %d", defaultTopK, topK)
-	}
-}
-
-// TestFormatSearchResults_ComResultados verifica a formatação com resultados.
-func TestFormatSearchResults_ComResultados(t *testing.T) {
-	results := []searchResult{
-		{Index: 1, Score: 0.95, Title: "Deploy com Argo CD", Preview: "Como configurar deploy..."},
-		{Index: 2, Score: 0.82, Title: "Helm Charts", Preview: "Criando charts personalizados..."},
-	}
-
-	output := formatSearchResults("deploy", results)
-
-	if !strings.Contains(output, `"deploy"`) {
-		t.Error("saída deve conter a query")
-	}
-	if !strings.Contains(output, "2 encontrados") {
-		t.Error("saída deve indicar quantidade de resultados")
-	}
-	if !strings.Contains(output, "[1] (0.95) Deploy com Argo CD") {
-		t.Error("saída deve conter primeiro resultado formatado")
-	}
-	if !strings.Contains(output, "[2] (0.82) Helm Charts") {
-		t.Error("saída deve conter segundo resultado formatado")
-	}
-	if !strings.Contains(output, "Como configurar deploy...") {
-		t.Error("saída deve conter preview do primeiro resultado")
-	}
-}
-
-// TestFormatSearchResults_SemResultados verifica mensagem quando não há resultados.
-func TestFormatSearchResults_SemResultados(t *testing.T) {
-	output := formatSearchResults("inexistente", nil)
-
-	if !strings.Contains(output, "Nenhum resultado") {
-		t.Error("saída deve indicar ausência de resultados")
-	}
-	if !strings.Contains(output, `"inexistente"`) {
-		t.Error("saída deve conter a query pesquisada")
 	}
 }
 
@@ -114,16 +89,20 @@ func TestTruncatePreview_TextoCurto(t *testing.T) {
 	}
 }
 
-// TestTruncatePreview_TextoLongo verifica que texto longo é truncado com "...".
+// TestTruncatePreview_TextoLongo verifica que texto longo é truncado com reticências,
+// contando runas (um acento não parte no meio).
 func TestTruncatePreview_TextoLongo(t *testing.T) {
-	longText := strings.Repeat("a", 300)
+	longText := strings.Repeat("ç", 300)
 	result := truncatePreview(longText, 200)
 
-	if len(result) != 203 { // 200 + "..."
-		t.Errorf("esperado 203 caracteres, obtido %d", len(result))
+	if n := len([]rune(result)); n != 201 { // 200 + "…"
+		t.Errorf("esperado 201 runas, obtido %d", n)
 	}
-	if !strings.HasSuffix(result, "...") {
-		t.Error("texto truncado deve terminar com '...'")
+	if !strings.HasSuffix(result, "…") {
+		t.Error("texto truncado deve terminar com '…'")
+	}
+	if strings.ContainsRune(result, '�') {
+		t.Error("o corte partiu uma runa")
 	}
 }
 
@@ -135,5 +114,20 @@ func TestTruncatePreview_RemoveQuebrasLinha(t *testing.T) {
 	}
 	if result != "linha1 linha2 linha3" {
 		t.Errorf("esperado 'linha1 linha2 linha3', obtido %q", result)
+	}
+}
+
+// TestTruncatePreview_TiraFrontmatter verifica que o frontmatter YAML não entra.
+func TestTruncatePreview_TiraFrontmatter(t *testing.T) {
+	result := truncatePreview("---\ntitle: x\n---\n# Título\n## Seção\ncorpo **forte**\n```bash\nargocd app sync\n```", 200)
+	if result != "Seção corpo forte argocd app sync" {
+		t.Errorf("obtido %q", result)
+	}
+}
+
+// TestPontuacao_ComVirgula verifica a pontuação no formato brasileiro.
+func TestPontuacao_ComVirgula(t *testing.T) {
+	if p := pontuacao(0.8249); p != "0,82" {
+		t.Errorf("obtido %q", p)
 	}
 }

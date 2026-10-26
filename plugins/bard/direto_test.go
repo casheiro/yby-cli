@@ -427,13 +427,13 @@ func (o *ollamaFalso) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // rodarPlugin roda o binário de teste como o plugin, sem terminal em nenhuma ponta, com
 // a home isolada e o Ollama falso como único provider; falha se passar do prazo.
-func rodarPlugin(t *testing.T, ollama string, args []string, entrada string) (saida, erros string, codigo int) {
+func rodarPlugin(t *testing.T, ollama string, args []string, entrada string, extras ...string) (saida, erros string, codigo int) {
 	t.Helper()
 	pedido, err := json.Marshal(map[string]interface{}{"hook": "command", "args": args})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return rodarProcesso(t, ollama, entrada, "YBY_PLUGIN_REQUEST="+string(pedido))
+	return rodarProcesso(t, ollama, entrada, append([]string{"YBY_PLUGIN_REQUEST=" + string(pedido)}, extras...)...)
 }
 
 // rodarProcesso é rodarPlugin com as variáveis de ambiente extras dadas, sem o pedido

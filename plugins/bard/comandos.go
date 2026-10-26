@@ -72,14 +72,31 @@ func retomador(ctxData map[string]interface{}, bardCfg BardConfig, clusterCtx *C
 	}
 }
 
-// modelosDetectados lista os providers de IA disponíveis, na ordem de ai.priority, para o
-// /modelo. Cada um confere se está disponível; nenhum é chamado para gerar texto.
+// modelosDetectados lista os providers de IA disponíveis, na ordem de ai.priority, com os
+// modelos de cada um (ai.ListModels), para o /modelo. Cada um confere se está disponível;
+// nenhum é chamado para gerar texto.
 func modelosDetectados(ctx context.Context) []tui.Modelo {
 	var lista []tui.Modelo
 	for _, p := range ai.GetAllAvailableProviders(ctx) {
-		lista = append(lista, tui.Modelo{Rotulo: rotuloProvider(p), Provider: p})
+		lista = append(lista, modeloDetectado(ctx, p))
 	}
 	return lista
+}
+
+// modeloDetectado junta ao provider os modelos dele e a criação com um modelo escolhido,
+// que vale só para a sessão.
+func modeloDetectado(ctx context.Context, p ai.Provider) tui.Modelo {
+	rotulo := rotuloProvider(p)
+	mod := tui.Modelo{Rotulo: rotulo, Provider: p}
+	if !ai.IsKnownProvider(rotulo) {
+		return mod
+	}
+	cat := ai.ListModels(ctx, rotulo)
+	mod.Padrao, mod.Modelos, mod.Aviso = cat.Default, cat.Models, cat.Warning
+	mod.ComModelo = func(ctx context.Context, modelo string) (ai.Provider, string, error) {
+		return ai.GetProviderWithModel(ctx, rotulo, modelo)
+	}
+	return mod
 }
 
 // contarHistorico conta as entradas que vão para o system prompt e as sessões delas, para

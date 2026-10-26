@@ -9,6 +9,10 @@ import (
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 )
 
+// aksServidor é o id da aplicação do servidor de API do AKS no Entra ID, o público dos
+// tokens que o kubectl manda ao cluster.
+const aksServidor = "6dae42f8-4368-4678-94ff-3960e28e3630"
+
 func init() {
 	RegisterProvider(func(runner shared.Runner) CloudProvider {
 		return &azureProvider{runner: runner}
@@ -33,7 +37,7 @@ func (a *azureProvider) IsAvailable(_ context.Context) bool {
 func (a *azureProvider) CLIVersion(ctx context.Context) (string, error) {
 	out, err := a.runner.RunCombinedOutput(ctx, "az", "--version")
 	if err != nil {
-		return "", fmt.Errorf("az --version: %w", err)
+		return "", erroDoCLI("az --version", out, err)
 	}
 	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
 	if len(lines) > 0 {
@@ -44,6 +48,8 @@ func (a *azureProvider) CLIVersion(ctx context.Context) (string, error) {
 
 // azAccountShow representa a saída de `az account show --output json`.
 type azAccountShow struct {
+	// ID é o id da assinatura ativa.
+	ID   string `json:"id"`
 	User struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
@@ -53,9 +59,9 @@ type azAccountShow struct {
 
 // ValidateCredentials verifica credenciais via `az account show`.
 func (a *azureProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
-	out, err := a.runner.RunCombinedOutput(ctx, "az", "account", "show", "--output", "json")
+	out, err := saidaDoCLI(ctx, a.runner, "az", "account", "show", "--output", "json")
 	if err != nil {
-		return &CredentialStatus{Authenticated: false}, fmt.Errorf("az account show: %w", err)
+		return &CredentialStatus{Authenticated: false}, erroDoCLI("az account show", out, err)
 	}
 
 	var account azAccountShow
@@ -66,7 +72,9 @@ func (a *azureProvider) ValidateCredentials(ctx context.Context) (*CredentialSta
 	return &CredentialStatus{
 		Authenticated: true,
 		Identity:      account.User.Name,
+		Account:       account.ID,
 		Method:        "az-cli",
+		ExpiresAt:     validadeAzure(ctx, a),
 	}, nil
 }
 
@@ -76,7 +84,10 @@ type azAKSCluster struct {
 	Location          string `json:"location"`
 	ResourceGroup     string `json:"resourceGroup"`
 	KubernetesVersion string `json:"kubernetesVersion"`
-	PowerState        struct {
+	// CurrentKubernetesVersion é a versão que roda; KubernetesVersion é a pedida, que pode
+	// vir sem o patch ("1.29").
+	CurrentKubernetesVersion string `json:"currentKubernetesVersion"`
+	PowerState               struct {
 		Code string `json:"code"`
 	} `json:"powerState"`
 }
@@ -84,9 +95,9 @@ type azAKSCluster struct {
 // ListClusters lista clusters AKS via `az aks list`.
 // Quando opts.Region não está vazio, filtra por localização (case-insensitive).
 func (a *azureProvider) ListClusters(ctx context.Context, opts ListOptions) ([]ClusterInfo, error) {
-	out, err := a.runner.RunCombinedOutput(ctx, "az", "aks", "list", "--output", "json")
+	out, err := saidaDoCLI(ctx, a.runner, "az", "aks", "list", "--output", "json")
 	if err != nil {
-		return nil, fmt.Errorf("az aks list: %w", err)
+		return nil, erroDoCLI("az aks list", out, err)
 	}
 
 	var aksClusters []azAKSCluster
@@ -99,11 +110,15 @@ func (a *azureProvider) ListClusters(ctx context.Context, opts ListOptions) ([]C
 		if opts.Region != "" && !strings.EqualFold(c.Location, opts.Region) {
 			continue
 		}
+		versao := c.CurrentKubernetesVersion
+		if versao == "" {
+			versao = c.KubernetesVersion
+		}
 		clusters = append(clusters, ClusterInfo{
 			Name:          c.Name,
 			Region:        c.Location,
 			Provider:      "azure",
-			Version:       c.KubernetesVersion,
+			Version:       versao,
 			Status:        c.PowerState.Code,
 			ResourceGroup: c.ResourceGroup,
 		})
@@ -122,8 +137,8 @@ func (a *azureProvider) ConfigureKubeconfig(ctx context.Context, cluster Cluster
 
 // RefreshToken renova o token de autenticação via `az account get-access-token`.
 func (a *azureProvider) RefreshToken(ctx context.Context, _ ClusterInfo) error {
-	if _, err := a.runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--output", "json"); err != nil {
-		return fmt.Errorf("az account get-access-token: %w", err)
+	if out, err := saidaDoCLI(ctx, a.runner, "az", "account", "get-access-token", "--output", "json"); err != nil {
+		return erroDoCLI("az account get-access-token", out, err)
 	}
 	return nil
 }

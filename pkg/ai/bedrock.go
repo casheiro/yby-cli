@@ -41,10 +41,7 @@ func NewBedrockProvider() *BedrockProvider {
 		region = "us-east-1"
 	}
 
-	model := "anthropic.claude-3-5-sonnet-20241022-v2:0"
-	if override := getConfiguredModel("bedrock"); override != "" {
-		model = override
-	}
+	model := defaultBedrockModel()
 
 	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRegion(region))
 	if err != nil {
@@ -58,6 +55,14 @@ func NewBedrockProvider() *BedrockProvider {
 		Model:  model,
 		Region: region,
 	}
+}
+
+// defaultBedrockModel é o modelo do Bedrock sem escolha na sessão: o do config ou o padrão.
+func defaultBedrockModel() string {
+	if override := getConfiguredModel("bedrock"); override != "" {
+		return override
+	}
+	return "anthropic.claude-3-5-sonnet-20241022-v2:0"
 }
 
 // newBedrockProviderWithClient cria um BedrockProvider com um client customizado (para testes).

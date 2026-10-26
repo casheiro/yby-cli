@@ -1,0 +1,12 @@
+flowchart TD
+  subgraph Helm_Charts["Helm Charts"]
+    HelmChart_api["api\n(HelmChart)"]
+  end
+  subgraph Repositorios_Externos["Repositorios Externos"]
+    HelmRepository_redis["redis\n(HelmRepository)"]
+  end
+  subgraph Workloads["Workloads"]
+    Deployment_api_server["api-server\n(Deployment)"]
+  end
+  HelmChart_api -->|depends_on| HelmRepository_redis
+  HelmChart_api -->|deploys| Deployment_api_server

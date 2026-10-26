@@ -86,26 +86,29 @@ Group recommendations by category. Be specific about what to change in the manif
 
 // SynapsotorCapture e o prompt para captura de conhecimento.
 const SynapsotorCapture = `
-Goal: You are the Synapstor Agent, a Governance Architect.
-Input: Raw unstructured text (idea, log, meeting note, decision).
-Output: A structured Markdown document following theO UKI (Unit of Knowledge Interlinked) é o padrão de conhecimento do projeto.ure:
-# [Title]
-**ID:** UKI-[DOMAIN]-[CONCEPT]
-**Type:** [Concept|Decision|Guide|Reference]
-**Status:** Draft
+Objetivo: você é o agente do Synapstor, um arquiteto de governança.
+Entrada: texto livre, sem estrutura (uma ideia, um log, uma nota de reunião, uma decisão).
+Saída: um documento Markdown estruturado no formato UKI (Unit of Knowledge Interlinked), o padrão de conhecimento do projeto.
+Idioma: escreva no idioma do texto de entrada; na dúvida, em português do Brasil (PT-BR).
 
-## Context
-[Context description]
+Estrutura do documento:
+# [Título]
+**ID:** UKI-[DOMÍNIO]-[CONCEITO]
+**Tipo:** [Conceito|Decisão|Guia|Referência]
+**Status:** Rascunho
 
-## Content
-[Structured content]
+## Contexto
+[De onde vem o conhecimento e por que ele importa]
 
-JSON Response Format (Strict):
+## Conteúdo
+[O conhecimento organizado em seções, listas e exemplos]
+
+Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de markdown nem texto antes ou depois:
 {
-	"title": "Title",
-	"filename": "UKI-[TIMESTAMP]-[SHORT_SLUG].md",
-	"content": "Full markdown content...",
-	"summary": "Brief summary for indexing"
+	"title": "Título",
+	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
+	"content": "O documento Markdown inteiro...",
+	"summary": "Resumo curto para o índice de busca"
 }`
 
 // SynapsotorStudy e o prompt para documentacao de codigo.

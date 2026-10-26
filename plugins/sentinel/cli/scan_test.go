@@ -22,8 +22,8 @@ func TestExportScanMarkdown_SemFindings(t *testing.T) {
 	if !strings.Contains(content, "prod") {
 		t.Error("markdown deveria conter o nome do namespace")
 	}
-	if !strings.Contains(content, "0 criticos, 0 avisos") {
-		t.Errorf("resumo esperado '0 criticos, 0 avisos', conteúdo: %s", content)
+	if !strings.Contains(content, "**Resumo:** nenhum achado") {
+		t.Errorf("resumo esperado 'nenhum achado', conteúdo: %s", content)
 	}
 	if strings.Contains(content, "## Recomendações") {
 		t.Error("não deveria conter seção de recomendações quando não há findings")
@@ -42,8 +42,30 @@ func TestExportScanMarkdown_ContaCriticaisEAvisos(t *testing.T) {
 
 	content := exportScanMarkdown(report)
 
-	if !strings.Contains(content, "2 criticos, 1 avisos") {
-		t.Errorf("resumo esperado '2 criticos, 1 avisos', conteúdo: %s", content)
+	if !strings.Contains(content, "**Resumo:** 2 críticos, 1 médio") {
+		t.Errorf("resumo esperado '2 críticos, 1 médio', conteúdo: %s", content)
+	}
+}
+
+// TestExportScanMarkdown_SeveridadeComoNoTerminal: o relatório lê a severidade como o
+// terminal (Severity antes de Type), então um check interno com Severity alta e Type
+// "critical" sai como alto (▲) nos dois, e o baixo sai neutro (○).
+func TestExportScanMarkdown_SeveridadeComoNoTerminal(t *testing.T) {
+	content := exportScanMarkdown(ScanReport{
+		Namespace: "prod",
+		Findings: []checks.SecurityFinding{
+			{Severity: checks.SeverityHigh, Type: "critical", Category: checks.CategorySupplyChain, Resource: "Deployment/api", Description: "imagem sem assinatura"},
+			{Severity: "low", Type: "low", Category: checks.CategorySupplyChain, Resource: "StatefulSet/redis", Description: "pull policy"},
+		},
+	})
+	for _, esperado := range []string{
+		"**Resumo:** 1 alto, 1 baixo\n",
+		"- ▲ **[supply-chain]** `Deployment/api`",
+		"- ○ **[supply-chain]** `StatefulSet/redis`",
+	} {
+		if !strings.Contains(content, esperado) {
+			t.Errorf("esperava %q no relatório:\n%s", esperado, content)
+		}
 	}
 }
 
