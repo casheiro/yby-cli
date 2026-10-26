@@ -99,6 +99,53 @@ func TestManagerDiscover(t *testing.T) {
 	// This at least covers the directory reading logic.
 }
 
+// criarPluginManifesto põe em dir/.yby/plugins um binário que o TestHelperProcess
+// responde como o plugin "manifesto" e devolve o caminho dele.
+func criarPluginManifesto(t *testing.T, dir string) string {
+	t.Helper()
+	pasta := filepath.Join(dir, ".yby", "plugins")
+	assert.NoError(t, os.MkdirAll(pasta, 0755))
+	caminho := filepath.Join(pasta, "yby-plugin-manifesto.exe")
+	assert.NoError(t, os.WriteFile(caminho, []byte("fake bin"), 0755))
+	return caminho
+}
+
+func descobrirComMock(t *testing.T, home, cwd string) *Manager {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Chdir(cwd)
+	original := execCommandContext
+	execCommandContext = mockExecCommandContext
+	t.Cleanup(func() { execCommandContext = original })
+
+	m := NewManager()
+	assert.NoError(t, m.Discover())
+	return m
+}
+
+func TestManagerDiscover_NaHomeLeAPastaUmaVez(t *testing.T) {
+	home := t.TempDir()
+	criarPluginManifesto(t, home)
+
+	m := descobrirComMock(t, home, home)
+
+	assert.Len(t, m.ListPlugins(), 1)
+}
+
+func TestManagerDiscover_NomeRepetidoFicaODaHome(t *testing.T) {
+	home, projeto := t.TempDir(), t.TempDir()
+	daHome := criarPluginManifesto(t, home)
+	criarPluginManifesto(t, projeto)
+
+	m := descobrirComMock(t, home, projeto)
+
+	assert.Len(t, m.ListPlugins(), 1)
+	p, ok := m.GetPlugin("manifesto")
+	assert.True(t, ok)
+	assert.Equal(t, daHome, p.Path)
+}
+
 func TestManagerGetAssets(t *testing.T) {
 	m := NewManager()
 
