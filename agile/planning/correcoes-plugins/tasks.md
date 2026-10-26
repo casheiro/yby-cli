@@ -585,7 +585,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Forbidden → "sem permissão para listar X em todos os namespaces" com a dica "n escolhe um namespace", sem reconectar;
     - erro de credencial exec → dica `yby cloud refresh`.
   - **Verificar:** testes.
-- [ ] **V06 · Logs e YAML mostram o que dizem**
+- [x] **V06 · Logs e YAML mostram o que dizem** ✓
   - **Problema:** `LogsDoPod` cai calado no log anterior (`monitor/detalhe.go:~86-93`) enquanto o quadro diz "últimas 100 linhas do log" (`ui/quadro.go:~235`). Não há `LimitBytes` (`detalhe.go:~106`). O YAML vem com `managedFields` (`monitor/yaml.go:~58`).
   - **Fazer:** dizer "execução anterior" quando for; `LimitBytes` ~1 MiB; tirar `managedFields` e last-applied do YAML.
   - **Verificar:** testes e goldens.
@@ -692,6 +692,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | V01 | Exclusão com propagação em segundo plano (Job não deixa pods órfãos) e precondição de UID guardado no alvo da ação | este commit |
+| 26/10/2026 | V06 | `LogsDoPod` avisa quando o log é da execução anterior (quadro e painel dizem), leitura com `LimitBytes` de 1 MiB e YAML sem `managedFields` nem last-applied | este commit |
 
 ### Fase 7 · Pendências
 

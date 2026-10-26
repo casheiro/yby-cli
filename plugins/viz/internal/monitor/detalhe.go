@@ -28,7 +28,9 @@ type LeitorDeDetalhe interface {
 	EventosDoObjeto(kind, nome, namespace string, limite int) ([]Event, error)
 	// LogsDoPod traz as últimas linhas do log do contêiner do pod (vazio
 	// deixa a API escolher, o que só vale para pod de um contêiner); vazio sem log.
-	LogsDoPod(nome, namespace, conteiner string, linhas int64) (string, error)
+	// anterior avisa que o texto é da execução anterior do contêiner: o log
+	// atual estava vazio ou falhou (CrashLoopBackOff).
+	LogsDoPod(nome, namespace, conteiner string, linhas int64) (logs string, anterior bool, err error)
 	// YAMLDoRecurso traz o manifesto do recurso como está no cluster.
 	YAMLDoRecurso(kind, nome, namespace string) (string, error)
 }
@@ -41,6 +43,10 @@ var (
 // prazoDeLeitura limita cada leitura do detalhe: sem ele, um kubelet que não
 // responde deixaria o painel lendo para sempre (o rest.Config não tem timeout).
 const prazoDeLeitura = 10 * time.Second
+
+// limiteDeBytesDoLog corta a leitura do log: 100 linhas de JSON enorme ou de
+// stack trace não podem encher a memória nem a tela.
+const limiteDeBytesDoLog int64 = 1 << 20
 
 // lerLog lê as últimas linhas do log de um contêiner (da execução anterior,
 // com anterior); o K8sClient usa lerLogs, e os testes trocam.
@@ -74,7 +80,7 @@ func (c *K8sClient) EventosDoObjeto(kind, nome, namespace string, limite int) ([
 // LogsDoPod traz as últimas linhas do log do contêiner. Quando ele espera
 // para reiniciar (CrashLoopBackOff), o log atual vem vazio ou com erro, e o
 // que explica a falha é o da execução anterior.
-func (c *K8sClient) LogsDoPod(nome, namespace, conteiner string, linhas int64) (string, error) {
+func (c *K8sClient) LogsDoPod(nome, namespace, conteiner string, linhas int64) (string, bool, error) {
 	ler := c.lerLog
 	if ler == nil {
 		ler = func(ctx context.Context, namespace, pod, conteiner string, linhas int64, anterior bool) (string, error) {
@@ -85,12 +91,12 @@ func (c *K8sClient) LogsDoPod(nome, namespace, conteiner string, linhas int64) (
 	defer cancelar()
 	logs, err := ler(ctx, namespace, nome, conteiner, linhas, false)
 	if err == nil && strings.TrimSpace(logs) != "" {
-		return logs, nil
+		return logs, false, nil
 	}
 	if anterior, errAnterior := ler(ctx, namespace, nome, conteiner, linhas, true); errAnterior == nil && strings.TrimSpace(anterior) != "" {
-		return anterior, nil
+		return anterior, true, nil
 	}
-	return logs, err
+	return logs, false, err
 }
 
 // YAMLDoRecurso traz o manifesto do recurso pelo client dinâmico.
@@ -103,7 +109,8 @@ func (c *K8sClient) YAMLDoRecurso(kind, nome, namespace string) (string, error) 
 
 // lerLogs lê as últimas linhas do log do contêiner (da execução anterior, com anterior).
 func lerLogs(ctx context.Context, clientset kubernetes.Interface, namespace, pod, conteiner string, linhas int64, anterior bool) (string, error) {
-	opts := &corev1.PodLogOptions{Container: conteiner, TailLines: &linhas, Previous: anterior}
+	limite := limiteDeBytesDoLog
+	opts := &corev1.PodLogOptions{Container: conteiner, TailLines: &linhas, LimitBytes: &limite, Previous: anterior}
 	stream, err := clientset.CoreV1().Pods(namespace).GetLogs(pod, opts).Stream(ctx)
 	if err != nil {
 		return "", fmt.Errorf("falha ao obter logs do pod '%s': %w", pod, err)
@@ -135,10 +142,10 @@ func (r *RetryClient) EventosDoObjeto(kind, nome, namespace string, limite int) 
 }
 
 // LogsDoPod repassa ao client de dentro.
-func (r *RetryClient) LogsDoPod(nome, namespace, conteiner string, linhas int64) (string, error) {
+func (r *RetryClient) LogsDoPod(nome, namespace, conteiner string, linhas int64) (string, bool, error) {
 	l, err := r.leitor()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	return l.LogsDoPod(nome, namespace, conteiner, linhas)
 }
