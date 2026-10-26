@@ -151,8 +151,8 @@ func (e *Executor) Run(ctx context.Context, binaryPath string, req interface{}) 
 }
 
 // RunInteractive executes the plugin in interactive mode (TUI).
-// It passes the request payload via the YBY_PLUGIN_REQUEST environment variable
-// and connects the plugin's Stdin/Stdout/Stderr directly to the OS.
+// It passes the request payload via the YBY_PLUGIN_REQUEST environment variable (or, when
+// too large for one, a file named by YBY_PLUGIN_REQUEST_FILE) and connects the plugin's Stdin/Stdout/Stderr directly to the OS.
 func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req interface{}) error {
 	if err := e.checkTrust(binaryPath); err != nil {
 		return err
@@ -168,7 +168,12 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 		return ybyerrors.Wrap(err, ybyerrors.ErrCodePluginRPC, "falha ao serializar requisição do plugin")
 	}
 	// Plugins interativos herdam todas as env vars do parent (precisam de KUBECONFIG, etc)
-	cmd.Env = ambienteInterativo(cmd.Environ(), reqBytes)
+	env, limpar, err := ambienteInterativo(cmd.Environ(), reqBytes)
+	if err != nil {
+		return err
+	}
+	defer limpar()
+	cmd.Env = env
 
 	// Segurança: resource limits no processo filho
 	applyResourceLimits(cmd)
@@ -209,28 +214,31 @@ func (e *Executor) RunInteractive(ctx context.Context, binaryPath string, req in
 // no PATH.
 const EnvBinarioDoCore = "YBY_BIN"
 
-// envPedido é a variável com o pedido do plugin interativo.
-const envPedido = "YBY_PLUGIN_REQUEST"
-
 // executavelDoCore é o os.Executable, trocado nos testes.
 var executavelDoCore = os.Executable
 
 // ambienteInterativo é o ambiente do plugin interativo: o do core, com o pedido em
-// YBY_PLUGIN_REQUEST e o caminho do core em YBY_BIN (fora quando o caminho não é
+// YBY_PLUGIN_REQUEST (ou, grande demais para uma variável, num arquivo apontado por
+// YBY_PLUGIN_REQUEST_FILE) e o caminho do core em YBY_BIN (fora quando o caminho não é
 // conhecido). O pedido e o YBY_BIN herdados (o core aberto por outro plugin) dão lugar
-// aos deste core.
-func ambienteInterativo(base []string, req []byte) []string {
-	env := make([]string, 0, len(base)+2)
+// aos deste core. limpar apaga o arquivo do pedido depois que o plugin sai.
+func ambienteInterativo(base []string, req []byte) (env []string, limpar func(), err error) {
+	entrada, limpar, err := pedidoNoAmbiente(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	env = make([]string, 0, len(base)+2)
 	for _, kv := range base {
-		if !strings.HasPrefix(kv, EnvBinarioDoCore+"=") && !strings.HasPrefix(kv, envPedido+"=") {
+		if !strings.HasPrefix(kv, EnvBinarioDoCore+"=") && !strings.HasPrefix(kv, EnvPedido+"=") &&
+			!strings.HasPrefix(kv, EnvPedidoArquivo+"=") {
 			env = append(env, kv)
 		}
 	}
-	env = append(env, envPedido+"="+string(req))
+	env = append(env, entrada)
 	if bin, err := executavelDoCore(); err == nil && bin != "" {
 		env = append(env, EnvBinarioDoCore+"="+bin)
 	}
-	return env
+	return env, limpar, nil
 }
 
 // statusControlCExit é o código de um processo do Windows encerrado pelo ctrl+c antes de

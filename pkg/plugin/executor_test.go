@@ -47,6 +47,15 @@ func TestHelperProcess(t *testing.T) {
 	}
 
 	cmd := args[0]
+	// Plugin interativo que confere se recebeu o pedido inteiro, venha pela variável ou
+	// pelo arquivo.
+	if cmd == "/path/to/pedido-grande-plugin" {
+		pedido, err := PedidoDoAmbiente(os.Getenv)
+		if err != nil || len(pedido) < 200*1024 {
+			os.Exit(3)
+		}
+		return
+	}
 	// Plugin de verdade numa pasta qualquer, para os testes do Discover.
 	if strings.HasPrefix(filepath.Base(cmd), "yby-plugin-manifesto") {
 		fmt.Fprint(os.Stdout, `{"data": {"name": "manifesto", "version": "1.0.0", "hooks": ["command"]}}`)

@@ -37,9 +37,13 @@ func main() {
 func executar(saida, erros io.Writer) int {
 	var req plugin.PluginRequest
 
-	// 1. Verificar protocolo via variável de ambiente
-	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
-		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+	// 1. Verificar protocolo via ambiente (variável ou arquivo do pedido)
+	envReq, err := plugin.PedidoDoAmbiente(os.Getenv)
+	if err != nil {
+		return falhaJSON(saida, erros, err)
+	}
+	if envReq != nil {
+		if err := json.Unmarshal(envReq, &req); err != nil {
 			return falhaJSON(saida, erros, fmt.Errorf("falha ao decodificar requisição do env: %w", err))
 		}
 	} else {
