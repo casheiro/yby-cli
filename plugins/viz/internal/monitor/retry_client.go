@@ -17,6 +17,23 @@ func (r *RetryClient) Inner() Client {
 	return r.inner
 }
 
+// Contexto devolve o contexto do kubeconfig do client interno, quando ele o conhece.
+func (r *RetryClient) Contexto() string {
+	if c, ok := r.inner.(interface{ Contexto() string }); ok {
+		return c.Contexto()
+	}
+	return ""
+}
+
+// NamespaceDoContexto devolve o namespace do contexto do kubeconfig do client
+// interno, quando ele o conhece.
+func (r *RetryClient) NamespaceDoContexto() string {
+	if c, ok := r.inner.(interface{ NamespaceDoContexto() string }); ok {
+		return c.NamespaceDoContexto()
+	}
+	return ""
+}
+
 // NewRetryClient cria um RetryClient com configuração padrão (3 tentativas, 1s base)
 func NewRetryClient(inner Client) *RetryClient {
 	return &RetryClient{

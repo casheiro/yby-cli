@@ -273,16 +273,14 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Plugin Viz — Observabilidade TUI (v1.0.0)
 
-- **Dashboard TUI**: visualizacao de Pods, Deployments, StatefulSets, Services em tempo real via Bubbletea
-- **Real K8s Client**: conexao direta ao cluster via client-go (nao usa kubectl)
-- **RetryClient**: reconexao com backoff exponencial, preserva ultimo estado durante reconexao
-- **Filtros**: namespace (`/`), label (`L`), status (`S`) com filtro server-side via `ListFilter`
-- **Scroll**: PgUp/PgDn, Home/End, indicador de posicao na status bar
-- **Tabs**: navegacao entre tipos de recurso (Pods, Deployments, StatefulSets, Services)
-- **Acoes**: delete, scale, restart direto da TUI com confirmacao
-- **Detail view**: YAML viewer para inspecao de recursos
-- **Logs**: visualizacao de logs de pods em tempo real
-- **Search**: busca por nome de recurso com highlight
+- **Moldura da carta** (`ui.Moldura`): masthead com contexto ▸ namespace do kubeconfig (começa no namespace do contexto; sem namespace no contexto, todos), client-go direto (`monitor.K8sClient` dentro do `RetryClient`), sem kubectl.
+- **9 abas** (Pods, Deployments, StatefulSets, Services, Nodes, Jobs, Ingresses, ConfigMaps, Eventos) com contagem ao vivo: um informer por tipo no namespace (`monitor.Observador`, `plugins/viz/internal/monitor/vigia.go`) manda lotes de no máximo 4 por segundo, e o número de cada aba é o da lista que ela mostraria aberta, com os filtros da tela. Tipo que o RBAC não deixa listar fica sem número. O relógio de 2 s só lê a aba ativa: confirma a conexão e vira lista quando o watch não cobre a aba.
+- **Lista**: problemas primeiro (pods, deployments, statefulsets, nós, jobs), por nome (services, ingresses, configmaps), eventos dos mais recentes; a linha de estado traz o problema mais grave.
+- **Detalhe**: painel ao lado a partir de 120 colunas e por cima abaixo disso (↵ abre); quadros de logs (`l`, pods), YAML (`y`) e eventos (`e`).
+- **Teclas**: `/` busca por nome enquanto digita, `n` troca o namespace (vazio: todos), `f` filtra status (só pods) ou label (texto com `=`, `!`, `,` ou parênteses); só o namespace vai ao servidor, label, status e busca filtram na TUI. `x` abre as ações (reiniciar e escalar em deployments e statefulsets, excluir com confirmação pelo nome, copiar nome por OSC 52), `r` recarrega, `?` ajuda, `1`–`9` e ⇥/⇧⇥ trocam de aba, esc fecha a camada de cima (sem camada, limpa os filtros), `q` sai só da lista, ctrl+c sai de qualquer lugar; o mouse rola e seleciona linha e aba. As teclas antigas (`d`, `s`, `L`, `S`) avisam onde a ação foi parar.
+- **AltGr**: `ui.TeclaAltGr` descarta o alt+NUL e tira o alt do símbolo que o console do Windows manda para `/` e `?` digitados com AltGr (ABNT2).
+- **Janela pequena** (abaixo de 60x16, "aumente a janela"): menu, confirmações e os campos `/`, `n` e `f` são cancelados como no esc, e a janela de volta avisa "ação cancelada: a janela ficou pequena demais"; ajuda, detalhe por cima e quadros ficam abertos. Enquanto isso só ctrl+c e `q` (sem camada aberta) fazem efeito.
+- **Goldens** em `plugins/viz/internal/ui/testdata` (`cd plugins/viz && go test -run TestTela ./internal/ui/ -update`).
 
 ### Enterprise Overrides
 

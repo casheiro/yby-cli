@@ -36,6 +36,7 @@ func agendadorPadrao(d time.Duration, msg tea.Msg) tea.Cmd {
 type Toast struct {
 	tipo      TipoToast
 	texto     string
+	nota      string // depois de " · ", em TintaSuave ("RBAC")
 	visivel   bool
 	id        int
 	duracao   time.Duration
@@ -59,7 +60,13 @@ func (m Toast) Visivel() bool { return m.visivel }
 // Mostrar exibe uma mensagem e devolve o comando que a esconde depois da duração.
 // Uma nova mensagem substitui a anterior e cancela, na prática, o tempo dela.
 func (m Toast) Mostrar(tipo TipoToast, texto string) (Toast, tea.Cmd) {
-	m.tipo, m.texto, m.visivel = tipo, texto, true
+	return m.MostrarComNota(tipo, texto, "")
+}
+
+// MostrarComNota é o Mostrar com uma nota curta depois de " · ", em TintaSuave:
+// "✕ sem permissão para escalar · RBAC". Nota vazia é o Mostrar comum.
+func (m Toast) MostrarComNota(tipo TipoToast, texto, nota string) (Toast, tea.Cmd) {
+	m.tipo, m.texto, m.nota, m.visivel = tipo, texto, nota, true
 	m.id++
 	return m, m.agendador(m.duracao, ToastSomeMsg{ID: m.id})
 }
@@ -81,11 +88,15 @@ func (m Toast) View() string {
 		return ""
 	}
 	s, g := S(), G()
+	texto := s.Tinta.Render(m.texto)
+	if m.nota != "" {
+		texto += s.Tinta.Render(" · ") + s.TintaSuave.Render(m.nota)
+	}
 	switch m.tipo {
 	case ToastErro:
-		return s.Erro.Render(g.Falha) + " " + s.Tinta.Render(m.texto)
+		return s.Erro.Render(g.Falha) + " " + texto
 	case ToastAviso:
-		return s.Aviso.Render(g.Alerta) + " " + s.Tinta.Render(m.texto)
+		return s.Aviso.Render(g.Alerta) + " " + texto
 	}
-	return s.Ok.Render(g.Feito) + " " + s.Tinta.Render(m.texto)
+	return s.Ok.Render(g.Feito) + " " + texto
 }

@@ -70,7 +70,7 @@ Linhas fixas, de cima para baixo:
 3. Abas (`tabs.go`), filtros (`filtro.go`), corpo.
 4. **Rule.**
 5. **StatusLine:** à esquerda uma frase (com glifo de status), à direita `atualizado HH:MM:SS` em `TintaSuave`.
-6. **KeyHints:** tecla em negrito, ação em `TintaSuave`, separadas por dois espaços; `q sair` sempre no canto direito; só teclas válidas na tela.
+6. **KeyHints:** tecla em negrito, ação em `TintaSuave`, separadas por dois espaços; `q sair` sempre no canto direito; só teclas válidas na tela. Nas camadas em que q é letra ou não sai (campo, menu, ajuda), `Partes.Sair` troca a tecla do canto direito (o Viz usa `ctrl+c sair`). Abaixo de 80 colunas a legenda fecha com `? mais`; nas camadas em que o ? não abre a ajuda (campo de texto, confirmação, a própria tela ?), `Partes.SemAjuda` tira o `? mais`.
 
 **Moldura de texto** (`moldura_texto.go`), para telas com campo de texto (Bard): `MolduraTexto(largura, altura, PartesTexto)` monta masthead, régua, corpo alinhado ao topo, régua, campo (n linhas), régua, estado e legenda. A tecla de sair é configurável (o Bard usa ctrl+c, porque q é digitado). Abaixo de 60×16 mostra a tela "aumente a janela". Junto: `AlturaCorpoTexto(altura, linhasCampo)`, `StatusLineTexto(largura, mensagem, direita)` (direita em `TintaSuave`) e `KeyHintsCom(largura, sair, teclas...)`.
 
@@ -79,6 +79,8 @@ Responsivo:
 - 80–119: uma coluna; o detalhe abre por cima da lista.
 - < 80: compacto; abas viram números (`1 Pods · 2 Deploy…`), a legenda mostra 3 teclas + `? mais`.
 - < 60×16: tela única "aumente a janela".
+
+Quem desenha a lista e o detalhe usa as medidas da moldura: `LargurasLadoALado(largura)` devolve as larguras da lista (60%) e do detalhe (40%) sem o fio entre elas, e `LimiteDetalheEmpilhado(h)` a altura máxima do detalhe por cima da lista num corpo de h linhas. `TeclasDoPainel(largura, teclas...)` escreve as teclas do rodapé de um painel no formato da legenda, sem `q sair` nem `? mais`.
 
 ## 6. Componentes (folha 03)
 
@@ -91,8 +93,10 @@ Responsivo:
 - **Cota:** `argo cd  ━━━━━━━━━━━━━━┄┄┄┄┄┄┄┄  64%` — cheio em `Tinta`, tracejado em `Fio`; à direita percentual ou tempo restante (tempo em `Aviso` quando perto do fim).
 - **Rota:** `◆━━━◆━━━◆┄┄┄◇┄┄┄◇┄┄┄◇  03/06`; marcos feitos `◆` em `Ok`, o atual `◆` negrito em `Tinta`, futuros `◇` em `TintaSuave`, trechos feitos `━`, futuros `┄` em `Fio`; abaixo os rótulos em caixa-alta separados por ` · `, o atual em negrito `Tinta`.
 - **Spinner:** quadros `◇ ◈ ◆ ◈`; sem animação (quadro fixo `◈`) com `NO_COLOR` ou fora de TTY.
-- **Toast:** na linha de estado, `✓ Deployment api reiniciado · 3 réplicas` ou `✕ sem permissão para escalar · RBAC`; some em 6 s.
-- **Confirmar:** destrutivo = Quadro com fio `Erro`, rótulo `EXCLUIR POD`, `digite  <nome em negrito>`, campo `› ` com cursor, `esc cancelar`; ↵ só confirma com o nome exato. Reversível = ↵ confirma, esc cancela.
+- **Toast:** na linha de estado, `✓ Deployment api reiniciado · 3 réplicas` ou `✕ sem permissão para escalar · RBAC`; some em 6 s. `MostrarComNota(tipo, texto, nota)` põe a nota depois de ` · `, em `TintaSuave` (o `RBAC` da prancha).
+- **Confirmar:** destrutivo = Quadro com fio `Erro`, rótulo `EXCLUIR POD`, `digite  <nome em negrito>`, campo `› ` com cursor, `esc cancelar`; ↵ só confirma com o nome exato. `ComDetalhes(resumo, explicacao, verbo)` dá o diálogo completo da folha VizConfirmar: o resumo do recurso, a explicação do que acontece, `Digite <nome> para confirmar`, `faltam N letras` (ou `✓ confere`, `▲ não confere`) ao lado do campo, o campo num quadro de fio (só com a explicação; sem ela, quando falta altura, o campo é uma linha só) e os botões `[ esc cancelar ]   [ ↵ <verbo> ]`, o de confirmar apagado até o nome conferir. Reversível = ↵ confirma, esc cancela.
+- **Copiar (OSC 52):** `CopiarOSC52(texto)` manda o texto para a área de transferência do terminal (embrulhado no tmux e no screen); o terminal não responde, então a frase diz "enviado", não "copiado". Usado pelo ctrl+y do Bard e pelo `x ▸ c` do Viz.
+- **Quadro nomeado:** `QuadroNomeado(rotulo, nome, corpo, largura, variante)` põe o nome do recurso depois do rótulo sem caixa-alta (`┌ POD · worker-5d8b6-q7tvn ───┐`), porque os nomes do Kubernetes são em minúsculas.
 - **Quadro com tecla** (`quadro_tecla.go`): `QuadroComTecla(rotulo, tecla, acao, corpo, largura, variante)` põe `ROTULO · tecla ação` no fio de cima (`┌ SAÍDA · ctrl+y copia ─┐`); se não couber, vira o Quadro comum.
 - **Aviso de rolagem** (`rolagem.go`): `AvisoRolagem(SetaAcima|SetaAbaixo, texto)` marca conteúdo fora da janela em `TintaSuave`, sem recuo: `↑ 2 mensagens anteriores`, `↓ 3 mensagens novas` (`^`/`v` no ASCII).
 - **Markdown** (`pkg/ui/uimarkdown`, pacote separado para o core não levar o glamour): `Novo(largura)` e `Renderizar(md)` com estilo tirado dos tokens: texto em Tinta, h1/h2 em negrito e caixa-alta, código inline em negrito sem fundo, links em TintaSuave sublinhados, régua em Fio, listas com • (- no ASCII). Tabelas viram `ui.Tabela` na largura toda (status do Kubernetes vira `ui.Status`), blocos cercados viram Quadro com o nome da linguagem (shell vira `COMANDO · ctrl+y copia`) e linhas longas de código quebram dentro do quadro. Sem cor fica só o negrito; no perfil Ascii, texto puro. `Comandos(md)` devolve os blocos de shell.

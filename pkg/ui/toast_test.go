@@ -86,6 +86,9 @@ func TestToastGolden(t *testing.T) {
 			m, _ := NovoToast().ComAgendador(nada).Mostrar(c.tipo, c.texto)
 			linhas = append(linhas, m.View())
 		}
+		// A nota sai depois de " · ", em tinta suave, como na prancha.
+		m, _ := NovoToast().ComAgendador(nada).MostrarComNota(ToastErro, "sem permissão para escalar", "RBAC")
+		linhas = append(linhas, m.View())
 		return strings.Join(linhas, "\n")
 	})
 }

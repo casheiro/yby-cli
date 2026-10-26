@@ -7,6 +7,7 @@ import (
 
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // MockClient implementa monitor.Client para testes
@@ -23,15 +24,31 @@ type MockClient struct {
 	Err          error
 }
 
-func (m *MockClient) GetPods(_ monitor.ListFilter) ([]monitor.Pod, error)               { return m.Pods, m.Err }
-func (m *MockClient) GetDeployments(_ monitor.ListFilter) ([]monitor.Deployment, error) { return m.Deployments, m.Err }
-func (m *MockClient) GetServices(_ monitor.ListFilter) ([]monitor.Service, error)       { return m.Services, m.Err }
-func (m *MockClient) GetNodes(_ monitor.ListFilter) ([]monitor.Node, error)             { return m.Nodes, m.Err }
-func (m *MockClient) GetStatefulSets(_ monitor.ListFilter) ([]monitor.StatefulSet, error) { return m.StatefulSets, m.Err }
-func (m *MockClient) GetJobs(_ monitor.ListFilter) ([]monitor.Job, error)                 { return m.Jobs, m.Err }
-func (m *MockClient) GetIngresses(_ monitor.ListFilter) ([]monitor.Ingress, error)        { return m.Ingresses, m.Err }
-func (m *MockClient) GetConfigMaps(_ monitor.ListFilter) ([]monitor.ConfigMap, error)     { return m.ConfigMaps, m.Err }
-func (m *MockClient) GetEvents(_ monitor.ListFilter) ([]monitor.Event, error)             { return m.Events, m.Err }
+func (m *MockClient) GetPods(_ monitor.ListFilter) ([]monitor.Pod, error) { return m.Pods, m.Err }
+func (m *MockClient) GetDeployments(_ monitor.ListFilter) ([]monitor.Deployment, error) {
+	return m.Deployments, m.Err
+}
+func (m *MockClient) GetServices(_ monitor.ListFilter) ([]monitor.Service, error) {
+	return m.Services, m.Err
+}
+func (m *MockClient) GetNodes(_ monitor.ListFilter) ([]monitor.Node, error) { return m.Nodes, m.Err }
+func (m *MockClient) GetStatefulSets(_ monitor.ListFilter) ([]monitor.StatefulSet, error) {
+	return m.StatefulSets, m.Err
+}
+func (m *MockClient) GetJobs(_ monitor.ListFilter) ([]monitor.Job, error) { return m.Jobs, m.Err }
+func (m *MockClient) GetIngresses(_ monitor.ListFilter) ([]monitor.Ingress, error) {
+	return m.Ingresses, m.Err
+}
+func (m *MockClient) GetConfigMaps(_ monitor.ListFilter) ([]monitor.ConfigMap, error) {
+	return m.ConfigMaps, m.Err
+}
+func (m *MockClient) GetEvents(_ monitor.ListFilter) ([]monitor.Event, error) { return m.Events, m.Err }
+
+// comJanela dá ao modelo o tamanho de janela que o Bubble Tea manda no início.
+func comJanela(m Model) Model {
+	m.width, m.height = 120, 30
+	return m
+}
 
 // --- Testes de criação do Model ---
 
@@ -106,8 +123,8 @@ func TestModel_Update_TabNavigation(t *testing.T) {
 	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = newModel.(Model)
 
-	if m.activeTab != TabServices {
-		t.Errorf("esperava aba TabServices (2), obtido %d", m.activeTab)
+	if m.activeTab != TabStatefulSets {
+		t.Errorf("esperava aba TabStatefulSets (2), obtido %d", m.activeTab)
 	}
 }
 
@@ -136,9 +153,9 @@ func TestModel_Update_NumberKeys(t *testing.T) {
 	}{
 		{"1", TabPods},
 		{"2", TabDeployments},
-		{"3", TabServices},
-		{"4", TabNodes},
-		{"5", TabStatefulSets},
+		{"3", TabStatefulSets},
+		{"4", TabServices},
+		{"5", TabNodes},
 		{"6", TabJobs},
 		{"7", TabIngresses},
 		{"8", TabConfigMaps},
@@ -330,13 +347,13 @@ func TestModel_View_Pods(t *testing.T) {
 		{Name: "nginx-pod", Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi"},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 
 	if !strings.Contains(view, "nginx-pod") {
 		t.Error("view deveria conter o nome do pod 'nginx-pod'")
 	}
-	if !strings.Contains(view, "Cluster Monitor") {
-		t.Error("view deveria conter o título 'Cluster Monitor'")
+	if !strings.Contains(view, "YBY  VIZ") {
+		t.Error("view deveria conter a marca 'YBY  VIZ'")
 	}
 }
 
@@ -349,7 +366,7 @@ func TestModel_View_Deployments(t *testing.T) {
 		{Name: "api-deploy", Namespace: "backend", Replicas: 3, Ready: 3, Available: 3},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 
 	if !strings.Contains(view, "api-deploy") {
 		t.Error("view deveria conter o nome do deployment 'api-deploy'")
@@ -365,7 +382,7 @@ func TestModel_View_Services(t *testing.T) {
 		{Name: "web-svc", Namespace: "default", Type: "ClusterIP", ClusterIP: "10.0.0.1", Ports: "80/TCP"},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 
 	if !strings.Contains(view, "web-svc") {
 		t.Error("view deveria conter o nome do service 'web-svc'")
@@ -381,7 +398,7 @@ func TestModel_View_Nodes(t *testing.T) {
 		{Name: "worker-1", Status: "Ready", CPUCapacity: "4", MemoryCapacity: "8Gi", Version: "v1.29.0"},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 
 	if !strings.Contains(view, "worker-1") {
 		t.Error("view deveria conter o nome do node 'worker-1'")
@@ -391,16 +408,17 @@ func TestModel_View_Nodes(t *testing.T) {
 // TestModel_View_Error verifica que a view exibe mensagem de erro.
 func TestModel_View_Error(t *testing.T) {
 	model := NewModel(nil)
-	view := model.View()
+	view := comJanela(model).View()
 
 	if len(view) == 0 {
 		t.Error("view está vazia")
 	}
-	if !strings.Contains(view, "Erro") {
+	if !strings.Contains(view, "sem acesso ao cluster") {
 		t.Error("view deveria conter mensagem de erro")
 	}
-	if !strings.Contains(view, "q") {
-		t.Error("view deveria conter instrução para sair")
+	// A instrução para sair vem no próprio estado de erro (a legenda sempre tem "q sair").
+	if estado := ansi.Strip(comJanela(model).estadoErro()); !strings.Contains(estado, "q sai") || !strings.Contains(view, estado[:10]) {
+		t.Errorf("o estado de erro deveria dizer como sair: %q", estado)
 	}
 }
 
@@ -409,9 +427,9 @@ func TestModel_View_Carregando(t *testing.T) {
 	client := &MockClient{}
 	model := NewModel(client)
 
-	view := model.View()
+	view := comJanela(model).View()
 
-	if !strings.Contains(view, "Carregando") {
+	if !strings.Contains(view, "lendo pods") {
 		t.Error("view deveria conter mensagem de carregamento")
 	}
 }
@@ -566,7 +584,7 @@ func TestModel_View_StatefulSets(t *testing.T) {
 		{Name: "redis-ss", Namespace: "default", Replicas: 3, Ready: 3},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 	if !strings.Contains(view, "redis-ss") {
 		t.Error("view deveria conter 'redis-ss'")
 	}
@@ -581,7 +599,7 @@ func TestModel_View_Jobs(t *testing.T) {
 		{Name: "backup-job", Namespace: "default", Completions: 1, Succeeded: 1},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 	if !strings.Contains(view, "backup-job") {
 		t.Error("view deveria conter 'backup-job'")
 	}
@@ -596,7 +614,7 @@ func TestModel_View_Ingresses(t *testing.T) {
 		{Name: "web-ing", Namespace: "default", Class: "nginx", Hosts: "app.example.com", Paths: "/"},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 	if !strings.Contains(view, "web-ing") {
 		t.Error("view deveria conter 'web-ing'")
 	}
@@ -611,7 +629,7 @@ func TestModel_View_ConfigMaps(t *testing.T) {
 		{Name: "app-config", Namespace: "default", Keys: 5, DataSize: "2.1Ki"},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 	if !strings.Contains(view, "app-config") {
 		t.Error("view deveria conter 'app-config'")
 	}
@@ -626,7 +644,7 @@ func TestModel_View_Events(t *testing.T) {
 		{Name: "pod-1", Namespace: "default", Type: "Warning", Reason: "BackOff", Message: "Restart", Age: "2m"},
 	}
 
-	view := model.View()
+	view := comJanela(model).View()
 	if !strings.Contains(view, "pod-1") {
 		t.Error("view deveria conter 'pod-1'")
 	}

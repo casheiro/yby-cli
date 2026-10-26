@@ -73,4 +73,39 @@ func TestConfirmarGolden(t *testing.T) {
 	etapasPorModo(t, "confirmar_reversivel", func() string {
 		return NovoConfirmarReversivel("reiniciar", "reiniciar o deployment api?").View()
 	})
+	// O destrutivo completo da folha VizConfirmar, com o nome digitado pela metade.
+	etapasPorModo(t, "confirmar_detalhado", func() string {
+		var m tea.Model = NovoConfirmarDestrutivo("excluir deployment", "worker").
+			ComDetalhes(S().Negrito.Render("worker")+" em payments · 2 réplicas",
+				"Os pods param e o Deployment some do cluster. Se ele vem do Argo CD, a próxima sincronização cria de novo.", "excluir")
+		m, _ = m.Update(tea.WindowSizeMsg{Width: 60})
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("work")})
+		return m.View()
+	})
+}
+
+// TestConfirmarDetalhado: a contagem ao lado do campo e o botão de confirmar seguem o
+// que foi digitado; resumo e explicação vazios ficam de fora.
+func TestConfirmarDetalhado(t *testing.T) {
+	usarTema(t, true, termenv.Ascii, false)
+	var m tea.Model = NovoConfirmarDestrutivo("excluir pod", "api").ComDetalhes("", "", "")
+	digitar := func(txt string) string {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(txt)})
+		return m.View()
+	}
+	v := m.View()
+	if linhas := strings.Split(v, "\n"); !strings.Contains(v, "faltam 3 letras") || !strings.Contains(v, "[ ↵ confirmar ]") ||
+		!strings.HasPrefix(linhas[1], "│ Digite api para confirmar") {
+		t.Errorf("vazio:\n%s", v)
+	}
+	if v = digitar("ap"); !strings.Contains(v, "falta 1 letra") {
+		t.Errorf("uma letra:\n%s", v)
+	}
+	if v = digitar("i"); !strings.Contains(v, "✓ confere") || !m.(Confirmar).Liberado() {
+		t.Errorf("confere:\n%s", v)
+	}
+	if v = digitar("x"); !strings.Contains(v, "▲ não confere") || m.(Confirmar).Liberado() {
+		t.Errorf("não confere:\n%s", v)
+	}
+	etapasLarguraMax(t, v, larguraConfirmarPadrao)
 }

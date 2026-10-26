@@ -3,7 +3,9 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"strings"
+	"unicode"
 )
 
 // TeclasGlobais são as teclas válidas em toda TUI.
@@ -68,6 +70,25 @@ func RotuloTecla(rotulo string) string {
 		return teclasASCII.Replace(rotulo)
 	}
 	return rotulo
+}
+
+// TeclaAltGr desfaz a leitura do AltGr no console do Windows. O Bubble Tea v1 entrega
+// o símbolo digitado com AltGr (ctrl+alt), como / e ? num teclado ABNT2 sem a tecla
+// própria, como alt+símbolo, e manda antes um alt+NUL do próprio AltGr. Devolve a tecla
+// sem o alt quando o caractere é um símbolo (letras e dígitos com alt continuam atalhos)
+// e false quando ela deve ser descartada.
+func TeclaAltGr(k tea.KeyMsg) (tea.KeyMsg, bool) {
+	if k.Type != tea.KeyRunes || !k.Alt || len(k.Runes) != 1 {
+		return k, true
+	}
+	r := k.Runes[0]
+	switch {
+	case r == 0:
+		return k, false
+	case !unicode.IsLetter(r) && !unicode.IsDigit(r):
+		k.Alt = false
+	}
+	return k, true
 }
 
 // DefaultKeys devolve o keymap padrão.

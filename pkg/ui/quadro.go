@@ -30,6 +30,22 @@ const larguraMinQuadro = 8
 // largura é a largura total em células, incluindo a borda; linhas do corpo mais largas
 // que o espaço interno são truncadas com reticências. Função pura: não guarda estado.
 func Quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
+	return quadro(strings.ToUpper(rotulo), corpo, largura, v)
+}
+
+// QuadroNomeado é o Quadro com o nome de um recurso depois do rótulo, como no painel do
+// Viz (┌ POD · worker-5d8b6-q7tvn ───┐): o rótulo vai em caixa-alta e o nome fica como
+// veio, porque os nomes do Kubernetes são em minúsculas. Sem nome, é o Quadro comum.
+func QuadroNomeado(rotulo, nome, corpo string, largura int, v VarianteQuadro) string {
+	texto := strings.ToUpper(rotulo)
+	if nome != "" {
+		texto += " · " + nome
+	}
+	return quadro(texto, corpo, largura, v)
+}
+
+// quadro desenha o Quadro com o texto do fio de cima já pronto.
+func quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
 	largura = max(largura, larguraMinQuadro)
 	s := S()
 	estilo := s.Fio
@@ -50,7 +66,7 @@ func Quadro(rotulo, corpo string, largura int, v VarianteQuadro) string {
 	// Fio de cima: canto, espaço, rótulo, espaço, preenchimento, canto.
 	var topo string
 	if rotulo != "" {
-		texto := truncarCelulas(strings.ToUpper(rotulo), largura-6)
+		texto := truncarCelulas(rotulo, largura-6)
 		falta := largura - 2 - lipgloss.Width(texto) - 2
 		topo = estilo.Render(cantoSE+" ") + estilo.Bold(true).Render(texto) +
 			estilo.Render(" "+strings.Repeat(horiz, max(falta, 0))+cantoSD)
