@@ -588,7 +588,7 @@ func TestIndex_NoTerminalRedesenhaEDesviaOLog(t *testing.T) {
 		}
 	}
 	// a barra da etapa de embeddings avança com o AoAvancar do VectorStore
-	for _, pct := range []string{"33%", "67%", "100%"} {
+	for _, pct := range []string{"25%", "50%", "100%"} {
 		if !strings.Contains(saida, pct) {
 			t.Errorf("a barra de gerar embeddings não passou por %s:\n%q", pct, saida)
 		}

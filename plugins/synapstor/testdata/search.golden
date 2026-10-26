@@ -1,16 +1,16 @@
 [38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  SYNAPSTOR[0m     [38;2;161;147;121msearch · "deploy argo cd helm chart values"[0m
 
-  [38;2;167;188;113m✓[0m [38;2;221;208;181mbuscar no índice[0m   [38;2;161;147;121m3 parecidos[0m                         [38;2;161;147;121m1,5 s[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mbuscar no índice[0m   [38;2;161;147;121m8 parecidos[0m                         [38;2;161;147;121m1,5 s[0m
 
 [38;2;161;147;121mRESULTADOS[0m
-  [38;2;167;188;113m0,61[0m  [38;2;221;208;181mCharts do Helm[0m
+  [38;2;167;188;113m0,62[0m  [38;2;221;208;181mCharts do Helm · Valores[0m
         [38;2;161;147;121m.synapstor/.uki/UKI-1761390100-helm-charts.md[0m
-        [38;2;161;147;121mContexto Os charts ficam em charts/ e seguem a versão do[0m
-        [38;2;161;147;121mapp. Valores Cada ambiente tem um values próprio…[0m
+        [38;2;161;147;121mValores Cada ambiente tem um values próprio[0m
+        [38;2;161;147;121m([exemplo](charts/api/values.yaml)). helm chart values…[0m
 
-  [38;2;167;188;113m0,55[0m  [38;2;221;208;181mDeploy com Argo CD[0m
+  [38;2;167;188;113m0,55[0m  [38;2;221;208;181mDeploy com Argo CD · Observações[0m
         [38;2;161;147;121m.synapstor/.uki/UKI-1761390000-deploy-argo.md[0m
-        [38;2;161;147;121mID: UKI-1 Tipo: procedimento Status: ativo Contexto O[0m
-        [38;2;161;147;121mpayments sobe pelo Argo CD com sync automático a partir…[0m
+        [38;2;161;147;121mObservações deploy argo cd sync payments deploy argo cd[0m
+        [38;2;161;147;121msync payments deploy argo cd sync payments deploy argo…[0m
 
 [38;2;161;147;121mRESUMO[0m  [38;2;167;188;113m2 resultados[0m  [38;2;161;147;121m· 1 abaixo de 0,35 ficou de fora[0m

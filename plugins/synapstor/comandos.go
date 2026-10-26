@@ -183,7 +183,8 @@ func runIndex(ctx context.Context, raiz string, args []string, saida, erros io.W
 	return nil
 }
 
-// escreverIndexacao escreve o resumo da indexação: indexados, removidos e sem mudança.
+// escreverIndexacao escreve o resumo da indexação: arquivos indexados, removidos, trechos
+// gerados e arquivos sem mudança.
 func escreverIndexacao(w io.Writer, r *indexer.IndexReport) {
 	if r.FilesScanned == 0 && r.FilesRemoved == 0 {
 		fmt.Fprintln(w)
@@ -193,12 +194,15 @@ func escreverIndexacao(w io.Writer, r *indexer.IndexReport) {
 		return
 	}
 	indexados := ui.CheckOk
-	if r.EmbeddingsCreated == 0 {
+	if r.FilesIndexed == 0 {
 		indexados = ui.CheckNeutro
 	}
 	partes := []ui.ParteResumo{
-		{Texto: plural(r.EmbeddingsCreated, "indexado", "indexados"), Tipo: indexados},
+		{Texto: plural(r.FilesIndexed, "indexado", "indexados"), Tipo: indexados},
 		{Texto: plural(r.FilesRemoved, "removido", "removidos"), Tipo: ui.CheckNeutro},
+	}
+	if r.EmbeddingsCreated > 0 {
+		partes = append(partes, ui.ParteResumo{Texto: plural(r.EmbeddingsCreated, "trecho", "trechos"), Tipo: ui.CheckNeutro})
 	}
 	if r.FilesSkipped > 0 {
 		partes = append(partes, ui.ParteResumo{Texto: plural(r.FilesSkipped, "sem mudança", "sem mudança"), Tipo: ui.CheckNeutro})

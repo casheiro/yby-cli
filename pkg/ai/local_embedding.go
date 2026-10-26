@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/knights-analytics/hugot"
 	"github.com/knights-analytics/hugot/backends"
@@ -210,17 +211,11 @@ func (p *LocalEmbeddingProvider) EmbedDocuments(_ context.Context, texts []strin
 		return nil, err
 	}
 
-	// all-MiniLM-L6-v2 tem limite de 512 tokens (~2000 chars).
-	// Textos maiores são truncados pois o modelo não suporta sequências mais longas.
-	// Para UKIs, a maioria do conteúdo semântico relevante está no início (título, contexto).
-	const maxChars = 2000
+	// O modelo tem limite de 512 tokens (~2000 bytes): texto maior é truncado, sem partir
+	// um caractere UTF-8 ao meio. O indexador já entrega trechos menores que isso.
 	prepared := make([]string, len(texts))
 	for i, t := range texts {
-		if len(t) > maxChars {
-			prepared[i] = t[:maxChars]
-		} else {
-			prepared[i] = t
-		}
+		prepared[i] = cortarParaModelo(t)
 	}
 
 	// Processar em batches de 16 (conservador pra evitar OOM)
@@ -256,4 +251,20 @@ func (p *LocalEmbeddingProvider) Destroy() {
 		p.session = nil
 		p.ready = false
 	}
+}
+
+// maxCharsLocal é o tamanho máximo, em bytes, do texto entregue ao modelo local.
+const maxCharsLocal = 2000
+
+// cortarParaModelo limita o texto a maxCharsLocal bytes, recuando até a divisa do último
+// caractere inteiro: cortar no meio de uma runa entregaria UTF-8 inválido ao tokenizador.
+func cortarParaModelo(t string) string {
+	if len(t) <= maxCharsLocal {
+		return t
+	}
+	corte := maxCharsLocal
+	for corte > 0 && !utf8.RuneStart(t[corte]) {
+		corte--
+	}
+	return t[:corte]
 }

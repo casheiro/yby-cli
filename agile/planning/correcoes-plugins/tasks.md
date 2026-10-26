@@ -243,7 +243,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** o chromem recusa `nResults > len(documents)`. O Synapstor limita (`search.go:~117`), mas o Bard passa `TopK=5` direto (`plugins/bard/tui/fluxo.go:~287`, `plugins/bard/config.go:~20`), então com menos de 5 UKIs o RAG some. O corte é 0,35 na busca (`search.go:~20`) e 0,6 no Bard (`plugins/bard/config.go:~21`).
   - **Fazer:** limitar `min(topK, Count())` dentro de `VectorStore.Search` (`pkg/ai/vector_store.go`), com vazio quando não houver documento, e definir o corte num lugar só.
   - **Verificar:** teste com 2 documentos e TopK 5.
-- [ ] **Y05 · Divisão em trechos**
+- [x] **Y05 · Divisão em trechos**
   - **Problema:** o arquivo inteiro vira um vetor (`indexer.go:~188-207`), e o `splitMarkdown` (`~309-351`) é código morto. O MiniLM corta em 2000 bytes, podendo partir um caractere UTF-8 (`pkg/ai/local_embedding.go:~211-216`). O Bard injeta o documento inteiro (`fluxo.go:~293-296`): até 5 docs por pergunta.
   - **Fazer:**
     - dividir por H2, com ~1500 caracteres e sobreposição; ID `caminho#n`; título e seção nos metadados e no começo do trecho;
@@ -681,6 +681,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y03 | O manifest passou para `.synapstor/.index/manifest.json` (dentro do que o git ignora); o do lugar antigo conta como vazio e é apagado na primeira gravação. | este commit |
 | 26/10/2026 | Y09 | Arquivo que não abre mantém a entrada antiga no manifest e no índice, com aviso; cada arquivo é lido uma vez e o hash sai do conteúdo lido; o `index` pega uma trava do sistema (`gofrs/flock`) em `.synapstor/.index/index.lock`, que sai sozinha quando o processo cai, e o segundo `index` para com "outro yby synapstor index está rodando neste projeto". | este commit |
 | 26/10/2026 | Y04 | `VectorStore.Search` limita o topK ao número de documentos e devolve vazio com a coleção vazia, sem o erro do chromem; a unificação do corte de relevância com o Bard fica na onda 2. | este commit |
+| 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
 
 ### Fase 4 · Sentinel
 

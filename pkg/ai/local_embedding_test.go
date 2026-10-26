@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,4 +63,17 @@ func TestHuggingFaceEndpoint(t *testing.T) {
 
 	t.Setenv("HF_ENDPOINT", "https://hf.mirror.local/")
 	assert.Equal(t, "https://hf.mirror.local", huggingFaceEndpoint())
+}
+
+// TestCortarParaModelo_NaoPartePalavraDeRuna: o corte em bytes caía no meio de um
+// caractere de 2 bytes e entregava UTF-8 inválido ao tokenizador.
+func TestCortarParaModelo_NaoPartePalavraDeRuna(t *testing.T) {
+	texto := strings.Repeat("a", maxCharsLocal-1) + "çç"
+	cortado := cortarParaModelo(texto)
+	assert.True(t, utf8.ValidString(cortado), "o corte tem de cair numa divisa de caractere")
+	assert.LessOrEqual(t, len(cortado), maxCharsLocal)
+	assert.Equal(t, strings.Repeat("a", maxCharsLocal-1), cortado)
+
+	curto := "ação"
+	assert.Equal(t, curto, cortarParaModelo(curto))
 }

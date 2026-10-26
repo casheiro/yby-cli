@@ -74,6 +74,9 @@ func indiceVazio() error {
 		WithHint("rode yby synapstor index para indexar os UKIs")
 }
 
+// candidatosPorResultado é quantos trechos a busca pede ao índice por UKI pedido.
+const candidatosPorResultado = 4
+
 // runSearch busca a consulta no índice e escreve os resultados em saida.
 func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.Writer) error {
 	query, topK, err := parseSearchArgs(args)
@@ -115,7 +118,9 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 		return indiceVazio()
 	}
 
-	docs, err := vs.Search(ctx, query, min(topK, total))
+	// O índice guarda trechos: pede mais candidatos que topK para que os trechos de um
+	// mesmo UKI não comam as vagas dos outros; resultadosDaBusca corta em topK UKIs.
+	docs, err := vs.Search(ctx, query, min(topK*candidatosPorResultado, total))
 	var outro *ai.IndiceDeOutroModeloError
 	if errors.As(err, &outro) {
 		prog.Falhar("")
@@ -129,12 +134,40 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 			WithContext("provider", provider.Name())
 	}
 
-	// Filtrar resultados com score mínimo de relevância
+	results, foraDoCorte := resultadosDaBusca(docs, topK)
+	prog.Concluir(plural(len(docs), "parecido", "parecidos"))
+	parar()
+
+	escreverResultados(saida, results, foraDoCorte)
+	return nil
+}
+
+// resultadosDaBusca tira os trechos abaixo de minScore e junta os trechos do mesmo arquivo
+// num resultado só, o de maior pontuação: o índice guarda trechos, mas quem busca quer saber
+// de qual UKI. Devolve no máximo topK UKIs e quantos UKIs distintos ficaram de fora só por
+// estarem abaixo de minScore (UKI com algum trecho acima do corte não entra na conta).
+func resultadosDaBusca(docs []ai.UnknownDocument, topK int) ([]searchResult, int) {
 	var results []searchResult
+	vistos := map[string]bool{}
+	abaixo := map[string]bool{}
+	acima := map[string]bool{}
 	for _, doc := range docs {
+		caminho := doc.Metadata["source"]
+		if caminho == "" {
+			caminho = doc.ID
+		}
 		if doc.Score < minScore {
+			abaixo[caminho] = true
 			continue
 		}
+		acima[caminho] = true
+		if vistos[caminho] {
+			continue
+		}
+		if topK > 0 && len(results) >= topK {
+			continue
+		}
+		vistos[caminho] = true
 
 		title := doc.Metadata["title"]
 		if title == "" {
@@ -143,9 +176,8 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 		if title == "" {
 			title = doc.ID
 		}
-		caminho := doc.Metadata["source"]
-		if caminho == "" {
-			caminho = doc.ID
+		if secao := doc.Metadata["section"]; secao != "" {
+			title += " · " + secao
 		}
 
 		results = append(results, searchResult{
@@ -155,11 +187,13 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 			Preview: truncatePreview(doc.Content, 200),
 		})
 	}
-	prog.Concluir(plural(len(docs), "parecido", "parecidos"))
-	parar()
-
-	escreverResultados(saida, results, len(docs)-len(results))
-	return nil
+	foraDoCorte := 0
+	for caminho := range abaixo {
+		if !acima[caminho] {
+			foraDoCorte++
+		}
+	}
+	return results, foraDoCorte
 }
 
 // escreverResultados escreve a seção RESULTADOS e o resumo da busca: cada resultado em

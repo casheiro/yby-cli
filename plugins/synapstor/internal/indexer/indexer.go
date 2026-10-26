@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +26,9 @@ type IndexManifest struct {
 type IndexedFile struct {
 	SHA256    string    `json:"sha256"`
 	IndexedAt time.Time `json:"indexed_at"`
+	// Chunks é quantos documentos (trechos) o arquivo tem no índice; a soma confere com
+	// o tamanho da coleção. Manifest antigo, sem o campo, não bate e refaz o índice.
+	Chunks int `json:"chunks"`
 }
 
 // manifestFile mora dentro da pasta do índice (que o .gitignore ignora): manifest e índice
@@ -136,12 +139,12 @@ func (i *Indexer) tirarDoIndice(ctx context.Context, storePath string, arquivos 
 
 // refazerSeNecessario apaga o índice e diz se apagou. Apaga quando: o --full foi pedido;
 // ele foi feito com outros embeddings que não os do provider de agora (ou com um modelo
-// que não ficou registrado); ou o número de documentos não bate com o manifest (cada
-// arquivo vira um documento), o que denuncia órfãos sem entrada no manifest ou arquivos
+// que não ficou registrado); ou o número de documentos não bate com o manifest (a soma
+// dos trechos de cada arquivo), o que denuncia órfãos sem entrada no manifest ou arquivos
 // que o manifest dá como indexados e não estão no índice.
 // Sem conseguir abrir o índice, só o --full decide: apaga a pasta; sem ele, as etapas
 // seguintes dizem o que houve.
-func (i *Indexer) refazerSeNecessario(ctx context.Context, storePath string, arquivosNoManifest int) (bool, error) {
+func (i *Indexer) refazerSeNecessario(ctx context.Context, storePath string, esperados int) (bool, error) {
 	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
 	if err != nil {
 		slog.Debug("não deu para abrir o índice para conferir o modelo", "erro", err)
@@ -171,9 +174,9 @@ func (i *Indexer) refazerSeNecessario(ctx context.Context, storePath string, arq
 		return false, err
 	case i.FullReindex:
 		motivo = "--full"
-	case vs.Count() != arquivosNoManifest:
+	case vs.Count() != esperados:
 		motivo = "índice fora do manifest"
-		aviso = "o índice não bate com o manifest (" + plural(vs.Count(), "documento", "documentos") + " para " + plural(arquivosNoManifest, "arquivo", "arquivos") + "); refeito do zero"
+		aviso = "o índice não bate com o manifest (" + plural(vs.Count(), "documento", "documentos") + " para " + plural(esperados, "esperado", "esperados") + "); refeito do zero"
 	default:
 		return false, nil
 	}
@@ -208,6 +211,8 @@ type IndexReport struct {
 	FilesScanned int
 	FilesSkipped int
 	FilesRemoved int
+	// FilesIndexed conta os arquivos novos ou alterados que entraram no índice.
+	FilesIndexed int
 	// FilesUnreadable conta os arquivos que existem e não deu para ler; não são tratados
 	// como apagados.
 	FilesUnreadable   int
@@ -251,7 +256,7 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	manifest := i.loadManifest()
 
 	// 2.5. --full, índice de outros embeddings ou fora do manifest: apaga e refaz tudo.
-	refeito, err := i.refazerSeNecessario(ctx, storePath, len(manifest.Files))
+	refeito, err := i.refazerSeNecessario(ctx, storePath, documentosNoManifest(manifest))
 	if err != nil {
 		return nil, err
 	}
@@ -272,6 +277,9 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	var allMetadatas []map[string]string
 	var allIDs []string
 	var ilegiveis []string
+	// reindexados são os arquivos novos ou alterados: os trechos antigos deles saem do
+	// índice antes dos novos entrarem, senão um arquivo que encolhe deixa trechos órfãos.
+	var reindexados []string
 
 	for _, path := range files {
 		rel, _ := filepath.Rel(i.RootDir, path)
@@ -302,34 +310,47 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 			}
 		}
 
-		// UKI é a menor unidade de conhecimento — indexar inteiro, sem chunking
+		// Um vetor para o arquivo todo diluiria o assunto e estouraria o limite do modelo
+		// local: o documento vira um trecho por seção H2 (ID "caminho#n").
 		baseName := filepath.Base(path)
 		docContent := string(content)
 
-		meta := map[string]string{
-			"source":   relPath,
-			"filename": baseName,
-		}
-
-		// Extrair título do H1
+		titulo := ""
 		for _, line := range strings.Split(docContent, "\n") {
 			if strings.HasPrefix(line, "# ") {
-				meta["title"] = strings.TrimPrefix(line, "# ")
+				titulo = strings.TrimSpace(strings.TrimPrefix(line, "# "))
 				break
 			}
 		}
 
-		allChunks = append(allChunks, docContent)
-		allMetadatas = append(allMetadatas, meta)
-		allIDs = append(allIDs, relPath)
+		trechos := dividirEmTrechos(titulo, docContent)
+		for n, tr := range trechos {
+			meta := map[string]string{
+				"source":   relPath,
+				"filename": baseName,
+				"chunk":    strconv.Itoa(n),
+			}
+			if titulo != "" {
+				meta["title"] = titulo
+			}
+			if tr.Secao != "" {
+				meta["section"] = tr.Secao
+			}
+			allChunks = append(allChunks, tr.Texto)
+			allMetadatas = append(allMetadatas, meta)
+			allIDs = append(allIDs, relPath+"#"+strconv.Itoa(n))
+		}
+		reindexados = append(reindexados, relPath)
 
 		newManifest.Files[relPath] = IndexedFile{
 			SHA256:    hash,
 			IndexedAt: time.Now(),
+			Chunks:    len(trechos),
 		}
 	}
 
 	report.ChunksGenerated = len(allChunks)
+	report.FilesIndexed = len(reindexados)
 	report.FilesUnreadable = len(ilegiveis)
 	if len(ilegiveis) > 0 {
 		et.Avisar("não deu para ler " + listaCurta(ilegiveis) + "; a próxima indexação tenta de novo")
@@ -357,8 +378,20 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		}
 	}
 
-	// 4. Se não há chunks novos, salvar manifest e retornar
+	// 4. Se não há chunks novos, salvar manifest e retornar (arquivo que ficou vazio
+	// também perde os trechos antigos)
 	if len(allChunks) == 0 {
+		if len(reindexados) > 0 {
+			_, falhas := i.tirarDoIndice(ctx, storePath, reindexados)
+			for _, relPath := range falhas {
+				// o trecho antigo continua no índice: o manifest antigo faz tentar de novo
+				if antigo, ok := manifest.Files[relPath]; ok {
+					newManifest.Files[relPath] = antigo
+				} else {
+					delete(newManifest.Files, relPath)
+				}
+			}
+		}
 		if err := i.saveManifest(newManifest); err != nil {
 			return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)
 		}
@@ -372,6 +405,13 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	if err != nil {
 		et.Falhar("")
 		return nil, fmt.Errorf("falha ao inicializar vector store: %w", err)
+	}
+
+	for _, relPath := range reindexados {
+		if err := vs.DeleteByMetadata(ctx, map[string]string{"source": relPath}); err != nil {
+			et.Falhar("")
+			return nil, fmt.Errorf("não deu para tirar os trechos antigos de %s do índice: %w", relPath, err)
+		}
 	}
 
 	vs.AoAvancar = func(feitos, total int) { et.Avancar(float64(feitos) / float64(total)) }
@@ -389,7 +429,7 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		et.Falhar("")
 		return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)
 	}
-	et.Concluir(plural(len(allChunks), "documento", "documentos"))
+	et.Concluir(plural(len(allChunks), "trecho", "trechos"))
 
 	report.Duration = time.Since(start)
 	return report, nil
@@ -414,7 +454,7 @@ func (i *Indexer) scanFiles() ([]string, error) {
 				return nil
 			}
 			name := strings.ToLower(info.Name())
-			if !info.IsDir() && strings.HasSuffix(name, ".md") && name != "index.md" {
+			if !info.IsDir() && strings.HasSuffix(name, ".md") && name != "index.md" && name != "_footer.md" && name != "_sidebar.md" {
 				candidates = append(candidates, path)
 			}
 			return nil
@@ -426,46 +466,11 @@ func (i *Indexer) scanFiles() ([]string, error) {
 	return candidates, nil
 }
 
-// splitMarkdown breaks markdown into logical chunks based on headers
-func splitMarkdown(content string) []string {
-	// Simple splitter: split by headers 1 and 2
-	// Improves context retrieval by keeping sections together
-	re := regexp.MustCompile(`(?m)^#{1,2}\s`)
-	indexes := re.FindAllStringIndex(content, -1)
-
-	if len(indexes) == 0 {
-		return []string{content}
+// documentosNoManifest soma os trechos que o manifest diz ter no índice.
+func documentosNoManifest(m *IndexManifest) int {
+	total := 0
+	for _, f := range m.Files {
+		total += f.Chunks
 	}
-
-	var chunks []string
-	lastIdx := 0
-
-	for i, idx := range indexes {
-		start := idx[0]
-		if i == 0 && start > 0 {
-			// Content before first header
-			chunks = append(chunks, content[0:start])
-		}
-
-		if i > 0 {
-			chunks = append(chunks, content[lastIdx:start])
-		}
-		lastIdx = start
-	}
-
-	// Last chunk
-	if lastIdx < len(content) {
-		chunks = append(chunks, content[lastIdx:])
-	}
-
-	// Cleanup empty chunks
-	var cleanChunks []string
-	for _, c := range chunks {
-		trimmed := strings.TrimSpace(c)
-		if len(trimmed) > 10 { // Ignore very small chunks
-			cleanChunks = append(cleanChunks, trimmed)
-		}
-	}
-
-	return cleanChunks
+	return total
 }
