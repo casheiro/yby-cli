@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -40,7 +41,14 @@ func invokePlugin(binaryPath string, req plugin.PluginRequest) (*plugin.PluginRe
 	}
 
 	cmd := exec.Command(binaryPath)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("YBY_PLUGIN_REQUEST=%s", string(reqJSON)))
+	// O pedido do core ao Bard (variável ou arquivo) fica de fora: vale só o desta chamada.
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, plugin.EnvPedido+"=") && !strings.HasPrefix(kv, plugin.EnvPedidoArquivo+"=") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, plugin.EnvPedido+"="+string(reqJSON))
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
