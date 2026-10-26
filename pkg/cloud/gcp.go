@@ -33,7 +33,7 @@ func (g *gcpProvider) IsAvailable(_ context.Context) bool {
 func (g *gcpProvider) CLIVersion(ctx context.Context) (string, error) {
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "--version")
 	if err != nil {
-		return "", fmt.Errorf("gcloud --version: %w", err)
+		return "", erroDoCLI("gcloud --version", out, err)
 	}
 	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
 	if len(lines) > 0 {
@@ -53,7 +53,7 @@ type gcpAuthAccount struct {
 func (g *gcpProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "list", "--format", "json")
 	if err != nil {
-		return &CredentialStatus{Authenticated: false}, fmt.Errorf("gcloud auth list: %w", err)
+		return &CredentialStatus{Authenticated: false}, erroDoCLI("gcloud auth list", out, err)
 	}
 
 	var accounts []gcpAuthAccount
@@ -67,6 +67,7 @@ func (g *gcpProvider) ValidateCredentials(ctx context.Context) (*CredentialStatu
 				Authenticated: true,
 				Identity:      acc.Account,
 				Method:        "gcloud-cli",
+				ExpiresAt:     validadeGCP(ctx, g),
 			}, nil
 		}
 	}
@@ -80,6 +81,18 @@ type gcpCluster struct {
 	Location             string `json:"location"`
 	CurrentMasterVersion string `json:"currentMasterVersion"`
 	Status               string `json:"status"`
+	// SelfLink é https://container.googleapis.com/v1/projects/<projeto>/locations/<local>/clusters/<nome>.
+	SelfLink string `json:"selfLink"`
+}
+
+// projetoDoSelfLink tira o projeto do selfLink do cluster; vazio se não houver.
+func projetoDoSelfLink(link string) string {
+	_, depois, ok := strings.Cut(link, "/projects/")
+	if !ok {
+		return ""
+	}
+	projeto, _, _ := strings.Cut(depois, "/")
+	return projeto
 }
 
 // ListClusters lista clusters GKE via `gcloud container clusters list`.
@@ -95,7 +108,7 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 
 	out, err := g.runner.RunCombinedOutput(ctx, "gcloud", args...)
 	if err != nil {
-		return nil, fmt.Errorf("gcloud container clusters list: %w", err)
+		return nil, erroDoCLI("gcloud container clusters list", out, err)
 	}
 
 	var gcpClusters []gcpCluster
@@ -105,13 +118,18 @@ func (g *gcpProvider) ListClusters(ctx context.Context, opts ListOptions) ([]Clu
 
 	clusters := make([]ClusterInfo, 0, len(gcpClusters))
 	for _, c := range gcpClusters {
+		projeto := opts.Project
+		if projeto == "" {
+			// sem --project, o gcloud lista o projeto padrão, que está no selfLink
+			projeto = projetoDoSelfLink(c.SelfLink)
+		}
 		clusters = append(clusters, ClusterInfo{
 			Name:      c.Name,
 			Region:    c.Location,
 			Provider:  "gcp",
 			Version:   c.CurrentMasterVersion,
 			Status:    c.Status,
-			ProjectID: opts.Project,
+			ProjectID: projeto,
 		})
 	}
 	return clusters, nil
@@ -134,8 +152,8 @@ func (g *gcpProvider) ConfigureKubeconfig(ctx context.Context, cluster ClusterIn
 
 // RefreshToken renova o token de autenticação via `gcloud auth print-access-token`.
 func (g *gcpProvider) RefreshToken(ctx context.Context, _ ClusterInfo) error {
-	if _, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token"); err != nil {
-		return fmt.Errorf("gcloud auth print-access-token: %w", err)
+	if out, err := g.runner.RunCombinedOutput(ctx, "gcloud", "auth", "print-access-token"); err != nil {
+		return erroDoCLI("gcloud auth print-access-token", out, err)
 	}
 	return nil
 }

@@ -25,11 +25,11 @@ func (r *RetryClient) Contexto() string {
 	return ""
 }
 
-// NamespaceDoContexto devolve o namespace do contexto do kubeconfig do client
+// NamespaceInicial devolve o namespace por onde a TUI começa, do client
 // interno, quando ele o conhece.
-func (r *RetryClient) NamespaceDoContexto() string {
-	if c, ok := r.inner.(interface{ NamespaceDoContexto() string }); ok {
-		return c.NamespaceDoContexto()
+func (r *RetryClient) NamespaceInicial() string {
+	if c, ok := r.inner.(interface{ NamespaceInicial() string }); ok {
+		return c.NamespaceInicial()
 	}
 	return ""
 }

@@ -1,0 +1,16 @@
+◆ YBY  CLOUD  PAINEL DE CLUSTERS                                       4 clusters · 3 contas   ◈ próxima leitura em 18 s
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+✓ 2 prontos   ▲ 1 token expira em breve   ✕ 1 token expirado                                                            
+                                                                       │ ┌ EKS · staging ──────────────────────────────┐
+CLOUD  CLUSTER    REGIÃO       K8S   STATUS     TOKEN                  │ │ IDENTIDADE                                  │
+aws    prod-core  us-east-1    1.31  ✓ pronto   ━┄┄┄┄┄┄┄  11 min       │ │ conta     4821·…·9310                       │
+aws    staging    us-east-1    1.31  ✕ token    expirou há 12 min      │ │ papel     yby-staging-admin                 │
+azure  aks-dados  brazilsouth  1.30  ▲ atenção  ┄┄┄┄┄┄┄┄  3 min        │ │ método    SSO · Identity Center             │
+gcp    gke-ml     us-central1  1.31  ✓ pronto   ━━━━━━━┄  52 min       │ │ token     ✕ expirou às 11:55                │
+                                                                       │ │                                             │
+                                                                       │ │ AUDITORIA RECENTE                           │
+                                                                       │ │ 11:55  ✕ renova  SSO vencido                │
+                                                                       │ └─────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+✕ staging sem token: t renova (com o SSO vencido, rode aws sso login antes)                          atualizado 12:07:00
+↑↓ mover  ↵ abrir no Viz  t renovar token  r recarregar  / buscar  ? ajuda                                        q sair

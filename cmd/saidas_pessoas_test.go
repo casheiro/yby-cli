@@ -802,15 +802,15 @@ func TestExportSemDados_AvisoForaDaSaida(t *testing.T) {
 	_ = cloudAuditCmd.Flags().Set("export", "")
 }
 
-// Os comandos não usam mais os estilos antigos (o cmd/style.go saiu na T028). Só o
-// cloud_dashboard.go fica de fora até o redesenho da fase 4 (T029).
+// Os comandos não usam mais os estilos antigos (o cmd/style.go saiu na T028; o painel do
+// cloud, o último, foi redesenhado na T029).
 func TestSaidasMigradas_SemEstilosAntigos(t *testing.T) {
 	antigos := []string{"titleStyle", "headerStyle", "stepStyle", "checkStyle", "crossStyle",
 		"warningStyle", "itemStyle", "grayStyle", "lipgloss.Color(", "lipgloss.NewStyle("}
 	arquivos, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 	for _, a := range arquivos {
-		if strings.HasSuffix(a, "_test.go") || a == "cloud_dashboard.go" {
+		if strings.HasSuffix(a, "_test.go") {
 			continue
 		}
 		bruto, err := os.ReadFile(a)

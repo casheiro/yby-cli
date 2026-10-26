@@ -200,6 +200,31 @@ func TestGCPProvider_ListClusters(t *testing.T) {
 	}
 }
 
+// Sem --project, o projeto vem do selfLink de cada cluster (o get-credentials usa ele no
+// nome do contexto, gke_<projeto>_<local>_<nome>).
+func TestGCPProvider_ListClusters_ProjetoDoSelfLink(t *testing.T) {
+	listJSON := `[
+		{"name":"gke-ml","location":"us-central1","status":"RUNNING","selfLink":"https://container.googleapis.com/v1/projects/ml-plataforma/locations/us-central1/clusters/gke-ml"},
+		{"name":"sem-link","location":"us-east1","status":"RUNNING"}
+	]`
+	runner := &testutil.MockRunner{
+		RunCombinedOutputFunc: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+			return []byte(listJSON), nil
+		},
+	}
+	p := &gcpProvider{runner: runner}
+	clusters, err := p.ListClusters(context.Background(), ListOptions{})
+	if err != nil {
+		t.Fatalf("ListClusters() error = %v, want nil", err)
+	}
+	if clusters[0].ProjectID != "ml-plataforma" {
+		t.Errorf("clusters[0].ProjectID = %q, want %q", clusters[0].ProjectID, "ml-plataforma")
+	}
+	if clusters[1].ProjectID != "" {
+		t.Errorf("clusters[1].ProjectID = %q, want vazio", clusters[1].ProjectID)
+	}
+}
+
 func TestGCPProvider_ListClusters_WithRegion(t *testing.T) {
 	var capturedArgs []string
 	runner := &testutil.MockRunner{

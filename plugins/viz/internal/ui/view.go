@@ -71,12 +71,27 @@ func (m Model) namespaceNaTela() string {
 	return m.filter.Namespace
 }
 
+// nomeDoCluster encurta para o masthead os contextos que os CLIs das clouds gravam: o ARN
+// do EKS (arn:aws:eks:<região>:<conta>:cluster/<nome>) e o gke_<projeto>_<local>_<nome>
+// do GKE viram o nome do cluster. Os outros contextos ficam como estão.
+func nomeDoCluster(contexto string) string {
+	if strings.HasPrefix(contexto, "arn:aws:eks:") {
+		if _, nome, ok := strings.Cut(contexto, ":cluster/"); ok && nome != "" {
+			return nome
+		}
+	}
+	if partes := strings.SplitN(contexto, "_", 4); len(partes) == 4 && partes[0] == "gke" && partes[3] != "" {
+		return partes[3]
+	}
+	return contexto
+}
+
 // contexto é "cluster ▸ namespace" (só o namespace sem contexto no
 // kubeconfig) e o indicador ao vivo enquanto a conexão está de pé.
 func (m Model) contexto() string {
 	segs := []string{m.namespaceNaTela()}
 	if c := m.contextoDoCluster(); c != "" {
-		segs = []string{c, m.namespaceNaTela()}
+		segs = []string{nomeDoCluster(c), m.namespaceNaTela()}
 	}
 	ctx := yui.CaminhoContexto(segs...)
 	if m.err == nil && !m.reconnecting {

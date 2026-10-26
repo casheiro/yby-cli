@@ -33,7 +33,7 @@ func (a *azureProvider) IsAvailable(_ context.Context) bool {
 func (a *azureProvider) CLIVersion(ctx context.Context) (string, error) {
 	out, err := a.runner.RunCombinedOutput(ctx, "az", "--version")
 	if err != nil {
-		return "", fmt.Errorf("az --version: %w", err)
+		return "", erroDoCLI("az --version", out, err)
 	}
 	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
 	if len(lines) > 0 {
@@ -44,6 +44,8 @@ func (a *azureProvider) CLIVersion(ctx context.Context) (string, error) {
 
 // azAccountShow representa a saída de `az account show --output json`.
 type azAccountShow struct {
+	// ID é o id da assinatura ativa.
+	ID   string `json:"id"`
 	User struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
@@ -55,7 +57,7 @@ type azAccountShow struct {
 func (a *azureProvider) ValidateCredentials(ctx context.Context) (*CredentialStatus, error) {
 	out, err := a.runner.RunCombinedOutput(ctx, "az", "account", "show", "--output", "json")
 	if err != nil {
-		return &CredentialStatus{Authenticated: false}, fmt.Errorf("az account show: %w", err)
+		return &CredentialStatus{Authenticated: false}, erroDoCLI("az account show", out, err)
 	}
 
 	var account azAccountShow
@@ -66,7 +68,9 @@ func (a *azureProvider) ValidateCredentials(ctx context.Context) (*CredentialSta
 	return &CredentialStatus{
 		Authenticated: true,
 		Identity:      account.User.Name,
+		Account:       account.ID,
 		Method:        "az-cli",
+		ExpiresAt:     validadeAzure(ctx, a),
 	}, nil
 }
 
@@ -86,7 +90,7 @@ type azAKSCluster struct {
 func (a *azureProvider) ListClusters(ctx context.Context, opts ListOptions) ([]ClusterInfo, error) {
 	out, err := a.runner.RunCombinedOutput(ctx, "az", "aks", "list", "--output", "json")
 	if err != nil {
-		return nil, fmt.Errorf("az aks list: %w", err)
+		return nil, erroDoCLI("az aks list", out, err)
 	}
 
 	var aksClusters []azAKSCluster
@@ -122,8 +126,8 @@ func (a *azureProvider) ConfigureKubeconfig(ctx context.Context, cluster Cluster
 
 // RefreshToken renova o token de autenticação via `az account get-access-token`.
 func (a *azureProvider) RefreshToken(ctx context.Context, _ ClusterInfo) error {
-	if _, err := a.runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--output", "json"); err != nil {
-		return fmt.Errorf("az account get-access-token: %w", err)
+	if out, err := a.runner.RunCombinedOutput(ctx, "az", "account", "get-access-token", "--output", "json"); err != nil {
+		return erroDoCLI("az account get-access-token", out, err)
 	}
 	return nil
 }
