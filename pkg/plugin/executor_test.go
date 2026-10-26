@@ -56,6 +56,11 @@ func TestHelperProcess(t *testing.T) {
 		}
 		return
 	}
+	// Plugins dos testes de contexto (manager_contexto_test.go).
+	if strings.HasPrefix(filepath.Base(cmd), prefixoPluginDeContexto) {
+		pluginDeContexto(cmd)
+		return
+	}
 	// Plugin de verdade numa pasta qualquer, para os testes do Discover.
 	if strings.HasPrefix(filepath.Base(cmd), "yby-plugin-manifesto") {
 		fmt.Fprint(os.Stdout, `{"data": {"name": "manifesto", "version": "1.0.0", "hooks": ["command"]}}`)

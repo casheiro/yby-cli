@@ -481,7 +481,7 @@ func TestContextHook_JSONNaoMuda(t *testing.T) {
 	if err := handlePluginRequest(plugin.PluginRequest{Hook: "context"}, &b, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	esperado := `{"data":{"data":{"synapstor_indexed_files":0,"synapstor_last_indexed":"","synapstor_status":"not_indexed"}}}` + "\n"
+	esperado := `{"data":{"synapstor_indexed_files":0,"synapstor_last_indexed":"","synapstor_status":"not_indexed"}}` + "\n"
 	if b.String() != esperado {
 		t.Errorf("JSON do context mudou:\n%s", b.String())
 	}

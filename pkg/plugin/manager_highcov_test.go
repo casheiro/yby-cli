@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -745,7 +746,7 @@ func TestExecuteContextHook_DataNaoMap(t *testing.T) {
 		ProjectName: "test",
 		Data:        map[string]interface{}{"existente": "valor"},
 	}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err)
 	// Data original deve estar preservada (patch não aplicado)
 	assert.Equal(t, "valor", ctx.Data["existente"])

@@ -79,7 +79,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 1 · Contratos entre os plugins e contexto
 
-- [ ] **K01 · Separar "fornece contexto" de "consome contexto"** ✓
+- [x] **K01 · Separar "fornece contexto" de "consome contexto"** ✓
   - **Conferência (26/10), que muda o Fazer:** o Sentinel consome contexto (`plugins/sentinel/cli/main.go:~120-131` lê `Infra.Namespace`/`KubeContext`; `pkg/plugin/sdk/sdk_k8s.go:~23-26` monta o client com `Infra`), e o V02 quer o mesmo para o Viz. Os dois declaram só `command` e hoje não recebem nada: `yby -c staging sentinel scan` ignora o ambiente. Pela decisão do usuário: (1) todo plugin recebe o contexto barato (`environment`, `infra` com o caminho do kube_config, `values`), só quando o ambiente foi pedido por `-c` ou `YBY_ENV`; (2) o caro só com `consome_contexto`; (3) o `yby init` (`cmd/init.go:~229`) continua usando o hook `context` como fornecedor; (4) `ExecuteContextHook` com contexto do chamador, e não `context.Background()`. Testes do manager com o processo auxiliar `GO_WANT_HELPER_PROCESS` (`pkg/plugin/executor_test.go`), que roda no Windows.
   - **Problema:** em `pkg/plugin/manager.go:~275-316`, quem declara o hook `context` recebe o contexto inteiro (`GetCoreContext` + os hooks de todos os plugins). Só o Atlas e o Synapstor declaram, e nenhum dos dois usa o `req.Context` (`plugins/atlas/main.go:~82`, `plugins/synapstor/main.go:~38-45`). Por isso todo `yby atlas …` e `yby synapstor …`, até o `--help`, varre o repo e manda mais de 128 KB a quem descarta. Foi a origem do E2BIG do #217.
   - **Fazer:**
@@ -664,6 +664,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | K01 | Contexto barato (ambiente, infra com kube_config, values) a todo plugin quando o ambiente é pedido (`-c` em qualquer forma do pflag antes do nome, ou `YBY_ENV`); o caro só com `consome_contexto`; `--help` sem contexto; `ExecuteContextHook` com o contexto do chamador; Synapstor sem embrulho duplo; `UKIIndex` removido. | este commit |
 
 ### Fase 2 · Bard
 

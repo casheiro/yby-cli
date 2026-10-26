@@ -1,12 +1,13 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	projectContext "github.com/casheiro/yby-cli/pkg/context"
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/stretchr/testify/assert"
 )
@@ -297,7 +298,7 @@ func TestExecuteContextHook_ComPatchDeDados(t *testing.T) {
 		ProjectName: "teste",
 		Data:        map[string]interface{}{"existente": "valor"},
 	}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "valor_novo", ctx.Data["chave_nova"])
 	assert.Equal(t, "valor", ctx.Data["existente"]) // Dados anteriores preservados
@@ -323,34 +324,22 @@ func TestExecuteContextHook_DataNilInicializado(t *testing.T) {
 
 	// Data inicia como nil
 	ctx := &scaffold.BlueprintContext{ProjectName: "teste"}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err)
 	assert.NotNil(t, ctx.Data)
 	assert.Equal(t, "info", ctx.Data["nova"])
 }
 
-// ---- BuildPluginContext ----
+// ---- lerAmbiente ----
 
-func TestBuildPluginContext_SemArquivoDeAmbientes(t *testing.T) {
-	tmp := t.TempDir()
-
-	m := NewManager()
-	coreCtx := &projectContext.CoreContext{
-		ProjectName: "meu-projeto",
-		Environment: "staging",
-	}
-	bpCtx := &scaffold.BlueprintContext{
-		Data: make(map[string]interface{}),
-	}
-
-	fullCtx, values, err := m.BuildPluginContext(coreCtx, bpCtx, tmp)
-	assert.NoError(t, err)
-	assert.Equal(t, "meu-projeto", fullCtx.ProjectName)
-	assert.Equal(t, "staging", fullCtx.Environment)
-	assert.Empty(t, values) // Sem values pois não há arquivo de ambientes
+func TestLerAmbiente_SemArquivoDeAmbientes(t *testing.T) {
+	_, _, err := lerAmbiente(t.TempDir(), "staging")
+	var yerr *ybyerrors.YbyError
+	assert.ErrorAs(t, err, &yerr)
+	assert.Equal(t, ybyerrors.ErrCodeConfig, yerr.Code)
 }
 
-func TestBuildPluginContext_ComAmbienteInvalido(t *testing.T) {
+func TestLerAmbiente_ComAmbienteInvalido(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Criar environments.yaml sem o ambiente solicitado
@@ -363,18 +352,8 @@ environments:
 	os.MkdirAll(filepath.Join(tmp, ".yby"), 0755)
 	os.WriteFile(filepath.Join(tmp, ".yby", "environments.yaml"), []byte(envConfig), 0644)
 
-	m := NewManager()
-	coreCtx := &projectContext.CoreContext{
-		ProjectName: "projeto",
-		Environment: "producao", // Não existe no manifesto
-	}
-	bpCtx := &scaffold.BlueprintContext{Data: make(map[string]interface{})}
-
-	fullCtx, _, err := m.BuildPluginContext(coreCtx, bpCtx, tmp)
-	assert.NoError(t, err)
-	assert.Equal(t, "producao", fullCtx.Environment)
-	// Infra deve estar vazia pois o ambiente não foi encontrado
-	assert.Empty(t, fullCtx.Infra.KubeContext)
+	_, _, err := lerAmbiente(tmp, "producao")
+	assert.ErrorContains(t, err, "producao")
 }
 
 // ---- Install com file:// ----

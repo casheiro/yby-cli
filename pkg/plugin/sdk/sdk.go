@@ -21,6 +21,8 @@ var (
 func Init() error {
 	var req plugin.PluginRequest
 	var parsed bool
+	// Cada Init lê um pedido novo: nada do anterior fica.
+	currentContext, currentHook, currentArgs = nil, "", nil
 
 	// 1. Tentar ler o pedido do ambiente (modo interativo/RunInteractive): a variável
 	// YBY_PLUGIN_REQUEST ou o arquivo de YBY_PLUGIN_REQUEST_FILE

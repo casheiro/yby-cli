@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -178,6 +179,6 @@ func TestManagerExecuteContextHook(t *testing.T) {
 	m.plugins = append(m.plugins, p)
 
 	ctx := &scaffold.BlueprintContext{}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err) // Hook fails but logs and ignores
 }
