@@ -15,6 +15,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -129,7 +130,11 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 		prog.Pular("indisponíveis")
 	}
 
-	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", logsStr, eventsStr, metricsStr)
+	// O provider pode ser remoto: tokens, senhas e chaves dos logs, dos eventos e das
+	// métricas são redigidos antes de sair da máquina. Cada parte é redigida sozinha,
+	// para o fim de uma não ser lido como valor do título da seguinte.
+	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s",
+		redacao.Redigir(logsStr), redacao.Redigir(eventsStr), redacao.Redigir(metricsStr))
 	if strings.TrimSpace(logsStr) == "" && (events == nil || len(events.Items) == 0) {
 		parar()
 		return yerrors.New(yerrors.ErrCodeValidation, "não há logs nem eventos do pod para analisar").

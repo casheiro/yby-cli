@@ -111,17 +111,20 @@ func (c checkFalso) Run(context.Context, kubernetes.Interface, string) ([]checks
 	return c.achados, c.err
 }
 
-// provedorFalso responde sempre o mesmo texto e conta as chamadas; nunca há IA de verdade.
+// provedorFalso responde sempre o mesmo texto, conta as chamadas e guarda o que recebeu
+// de contexto; nunca há IA de verdade.
 type provedorFalso struct {
 	ai.Provider
-	resposta string
-	err      error
-	chamadas int
+	resposta  string
+	err       error
+	chamadas  int
+	recebidos []string
 }
 
 func (p *provedorFalso) Name() string { return "falso" }
-func (p *provedorFalso) Completion(context.Context, string, string) (string, error) {
+func (p *provedorFalso) Completion(_ context.Context, _, contexto string) (string, error) {
 	p.chamadas++
+	p.recebidos = append(p.recebidos, contexto)
 	return p.resposta, p.err
 }
 

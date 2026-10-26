@@ -418,7 +418,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - chave com contexto, UID e `restartCount`;
     - eventos só com reason, message, count e lastTimestamp.
   - **Verificar:** testes.
-- [ ] **S11 · Redigir segredos antes da IA**
+- [x] **S11 · Redigir segredos antes da IA**
   - **Problema:** `investigate.go:~133` manda logs e eventos crus, e o provider pode ser remoto.
   - **Fazer:** redigir tokens, JWT, chaves AWS, senhas em URL e `Authorization:` antes de enviar (função compartilhada com o B06, se couber em `pkg/`).
   - **Verificar:** testes.
@@ -682,6 +682,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | S10 | Investigate checa a saúde antes do cache (Succeeded saudável, reinício só vale se for de menos de 2 h), lê logs por contêiner com Previous, chave de cache com contexto, UID e reinícios, e eventos resumidos | este commit |
+| 26/10/2026 | S11 | Investigate redige logs, eventos e métricas e o scan redige os achados com o pkg/redacao antes da IA; o pkg/redacao passou a redigir o value de env com name sensível e o valor de ConfigMap no kubectl describe | este commit |
 
 ### Fase 5 · Atlas
 

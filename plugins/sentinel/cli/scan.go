@@ -16,6 +16,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
@@ -269,8 +270,10 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	// 4. Recomendações via IA (o --no-ai as pula: o Bard, que chama o scan, já é a IA)
 	if provider := provedorDeIA(ctx); provider != nil && !op.semIA {
 		prog.Iniciar("recomendações da IA")
+		// As mensagens dos achados podem trazer valores do cluster (env, anotações):
+		// redigidas antes de ir a um provider que pode ser remoto.
 		findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
-		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))
+		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), redacao.Redigir(string(findingsJSON)))
 		if errIA != nil {
 			prog.Falhar("indisponíveis")
 			slog.Debug("as recomendações da IA falharam", "provider", provider.Name(), "erro", errIA)
