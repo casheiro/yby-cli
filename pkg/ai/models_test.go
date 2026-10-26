@@ -136,14 +136,14 @@ func TestGetProviderWithModel_CLIs(t *testing.T) {
 	c, ok := p.(*ClaudeCLIProvider)
 	require.True(t, ok, "os CLIs seguem sem decorators: %T", p)
 	assert.Equal(t, "opus", c.model)
-	assert.Equal(t, []string{"--model", "opus", "-p", "oi"}, c.args("oi"))
-	assert.Equal(t, []string{"-p", "oi"}, NewClaudeCLIProvider().args("oi"), "sem modelo, o CLI escolhe")
+	assert.Equal(t, []string{"--model", "opus", "-p"}, c.args())
+	assert.Equal(t, []string{"-p"}, NewClaudeCLIProvider().args(), "sem modelo, o CLI escolhe")
 
 	_, _, err = GetProviderWithModel(context.Background(), "claude-cli", "gpt-4o")
 	assert.Equal(t, "o claude-cli não tem o modelo gpt-4o", codigoErro(t, err).Message)
 
 	g := &GeminiCLIProvider{command: "gemini", model: "gemini-2.5-pro"}
-	assert.Equal(t, []string{"--model", "gemini-2.5-pro", "-p", "oi"}, g.args("oi"))
+	assert.Equal(t, []string{"--model", "gemini-2.5-pro", "-p", instrucaoStdinGemini}, g.args())
 }
 
 func TestListModels_ListasConhecidas(t *testing.T) {

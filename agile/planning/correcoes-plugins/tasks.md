@@ -181,7 +181,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `invokePlugin` usa `exec.Command` sem ctx (`tools/plugin_helper.go`), e o esc durante um scan deixa o Sentinel rodando. O `EnrichContext` usa `context.Background()` (`main.go:~207,225`) e chama o kubectl em sequência sem `--request-timeout` (`context_enricher.go:~159`), então com o cluster fora do ar a TUI demora a abrir.
   - **Fazer:** `exec.CommandContext` nas tools; `--request-timeout=5s` e prazo total de ~5 s no enriquecimento.
   - **Verificar:** testes com comando falso lento.
-- [ ] **B10 · Providers CLI: prompt pelo stdin e cancelamento**
+- [x] **B10 · Providers CLI: prompt pelo stdin e cancelamento**
   - **Problema:** `pkg/ai/claude_cli.go` e `pkg/ai/gemini_cli.go` passam system prompt, histórico, blueprint e saída da tool num único argumento de `-p`, com `exec.Command` sem ctx. Isso estoura no Windows (~32 K) e no Linux (128 KiB por argumento), que é a mesma classe do #217, e o esc não mata o `claude`.
   - **Fazer:** prompt pelo stdin (confirmar a forma suportada pelo `claude -p` e pelo `gemini -p` atuais) e `exec.CommandContext`.
   - **Verificar:** teste com comando falso conferindo stdin e cancelamento; teste real local com o `claude` instalado, se houver.
@@ -673,6 +673,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | B05 | Com ferramenta, o prompt final mantém o bloco de notas do Synapstor antes do resultado da ferramenta; teste do `Fluxo` com busca e tool falsas. | este commit |
 | 26/10/2026 | B08 | `ai.ErroRetentavel` classifica o erro (429/502/503, rede, stream cortado, YbyError de timeout); o `RetryProvider` e o `Fluxo` deixam de repetir o resto (chave inválida, modelo inexistente, ERR_TOKEN_LIMIT, config, falha de CLI). | este commit |
+| 26/10/2026 | B10 | Providers claude-cli e gemini-cli levam o prompt pelo stdin (`claude -p` sem texto; `gemini -p` com instrução curta), rodam com `CommandContext` e `WaitDelay`, limitam o stderr no erro e o stream do gemini perde as linhas "Loaded cached credentials". | este commit |
 
 ### Fase 3 · Synapstor
 
