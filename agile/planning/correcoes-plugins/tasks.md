@@ -72,7 +72,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Fazer:** tirar o exclude, corrigir o que o lint apontar no Sentinel e rodar `gofmt -w` nos dois arquivos.
   - **Verificar:** `golangci-lint run --build-tags k8s plugins/sentinel/cli/...` limpo, com a config v1 do CI. Localmente, migrar uma cópia da config: v2, com o revive `exported` desligado, `exclude-use-default` e os mesmos linters.
   - **Conferência (26/10):** o v1 não pula o diretório passado como argumento, então o exclude anula só os subpacotes do Sentinel. Viz e Synapstor nunca são lintados no CI: acrescentar `golangci-lint run` dentro de cada módulo. A regex `test` do exclude-dirs também tira o `pkg/testutil`: trocar por `^test/`, corrigindo o que aparecer.
-- [ ] **R01 · Pacote de redação compartilhado** (novo, saiu do B06 e do S11)
+- [x] **R01 · Pacote de redação compartilhado** (novo, saiu do B06 e do S11)
   - **Problema:** `sanitizeContent` (`plugins/bard/history.go:~18-51`) está no `package main` do Bard, e nem o `plugins/bard/tools` nem o Sentinel conseguem importar. Faltam padrões para JWT, credencial em URL, `Authorization:` genérico, AWS secret key e bloco PEM.
   - **Fazer:** pacote-folha `pkg/redacao` (só `regexp` e `strings`), com `Redigir(string) string`; o Bard passa a usá-lo no histórico e no `/exportar`. Os usos novos ficam com o B06 e o S11.
   - **Verificar:** testes de tabela com cada padrão e com texto que não pode ser redigido (ex.: `KEYCLOAK_URL=https://kc`).
@@ -659,6 +659,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | C02 | O `.golangci.yml` deixa de excluir o Sentinel e exclui só a pasta `test/` da raiz; o pipeline ganha lint do Viz e do Synapstor; gofmt nos dois arquivos. Validado com o golangci-lint v1.64.8 do CI (GOTOOLCHAIN=go1.26.1). | este commit |
 | 26/10/2026 | C01 | Testes do Sentinel (`-tags k8s`, GOGC=30, `-p 1`), do Viz e do Synapstor no feature-pipeline, no release-pipeline, no release.yaml e no `task test`. Rodados com `-race` no Linux (golang:1.26) sem falha; a raiz no Linux pede LANG=C.UTF-8 por causa dos glifos. | este commit |
+| 26/10/2026 | R01 | Pacote-folha `pkg/redacao` (`Redigir`, marca `[REDIGIDO]`) no lugar do `sanitizeContent` do Bard: tokens com formato próprio, PEM, senha em URL, Authorization, Bearer/Basic e valores de nomes sensíveis (inclusive camelCase, compostos colados e `senha`), redigidos pela união dos trechos achados sobre o mesmo texto. Seis voltas de revisão adversarial com busca diferencial contra o antigo: nenhum vazamento novo realista. | este commit |
 
 ### Fase 1 · Contratos
 

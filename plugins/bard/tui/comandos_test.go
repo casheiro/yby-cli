@@ -775,7 +775,7 @@ func TestComandos_Exportar(t *testing.T) {
 	semCores(t)
 	dir := t.TempDir()
 	m := telaDeTeste(t, Config{SessionID: "20261024-114500", Cluster: "staging", Namespace: "default", AIModel: "claude-cli",
-		Diretorio: dir, Sanitizar: func(s string) string { return strings.ReplaceAll(s, "sk-segredo", "[REDACTED]") }}, "11:50", "11:51", "11:52")
+		Diretorio: dir, Sanitizar: func(s string) string { return strings.ReplaceAll(s, "sk-segredo", "[REDIGIDO]") }}, "11:50", "11:51", "11:52")
 
 	m, _ = teclarModelo(t, m, append(teclasDe("/exportar"), teclaEnter)...)
 	if m.aviso == nil || m.aviso.texto != "a conversa ainda não tem mensagens para exportar" {
@@ -791,7 +791,7 @@ func TestComandos_Exportar(t *testing.T) {
 		t.Fatalf("o /exportar deveria gravar no diretório do projeto: %v", err)
 	}
 	want := "# Conversa com o Bard · 24/10/2026 11:45\n\nstaging · default · claude-cli\n\n" +
-		"## Você · 11:51\n\nminha chave é [REDACTED]\n\n" +
+		"## Você · 11:51\n\nminha chave é [REDIGIDO]\n\n" +
 		"## Bard · 11:52\n\n- ferramenta: `kubectl get pods`\n\nGuarde-a fora do repositório.\n"
 	if string(dados) != want {
 		t.Errorf("markdown exportado:\n%s\nesperado:\n%s", dados, want)
