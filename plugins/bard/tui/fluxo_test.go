@@ -732,3 +732,28 @@ func TestPrimeiraLinhaEAlvo(t *testing.T) {
 		}
 	}
 }
+
+// As notas do Synapstor e a saída da ferramenta vão juntas ao provider.
+func TestFluxo_FerramentaMantemNotasDoSynapstor(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{
+		intencao: `{"intent":"investigate_pod","params":{"pod":"worker-1"},"direct":false}`,
+		trechos:  []string{"ok"},
+	}
+	chamadas := 0
+	f := fluxoDeTeste(p)
+	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{
+		{Content: "NOTA-X", Metadata: map[string]string{"title": "runbook"}, Score: 0.9},
+	}}
+	f.TopK = 5
+	f.Limiar = 0.6
+	ferramenta := ferramentaDeTeste("SAIDA-Y", nil, &chamadas)
+	f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
+
+	coletar(t, f.Iniciar(context.Background(), 1, "por que o worker reinicia?"), nil)
+
+	entrada := p.ultimaEntrada()
+	if !strings.Contains(entrada, "SAIDA-Y") || !strings.Contains(entrada, "NOTA-X") {
+		t.Errorf("o prompt deveria ter a saída da ferramenta e as notas: %q", entrada)
+	}
+}

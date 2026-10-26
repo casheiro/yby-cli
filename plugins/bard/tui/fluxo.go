@@ -230,6 +230,10 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		}
 		e.etapa(msg)
 		entradaFinal = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", entrada, ferramenta.Name, saida)
+		if notas.texto != "" {
+			// As notas do Synapstor continuam valendo quando uma ferramenta roda.
+			entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\n%s", notas.texto, entradaFinal)
+		}
 	}
 
 	// 4. Resposta, em pedaços, com novas tentativas

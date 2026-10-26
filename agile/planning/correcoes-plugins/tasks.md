@@ -146,7 +146,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - parâmetros passados por env ou escapados, nunca interpolados crus no `sh -c`.
   - **Verificar:** `loader_test.go` confere `Intents` e a precedência; teste de que o parâmetro `"; rm -rf ~"` não executa nada.
   - **Conferência (26/10):** entra também o override de prompt do projeto: `prompts.Get` lê `.yby/prompts/bard.*.txt` do diretório atual (`pkg/ai/prompts/prompts.go:~28`), e um repo clonado reescreve o system prompt sem confiança. No Windows não há `sh` sem o Git Bash: rodar sem shell (argv com os parâmetros inteiros) ou recusar com mensagem clara, nunca interpolar.
-- [ ] **B05 · Notas do Synapstor somem quando uma tool roda** ✓
+- [x] **B05 · Notas do Synapstor somem quando uma tool roda** ✓
   - **Problema:** `tui/fluxo.go:~232` refaz `entradaFinal` a partir de `entrada` e descarta o bloco de notas montado em `~183-186`.
   - **Fazer:** compor as notas e o resultado da ferramenta.
   - **Verificar:** teste do `Fluxo` com tool + Synapstor falsos: o prompt tem os dois.
@@ -671,6 +671,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | B05 | Com ferramenta, o prompt final mantém o bloco de notas do Synapstor antes do resultado da ferramenta; teste do `Fluxo` com busca e tool falsas. | este commit |
 
 ### Fase 3 · Synapstor
 
