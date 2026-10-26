@@ -403,7 +403,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** são quatro cópias divergentes (`checks/rbac_allowlist.go:~44-76` e três no Rego em `backends/opa.go:~25-127`), e o casamento pelo nome deixa um `helm-qualquer` dar cluster-admin calado (`opa.go:~43-45`).
   - **Fazer:** uma fonte só, passada ao Rego como `data`; casar por subject (namespace/SA) e labels `managed-by`, não pelo nome do binding; "N ignorados pela allowlist" na tela e no JSON.
   - **Verificar:** testes do Rego.
-- [ ] **S10 · Investigate: saúde, logs e cache**
+- [x] **S10 · Investigate: saúde, logs e cache**
   - **Problema:**
     - um restart antigo deixa o pod "não saudável" para sempre (`investigate.go:~288-293`);
     - pod `Succeeded` conta como problema (`~279`);
@@ -681,6 +681,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | S10 | Investigate checa a saúde antes do cache (Succeeded saudável, reinício só vale se for de menos de 2 h), lê logs por contêiner com Previous, chave de cache com contexto, UID e reinícios, e eventos resumidos | este commit |
 
 ### Fase 5 · Atlas
 
