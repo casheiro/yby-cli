@@ -133,3 +133,10 @@ func TestScanInfra_SopsComCRLFNaoVaiParaK8s(t *testing.T) {
 		t.Fatalf("o arquivo SOPS com CRLF não devia entrar: %v", nomesDe(bp))
 	}
 }
+
+func TestClassifyFiles_ComposeComVariantes(t *testing.T) {
+	m := classifyFiles([]string{"/p/docker-compose.prod.yml", "/p/docker-compose.override.yml", "/p/compose.dev.yaml"})
+	if len(m["compose"]) != 3 {
+		t.Errorf("compose = %v, k8s = %v", m["compose"], m["k8s"])
+	}
+}

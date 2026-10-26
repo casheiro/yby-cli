@@ -706,6 +706,12 @@ func classifyFiles(files []string) map[string][]string {
 		name := filepath.Base(f)
 		ext := filepath.Ext(f)
 
+		// Compose e variantes (docker-compose.prod.yml, override...)
+		if analyzers.EhArquivoCompose(name) {
+			result["compose"] = append(result["compose"], f)
+			continue
+		}
+
 		// Arquivos com nomes específicos
 		if analyzerType, ok := infraFileNames[name]; ok {
 			result[analyzerType] = append(result[analyzerType], f)
