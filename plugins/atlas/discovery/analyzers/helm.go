@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -91,8 +92,18 @@ func (h *HelmAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult
 		chartMetas[relPath] = meta
 	}
 
-	// Segunda passada: processar dependências e templates
-	for chartPath, meta := range chartMetas {
+	// Repositórios remotos já emitidos, por (repositório, nome): vários charts
+	// que dependem do mesmo chart remoto compartilham um só recurso.
+	reposVistos := make(map[string]bool)
+
+	// Segunda passada: processar dependências e templates, em ordem estável
+	chartPaths := make([]string, 0, len(chartMetas))
+	for p := range chartMetas {
+		chartPaths = append(chartPaths, p)
+	}
+	sort.Strings(chartPaths)
+	for _, chartPath := range chartPaths {
+		meta := chartMetas[chartPath]
 		chartDir := path.Dir(chartPath)
 		chartResource := chartsByDir[chartDir]
 		chartID := chartResource.ID()
@@ -144,7 +155,10 @@ func (h *HelmAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult
 				if dep.Condition != "" {
 					repoResource.Metadata["condition"] = dep.Condition
 				}
-				result.Resources = append(result.Resources, repoResource)
+				if chave := dep.Repository + "|" + dep.Name; !reposVistos[chave] {
+					reposVistos[chave] = true
+					result.Resources = append(result.Resources, repoResource)
+				}
 				result.Relations = append(result.Relations, InfraRelation{
 					From: chartID,
 					To:   repoResource.ID(),
@@ -156,7 +170,7 @@ func (h *HelmAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult
 		// Escanear diretório templates/
 		absChartDir := filepath.Join(rootPath, chartDir)
 		templatesDir := filepath.Join(absChartDir, "templates")
-		templateResources := scanTemplatesDir(rootPath, templatesDir)
+		templateResources := scanTemplatesDir(rootPath, templatesDir, chartResource.Name)
 		for _, tmplRes := range templateResources {
 			result.Resources = append(result.Resources, tmplRes)
 			result.Relations = append(result.Relations, InfraRelation{
@@ -187,41 +201,36 @@ func parseChartYAML(path string) (*chartMeta, error) {
 
 // kindNameRe extrai kind e name de manifests K8s.
 var kindNameRe = regexp.MustCompile(`(?m)^kind:\s*(\S+)`)
-var nameRe = regexp.MustCompile(`(?m)^\s*name:\s*(\S+)`)
+var nameRe = regexp.MustCompile(`(?m)^\s*name:[ \t]*(.+?)[ \t]*$`)
 
-// scanTemplatesDir escaneia o diretório templates/ em busca de recursos K8s.
-func scanTemplatesDir(rootPath string, templatesDir string) []InfraResource {
+// scanTemplatesDir escaneia o diretório templates/ (e suas subpastas) em busca de recursos K8s.
+func scanTemplatesDir(rootPath string, templatesDir string, chartName string) []InfraResource {
 	var resources []InfraResource
 
-	entries, err := os.ReadDir(templatesDir)
-	if err != nil {
+	_ = filepath.WalkDir(templatesDir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			// templates/tests/ guarda os hooks de teste do chart (helm.sh/hook: test), não a topologia
+			if d.Name() == "tests" && filepath.Dir(p) == filepath.Clean(templatesDir) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		// Só manifests; _helpers.tpl e NOTES.txt ficam de fora pela extensão
+		if ext := filepath.Ext(d.Name()); ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+		resources = append(resources, extractTemplateResources(rootPath, p, chartName)...)
 		return nil
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
-			continue
-		}
-
-		// Ignorar helpers e NOTES
-		if name == "_helpers.tpl" || name == "NOTES.txt" {
-			continue
-		}
-
-		filePath := filepath.Join(templatesDir, name)
-		resources = append(resources, extractTemplateResources(rootPath, filePath)...)
-	}
+	})
 
 	return resources
 }
 
 // extractTemplateResources extrai recursos K8s de um arquivo de template Helm.
-func extractTemplateResources(rootPath string, filePath string) []InfraResource {
+func extractTemplateResources(rootPath string, filePath string, chartName string) []InfraResource {
 	var resources []InfraResource
 
 	file, err := os.Open(filePath)
@@ -252,12 +261,12 @@ func extractTemplateResources(rootPath string, filePath string) []InfraResource 
 			return
 		}
 
-		if name == "" {
-			name = "unknown"
-		}
-
-		// Remover aspas e anotações de template do nome
+		// Nome ausente ou gerado por template (ex: {{ include "x.fullname" . }})
+		// não é conhecido sem renderizar: usa <chart>-<kind>.
 		name = cleanTemplateName(name)
+		if name == "" || strings.Contains(name, "{{") {
+			name = chartName + "-" + strings.ToLower(kind)
+		}
 
 		resources = append(resources, InfraResource{
 			Kind:     kind,
@@ -299,23 +308,22 @@ func extractKindAndName(content string) (string, string) {
 	return kind, name
 }
 
-// cleanTemplateName remove aspas e expressões de template Go de nomes de recursos.
+// cleanTemplateName remove aspas do nome de um recurso.
 func cleanTemplateName(name string) string {
-	// Remover aspas
-	name = strings.Trim(name, "\"'")
-
-	// Se o nome é inteiramente uma expressão de template, usar como está
-	if strings.HasPrefix(name, "{{") && strings.HasSuffix(name, "}}") {
-		// Extrair referência do template (ex: {{ .Release.Name }})
-		inner := strings.TrimPrefix(name, "{{")
-		inner = strings.TrimSuffix(inner, "}}")
-		inner = strings.TrimSpace(inner)
-		// Simplificar: usar a última parte da expressão
-		parts := strings.Split(inner, ".")
-		if len(parts) > 0 {
-			return "{{ " + inner + " }}"
+	name = strings.TrimSpace(name)
+	if name != "" && (name[0] == '"' || name[0] == '\'') {
+		// Entre aspas: vale até a aspa de fechamento; o resto é comentário.
+		if i := strings.IndexByte(name[1:], name[0]); i >= 0 {
+			return name[1 : 1+i]
 		}
+		return strings.Trim(name, "\"'")
 	}
-
-	return name
+	// Sem aspas: um # precedido de espaço começa comentário YAML.
+	if i := strings.Index(name, " #"); i >= 0 {
+		name = name[:i]
+	}
+	if i := strings.Index(name, "	#"); i >= 0 {
+		name = name[:i]
+	}
+	return strings.Trim(strings.TrimSpace(name), "\"'")
 }

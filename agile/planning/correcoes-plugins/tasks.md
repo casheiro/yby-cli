@@ -482,7 +482,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `Ports []string`/`Volumes []string` (`analysis/compose.go:~24,26`): a sintaxe longa derruba o arquivo inteiro. Só nomes exatos contam (`scanner.go:~519-527`).
   - **Fazer:** `UnmarshalYAML` tolerante; aceitar `*compose*.y*ml` e `docker-compose.*.yml`.
   - **Verificar:** teste.
-- [ ] **A07 · Helm: nome dos templates**
+- [x] **A07 · Helm: nome dos templates**
   - **Problema:** `nameRe` com `(\S+)` (`analysis/helm.go:~189`) captura `{{` e tudo vira `Deployment/{{`, que o diagrama descarta. `templates/` sem recursão (`~195`). `HelmRepository` duplicado entre charts. O check de `_helpers.tpl`/`NOTES.txt` (`~211`) nunca é alcançado.
   - **Fazer:**
     - nome templado → `<chart>-<kind>` (ou `<chart>/<arquivo>`);
@@ -691,6 +691,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A05 | Service passa a selecionar só workloads (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob) pelos labels do template do pod e no mesmo namespace | este commit |
 | 26/10/2026 | A06 | Compose aceita ports e volumes na sintaxe longa, reconhece docker-compose.*.yml e compose.*.yml e mescla base e override em um nó só por serviço | este commit |
 | 26/10/2026 | A09 | Varredura testa o caminho relativo à raiz, ignora também dist/build/target/.venv/.next/.terraform/coverage/__pycache__, respeita o .gitignore via `git ls-files` (com fallback sem git), lê cada YAML uma vez e reconhece SOPS com CRLF | este commit |
+| 26/10/2026 | A07 | Helm: nome templado vira <chart>-<kind>, templates/ é varrido com subpastas, HelmRepository deduplicado por (repositório, nome) e charts processados em ordem estável | este commit |
 | 26/10/2026 | A01 | Relações do blueprint sem falsos positivos: COPY casa por segmento e nunca a raiz, imports Go pelo módulo mais longo com fronteira `/` (linha única e subpastas via go/parser), relações deduplicadas por (from, to, type) | este commit |
 
 ### Fase 6 · Viz
