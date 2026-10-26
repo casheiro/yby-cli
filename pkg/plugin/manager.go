@@ -73,14 +73,28 @@ func (m *Manager) Discover() error {
 		locations = append(locations, filepath.Join(cwd, ".yby", "plugins"))
 	}
 
+	// Rodando na home, ./.yby/plugins é a própria ~/.yby/plugins: cada pasta é lida uma vez.
+	var lidas []os.FileInfo
 	for _, loc := range locations {
+		info, err := os.Stat(loc)
+		if err != nil || pastaJaLida(lidas, info) {
+			continue
+		}
+		lidas = append(lidas, info)
 		if err := m.scanDirectory(loc); err != nil {
-			// Log error but continue scanning other locations?
-			// For now, silent ignore of non-existent dirs
 			continue
 		}
 	}
 	return nil
+}
+
+func pastaJaLida(lidas []os.FileInfo, info os.FileInfo) bool {
+	for _, l := range lidas {
+		if os.SameFile(l, info) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) scanDirectory(dir string) error {
@@ -125,6 +139,12 @@ func (m *Manager) scanDirectory(dir string) error {
 		manifest, err := m.loadManifest(path)
 		if err != nil {
 			slog.Debug("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
+			continue
+		}
+
+		// Mesmo nome em duas pastas: fica o primeiro, que é o que o GetPlugin executaria.
+		if anterior, ok := m.GetPlugin(manifest.Name); ok {
+			slog.Debug("Plugin com nome repetido ignorado", "name", manifest.Name, "path", path, "carregado", anterior.Path)
 			continue
 		}
 
