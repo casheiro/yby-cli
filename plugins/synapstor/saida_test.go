@@ -23,6 +23,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/decay"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gofrs/flock"
 	"github.com/muesli/termenv"
 )
 
@@ -364,6 +365,26 @@ func TestIndex_SemUKIs(t *testing.T) {
 	}
 	if !strings.Contains(saida, "nenhum UKI em .synapstor/.uki nem em docs/wiki") || !strings.Contains(saida, "PRÓXIMO PASSO") {
 		t.Errorf("estado vazio fora do formato:\n%s", saida)
+	}
+}
+
+func TestIndex_OutroIndexEmAndamento(t *testing.T) {
+	usarDependencias(t, &provedorFalso{})
+	raiz := projetoDeExemplo(t)
+	pasta := filepath.Join(raiz, ".synapstor", ".index")
+	if err := os.MkdirAll(pasta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outro := flock.New(filepath.Join(pasta, "index.lock"))
+	if ok, err := outro.TryLock(); err != nil || !ok {
+		t.Fatalf("preparo: não deu para travar (%v)", err)
+	}
+	t.Cleanup(func() { _ = outro.Unlock() })
+
+	_, _, err := rodar(t, raiz, "index")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || !strings.Contains(ye.Message, "outro yby synapstor index") || !strings.Contains(ye.GetHint(), "espere") {
+		t.Fatalf("esperado o erro do index em andamento, com dica, obtido %v", err)
 	}
 }
 

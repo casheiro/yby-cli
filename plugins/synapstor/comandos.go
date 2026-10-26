@@ -170,6 +170,10 @@ func runIndex(ctx context.Context, raiz string, args []string, saida, erros io.W
 
 	report, err := idx.Run(ctx)
 	parar()
+	if errors.Is(err, indexer.ErrIndexEmAndamento) {
+		return yerrors.New(yerrors.ErrCodeExec, "outro yby synapstor index está rodando neste projeto").
+			WithHint("espere ele terminar e rode de novo")
+	}
 	if err != nil {
 		return yerrors.Wrap(err, yerrors.ErrCodeExec, "a indexação parou").
 			WithHint("confira o provider de embeddings com yby doctor; para ver o log, rode com YBY_LOG_LEVEL=debug").

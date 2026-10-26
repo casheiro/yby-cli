@@ -287,7 +287,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prompt em PT-BR no formato da especificação;
     - correção com o prompt do próprio comando.
   - **Verificar:** testes do scanner com fixture de mais de 50 achados.
-- [ ] **Y09 · Arquivo ilegível não é apagado; trava do índice**
+- [x] **Y09 · Arquivo ilegível não é apagado; trava do índice**
   - **Problema:** erro de leitura faz `continue` (`indexer.go:~169-186`), e o arquivo some do manifest e cai em `removedFiles`. O arquivo é lido duas vezes, e não há trava contra dois `index` ao mesmo tempo.
   - **Fazer:** manter a entrada antiga e avisar; hash do conteúdo já lido; `.synapstor/.index.lock`.
   - **Verificar:** testes.
@@ -679,6 +679,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y01 | O `VectorStore` grava com que provider, modelo e dimensão o índice foi feito (`identidade.json`); a busca com outros embeddings devolve `IndiceDeOutroModeloError` com "rode yby synapstor index --full", e o `index` apaga e refaz tudo sozinho quando o modelo muda. | este commit |
 | 26/10/2026 | Y02 | O `--full` apaga e recria o índice, o `index` refaz tudo quando o número de documentos não bate com o manifest (órfãos) e o ID, o `source` e as chaves do manifest usam `/`. | este commit |
 | 26/10/2026 | Y03 | O manifest passou para `.synapstor/.index/manifest.json` (dentro do que o git ignora); o do lugar antigo conta como vazio e é apagado na primeira gravação. | este commit |
+| 26/10/2026 | Y09 | Arquivo que não abre mantém a entrada antiga no manifest e no índice, com aviso; cada arquivo é lido uma vez e o hash sai do conteúdo lido; o `index` pega uma trava do sistema (`gofrs/flock`) em `.synapstor/.index/index.lock`, que sai sozinha quando o processo cai, e o segundo `index` para com "outro yby synapstor index está rodando neste projeto". | este commit |
 
 ### Fase 4 · Sentinel
 

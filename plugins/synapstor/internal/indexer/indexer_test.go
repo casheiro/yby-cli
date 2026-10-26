@@ -1,10 +1,17 @@
 package indexer
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/gofrs/flock"
 )
 
 func TestSplitMarkdown(t *testing.T) {
@@ -86,32 +93,19 @@ func TestIndexManifest_SaveAndLoad(t *testing.T) {
 	}
 }
 
-// TestFileHash_Deterministico verifica que o hash é determinístico para o mesmo conteúdo.
-func TestFileHash_Deterministico(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(path, []byte("conteúdo fixo"), 0644)
-
-	h1, err := fileHash(path)
-	if err != nil {
-		t.Fatalf("fileHash falhou: %v", err)
-	}
-	h2, _ := fileHash(path)
+// TestHashDoConteudo_Deterministico verifica que o hash é determinístico para o mesmo conteúdo.
+func TestHashDoConteudo_Deterministico(t *testing.T) {
+	h1 := hashDoConteudo([]byte("conteúdo fixo"))
+	h2 := hashDoConteudo([]byte("conteúdo fixo"))
 	if h1 != h2 {
 		t.Error("hash deveria ser determinístico")
 	}
 }
 
-// TestFileHash_DiferenteParaConteudoDiferente verifica que conteúdos diferentes geram hashes diferentes.
-func TestFileHash_DiferenteParaConteudoDiferente(t *testing.T) {
-	tmpDir := t.TempDir()
-	path1 := filepath.Join(tmpDir, "a.txt")
-	path2 := filepath.Join(tmpDir, "b.txt")
-	os.WriteFile(path1, []byte("conteúdo A"), 0644)
-	os.WriteFile(path2, []byte("conteúdo B"), 0644)
-
-	h1, _ := fileHash(path1)
-	h2, _ := fileHash(path2)
+// TestHashDoConteudo_DiferenteParaConteudoDiferente verifica que conteúdos diferentes geram hashes diferentes.
+func TestHashDoConteudo_DiferenteParaConteudoDiferente(t *testing.T) {
+	h1 := hashDoConteudo([]byte("conteúdo A"))
+	h2 := hashDoConteudo([]byte("conteúdo B"))
 	if h1 == h2 {
 		t.Error("hashes deveriam ser diferentes para conteúdos diferentes")
 	}
@@ -162,4 +156,134 @@ func TestLoadManifest_ArquivoInexistente(t *testing.T) {
 	if len(loaded.Files) != 0 {
 		t.Errorf("esperado 0 arquivos no manifest, obtido %d", len(loaded.Files))
 	}
+}
+
+// etapasComAvisos guarda os avisos da indexação.
+type etapasComAvisos struct {
+	shared.EtapasMudas
+	avisos []string
+}
+
+func (e *etapasComAvisos) Avisar(texto string) { e.avisos = append(e.avisos, texto) }
+
+// TestRun_ArquivoIlegivelFicaNoIndice verifica que um arquivo que não deu para ler (sem
+// permissão, preso por outro programa) não é tratado como apagado: continua no índice e no
+// manifest, com aviso.
+func TestRun_ArquivoIlegivelFicaNoIndice(t *testing.T) {
+	ctx := context.Background()
+	raiz := projetoComUKIs(t)
+	p := &embeddingsFalsos{nome: "a", dimensao: 128}
+	if _, err := NewIndexer(p, raiz).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// muda o conteúdo do outro UKI, para a segunda indexação ter o que gravar
+	outro := filepath.Join(raiz, ".synapstor", ".uki", "UKI-2-backup.md")
+	if err := os.WriteFile(outro, []byte("# Backup\n\nO backup do banco roda toda noite, às 2h.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := NewIndexer(p, raiz)
+	et := &etapasComAvisos{}
+	idx.Etapas = et
+	idx.lerArquivo = func(caminho string) ([]byte, error) {
+		if strings.HasSuffix(filepath.ToSlash(caminho), "UKI-1-deploy.md") {
+			return nil, errors.New("acesso negado")
+		}
+		return os.ReadFile(caminho)
+	}
+	report, err := idx.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FilesRemoved != 0 || report.FilesUnreadable != 1 {
+		t.Errorf("o ilegível não é removido: %d removidos, %d ilegíveis", report.FilesRemoved, report.FilesUnreadable)
+	}
+	vs, err := ai.NewVectorStore(ctx, filepath.Join(raiz, ".synapstor", ".index"), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vs.Count() != 2 {
+		t.Errorf("o ilegível continua no índice: esperava 2 documentos, obtive %d", vs.Count())
+	}
+	if _, ok := idx.loadManifest().Files[".synapstor/.uki/UKI-1-deploy.md"]; !ok {
+		t.Error("o ilegível continua no manifest")
+	}
+	if len(et.avisos) != 1 || !strings.Contains(et.avisos[0], "não deu para ler .synapstor/.uki/UKI-1-deploy.md") {
+		t.Errorf("esperava um aviso com o arquivo ilegível, obtive %q", et.avisos)
+	}
+
+	// Na próxima, já legível e sem mudança, o arquivo é pulado por hash, sem reindexar.
+	report, err = NewIndexer(p, raiz).Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FilesSkipped != 2 || report.EmbeddingsCreated != 0 {
+		t.Errorf("de volta legível, nada muda: %d pulados, %d indexados", report.FilesSkipped, report.EmbeddingsCreated)
+	}
+}
+
+// TestRun_LeCadaArquivoUmaVez verifica que o hash sai do conteúdo já lido.
+func TestRun_LeCadaArquivoUmaVez(t *testing.T) {
+	raiz := projetoComUKIs(t)
+	idx := NewIndexer(&embeddingsFalsos{nome: "a", dimensao: 128}, raiz)
+	leituras := map[string]int{}
+	idx.lerArquivo = func(caminho string) ([]byte, error) {
+		leituras[filepath.Base(caminho)]++
+		return os.ReadFile(caminho)
+	}
+	if _, err := idx.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for nome, n := range leituras {
+		if n != 1 {
+			t.Errorf("%s lido %d vezes", nome, n)
+		}
+	}
+	if len(leituras) != 2 {
+		t.Errorf("esperava 2 arquivos lidos, obtive %v", leituras)
+	}
+}
+
+// TestRun_OutroIndexEmAndamento verifica que dois index no mesmo projeto não gravam o
+// índice ao mesmo tempo: o segundo para com erro claro, e a trava sai com o primeiro.
+func TestRun_OutroIndexEmAndamento(t *testing.T) {
+	ctx := context.Background()
+	raiz := projetoComUKIs(t)
+	p := &embeddingsFalsos{nome: "a", dimensao: 128}
+	pasta := filepath.Join(raiz, ".synapstor", ".index")
+	if err := os.MkdirAll(pasta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outro := flock.New(filepath.Join(pasta, arquivoDaTrava))
+	ok, err := outro.TryLock()
+	if err != nil || !ok {
+		t.Fatalf("preparo: não deu para travar (%v)", err)
+	}
+	// a trava presa impede o TempDir de apagar a pasta no Windows
+	t.Cleanup(func() { _ = outro.Unlock() })
+
+	_, err = NewIndexer(p, raiz).Run(ctx)
+	if !errors.Is(err, ErrIndexEmAndamento) {
+		t.Fatalf("esperava ErrIndexEmAndamento, obtive %v", err)
+	}
+	if !strings.Contains(err.Error(), "outro index") {
+		t.Errorf("a mensagem diz o que houve: %v", err)
+	}
+
+	if err := outro.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	report, err := NewIndexer(p, raiz).Run(ctx)
+	if err != nil {
+		t.Fatalf("sem o outro index, a indexação roda: %v", err)
+	}
+	if report.EmbeddingsCreated != 2 {
+		t.Errorf("esperava 2 indexados, obtive %d", report.EmbeddingsCreated)
+	}
+	// a trava é liberada no fim: um terceiro index consegue travar
+	depois := flock.New(filepath.Join(pasta, arquivoDaTrava))
+	if ok, err := depois.TryLock(); err != nil || !ok {
+		t.Errorf("a trava continua presa depois do index (%v)", err)
+	}
+	_ = depois.Unlock()
 }

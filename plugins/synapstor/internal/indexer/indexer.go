@@ -46,6 +46,9 @@ type Indexer struct {
 	// Etapas recebe o andamento (procurar documentos, tirar os removidos, gerar
 	// embeddings); o indexador não escreve na tela.
 	Etapas shared.Etapas
+	// lerArquivo lê os documentos; nil é os.ReadFile. Os testes trocam por uma leitura que
+	// falha, porque tirar a permissão (chmod 000) não vale no Windows.
+	lerArquivo func(string) ([]byte, error)
 }
 
 func NewIndexer(provider ai.Provider, rootDir string) *Indexer {
@@ -54,6 +57,13 @@ func NewIndexer(provider ai.Provider, rootDir string) *Indexer {
 		RootDir:  rootDir,
 		Etapas:   shared.EtapasMudas{},
 	}
+}
+
+func (i *Indexer) ler(caminho string) ([]byte, error) {
+	if i.lerArquivo == nil {
+		return os.ReadFile(caminho)
+	}
+	return i.lerArquivo(caminho)
 }
 
 func (i *Indexer) etapas() shared.Etapas {
@@ -142,7 +152,7 @@ func (i *Indexer) refazerSeNecessario(ctx context.Context, storePath string, arq
 		// apagado inteiro: é o único conserto possível.
 		et := i.etapas()
 		et.Iniciar("apagar o índice antigo")
-		if rerr := os.RemoveAll(storePath); rerr != nil {
+		if rerr := esvaziarIndice(storePath); rerr != nil {
 			et.Falhar("")
 			return false, fmt.Errorf("não deu para apagar o índice antigo: %w", rerr)
 		}
@@ -180,21 +190,27 @@ func (i *Indexer) refazerSeNecessario(ctx context.Context, storePath string, arq
 	return true, nil
 }
 
-// fileHash calcula o hash SHA-256 de um arquivo.
-func fileHash(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+// hashDoConteudo calcula o hash SHA-256 do conteúdo já lido de um arquivo.
+func hashDoConteudo(data []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
+
+// listaCurta nomeia o arquivo quando é um só e conta quando são vários.
+func listaCurta(caminhos []string) string {
+	if len(caminhos) == 1 {
+		return caminhos[0]
 	}
-	h := sha256.Sum256(data)
-	return fmt.Sprintf("%x", h), nil
+	return plural(len(caminhos), "arquivo", "arquivos") + " (" + caminhos[0] + " e outros)"
 }
 
 // IndexReport contém métricas coletadas durante o processo de indexação.
 type IndexReport struct {
-	FilesScanned      int
-	FilesSkipped      int
-	FilesRemoved      int
+	FilesScanned int
+	FilesSkipped int
+	FilesRemoved int
+	// FilesUnreadable conta os arquivos que existem e não deu para ler; não são tratados
+	// como apagados.
+	FilesUnreadable   int
 	ChunksGenerated   int
 	EmbeddingsCreated int
 	Duration          time.Duration
@@ -217,18 +233,24 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	report.FilesScanned = len(files)
 	et.Concluir(plural(len(files), "arquivo", "arquivos"))
 
-	// 2. Carregar manifest para indexação incremental
-	manifest := i.loadManifest()
-
 	// Sem documentos e sem nada indexado antes, não há o que fazer. Com o manifest
 	// cheio, segue para tirar do índice os documentos que foram apagados.
-	if len(files) == 0 && len(manifest.Files) == 0 {
+	if len(files) == 0 && len(i.loadManifest().Files) == 0 {
 		report.Duration = time.Since(start)
 		return report, nil
 	}
 
-	// 2.5. --full, índice de outros embeddings ou fora do manifest: apaga e refaz tudo.
+	// 2. Travar o índice: dois index ao mesmo tempo gravariam o manifest e a coleção sem
+	// coordenação. O manifest é lido depois da trava, já com o que o outro index gravou.
 	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
+	soltar, err := travar(storePath)
+	if err != nil {
+		return nil, err
+	}
+	defer soltar()
+	manifest := i.loadManifest()
+
+	// 2.5. --full, índice de outros embeddings ou fora do manifest: apaga e refaz tudo.
 	refeito, err := i.refazerSeNecessario(ctx, storePath, len(manifest.Files))
 	if err != nil {
 		return nil, err
@@ -249,14 +271,27 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	var allChunks []string
 	var allMetadatas []map[string]string
 	var allIDs []string
+	var ilegiveis []string
 
 	for _, path := range files {
 		rel, _ := filepath.Rel(i.RootDir, path)
 		relPath := filepath.ToSlash(rel)
-		hash, err := fileHash(path)
-		if err != nil {
+		content, err := i.ler(path)
+		if errors.Is(err, os.ErrNotExist) {
+			// apagado depois da busca: sai do índice como os outros removidos
 			continue
 		}
+		if err != nil {
+			// O arquivo existe e não abriu (sem permissão, preso por outro programa): não
+			// foi apagado. A entrada antiga fica no manifest, e o documento, no índice.
+			slog.Debug("não deu para ler o arquivo", "arquivo", relPath, "erro", err)
+			if existing, ok := manifest.Files[relPath]; ok {
+				newManifest.Files[relPath] = existing
+			}
+			ilegiveis = append(ilegiveis, relPath)
+			continue
+		}
+		hash := hashDoConteudo(content)
 
 		// Verificar se já indexado e não mudou
 		if !fullReindex {
@@ -265,11 +300,6 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 				report.FilesSkipped++
 				continue
 			}
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			continue
 		}
 
 		// UKI é a menor unidade de conhecimento — indexar inteiro, sem chunking
@@ -300,6 +330,10 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	}
 
 	report.ChunksGenerated = len(allChunks)
+	report.FilesUnreadable = len(ilegiveis)
+	if len(ilegiveis) > 0 {
+		et.Avisar("não deu para ler " + listaCurta(ilegiveis) + "; a próxima indexação tenta de novo")
+	}
 
 	// 3.5. Detectar arquivos removidos (presentes no manifest antigo, ausentes no novo)
 	var removedFiles []string

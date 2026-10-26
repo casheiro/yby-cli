@@ -272,11 +272,11 @@ func TestRun_ManifestAntigoSemIndiceNaoPulaTudo(t *testing.T) {
 	idx := NewIndexer(p, raiz)
 	m := &IndexManifest{Files: map[string]IndexedFile{}}
 	for _, nome := range []string{"UKI-1-deploy.md", "UKI-2-backup.md"} {
-		hash, err := fileHash(filepath.Join(raiz, ".synapstor", ".uki", nome))
+		dados, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".uki", nome))
 		if err != nil {
 			t.Fatal(err)
 		}
-		m.Files[".synapstor/.uki/"+nome] = IndexedFile{SHA256: hash}
+		m.Files[".synapstor/.uki/"+nome] = IndexedFile{SHA256: hashDoConteudo(dados)}
 	}
 	dados, _ := json.Marshal(m)
 	antigo := filepath.Join(raiz, ".synapstor", ".index_manifest.json")

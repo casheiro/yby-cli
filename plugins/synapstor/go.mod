@@ -7,6 +7,7 @@ replace github.com/casheiro/yby-cli => ../../
 require (
 	github.com/casheiro/yby-cli v0.0.0-00010101000000-000000000000
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	github.com/gofrs/flock v0.13.0
 	github.com/muesli/termenv v0.16.0
 )
 
@@ -72,7 +73,6 @@ require (
 	github.com/go-openapi/swag/yamlutils v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/gomlx/exceptions v0.0.3 // indirect
 	github.com/gomlx/go-huggingface v0.3.5-0.20260327162928-af20e4f3e7b5 // indirect
