@@ -531,7 +531,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prazo de ~60 s;
     - inventário resumido quando grande.
   - **Verificar:** testes com respostas falsas.
-- [ ] **A11 · Caminhos no Windows**
+- [x] **A11 · Caminhos no Windows**
   - **Problema:**
     - `filepath.Rel` sem `ToSlash` (`scanner.go`, `kustomize.go:~81`, `helm.go:~65`);
     - `infraNodeID` apaga o `\` (`diagram.go:~199`), e o ID muda com o SO;
@@ -687,6 +687,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | A12 | ScanInfra e o analyzer de compose ordenam recursos e relações (diagrama determinístico), goldens do GenerateInfraMermaid e o atlas compilado uma só vez nos testes (pacote de ~72 s para ~8 s) | este commit |
+| 26/10/2026 | A11 | `relSlash` (ToSlash) em todos os analyzers e no scanner, Kustomize/Helm com `path`, e o blueprint sai com caminhos relativos (`Component.Path`, `Roots=["."]`, `RootPath="."`) | este commit |
 
 ### Fase 6 · Viz
 

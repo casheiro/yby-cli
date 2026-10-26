@@ -109,6 +109,15 @@ func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, err
 	// Segunda passagem: detectar relacionamentos entre componentes
 	bp.Relations = detectRelations(root, bp.Components)
 
+	// O blueprint sai com caminhos relativos ao root e com '/', iguais em
+	// qualquer SO e sem expor o diretório da máquina que fez o scan.
+	for i := range bp.Components {
+		if rel, err := relSlash(root, bp.Components[i].Path); err == nil {
+			bp.Components[i].Path = rel
+		}
+	}
+	bp.Roots = []string{"."}
+
 	return bp, nil
 }
 
@@ -132,7 +141,7 @@ func detectRelations(root string, components []Component) []Relation {
 	// Mapa de caminhos de componentes para busca rápida
 	compPaths := make(map[string]Component)
 	for _, comp := range components {
-		relPath, err := filepath.Rel(root, comp.Path)
+		relPath, err := relSlash(root, comp.Path)
 		if err != nil {
 			relPath = comp.Path
 		}
@@ -186,10 +195,10 @@ func detectGoModRelations(comp Component, root string, compPaths map[string]Comp
 				// Caminho local começa com ./ ou ../
 				if strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") {
 					absTarget := filepath.Join(comp.Path, target)
-					relTarget, err := filepath.Rel(root, absTarget)
+					relTarget, err := relSlash(root, absTarget)
 					if err == nil {
 						if _, ok := compPaths[relTarget]; ok {
-							compRel, _ := filepath.Rel(root, comp.Path)
+							compRel, _ := relSlash(root, comp.Path)
 							relations = append(relations, Relation{
 								From: compRel,
 								To:   relTarget,
@@ -237,7 +246,7 @@ func detectDockerfileRelations(comp Component, root string, compPaths map[string
 				// Procurar referências a diretórios de outros componentes
 				for relPath := range compPaths {
 					if strings.Contains(line, relPath) {
-						compRel, _ := filepath.Rel(root, comp.Path)
+						compRel, _ := relSlash(root, comp.Path)
 						if compRel != relPath {
 							relations = append(relations, Relation{
 								From: compRel,
@@ -292,10 +301,10 @@ func detectHelmRelations(comp Component, root string, compPaths map[string]Compo
 			if strings.HasPrefix(repo, "file://") {
 				localPath := strings.TrimPrefix(repo, "file://")
 				absTarget := filepath.Join(comp.Path, localPath)
-				relTarget, err := filepath.Rel(root, absTarget)
+				relTarget, err := relSlash(root, absTarget)
 				if err == nil {
 					if _, ok := compPaths[relTarget]; ok {
-						compRel, _ := filepath.Rel(root, comp.Path)
+						compRel, _ := relSlash(root, comp.Path)
 						relations = append(relations, Relation{
 							From: compRel,
 							To:   relTarget,
@@ -335,7 +344,7 @@ func detectGoImportRelations(root string, comp Component, compPaths map[string]C
 	}
 
 	importRe := regexp.MustCompile(`^\s*"([^"]+)"`)
-	compRel, _ := filepath.Rel(root, comp.Path)
+	compRel, _ := relSlash(root, comp.Path)
 
 	// Coletar todos os imports do componente
 	seenImports := make(map[string]bool)
@@ -440,7 +449,7 @@ func detectDockerFromRelations(root string, comp Component, compPaths map[string
 		file.Close()
 
 		// Segunda passagem: encontrar COPY --from referenciando componentes
-		compRel, _ := filepath.Rel(root, comp.Path)
+		compRel, _ := relSlash(root, comp.Path)
 		for _, line := range lines {
 			matches := copyFromRe.FindStringSubmatch(line)
 			if len(matches) < 2 {
@@ -503,7 +512,7 @@ func detectHelmRemoteRelations(root string, comp Component) []Relation {
 
 			// Apenas repositórios remotos (não file://)
 			if repo != "" && !strings.HasPrefix(repo, "file://") {
-				compRel, _ := filepath.Rel(root, comp.Path)
+				compRel, _ := relSlash(root, comp.Path)
 				relations = append(relations, Relation{
 					From: compRel,
 					To:   repo,
@@ -577,7 +586,7 @@ func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 	}
 
 	bp := &InfraBlueprint{
-		RootPath: rootPath,
+		RootPath: ".",
 	}
 
 	for _, a := range allAnalyzers {
@@ -709,7 +718,7 @@ func detectPackageJsonRelations(root string, comp Component, compPaths map[strin
 		return nil
 	}
 
-	compRel, _ := filepath.Rel(root, comp.Path)
+	compRel, _ := relSlash(root, comp.Path)
 
 	allDeps := make(map[string]string)
 	for k, v := range pkg.Dependencies {
@@ -730,7 +739,7 @@ func detectPackageJsonRelations(root string, comp Component, compPaths map[strin
 		}
 
 		absTarget := filepath.Join(comp.Path, localPath)
-		relTarget, err := filepath.Rel(root, absTarget)
+		relTarget, err := relSlash(root, absTarget)
 		if err != nil {
 			continue
 		}
@@ -770,4 +779,14 @@ func ordenarBlueprint(bp *InfraBlueprint) {
 		}
 		return a.Type < b.Type
 	})
+}
+
+// relSlash devolve o caminho de target relativo a base, sempre com '/', para que
+// o blueprint seja igual no Windows e no Linux.
+func relSlash(base, target string) (string, error) {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }

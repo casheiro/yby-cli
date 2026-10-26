@@ -568,7 +568,7 @@ metadata:
 		t.Fatalf("esperado 1 recurso, obtido %d", len(result.Resources))
 	}
 
-	expectedPath := filepath.Join("k8s", "base", "deploy.yaml")
+	expectedPath := "k8s/base/deploy.yaml"
 	if result.Resources[0].Path != expectedPath {
 		t.Errorf("esperado Path '%s', obtido '%s'", expectedPath, result.Resources[0].Path)
 	}

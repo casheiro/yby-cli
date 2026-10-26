@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -62,12 +63,12 @@ func (h *HelmAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult
 			continue
 		}
 
-		relPath, err := filepath.Rel(rootPath, file)
+		relPath, err := relSlash(rootPath, file)
 		if err != nil {
 			relPath = file
 		}
 
-		chartDir := filepath.Dir(relPath)
+		chartDir := path.Dir(relPath)
 
 		resource := InfraResource{
 			Kind:     "HelmChart",
@@ -92,7 +93,7 @@ func (h *HelmAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult
 
 	// Segunda passada: processar dependências e templates
 	for chartPath, meta := range chartMetas {
-		chartDir := filepath.Dir(chartPath)
+		chartDir := path.Dir(chartPath)
 		chartResource := chartsByDir[chartDir]
 		chartID := chartResource.ID()
 
@@ -101,8 +102,8 @@ func (h *HelmAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult
 			if strings.HasPrefix(dep.Repository, "file://") {
 				// Dependência local
 				localPath := strings.TrimPrefix(dep.Repository, "file://")
-				targetDir := filepath.Join(chartDir, localPath)
-				targetDir = filepath.Clean(targetDir)
+				targetDir := path.Join(chartDir, localPath)
+				targetDir = path.Clean(targetDir)
 
 				if targetChart, ok := chartsByDir[targetDir]; ok {
 					result.Relations = append(result.Relations, InfraRelation{
@@ -229,7 +230,7 @@ func extractTemplateResources(rootPath string, filePath string) []InfraResource 
 	}
 	defer file.Close()
 
-	relPath, err := filepath.Rel(rootPath, filePath)
+	relPath, err := relSlash(rootPath, filePath)
 	if err != nil {
 		relPath = filePath
 	}

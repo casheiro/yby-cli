@@ -3,6 +3,7 @@ package analyzers
 import (
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -78,8 +79,8 @@ func (a *KustomizeAnalyzer) analyzeFile(rootPath, filePath string, result *Analy
 		return err
 	}
 
-	relPath, _ := filepath.Rel(rootPath, filePath)
-	dirName := filepath.Dir(relPath)
+	relPath, _ := relSlash(rootPath, filePath)
+	dirName := path.Dir(relPath)
 	if dirName == "." {
 		dirName = filepath.Base(rootPath)
 	}

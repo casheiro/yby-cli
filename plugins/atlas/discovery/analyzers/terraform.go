@@ -76,7 +76,7 @@ func (a *TerraformAnalyzer) analyzeDirectory(rootPath, dir string, files []strin
 			continue
 		}
 
-		relPath, _ := filepath.Rel(rootPath, f)
+		relPath, _ := relSlash(rootPath, f)
 		content := string(data)
 
 		a.extractResources(content, relPath, result)

@@ -196,8 +196,33 @@ func TestScan_RootsField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
-	if len(bp.Roots) != 1 || bp.Roots[0] != tmpDir {
-		t.Errorf("esperado Roots=[%s], obtido %v", tmpDir, bp.Roots)
+	if len(bp.Roots) != 1 || bp.Roots[0] != "." {
+		t.Errorf("esperado Roots=[.], obtido %v", bp.Roots)
+	}
+}
+
+func TestScan_CaminhosRelativosComBarra(t *testing.T) {
+	tmpDir := t.TempDir()
+	api := filepath.Join(tmpDir, "services", "api")
+	os.MkdirAll(api, 0755)
+	os.WriteFile(filepath.Join(api, "go.mod"), []byte("module api"), 0644)
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if len(bp.Components) != 1 || bp.Components[0].Path != "services/api" {
+		t.Errorf("esperado Path 'services/api', obtido %+v", bp.Components)
+	}
+}
+
+func TestScanInfra_RootPathRelativo(t *testing.T) {
+	bp, err := ScanInfra(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("ScanInfra falhou: %v", err)
+	}
+	if bp.RootPath != "." {
+		t.Errorf("esperado RootPath '.', obtido %q", bp.RootPath)
 	}
 }
 

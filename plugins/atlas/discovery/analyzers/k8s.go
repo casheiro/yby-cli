@@ -83,7 +83,7 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 		return nil, nil
 	}
 
-	relPath, err := filepath.Rel(rootPath, filePath)
+	relPath, err := relSlash(rootPath, filePath)
 	if err != nil {
 		relPath = filePath
 	}

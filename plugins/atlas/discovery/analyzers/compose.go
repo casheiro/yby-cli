@@ -90,7 +90,7 @@ func (a *ComposeAnalyzer) analyzeFile(rootPath, filePath string, result *Analyze
 		return err
 	}
 
-	relPath, _ := filepath.Rel(rootPath, filePath)
+	relPath, _ := relSlash(rootPath, filePath)
 
 	// Mapeia network → serviços conectados (para gerar relações "connects")
 	networkServices := make(map[string][]string)

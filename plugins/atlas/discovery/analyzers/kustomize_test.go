@@ -209,7 +209,7 @@ resources:
 	// O nome do recurso deve ser o path relativo do diretório
 	found := false
 	for _, r := range result.Resources {
-		if r.Kind == "Kustomization" && r.Name == filepath.Join("overlays", "prod") {
+		if r.Kind == "Kustomization" && r.Name == "overlays/prod" {
 			found = true
 		}
 	}
