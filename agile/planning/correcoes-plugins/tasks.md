@@ -589,7 +589,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `LogsDoPod` cai calado no log anterior (`monitor/detalhe.go:~86-93`) enquanto o quadro diz "últimas 100 linhas do log" (`ui/quadro.go:~235`). Não há `LimitBytes` (`detalhe.go:~106`). O YAML vem com `managedFields` (`monitor/yaml.go:~58`).
   - **Fazer:** dizer "execução anterior" quando for; `LimitBytes` ~1 MiB; tirar `managedFields` e last-applied do YAML.
   - **Verificar:** testes e goldens.
-- [ ] **V07 · Render e watch em O(N) por quadro**
+- [x] **V07 · Render e watch em O(N) por quadro**
   - **Problema:** `View` monta `itensDaAba` para as 9 abas e várias vezes para a ativa (`ui/view.go:~36,108-120`, `model.go:~208`, `teclas.go:~60`). `Tabela` desenha todas as linhas e depois corta (`view.go:~219-226`). O watch reconverte a lista inteira a cada lote (`vigia.go:~249-304`). O efeito é **hipótese**: medir antes.
   - **Fazer:** benchmarks de `View` e `listaDoCache` com 10k pods e 20k eventos. Se confirmar: cache de `itensDaAba` por versão e filtros, só a janela visível desenhada, conversão por chave no handler.
   - **Verificar:** benchmark antes e depois.
@@ -695,6 +695,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | V06 | `LogsDoPod` avisa quando o log é da execução anterior (quadro e painel dizem), leitura com `LimitBytes` de 1 MiB e YAML sem `managedFields` nem last-applied | este commit |
 | 26/10/2026 | V03 | Com a aba vigiada o tique só sonda `/version` (`monitor.Sondador`) em vez de listar; `fetchPodMetrics` e `Pod.CPU`/`Memory` removidos | este commit |
 | 26/10/2026 | V05 | Listas com prazo de 10 s por contexto (sem `rest.Config.Timeout`), `RetryClient` sem repetir Forbidden/Unauthorized/NotFound/Invalid/credencial exec/prazo, aba negada com "sem permissão para listar X …" sem reconectar e sem LIST no relógio, e dica `yby cloud refresh` para a credencial exec | este commit |
+| 26/10/2026 | V07 | Benchmarks com 10 mil pods e 20 mil eventos confirmaram a hipótese: `itensDaAba` em cache (chave: a lista, os filtros, o segundo e o modo visual), a tabela montada uma vez por lista e só a janela desenhada (`yui.TabelaJanela`) levam a `View` de ~800 ms para ~7 ms nos pods e de ~1,3 s para ~10 ms nos eventos (tecla + quadro de ~1,4 s para ~7 ms, lote + quadro de ~1,1 s para ~55 ms), e `listaDoCache` ordena pela chave calculada uma vez e não copia os eventos (pods ~30→13 ms, eventos ~55→22 ms e 32→4,7 MB por lote); a conversão por chave no handler é hipótese não confirmada (a conversão é ~10% do lote) e ficou de fora | este commit |
 
 ### Fase 7 · Pendências
 

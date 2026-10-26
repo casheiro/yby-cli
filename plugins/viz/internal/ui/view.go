@@ -113,7 +113,7 @@ func (m Model) linhaAbas() (normais, compactas string) {
 	for t := ResourceTab(0); t < tabCount; t++ {
 		n := -1
 		if m.carregadas&(1<<uint(t)) != 0 {
-			n = len(m.itensDaAba(t))
+			n = m.contagemDaAba(t)
 		}
 		lista[t] = yui.Aba{Titulo: strconv.Itoa(int(t)+1) + " " + abas[t].titulo, Contagem: n}
 		curtas[t] = yui.Aba{Titulo: abas[t].titulo, Contagem: n}
@@ -149,7 +149,7 @@ func (m Model) linhaFiltros(itens []itemLista) string {
 	prefixo := s.TintaSuave.Render("ordem") + " " + s.Tinta.Render(abas[m.activeTab].ordem) + "   "
 	resto := m.width - lipgloss.Width(prefixo)
 	if chips := m.chips(); len(chips) > 0 {
-		total := len(abas[m.activeTab].itens(m)) // a lista inteira do namespace: os filtros são da tela
+		total := m.tamanhoDaFonte(m.activeTab) // a lista inteira do namespace: os filtros são da tela
 		return prefixo + yui.Filtros(chips, len(itens), total, resto)
 	}
 	// Sem espaço para tudo, a dica de busca sai antes do resumo.
@@ -222,13 +222,12 @@ func (m Model) corpoLista(itens []itemLista) string {
 		return "\n" + m.listaVazia()
 	}
 	colunas, linhas := m.tabelaDaAba(m.activeTab, itens)
-	// A tabela inteira mede as colunas (a largura não muda ao rolar); a janela
-	// mostra o cabeçalho e as linhas a partir de scrollY.
-	tabela := strings.Split(yui.Tabela(colunas, linhas, m.selectedIndex, m.larguraDaLista()), "\n")
+	// A tabela inteira mede as colunas (a largura não muda ao rolar); só o
+	// cabeçalho e as linhas da janela, a partir de scrollY, são desenhados.
 	m.clampScroll(len(itens))
 	ini := m.scrollY
 	fim := min(len(itens), ini+m.linhasDeDados())
-	corpo := append(tabela[:1], tabela[1+ini:1+fim]...)
+	corpo := strings.Split(yui.TabelaJanela(colunas, linhas, m.selectedIndex, m.larguraDaLista(), ini, fim), "\n")
 	if ini > 0 || fim < len(itens) {
 		corpo = append(corpo, m.avisoRolagem(ini, len(itens)-fim))
 	}

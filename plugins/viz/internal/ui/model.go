@@ -59,10 +59,11 @@ type Model struct {
 	lendoExtras    string             // recurso cujos extras estão sendo lidos
 	leituraExtras  int                // leitura de extras mais nova: a resposta de outra é descartada
 	extras         map[string]extrasDetalhe
-	quadro         quadroAberto // logs, YAML ou eventos ocupando o corpo
-	idQuadro       int          // último pedido de conteúdo do quadro: resposta de outro é descartada
-	bard           ligacaoBard  // o b abre o Bard (bard.go)
-	bardAbrindo    bool         // o yby do b rodando: outro b espera ele voltar
+	quadro         quadroAberto  // logs, YAML ou eventos ocupando o corpo
+	idQuadro       int           // último pedido de conteúdo do quadro: resposta de outro é descartada
+	bard           ligacaoBard   // o b abre o Bard (bard.go)
+	bardAbrindo    bool          // o yby do b rodando: outro b espera ele voltar
+	cache          *cacheDeItens // a lista de cada aba já filtrada e ordenada (itensDaAba)
 	// tique agenda a próxima leitura do relógio (tea.Tick; injetável nos testes).
 	tique func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
@@ -93,6 +94,7 @@ func NewModel(client monitor.Client) Model {
 		toast:  yui.NovoToast(),
 		copiar: yui.CopiarOSC52,
 		bard:   novaLigacaoBard(),
+		cache:  &cacheDeItens{},
 	}
 	// Começa no namespace pedido (--namespace) ou no do contexto do kubeconfig,
 	// como o kubectl; n troca.
@@ -227,7 +229,7 @@ func (m Model) linhasDeDados() int {
 
 // itemCount retorna o número de linhas da lista visível da aba ativa.
 func (m Model) itemCount() int {
-	return len(m.itensDaAba(m.activeTab))
+	return m.contagemDaAba(m.activeTab)
 }
 
 // seguirSelecao rola a lista para a linha selecionada ficar na janela, sem

@@ -431,9 +431,12 @@ func TestAcao_FundoSemPainelPorCima(t *testing.T) {
 func telaDeAcoes(t *testing.T, largura, altura int) Model {
 	t.Helper()
 	m := telaDaPrancha(t, largura, altura)
-	for i := range m.deployments {
-		m.deployments[i].Seletor = "app=" + m.deployments[i].Name
+	// Uma lista nova, como as que chegam do cluster: o Model não muda listas no lugar.
+	deployments := append([]monitor.Deployment(nil), m.deployments...)
+	for i := range deployments {
+		deployments[i].Seletor = "app=" + deployments[i].Name
 	}
+	m.deployments = deployments
 	m, _ = teclas(t, m, "2")
 	return m
 }

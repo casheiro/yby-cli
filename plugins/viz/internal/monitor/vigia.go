@@ -5,7 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -273,14 +274,26 @@ func (v *vigia) entregar(ctx context.Context, saida chan<- Lote, intervalo time.
 	}
 }
 
+// comChave é um objeto do cache com a chave namespace/nome dele.
+type comChave struct {
+	chave string
+	obj   any
+}
+
 // listaDoCache converte os objetos do cache de um tipo, na ordem da API
-// (namespace e nome): a ordem "problemas primeiro" desempata por ela.
+// (namespace e nome): a ordem "problemas primeiro" desempata por ela. A chave
+// de cada objeto é calculada uma vez, ao lado dele: buscá-la num mapa a cada
+// comparação custava mais que a conversão.
 func listaDoCache(kind string, objs []any) any {
-	chaves := make(map[any]string, len(objs))
-	for _, o := range objs {
-		chaves[o], _ = cache.MetaNamespaceKeyFunc(o)
+	ordenados := make([]comChave, len(objs))
+	for i, o := range objs {
+		k, _ := cache.MetaNamespaceKeyFunc(o)
+		ordenados[i] = comChave{chave: k, obj: o}
 	}
-	sort.Slice(objs, func(i, j int) bool { return chaves[objs[i]] < chaves[objs[j]] })
+	slices.SortFunc(ordenados, func(a, b comChave) int { return strings.Compare(a.chave, b.chave) })
+	for i := range ordenados {
+		objs[i] = ordenados[i].obj
+	}
 	switch kind {
 	case "pod":
 		return converter(objs, func(p *corev1.Pod) Pod { return podDeK8s(p) })
@@ -299,8 +312,7 @@ func listaDoCache(kind string, objs []any) any {
 	case "configmap":
 		return converter(objs, configMapDeK8s)
 	}
-	eventos := converter(objs, func(e *corev1.Event) corev1.Event { return *e })
-	return eventosDeK8s(eventos, nil)
+	return eventosDePonteiros(converter(objs, func(e *corev1.Event) *corev1.Event { return e }), nil)
 }
 
 // converter aplica f a cada objeto do tipo O (os outros, que o cache não

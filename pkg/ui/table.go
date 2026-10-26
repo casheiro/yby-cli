@@ -72,13 +72,24 @@ func Status(tipo TipoStatus, texto string) string {
 // Colunas de menor prioridade somem quando não cabem; o texto é truncado com `…` sem
 // quebrar caracteres UTF-8 nem glifos largos. Função pura.
 func Tabela(colunas []Coluna, linhas []Linha, selecionada, largura int) string {
+	return TabelaJanela(colunas, linhas, selecionada, largura, 0, len(linhas))
+}
+
+// TabelaJanela renderiza o cabeçalho e só as linhas de ini a fim (fim exclusivo), para a
+// lista longa que mostra uma janela dela: as larguras das colunas saem de todas as linhas,
+// como na Tabela inteira (a coluna não muda de largura ao rolar), mas só a janela é
+// desenhada. selecionada conta na lista inteira. Com a janela inteira, a saída é a da
+// Tabela. Função pura.
+func TabelaJanela(colunas []Coluna, linhas []Linha, selecionada, largura, ini, fim int) string {
 	if len(colunas) == 0 || largura <= 0 {
 		return ""
 	}
 	visiveis, larguras := ajustarColunas(colunas, linhas, largura)
 	s := S()
+	ini = min(max(ini, 0), len(linhas))
+	fim = min(max(fim, ini), len(linhas))
 
-	saida := make([]string, 0, len(linhas)+1)
+	saida := make([]string, 0, fim-ini+1)
 	cab := make([]string, len(visiveis))
 	for i, idx := range visiveis {
 		cab[i] = celula(strings.ToUpper(colunas[idx].Titulo), larguras[i], colunas[idx].Direita)
@@ -86,8 +97,8 @@ func Tabela(colunas []Coluna, linhas []Linha, selecionada, largura int) string {
 	saida = append(saida, s.Rotulo.Render(strings.Join(cab, strings.Repeat(" ", espacoColunas))))
 
 	sep := strings.Repeat(" ", espacoColunas)
-	for n, l := range linhas {
-		sel := n == selecionada
+	for n := ini; n < fim; n++ {
+		l, sel := linhas[n], n == selecionada
 		partes := make([]string, len(visiveis))
 		for i, idx := range visiveis {
 			txt := ""

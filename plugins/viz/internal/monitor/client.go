@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -652,9 +653,18 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 // eventosDeK8s converte os eventos que passam em aceitar (todos, se nil), dos
 // mais recentes para os mais antigos.
 func eventosDeK8s(itens []corev1.Event, aceitar func(*corev1.Event) bool) []Event {
-	var result []Event
+	ponteiros := make([]*corev1.Event, len(itens))
 	for i := range itens {
-		e := &itens[i]
+		ponteiros[i] = &itens[i]
+	}
+	return eventosDePonteiros(ponteiros, aceitar)
+}
+
+// eventosDePonteiros é o eventosDeK8s sobre os objetos do cache do watch, sem
+// copiá-los (cada corev1.Event tem perto de 1 KB).
+func eventosDePonteiros(itens []*corev1.Event, aceitar func(*corev1.Event) bool) []Event {
+	result := make([]Event, 0, len(itens))
+	for _, e := range itens {
 		if aceitar != nil && !aceitar(e) {
 			continue
 		}
@@ -681,7 +691,7 @@ func eventosDeK8s(itens []corev1.Event, aceitar func(*corev1.Event) bool) []Even
 			Quando:    quando,
 		})
 	}
-	sort.SliceStable(result, func(i, j int) bool { return result[i].Quando.After(result[j].Quando) })
+	slices.SortStableFunc(result, func(a, b Event) int { return b.Quando.Compare(a.Quando) })
 	return result
 }
 
