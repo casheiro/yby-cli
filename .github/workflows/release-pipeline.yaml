@@ -67,18 +67,20 @@ jobs:
     runs-on: ubuntu-latest
     # Only run on merged PRs to the release branch (The "Close" event)
     if: github.event.pull_request.merged == true
+    outputs:
+      release_version: ${{ steps.tag.outputs.release_version }}
     steps:
       - name: 📥 Checkout release branch
         uses: actions/checkout@v4.3.0
         with:
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🏷️ Create Final Tag
         id: tag
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RELEASE_VERSION=$(echo "${{ github.event.pull_request.base.ref }}" | sed -n 's,release/\(v[0-9]\+\.[0-9]\+\.[0-9]\+\),\1,p')
 
@@ -98,7 +100,7 @@ jobs:
 
       - name: ↪️ Create Pull Request (Release -> Main)
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.event.pull_request.base.ref }}
           RELEASE_VERSION: ${{ steps.tag.outputs.release_version }}
         run: |
@@ -114,79 +116,41 @@ jobs:
               --body "Final release PR for **$RELEASE_VERSION**. Merging this brings the release into main."
           fi
 
-      - name: 🔄 Automated Back-Merge (Release -> Develop)
+      - name: 🔄 Back-Merge (Release -> Develop)
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_BRANCH: ${{ github.event.pull_request.base.ref }}
           RELEASE_VERSION: ${{ steps.tag.outputs.release_version }}
         run: |
-          echo "🚀 Syncing $RELEASE_BRANCH ($RELEASE_VERSION) back to develop..."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # A develop é protegida e o GITHUB_TOKEN não fura a proteção. Em geral a
+          # release só traz o commit de merge a mais; só abre PR se o conteúdo mudou.
           git fetch origin develop
-          git checkout develop || git checkout -b develop origin/develop
-          git merge "origin/$RELEASE_BRANCH" --no-ff -m "chore: Back-merge Release $RELEASE_VERSION to Develop"
-          git push origin develop
-  publish-docs:
-    name: 📚 Publish Documentation
-    runs-on: ubuntu-latest
-    needs: [finalize-release]
-    if: github.event.pull_request.merged == true
-    steps:
-      - name: 📥 Checkout Wiki
-        uses: actions/checkout@v4.3.0
-        with:
-          repository: ${{ github.repository }}.wiki
-          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          path: docs/wiki
-
-      - name: 📥 Checkout Code
-        uses: actions/checkout@v4.3.0
-        with:
-          path: main-repo
-
-      - name: 🔧 Setup Go
-        uses: actions/setup-go@v5.5.0
-        with:
-          go-version: "1.26"  # Resolve para última patch release (security fixes automáticos)
-
-      - name: 🔨 Build Native Plugins
-        run: |
-          cd main-repo
-          mkdir -p .yby/plugins
-          # Build manual dos plugins conhecidos para garantir que o gen-docs pegue as descrições
-          go build -o .yby/plugins/yby-plugin-atlas ./plugins/atlas
-          go build -o .yby/plugins/yby-plugin-bard ./plugins/bard
-          go build -C ./plugins/synapstor -o ../../.yby/plugins/yby-plugin-synapstor .
-          go build -C ./plugins/viz -o ../../.yby/plugins/yby-plugin-viz .
-          # Sentinel tem estrutura diferente
-          go build -tags k8s -o .yby/plugins/yby-plugin-sentinel ./plugins/sentinel/cli
-
-      - name: 📝 Generate Docs
-        run: |
-          cd main-repo
-          # Gera na raiz da wiki (CLI-Reference.md será criado lá) e limpa comandos antigos se houver
-          go run ./cmd/yby gen-docs ../docs/wiki
-
-      - name: 🚀 Commit & Push Wiki
-        run: |
-          cd docs/wiki
-
-          # Check for changes
-          if [[ -n $(git status --porcelain) ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add .
-            git commit -m "docs: auto-update reference for release ${{ needs.finalize-release.outputs.release_version }}"
-            git push origin master
-          else
-            echo "✅ Documentation is already up-to-date."
+          if git diff --quiet "origin/develop" "origin/$RELEASE_BRANCH"; then
+            echo "✅ $RELEASE_BRANCH tem o mesmo conteúdo da develop; nada a voltar."
+            exit 0
           fi
+          EXISTING_PR=$(gh pr list --head "$RELEASE_BRANCH" --base "develop" --state open --json number -q '.[0].number')
+          if [ -z "$EXISTING_PR" ]; then
+            gh pr create \
+              --head "$RELEASE_BRANCH" \
+              --base "develop" \
+              --title "chore: Back-merge Release $RELEASE_VERSION to Develop" \
+              --body "A $RELEASE_BRANCH tem mudanças que não estão na develop."
+          fi
+          echo "::warning::$RELEASE_BRANCH difere da develop; PR de volta aberto."
+
+  publish-release:
+    name: 📦 Publish Release (GoReleaser)
+    needs: [finalize-release]
+    uses: ./.github/workflows/release.yaml
+    with:
+      tag: ${{ needs.finalize-release.outputs.release_version }}
+    secrets: inherit
 
   notify-failure:
     name: 🚨 Notify on Failure
     runs-on: ubuntu-latest
-    needs: [finalize-release]
+    needs: [finalize-release, publish-release]
     if: failure()
     steps:
       - name: 💬 Send notification
