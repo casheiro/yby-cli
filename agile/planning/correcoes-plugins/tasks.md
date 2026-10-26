@@ -172,7 +172,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o scan do Sentinel resumido (contagem por severidade + os N mais graves com recursos);
     - JSON compacto em vez de indentado.
   - **Verificar:** testes de corte.
-- [ ] **B08 · Retry só do que é retentável**
+- [x] **B08 · Retry só do que é retentável**
   - **Problema:** `tui/fluxo.go:~239-261` tenta de novo qualquer erro por 30 s. Por dentro, o `RetryProvider` (`pkg/ai/retry_provider.go`) já tenta 429/502/503 por até 2 min. Chave inválida, modelo inexistente e ERR_TOKEN_LIMIT mostram "tentando de novo" quatro vezes.
   - **Fazer:** o `Fluxo` reusa a classificação de erro do `pkg/ai` e marca como permanente o resto, incluindo YbyError de config e de token.
   - **Verificar:** teste com erro permanente: uma tentativa só.
@@ -672,6 +672,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | B05 | Com ferramenta, o prompt final mantém o bloco de notas do Synapstor antes do resultado da ferramenta; teste do `Fluxo` com busca e tool falsas. | este commit |
+| 26/10/2026 | B08 | `ai.ErroRetentavel` classifica o erro (429/502/503, rede, stream cortado, YbyError de timeout); o `RetryProvider` e o `Fluxo` deixam de repetir o resto (chave inválida, modelo inexistente, ERR_TOKEN_LIMIT, config, falha de CLI). | este commit |
 
 ### Fase 3 · Synapstor
 

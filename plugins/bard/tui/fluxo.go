@@ -259,6 +259,12 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 				// O texto da tentativa falha some já, e não só quando a
 				// próxima começa: um esc durante a espera não o leva ao fim.
 				e.recomecar()
+				// Chave inválida, modelo inexistente ou prompt grande demais
+				// falham igual na próxima vez: só tenta de novo o que o pkg/ai
+				// classifica como passageiro.
+				if !ai.ErroRetentavel(errStream) {
+					return backoff.Permanent(errStream)
+				}
 				e.etapa(EtapaMsg{Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual, Tentativa: tentativa + 1, Nota: NotaNovaTentativa})
 			}
 			return errStream

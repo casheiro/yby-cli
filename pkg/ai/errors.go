@@ -1,10 +1,16 @@
 package ai
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
+
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
 // APIError representa um erro HTTP de um provider de IA, com status code
@@ -45,4 +51,36 @@ func NewAPIErrorFromResponse(provider string, resp *http.Response, body []byte) 
 	}
 
 	return apiErr
+}
+
+// ErroRetentavel diz se vale tentar de novo a chamada que falhou com err:
+// status HTTP 429, 502 ou 503, erro de rede (inclusive prazo da chamada),
+// stream cortado no meio e YbyError de timeout ou de serviço fora do alcance.
+// O resto é permanente: chave inválida, modelo inexistente, prompt acima do
+// limite de tokens, configuração, falha de um provider CLI e cancelamento.
+func ErroRetentavel(err error) bool {
+	return erroRetentavel(err, DefaultRetryableStatusCodes)
+}
+
+// erroRetentavel é o ErroRetentavel com os status HTTP retentáveis informados.
+func erroRetentavel(err error, statuses map[int]bool) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return statuses[apiErr.StatusCode]
+	}
+	// O context.DeadlineExceeded também é um net.Error: o prazo de uma
+	// chamada vale nova tentativa, e o fim do contexto de quem chamou já
+	// encerra o retry.Do por conta própria.
+	var netErr net.Error
+	if errors.As(err, &netErr) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var ybyErr *ybyerrors.YbyError
+	if errors.As(err, &ybyErr) {
+		return ybyErr.Code == ybyerrors.ErrCodeNetworkTimeout || ybyErr.Code == ybyerrors.ErrCodeUnreachable
+	}
+	return false
 }

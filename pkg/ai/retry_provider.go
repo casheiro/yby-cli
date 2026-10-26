@@ -99,33 +99,28 @@ func (r *RetryProvider) GenerateGovernance(ctx context.Context, description stri
 	return result, err
 }
 
-// classifyError determina se o erro e retentavel baseado no status HTTP.
-// Erros que nao sao APIError ou cujo status nao esta na lista sao tratados
-// como permanentes (nao retentaveis).
+// classifyError marca como permanente (sem nova tentativa) o erro que
+// erroRetentavel não aceita com os status desta instância.
 func (r *RetryProvider) classifyError(err error) error {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		if !r.retryableStatuses[apiErr.StatusCode] {
-			return backoff.Permanent(err)
-		}
+	if !erroRetentavel(err, r.retryableStatuses) {
+		return backoff.Permanent(err)
+	}
 
-		// Respeitar Retry-After do servidor quando disponível
-		if apiErr.RetryAfter > 0 {
-			slog.Warn("erro do provider de IA, aguardando retry-after",
-				"provider", r.inner.Name(),
-				"status", apiErr.StatusCode,
-				"retry_after", apiErr.RetryAfter,
-			)
-			time.Sleep(apiErr.RetryAfter)
-		} else {
-			slog.Warn("erro do provider de IA, retentando",
-				"provider", r.inner.Name(),
-				"status", apiErr.StatusCode,
-			)
-		}
+	// Respeitar Retry-After do servidor quando disponível
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
+		slog.Warn("erro do provider de IA, aguardando retry-after",
+			"provider", r.inner.Name(),
+			"status", apiErr.StatusCode,
+			"retry_after", apiErr.RetryAfter,
+		)
+		time.Sleep(apiErr.RetryAfter)
 		return err
 	}
-	// Erros que nao sao APIError (ex: rede) sao retentaveis por padrao
+	slog.Warn("erro do provider de IA, retentando",
+		"provider", r.inner.Name(),
+		"erro", err,
+	)
 	return err
 }
 

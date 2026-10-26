@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
@@ -298,6 +299,40 @@ func TestFluxo_Erro429TentaDeNovo(t *testing.T) {
 	}
 	if final := ultimaEtapa(t, eventos, EtapaResposta); final.Estado != ui.EtapaFeita {
 		t.Errorf("etapa de resposta deveria terminar feita: %#v", final)
+	}
+}
+
+func TestFluxo_ErroPermanenteUmaTentativa(t *testing.T) {
+	casos := []struct {
+		nome string
+		err  error
+	}{
+		{"limite de tokens", ybyerrors.New(ybyerrors.ErrCodeTokenLimit, "prompt grande demais")},
+		{"chave inválida", &ai.APIError{Provider: "falso", StatusCode: 401, Body: "unauthorized"}},
+		{"modelo inexistente", &ai.APIError{Provider: "falso", StatusCode: 404, Body: "model not found"}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			isolarHome(t)
+			p := &provedorFalso{falhas: []error{c.err, c.err, c.err}, parcialPorFalha: "lixo"}
+			eventos := coletar(t, fluxoDeTeste(p).Iniciar(context.Background(), 1, "oi"), nil)
+
+			if p.totalChamadas() != 1 {
+				t.Errorf("erro permanente não se repete: %d chamadas", p.totalChamadas())
+			}
+			for _, e := range etapasDe(eventos) {
+				if e.Nota == NotaNovaTentativa {
+					t.Errorf("não deveria anunciar nova tentativa: %#v", e)
+				}
+			}
+			fim := fimDe(t, eventos)
+			if !errors.Is(fim.Err, c.err) || fim.Interrompida || fim.Resposta != "" {
+				t.Errorf("o fim deveria trazer o erro do provider, sem o parcial: %#v", fim)
+			}
+			if final := ultimaEtapa(t, eventos, EtapaResposta); final.Estado != ui.EtapaFalha {
+				t.Errorf("etapa de resposta deveria falhar: %#v", final)
+			}
+		})
 	}
 }
 
@@ -642,7 +677,7 @@ func TestFluxo_CancelamentoNaEsperaDescartaTentativaFalha(t *testing.T) {
 	isolarHome(t)
 	falhas := make([]error, 10)
 	for i := range falhas {
-		falhas[i] = errors.New("HTTP 429")
+		falhas[i] = &ai.APIError{Provider: "falso", StatusCode: 429, Body: "rate limited"}
 	}
 	p := &provedorFalso{falhas: falhas, parcialPorFalha: "lixo"}
 	f := fluxoDeTeste(p)

@@ -178,7 +178,7 @@ type iaClassifica struct {
 func (p *iaClassifica) Completion(_ context.Context, _, _ string) (string, error) { return p.json, nil }
 
 func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}, parcial: "começo"}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}
 	d, saida, erros := novoDiretoDeTeste(t, ia, true, true)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -192,7 +192,7 @@ func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
 }
 
 func TestDireto_RespostaQueRecomecaNoPipe(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}, parcial: "começo"}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}
 	d, saida, _ := novoDiretoDeTeste(t, ia, false, false)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -262,7 +262,7 @@ func TestDireto_FalhaFinalComRespostaParcial(t *testing.T) {
 // A nova tentativa que começa sem nada da resposta na tela aparece como detalhe da
 // etapa, como a nota "tentativa 2" da TUI.
 func TestDireto_NovaTentativaSemTextoMostraANota(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}}
 	d, saida, erros := novoDiretoDeTeste(t, ia, true, true)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
