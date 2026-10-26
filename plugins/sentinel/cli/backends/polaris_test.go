@@ -3,17 +3,21 @@
 package backends
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/validator"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 )
 
 // TestPolarisBackendName verifica que o nome do backend é "polaris".
 func TestPolarisBackendName(t *testing.T) {
-	backend := NewPolarisBackend()
+	backend := NewPolarisBackend(nil)
 	if backend.Name() != "polaris" {
 		t.Errorf("esperado Name() = \"polaris\", obtido %q", backend.Name())
 	}
@@ -21,7 +25,7 @@ func TestPolarisBackendName(t *testing.T) {
 
 // TestPolarisBackendIsAvailable verifica que o backend está sempre disponível.
 func TestPolarisBackendIsAvailable(t *testing.T) {
-	backend := NewPolarisBackend()
+	backend := NewPolarisBackend(nil)
 	if !backend.IsAvailable() {
 		t.Error("esperado IsAvailable() = true, obtido false")
 	}
@@ -127,5 +131,36 @@ func TestMapPolarisResults_SoONamespacePedidoEEmOrdem(t *testing.T) {
 		if outra := mapPolarisResults(audit, "payments"); !reflect.DeepEqual(outra, primeira) {
 			t.Fatalf("rodada %d diferente:\n%+v\n%+v", i, outra, primeira)
 		}
+	}
+}
+
+// TestPolarisBackend_UsaORestConfigInjetado: o cliente dinâmico sai do config recebido,
+// e não do kubeconfig padrão (KUBECONFIG aponta para um arquivo que não existe).
+func TestPolarisBackend_UsaORestConfigInjetado(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/nao-existe")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	chamado := false
+	b := NewPolarisBackend(func() (*rest.Config, error) {
+		chamado = true
+		return &rest.Config{Host: "https://cluster-b.example:6443"}, nil
+	})
+	if _, err := b.clienteDinamico(); err != nil {
+		t.Fatalf("clienteDinamico() com config injetado falhou: %v", err)
+	}
+	if !chamado {
+		t.Error("o config injetado não foi usado")
+	}
+}
+
+// TestPolarisBackend_ErroDoRestConfigPropaga: se o config do cluster não sai, o scan do
+// Polaris falha em vez de auditar outro cluster.
+func TestPolarisBackend_ErroDoRestConfigPropaga(t *testing.T) {
+	falha := errors.New("contexto b inexistente")
+	b := NewPolarisBackend(func() (*rest.Config, error) { return nil, falha })
+	_, err := b.ScanCluster(context.Background(), fake.NewSimpleClientset(), "default")
+	if !errors.Is(err, falha) {
+		t.Fatalf("esperava o erro do config, veio %v", err)
 	}
 }

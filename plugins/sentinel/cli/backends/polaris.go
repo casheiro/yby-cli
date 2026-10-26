@@ -15,16 +15,21 @@ import (
 	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 // PolarisBackend implementa SecurityBackend usando a SDK do Polaris
 // para auditoria de segurança de workloads Kubernetes.
-type PolarisBackend struct{}
+type PolarisBackend struct {
+	// restConfig entrega o config do mesmo cluster do clientset do scan (kubeconfig e
+	// contexto do yby, token cloud), para o cliente dinâmico não cair no kubeconfig padrão.
+	restConfig func() (*rest.Config, error)
+}
 
-// NewPolarisBackend cria uma nova instância do backend Polaris.
-func NewPolarisBackend() *PolarisBackend {
-	return &PolarisBackend{}
+// NewPolarisBackend cria uma nova instância do backend Polaris. restConfig devolve o
+// config do cluster que o scan está auditando.
+func NewPolarisBackend(restConfig func() (*rest.Config, error)) *PolarisBackend {
+	return &PolarisBackend{restConfig: restConfig}
 }
 
 // Name retorna o identificador do backend.
@@ -54,8 +59,8 @@ func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Inte
 	// Definir namespace na configuração para filtrar recursos
 	cfg.Namespace = namespace
 
-	// Criar cliente dinâmico a partir do kubeconfig padrão
-	dynamicClient, err := buildDynamicClient()
+	// Criar cliente dinâmico a partir do config do mesmo cluster do clientset
+	dynamicClient, err := p.clienteDinamico()
 	if err != nil {
 		return nil, fmt.Errorf("falha ao criar cliente dinâmico kubernetes: %w", err)
 	}
@@ -76,18 +81,15 @@ func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Inte
 	return mapPolarisResults(auditData, namespace), nil
 }
 
-// buildDynamicClient cria um cliente dinâmico Kubernetes usando as regras
-// de carregamento padrão do kubeconfig.
-func buildDynamicClient() (dynamic.Interface, error) {
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	configOverrides := &clientcmd.ConfigOverrides{}
-
-	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	restConfig, err := clientConfig.ClientConfig()
+// clienteDinamico cria o cliente dinâmico Kubernetes a partir do config injetado.
+func (p *PolarisBackend) clienteDinamico() (dynamic.Interface, error) {
+	if p.restConfig == nil {
+		return nil, fmt.Errorf("backend polaris sem config do cluster")
+	}
+	restConfig, err := p.restConfig()
 	if err != nil {
 		return nil, fmt.Errorf("falha ao obter rest config: %w", err)
 	}
-
 	return dynamic.NewForConfig(restConfig)
 }
 

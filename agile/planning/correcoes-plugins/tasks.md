@@ -340,7 +340,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Se isso ficar grande demais, o mínimo honesto é desligar o `--fix` com mensagem clara e registrar.
   - **Verificar:** testes com fake clientset e owner chain; dry-run no servidor com o reactor do fake.
   - **Conferência (26/10):** os achados do Polaris já vêm no controlador (Deployment/x), e o `validator.ResultMessage` tem `Mutations`, que podem gerar os patches `polaris/*`; o achado precisa guardar o contêiner. A cadeia de donos serve aos checks internos. Com o Polaris achando algo, hoje o `--fix` não gera patch nenhum. O `Prompter` está em `cmd/`: usar a confirmação do `pkg/ui`.
-- [ ] **S02 · Polaris no contexto e kubeconfig do yby**
+- [x] **S02 · Polaris no contexto e kubeconfig do yby**
   - **Problema:** `backends/polaris.go:~58,81-92` monta o cliente dinâmico com as regras padrão do kubeconfig, ignorando `Infra.KubeContext`/`KubeConfig` e o token cloud que o `sdk.GetKubeClient` respeita (`pkg/plugin/sdk/sdk_k8s.go`). Um mesmo scan mistura dois clusters.
   - **Fazer:** expor `sdk.GetRestConfig()` e montar os dois clientes a partir dele.
   - **Verificar:** teste do SDK; teste de que o backend recebe o config.
@@ -684,6 +684,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S10 | Investigate checa a saúde antes do cache (Succeeded saudável, reinício só vale se for de menos de 2 h), lê logs por contêiner com Previous, chave de cache com contexto, UID e reinícios, e eventos resumidos | este commit |
 | 26/10/2026 | S11 | Investigate redige logs, eventos e métricas e o scan redige os achados com o pkg/redacao antes da IA; o pkg/redacao passou a redigir o value de env com name sensível e o valor de ConfigMap no kubectl describe | este commit |
 | 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
+| 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
 
 ### Fase 5 · Atlas
 

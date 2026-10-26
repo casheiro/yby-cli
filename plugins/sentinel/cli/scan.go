@@ -39,7 +39,7 @@ type ScanReport struct {
 var (
 	novoClienteKube = getKubeClient
 	backendsDoScan  = func() []backends.SecurityBackend {
-		return []backends.SecurityBackend{backends.NewPolarisBackend(), backends.NewOPABackend()}
+		return []backends.SecurityBackend{backends.NewPolarisBackend(getRestConfig), backends.NewOPABackend()}
 	}
 	checksDoScan = checks.GetAll
 	provedorDeIA = func(ctx context.Context) ai.Provider { return ai.GetProvider(ctx, "auto") }
