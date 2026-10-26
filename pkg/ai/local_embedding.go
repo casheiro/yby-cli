@@ -37,6 +37,11 @@ func (p *LocalEmbeddingProvider) Name() string {
 	return "Local Embedding (all-MiniLM-L6-v2)"
 }
 
+// IdentidadeDosEmbeddings diz que os embeddings são locais e com que modelo.
+func (p *LocalEmbeddingProvider) IdentidadeDosEmbeddings(context.Context) (IdentidadeDoIndice, error) {
+	return IdentidadeDoIndice{Provider: "local", Modelo: localEmbeddingModelID}, nil
+}
+
 // IsAvailable sempre retorna true — embeddings locais estão sempre disponíveis.
 func (p *LocalEmbeddingProvider) IsAvailable(_ context.Context) bool {
 	return true

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -111,6 +112,31 @@ func (i *Indexer) tirarDoIndice(ctx context.Context, storePath string, arquivos 
 	return removidos, falhas
 }
 
+// refazerSeOutroModelo apaga o índice quando ele foi feito com outros embeddings que não
+// os do provider de agora (ou com um modelo que não ficou registrado), e diz se apagou.
+// Sem conseguir abrir o índice, não decide nada: as etapas seguintes dizem o que houve.
+func (i *Indexer) refazerSeOutroModelo(ctx context.Context, storePath string) (bool, error) {
+	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
+	if err != nil {
+		slog.Debug("não deu para abrir o índice para conferir o modelo", "erro", err)
+		return false, nil
+	}
+	err = vs.Conferir(ctx)
+	var outro *ai.IndiceDeOutroModeloError
+	if !errors.As(err, &outro) {
+		return false, err
+	}
+	et := i.etapas()
+	et.Iniciar("apagar o índice antigo")
+	if err := vs.Recriar(); err != nil {
+		et.Falhar("")
+		return false, fmt.Errorf("não deu para apagar o índice feito com outros embeddings: %w", err)
+	}
+	et.Concluir("outros embeddings")
+	et.Avisar("índice refeito do zero: era de " + outro.FeitoCom() + ", agora " + outro.Atual.String())
+	return true, nil
+}
+
 // fileHash calcula o hash SHA-256 de um arquivo.
 func fileHash(path string) (string, error) {
 	data, err := os.ReadFile(path)
@@ -157,6 +183,23 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		report.Duration = time.Since(start)
 		return report, nil
 	}
+
+	// 2.5. Índice feito com outros embeddings não se mistura com os de agora: refaz tudo.
+	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
+	refeito, err := i.refazerSeOutroModelo(ctx, storePath)
+	if err != nil {
+		return nil, err
+	}
+	fullReindex := i.FullReindex
+	if refeito {
+		// O manifest vazio vai para o disco já: se a indexação parar no meio, a próxima
+		// não pula por hash o que saiu do índice.
+		manifest = &IndexManifest{Files: make(map[string]IndexedFile)}
+		if err := i.saveManifest(manifest); err != nil {
+			return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)
+		}
+		fullReindex = true
+	}
 	newManifest := &IndexManifest{Files: make(map[string]IndexedFile)}
 
 	// 3. Processar arquivos -> chunks
@@ -172,7 +215,7 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		}
 
 		// Verificar se já indexado e não mudou
-		if !i.FullReindex {
+		if !fullReindex {
 			if existing, ok := manifest.Files[relPath]; ok && existing.SHA256 == hash {
 				newManifest.Files[relPath] = existing
 				report.FilesSkipped++
@@ -215,7 +258,6 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 	report.ChunksGenerated = len(allChunks)
 
 	// 3.5. Detectar arquivos removidos (presentes no manifest antigo, ausentes no novo)
-	storePath := filepath.Join(i.RootDir, ".synapstor", ".index")
 	var removedFiles []string
 	for relPath := range manifest.Files {
 		if _, exists := newManifest.Files[relPath]; !exists {

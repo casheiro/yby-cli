@@ -216,7 +216,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 3 · Synapstor
 
-- [ ] **Y01 · Índice versionado por provider/modelo/dimensão** ✓▶
+- [x] **Y01 · Índice versionado por provider/modelo/dimensão** ✓▶
   - **Problema:** `GetEmbeddingProvider` (`pkg/ai/factory.go:~197-226`) escolhe conforme o momento (Ollama se no ar, senão config, senão MiniLM local com 384 dimensões). A coleção tem nome fixo `synapstor-knowledge` (`pkg/ai/vector_store.go:~41`) e o manifest só guarda sha256 e data (`plugins/synapstor/internal/indexer/indexer.go:~19-28`). Trocando de provider, a busca falha com `vectors must have the same length` (reproduzido neste repo). No Bard isso vira só "Synapstor indisponível" (`plugins/bard/tui/fluxo.go:~287-290`).
   - **Fazer:**
     - gravar provider, modelo e dimensão no manifest (ou no nome da coleção, ex.: `synapstor-<modelo>-<dim>`);
@@ -676,6 +676,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | Y01 | O `VectorStore` grava com que provider, modelo e dimensão o índice foi feito (`identidade.json`); a busca com outros embeddings devolve `IndiceDeOutroModeloError` com "rode yby synapstor index --full", e o `index` apaga e refaz tudo sozinho quando o modelo muda. | este commit |
 
 ### Fase 4 · Sentinel
 

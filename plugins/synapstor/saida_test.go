@@ -108,9 +108,16 @@ type provedorFalso struct {
 	chamadas int
 	// aviso, se não vazio, é logado com slog.Warn a cada EmbedDocuments.
 	aviso string
+	// nome, se não vazio, troca o nome "falso": outro nome são outros embeddings.
+	nome string
 }
 
-func (p *provedorFalso) Name() string { return "falso" }
+func (p *provedorFalso) Name() string {
+	if p.nome != "" {
+		return p.nome
+	}
+	return "falso"
+}
 
 func (p *provedorFalso) Completion(context.Context, string, string) (string, error) {
 	p.chamadas++
@@ -317,6 +324,34 @@ func TestSearch_IndiceVazio(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(raiz, ".synapstor")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("a busca sem índice não deve criar .synapstor")
+	}
+}
+
+func TestSearchEIndex_TrocarDeEmbeddings(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	usarDependencias(t, &provedorFalso{})
+	raiz := projetoDeExemplo(t)
+	if _, _, err := rodar(t, raiz, "index"); err != nil {
+		t.Fatal(err)
+	}
+
+	usarDependencias(t, &provedorFalso{nome: "outro"})
+	_, _, err := rodar(t, raiz, "search", "deploy")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeValidation || !strings.Contains(ye.GetHint(), "yby synapstor index --full") ||
+		!strings.Contains(ye.Message, "falso (128 dimensões)") || !strings.Contains(ye.Message, "outro (128 dimensões)") {
+		t.Fatalf("a busca com outros embeddings diz com que o índice foi feito e como refazer, obtido %v", err)
+	}
+
+	saida, _, err := rodar(t, raiz, "index")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saida, "apagar o índice antigo") || !strings.Contains(saida, "refeito do zero") || !strings.Contains(saida, "3 indexados") {
+		t.Errorf("o index com outros embeddings refaz tudo e avisa:\n%s", saida)
+	}
+	if _, _, err := rodar(t, raiz, "search", "deploy"); err != nil {
+		t.Errorf("depois de refeito, a busca funciona: %v", err)
 	}
 }
 

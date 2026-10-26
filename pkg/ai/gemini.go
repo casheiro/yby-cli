@@ -286,15 +286,24 @@ type geminiBatchEmbeddingResponse struct {
 	} `json:"embeddings"`
 }
 
+func getEmbeddingModelForGemini() string {
+	if configured := GetEmbeddingModel("gemini"); configured != "" {
+		return configured
+	}
+	return "gemini-embedding-001"
+}
+
+// IdentidadeDosEmbeddings diz que os embeddings vêm do Gemini e com que modelo.
+func (p *GeminiProvider) IdentidadeDosEmbeddings(context.Context) (IdentidadeDoIndice, error) {
+	return IdentidadeDoIndice{Provider: "gemini", Modelo: getEmbeddingModelForGemini()}, nil
+}
+
 func (p *GeminiProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
 
-	embeddingModel := "gemini-embedding-001"
-	if configured := GetEmbeddingModel("gemini"); configured != "" {
-		embeddingModel = configured
-	}
+	embeddingModel := getEmbeddingModelForGemini()
 	url := fmt.Sprintf("%s/v1beta/models/%s:batchEmbedContents?key=%s", p.BaseURL, embeddingModel, p.APIKey)
 
 	const batchSize = 100

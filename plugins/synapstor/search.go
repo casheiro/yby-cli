@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -115,6 +116,12 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	}
 
 	docs, err := vs.Search(ctx, query, min(topK, total))
+	var outro *ai.IndiceDeOutroModeloError
+	if errors.As(err, &outro) {
+		prog.Falhar("")
+		return yerrors.New(yerrors.ErrCodeValidation, outro.Diferenca()).
+			WithHint("rode yby synapstor index --full para refazer o índice com " + outro.Atual.String())
+	}
 	if err != nil {
 		prog.Falhar("")
 		return yerrors.Wrap(err, yerrors.ErrCodeExec, "a busca no índice falhou").
