@@ -60,7 +60,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 0 · CI e base
 
-- [ ] **C01 · CI roda os testes do Sentinel, do Viz e do Synapstor** ✓
+- [x] **C01 · CI roda os testes do Sentinel, do Viz e do Synapstor** ✓
   - **Problema:** `.github/workflows/feature-pipeline.yaml:35` faz `go list ./... | grep -v 'plugins/sentinel/cli'`. Viz e Synapstor são módulos próprios, que o `go list ./...` da raiz não alcança. Resultado: os testes desses três plugins nunca rodam no PR.
   - **Fazer:**
     - incluir no job os passos `go test -race -tags k8s ./plugins/sentinel/...`, `cd plugins/viz && go test -race ./...` e `cd plugins/synapstor && go test -race ./...`;
@@ -658,6 +658,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | C02 | O `.golangci.yml` deixa de excluir o Sentinel e exclui só a pasta `test/` da raiz; o pipeline ganha lint do Viz e do Synapstor; gofmt nos dois arquivos. Validado com o golangci-lint v1.64.8 do CI (GOTOOLCHAIN=go1.26.1). | este commit |
+| 26/10/2026 | C01 | Testes do Sentinel (`-tags k8s`, GOGC=30, `-p 1`), do Viz e do Synapstor no feature-pipeline, no release-pipeline, no release.yaml e no `task test`. Rodados com `-race` no Linux (golang:1.26) sem falha; a raiz no Linux pede LANG=C.UTF-8 por causa dos glifos. | este commit |
 
 ### Fase 1 · Contratos
 
