@@ -170,7 +170,7 @@ func lerOpcoes(sub string, args []string) (opcoes, error) {
 			liga = &op.fix
 		case sub == "scan" && a == "--fix-dry-run":
 			liga = &op.fixDryRun
-		case sub == "scan" && a == "--no-ai":
+		case a == "--no-ai":
 			liga = &op.semIA
 		case sub == "investigate" && a == "--no-cache":
 			liga = &op.semCache

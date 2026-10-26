@@ -86,6 +86,13 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 		prog.Concluir(contar(len(events.Items), "evento", "eventos"))
 	}
 
+	// --no-ai: para na coleta e entrega os dados brutos (o Bard, que chama o investigate,
+	// já é a IA). Não lê nem grava o cache de análises.
+	if op.semIA {
+		parar()
+		return mostrarDadosBrutos(saida, tela, montarDadosBrutos(pod, eventosDe(events), logsStr, isPodHealthy(pod, events), podName, namespace), op)
+	}
+
 	// Pod saudável: nada para a IA analisar. Vem antes do cache, para uma análise guardada
 	// de quando o pod estava com problema não reaparecer depois que ele se recuperou. Nos
 	// formatos para scripts, o relatório de pod saudável vai para o stdout (ou para o
@@ -418,4 +425,92 @@ func identidadeDoPod(pod *corev1.Pod) idPod {
 		id.Reinicios += cs.RestartCount
 	}
 	return id
+}
+
+// eventosDe devolve os eventos da lista, ou nenhum se a lista não veio.
+func eventosDe(l *corev1.EventList) []corev1.Event {
+	if l == nil {
+		return nil
+	}
+	return l.Items
+}
+
+// montarDadosBrutos reúne o que o investigate coletou do pod, sem análise. Os logs e as
+// mensagens dos eventos passam pela redação: o Bard manda esses dados à IA dele.
+func montarDadosBrutos(pod *corev1.Pod, eventos []corev1.Event, logs string, saudavel bool, podName, namespace string) DadosBrutos {
+	d := DadosBrutos{
+		Metadata:   ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: time.Now()},
+		Healthy:    saudavel,
+		Phase:      string(pod.Status.Phase),
+		Containers: []ConteinerBruto{},
+		Events:     resumirEventos(eventos),
+		Logs:       redacao.Redigir(logs),
+	}
+	for i := range d.Events {
+		d.Events[i].Mensagem = redacao.Redigir(d.Events[i].Mensagem)
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		c := ConteinerBruto{Name: cs.Name, Ready: cs.Ready, RestartCount: cs.RestartCount, State: "running"}
+		switch {
+		case cs.State.Waiting != nil:
+			c.State, c.Reason = "waiting", cs.State.Waiting.Reason
+		case cs.State.Terminated != nil:
+			c.State, c.Reason = "terminated", cs.State.Terminated.Reason
+		}
+		d.Containers = append(d.Containers, c)
+	}
+	return d
+}
+
+// mostrarDadosBrutos exporta os dados brutos (json ou markdown) ou os escreve na tela.
+func mostrarDadosBrutos(saida, tela io.Writer, d DadosBrutos, op opcoes) error {
+	switch op.formato {
+	case "json":
+		content, err := exportDadosBrutosJSON(d)
+		if err != nil {
+			return yerrors.Wrap(err, yerrors.ErrCodePlugin, "não deu para montar o relatório JSON")
+		}
+		return gravarRelatorio(saida, content, op.arquivo, "json")
+	case "markdown":
+		return gravarRelatorio(saida, exportDadosBrutosMarkdown(d), op.arquivo, "markdown")
+	}
+	escreverDadosBrutos(tela, d)
+	return nil
+}
+
+// escreverDadosBrutos mostra na tela o que foi coletado: fase, contêineres, eventos e o
+// fim dos logs.
+func escreverDadosBrutos(w io.Writer, d DadosBrutos) {
+	fmt.Fprintln(w)
+	tipo, nota := ui.CheckAviso, "com sinais de problema; dados brutos, a IA não foi chamada"
+	if d.Healthy {
+		tipo, nota = ui.CheckOk, "nenhum sinal de problema; dados brutos, a IA não foi chamada"
+	}
+	ui.Check(w, tipo, "pod", d.Phase, nota)
+	if len(d.Containers) > 0 {
+		ui.Section(w, "contêineres")
+		for _, c := range d.Containers {
+			t := ui.CheckOk
+			if !c.Ready {
+				t = ui.CheckAviso
+			}
+			ui.Check(w, t, c.Name, estadoDoConteiner(c), contar(int(c.RestartCount), "reinício", "reinícios"))
+		}
+	}
+	if len(d.Events) > 0 {
+		ui.Section(w, "eventos")
+		for _, e := range d.Events {
+			t := ui.CheckOk
+			if e.Tipo == "Warning" {
+				t = ui.CheckAviso
+			}
+			ui.Check(w, t, e.Motivo, "x"+fmt.Sprint(e.Contagem), e.Mensagem)
+		}
+	}
+	if strings.TrimSpace(d.Logs) != "" {
+		ui.Section(w, "logs")
+		for _, l := range strings.Split(strings.TrimRight(d.Logs, "\n"), "\n") {
+			fmt.Fprintln(w, "  "+l)
+		}
+	}
 }

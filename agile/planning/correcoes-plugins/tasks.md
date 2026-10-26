@@ -422,7 +422,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `investigate.go:~133` manda logs e eventos crus, e o provider pode ser remoto.
   - **Fazer:** redigir tokens, JWT, chaves AWS, senhas em URL e `Authorization:` antes de enviar (função compartilhada com o B06, se couber em `pkg/`).
   - **Verificar:** testes.
-- [ ] **S12 · `investigate --no-ai`**
+- [x] **S12 · `investigate --no-ai`**
   - **Problema:** coerência com o `scan --no-ai`; é o que o Bard precisa no B12.
   - **Fazer:** parar na coleta e devolver os dados brutos (status, eventos resumidos, fim dos logs) no JSON.
   - **Verificar:** testes.
@@ -683,6 +683,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | S10 | Investigate checa a saúde antes do cache (Succeeded saudável, reinício só vale se for de menos de 2 h), lê logs por contêiner com Previous, chave de cache com contexto, UID e reinícios, e eventos resumidos | este commit |
 | 26/10/2026 | S11 | Investigate redige logs, eventos e métricas e o scan redige os achados com o pkg/redacao antes da IA; o pkg/redacao passou a redigir o value de env com name sensível e o valor de ConfigMap no kubectl describe | este commit |
+| 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
 
 ### Fase 5 · Atlas
 

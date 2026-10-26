@@ -98,6 +98,7 @@ func ajudaInvestigate() ui.Ajuda {
 			{Nome: "-o, --output formato", Descricao: "terminal, json ou markdown (padrão terminal)"},
 			{Nome: "-f, --file arquivo", Descricao: "grava o json ou o markdown no arquivo em vez de na tela"},
 			{Nome: "    --no-cache", Descricao: "ignora a análise guardada e pergunta à IA de novo"},
+			{Nome: "    --no-ai", Descricao: "só coleta: mostra status, eventos e fim dos logs, sem chamar a IA nem o cache"},
 			flagAjuda,
 		},
 		Rodape: "A análise fica guardada por 1 h em ~/.yby/sentinel/cache e volta enquanto os logs do pod não mudam.",
