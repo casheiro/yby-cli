@@ -1,0 +1,15 @@
+flowchart TD
+  subgraph Compose_Services["Compose Services"]
+    ComposeService_api["api\n(ComposeService)"]
+    ComposeService_cache["cache\n(ComposeService)"]
+    ComposeService_db["db\n(ComposeService)"]
+    ComposeService_web["web\n(ComposeService)"]
+    ComposeService_worker["worker\n(ComposeService)"]
+  end
+  ComposeService_api -->|depends_on| ComposeService_cache
+  ComposeService_api -->|depends_on| ComposeService_db
+  ComposeService_api -->|connects| ComposeService_web
+  ComposeService_web -->|depends_on| ComposeService_api
+  ComposeService_web -->|depends_on| ComposeService_cache
+  ComposeService_worker -->|depends_on| ComposeService_cache
+  ComposeService_worker -->|depends_on| ComposeService_db

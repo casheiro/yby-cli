@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -36,6 +37,15 @@ func TestMain(m *testing.M) {
 	dirTestdata = filepath.Join(wd, "testdata")
 	// A home dos testes (e dos binários que eles rodam) é temporária: o
 	// ~/.yby/config.yaml de verdade não muda o visual nem o log.
+	// Com a home trocada o go não acharia o cache de compilação nem o de módulos
+	// e o `go build` do helperBuildAtlas partiria do zero: fixa os dois antes.
+	if saida, err := exec.Command("go", "env", "GOCACHE", "GOMODCACHE").Output(); err == nil {
+		linhas := strings.Fields(string(saida))
+		if len(linhas) == 2 {
+			os.Setenv("GOCACHE", linhas[0])
+			os.Setenv("GOMODCACHE", linhas[1])
+		}
+	}
 	dir, err := os.MkdirTemp("", "atlas-home-")
 	if err != nil {
 		panic(err)
@@ -47,6 +57,9 @@ func TestMain(m *testing.M) {
 	}
 	codigo := m.Run()
 	os.RemoveAll(dir)
+	if binAtlasDir != "" {
+		os.RemoveAll(binAtlasDir)
+	}
 	os.Exit(codigo)
 }
 

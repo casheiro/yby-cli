@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -155,6 +156,9 @@ func (a *ComposeAnalyzer) analyzeFile(rootPath, filePath string, result *Analyze
 
 	// Gera relações "connects" entre serviços na mesma rede
 	for _, svcs := range networkServices {
+		// A ordem do mapa de serviços muda a cada execução; ordenado, a direção
+		// de cada par é sempre a mesma.
+		sort.Strings(svcs)
 		for i := 0; i < len(svcs); i++ {
 			for j := i + 1; j < len(svcs); j++ {
 				result.Relations = append(result.Relations, InfraRelation{

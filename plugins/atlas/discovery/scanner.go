@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
@@ -598,6 +599,7 @@ func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 		bp.Analyzers = append(bp.Analyzers, a.Name())
 	}
 
+	ordenarBlueprint(bp)
 	return bp, nil
 }
 
@@ -745,4 +747,27 @@ func detectPackageJsonRelations(root string, comp Component, compPaths map[strin
 	}
 
 	return relations
+}
+
+// ordenarBlueprint fixa a ordem dos recursos e das relações. Os analyzers
+// percorrem mapas, cuja ordem muda a cada execução; sem isto o diagrama
+// sairia diferente a cada vez.
+func ordenarBlueprint(bp *InfraBlueprint) {
+	sort.SliceStable(bp.Resources, func(i, j int) bool {
+		a, b := bp.Resources[i], bp.Resources[j]
+		if a.ID() != b.ID() {
+			return a.ID() < b.ID()
+		}
+		return a.Path < b.Path
+	})
+	sort.SliceStable(bp.Relations, func(i, j int) bool {
+		a, b := bp.Relations[i], bp.Relations[j]
+		if a.From != b.From {
+			return a.From < b.From
+		}
+		if a.To != b.To {
+			return a.To < b.To
+		}
+		return a.Type < b.Type
+	})
 }

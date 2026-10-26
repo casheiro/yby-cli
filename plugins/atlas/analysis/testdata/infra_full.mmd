@@ -1,0 +1,26 @@
+flowchart TD
+  subgraph Compose_Networks["Compose Networks"]
+    ComposeNetwork_back["back\n(ComposeNetwork)"]
+    ComposeNetwork_front["front\n(ComposeNetwork)"]
+  end
+  subgraph Compose_Services["Compose Services"]
+    ComposeService_api["api\n(ComposeService)"]
+    ComposeService_cache["cache\n(ComposeService)"]
+    ComposeService_db["db\n(ComposeService)"]
+    ComposeService_web["web\n(ComposeService)"]
+    ComposeService_worker["worker\n(ComposeService)"]
+  end
+  subgraph Compose_Volumes["Compose Volumes"]
+    ComposeVolume_dados["dados\n(ComposeVolume)"]
+  end
+  subgraph Helm_Charts["Helm Charts"]
+    HelmChart_alfa["alfa\n(HelmChart)"]
+    HelmChart_beta["beta\n(HelmChart)"]
+  end
+  ComposeService_api -->|depends_on| ComposeService_cache
+  ComposeService_api -->|depends_on| ComposeService_db
+  ComposeService_api -->|connects| ComposeService_web
+  ComposeService_web -->|depends_on| ComposeService_api
+  ComposeService_web -->|depends_on| ComposeService_cache
+  ComposeService_worker -->|depends_on| ComposeService_cache
+  ComposeService_worker -->|depends_on| ComposeService_db

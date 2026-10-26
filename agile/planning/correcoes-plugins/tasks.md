@@ -538,7 +538,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o blueprint leva caminhos absolutos (`Component.Path`, `Roots`).
   - **Fazer:** `ToSlash` na borda de cada analyzer e no blueprint; caminhos relativos.
   - **Verificar:** testes que rodam igual no Windows e no Linux.
-- [ ] **A12 · Saída ordenada, goldens e testes rápidos**
+- [x] **A12 · Saída ordenada, goldens e testes rápidos**
   - **Problema:** a ordem de mapas (`helm.go:~94`, `terraform.go:~54`, `range cf.Services`) muda o `.mmd` a cada execução. `helperBuildAtlas` faz `go build` em cada teste (`main_test.go:~19-31`), e o pacote leva ~68 s.
   - **Fazer:** ordenar recursos e relações no fim do `ScanInfra`; goldens de `GenerateInfraMermaid` com as fixtures dos itens A04 a A08; compilar uma vez (`TestMain`) ou chamar `executar()` no processo.
   - **Verificar:** dois `diagram` seguidos dão o mesmo arquivo; o pacote abaixo de ~15 s.
@@ -686,6 +686,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | A12 | ScanInfra e o analyzer de compose ordenam recursos e relações (diagrama determinístico), goldens do GenerateInfraMermaid e o atlas compilado uma só vez nos testes (pacote de ~72 s para ~8 s) | este commit |
 
 ### Fase 6 · Viz
 
