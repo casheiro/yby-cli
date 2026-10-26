@@ -164,6 +164,10 @@ metadata:
 spec:
   replicas: 1
   template:
+    metadata:
+      labels:
+        app: api
+        tier: backend
     spec:
       containers:
       - name: api
@@ -189,6 +193,65 @@ spec:
 	}
 	if !found {
 		t.Errorf("esperado relação 'selects' de Service/prod/api-svc para Deployment/prod/api, relações: %+v", result.Relations)
+	}
+}
+
+func TestK8sAnalyzer_ServiceSelecaSoWorkloadDoMesmoNamespace(t *testing.T) {
+	dir := t.TempDir()
+	file := writeTestFile(t, dir, "svc.yaml", `
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: prod
+spec:
+  selector:
+    app: api
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cfg
+  namespace: prod
+  labels:
+    app: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: prod
+spec:
+  template:
+    metadata:
+      labels:
+        app: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: dev
+spec:
+  template:
+    metadata:
+      labels:
+        app: api
+`)
+
+	result, err := NewK8sAnalyzer().Analyze(dir, []string{file})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var alvos []string
+	for _, rel := range result.Relations {
+		if rel.Type == "selects" {
+			alvos = append(alvos, rel.To)
+		}
+	}
+	if len(alvos) != 1 || alvos[0] != "Deployment/prod/api" {
+		t.Errorf("esperado só Deployment/prod/api, veio %v", alvos)
 	}
 }
 

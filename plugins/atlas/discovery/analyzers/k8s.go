@@ -167,7 +167,7 @@ func (a *K8sAnalyzer) extractRelations(parsed []parsedResource) []InfraRelation 
 
 		switch p.Resource.Kind {
 		case "Service":
-			relations = append(relations, a.extractServiceRelations(p.Resource, spec, resources)...)
+			relations = append(relations, a.extractServiceRelations(p.Resource, spec, parsed)...)
 		case "Ingress":
 			relations = append(relations, a.extractIngressRelations(p.Resource, spec, resources)...)
 		case "Deployment", "StatefulSet", "DaemonSet":
@@ -183,7 +183,7 @@ func (a *K8sAnalyzer) extractRelations(parsed []parsedResource) []InfraRelation 
 }
 
 // extractServiceRelations extrai relações de seleção de um Service para os recursos com labels correspondentes.
-func (a *K8sAnalyzer) extractServiceRelations(svc InfraResource, spec map[string]interface{}, resources []InfraResource) []InfraRelation {
+func (a *K8sAnalyzer) extractServiceRelations(svc InfraResource, spec map[string]interface{}, parsed []parsedResource) []InfraRelation {
 	if spec == nil {
 		return nil
 	}
@@ -200,16 +200,13 @@ func (a *K8sAnalyzer) extractServiceRelations(svc InfraResource, spec map[string
 
 	var relations []InfraRelation
 
-	// Encontrar recursos cujos labels coincidem com o selector
-	for _, res := range resources {
-		if res.Labels == nil {
+	// Só workloads entram, no mesmo namespace, pelos labels dos pods que criam
+	for _, p := range parsed {
+		res := p.Resource
+		if res.Namespace != svc.Namespace {
 			continue
 		}
-		// Não selecionar a si próprio
-		if res.ID() == svc.ID() {
-			continue
-		}
-		if labelsMatch(selector, res.Labels) {
+		if labelsMatch(selector, podLabels(p)) {
 			relations = append(relations, InfraRelation{
 				From: svc.ID(),
 				To:   res.ID(),
@@ -459,6 +456,20 @@ func getNestedStringMap(m map[string]interface{}, keys ...string) map[string]str
 	}
 
 	return result
+}
+
+// podLabels devolve os labels dos pods que o recurso cria: metadata.labels
+// no Pod, o template do pod nos demais workloads, nil para outros kinds.
+func podLabels(p parsedResource) map[string]string {
+	switch p.Resource.Kind {
+	case "Pod":
+		return p.Resource.Labels
+	case "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job":
+		return getNestedStringMap(p.Raw, "spec", "template", "metadata", "labels")
+	case "CronJob":
+		return getNestedStringMap(p.Raw, "spec", "jobTemplate", "spec", "template", "metadata", "labels")
+	}
+	return nil
 }
 
 // labelsMatch verifica se todos os labels do selector estão presentes nos labels do recurso.

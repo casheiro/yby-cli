@@ -474,7 +474,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - excluir do analyzer K8s os arquivos de `patches`/`patchesStrategicMerge`;
     - aplicar o `namespace` herdado.
   - **Verificar:** fixture base+overlay e golden.
-- [ ] **A05 · Service seleciona workload**
+- [x] **A05 · Service seleciona workload**
   - **Problema:** `analysis/k8s.go:~204-219` compara o selector com `metadata.labels` de qualquer recurso. O Service "seleciona" ConfigMap e não o Deployment.
   - **Fazer:** só workloads (Deployment, StatefulSet, DaemonSet, Pod, Job), via `spec.template.metadata.labels`, no mesmo namespace.
   - **Verificar:** teste.
@@ -688,6 +688,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | A12 | ScanInfra e o analyzer de compose ordenam recursos e relações (diagrama determinístico), goldens do GenerateInfraMermaid e o atlas compilado uma só vez nos testes (pacote de ~72 s para ~8 s) | este commit |
 | 26/10/2026 | A11 | `relSlash` (ToSlash) em todos os analyzers e no scanner, Kustomize/Helm com `path`, e o blueprint sai com caminhos relativos (`Component.Path`, `Roots=["."]`, `RootPath="."`) | este commit |
+| 26/10/2026 | A05 | Service passa a selecionar só workloads (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob) pelos labels do template do pod e no mesmo namespace | este commit |
 
 ### Fase 6 · Viz
 
