@@ -36,13 +36,14 @@ func executeSentinelScan(ctx context.Context, params map[string]string) (string,
 }
 
 // pedidoSentinelScan é o pedido ao Sentinel para o scan, no cluster e no namespace da
-// sessão quando a IA não diz o namespace.
+// sessão quando a IA não diz o namespace. As recomendações da IA do Sentinel ficam de fora
+// (--no-ai): quem analisa os achados é o próprio Bard.
 func pedidoSentinelScan(params map[string]string) plugin.PluginRequest {
 	args := []string{"scan"}
 	if ns := namespaceDe(params); ns != "" {
 		args = append(args, "-n", ns)
 	}
-	return pedidoAoPlugin(append(args, "-o", "json"))
+	return pedidoAoPlugin(append(args, "-o", "json", "--no-ai"))
 }
 
 // formatScanResults converte os dados do scan em texto legível.

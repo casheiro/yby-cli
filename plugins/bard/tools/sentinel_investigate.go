@@ -56,5 +56,5 @@ func pedidoSentinelInvestigate(pod string, params map[string]string) plugin.Plug
 	if ns := namespaceDe(params); ns != "" {
 		args = append(args, "-n", ns)
 	}
-	return pedidoAoPlugin(args)
+	return pedidoAoPlugin(append(args, "-o", "json"))
 }

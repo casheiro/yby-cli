@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -49,12 +50,21 @@ func invokePlugin(binaryPath string, req plugin.PluginRequest) (*plugin.PluginRe
 		}
 	}
 	cmd.Env = append(env, plugin.EnvPedido+"="+string(reqJSON))
+	// As etapas e os erros do plugin vão para o stderr; o resultado, para o stdout.
+	var erros bytes.Buffer
+	cmd.Stderr = &erros
 
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("plugin '%s' falhou: %w\n%s", binaryPath, err, string(output))
+		return nil, fmt.Errorf("plugin '%s' falhou: %w\n%s%s", binaryPath, err, string(output), erros.String())
 	}
+	return respostaDoPlugin(output)
+}
 
+// respostaDoPlugin lê o JSON que o plugin escreveu no stdout. O hook command do Sentinel
+// escreve o relatório direto (o mesmo do -o json), sem o envelope {"data": …} do
+// PluginResponse: um objeto com outras chaves vira o Data da resposta.
+func respostaDoPlugin(output []byte) (*plugin.PluginResponse, error) {
 	// Extrair JSON do output (plugins podem imprimir texto antes do JSON)
 	jsonData := extractJSON(output)
 	if jsonData == nil {
@@ -62,7 +72,13 @@ func invokePlugin(binaryPath string, req plugin.PluginRequest) (*plugin.PluginRe
 	}
 
 	var resp plugin.PluginResponse
-	if err := json.Unmarshal(jsonData, &resp); err != nil {
+	var err error
+	if envelope(jsonData) {
+		err = json.Unmarshal(jsonData, &resp)
+	} else {
+		err = json.Unmarshal(jsonData, &resp.Data)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("resposta inválida do plugin: %w\n%s", err, string(output))
 	}
 
@@ -71,6 +87,20 @@ func invokePlugin(binaryPath string, req plugin.PluginRequest) (*plugin.PluginRe
 	}
 
 	return &resp, nil
+}
+
+// envelope informa se o JSON é um PluginResponse: um objeto só com as chaves data e error.
+func envelope(jsonData []byte) bool {
+	var chaves map[string]json.RawMessage
+	if err := json.Unmarshal(jsonData, &chaves); err != nil {
+		return false
+	}
+	for k := range chaves {
+		if k != "data" && k != "error" {
+			return false
+		}
+	}
+	return true
 }
 
 // extractJSON encontra o primeiro objeto JSON válido no output.

@@ -58,6 +58,7 @@ O Sentinel usa ferramentas de seguranca reais como backends em vez de checks art
 # Scan de seguranca (usa Polaris + OPA automaticamente)
 yby sentinel scan -n default
 yby sentinel scan -n nexus-core
+yby sentinel scan -n default --no-ai          # sem as recomendações da IA
 
 # Exportar relatorio
 yby sentinel scan -n default -o json -f scan.json

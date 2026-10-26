@@ -41,6 +41,7 @@ FLAGS
   -p, --profile perfil   perfil de conformidade dos checks internos: cis-l1, cis-l2, pci-dss ou soc2
       --fix-dry-run      mostra os patches de remediação sem aplicar
       --fix              aplica os patches de remediação no cluster
+      --no-ai            não pede as recomendações da IA
   -h, --help             mostra esta ajuda
 
   No formato terminal, o resumo sai na tela e o relatório completo vai para ~/.yby/reports/sentinel-scan-<namespace>-<data>.md.
