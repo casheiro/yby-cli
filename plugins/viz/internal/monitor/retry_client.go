@@ -42,6 +42,15 @@ func (r *RetryClient) NamespaceInicial() string {
 	return ""
 }
 
+// Sondar repassa a sonda ao client interno, sem retry: o relógio tenta de novo
+// no próximo tique. Client que não sonda não tem o que confirmar.
+func (r *RetryClient) Sondar() error {
+	if s, ok := r.inner.(Sondador); ok {
+		return s.Sondar()
+	}
+	return nil
+}
+
 // NewRetryClient cria um RetryClient com configuração padrão (3 tentativas, 1s base)
 func NewRetryClient(inner Client) *RetryClient {
 	return &RetryClient{

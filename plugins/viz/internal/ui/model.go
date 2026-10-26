@@ -138,15 +138,27 @@ type leituraMsg struct {
 // status e a busca são filtros da tela: a leitura traz a lista inteira, que
 // também dá o total do "N de M".
 func (m Model) ler(relogio bool, tabs ...ResourceTab) tea.Cmd {
-	client, ns := m.client, m.filter.Namespace
+	client, ns, vigiadas := m.client, m.filter.Namespace, m.vigiadas
 	return func() tea.Msg {
 		msg := leituraMsg{namespace: ns, relogio: relogio, abas: tabs}
 		for _, t := range tabs {
+			if sondador, ok := client.(monitor.Sondador); ok && relogio && vigiadas&(1<<uint(t)) != 0 {
+				// A lista é do watch: o relógio só confirma que o cluster responde.
+				if err := sondador.Sondar(); err != nil {
+					msg.respostas = append(msg.respostas, err)
+				} else {
+					msg.respostas = append(msg.respostas, sondaOK{})
+				}
+				continue
+			}
 			msg.respostas = append(msg.respostas, lerAba(client, ns, t))
 		}
 		return msg
 	}
 }
+
+// sondaOK é a resposta da sonda de conexão de uma aba vigiada: não traz lista.
+type sondaOK struct{}
 
 // lerAba busca a lista de uma aba; devolve a lista ou o erro.
 func lerAba(client monitor.Client, ns string, tab ResourceTab) tea.Msg {
@@ -521,6 +533,14 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// (RBAC) ou de uma aba que a pessoa já deixou, não.
 					if temAba && tab == m.activeTab {
 						m.falhar(err)
+					}
+					continue
+				}
+				if _, sonda := r.(sondaOK); sonda {
+					// A aba pode ter deixado o watch entre o pedido e a resposta: o
+					// próximo tique volta a ler a lista.
+					if temAba && m.vigiada(tab) {
+						m.conexaoDePe()
 					}
 					continue
 				}

@@ -562,7 +562,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Fazer:** sem `--context`/`-n` explícitos, usar os do pedido. Contexto inexistente → `ContextoInexistenteError`.
   - **Verificar:** teste em `args_test.go`.
   - **Conferência (26/10):** o Viz nunca recebe contexto (declara só `command`); com o K01, passa a receber o `infra` quando o ambiente for pedido. O cloud dashboard (`cmd/cloud_painel_viz.go:~141`) passa `--context` explícito, e esse caminho não pode regredir.
-- [ ] **V03 · O relógio não faz LIST à toa**
+- [x] **V03 · O relógio não faz LIST à toa** ✓
   - **Problema:** todo tick lê a aba ativa (`ui/model.go:~496-497`) e descarta o resultado quando o watch cobre (`~527-532`). Na aba Pods, `GetPods` chama `fetchPodMetrics` (`monitor/client.go:~165-213`), que busca as métricas do cluster todo, nunca mostradas, e calculadas só com o primeiro contêiner.
   - **Fazer:** com a aba vigiada, o sinal de conexão vira `Discovery().ServerVersion()` ou o estado do watch; tirar `fetchPodMetrics` do `GetPods` (apagar, já que não aparece na tela).
   - **Verificar:** teste de que o tick não chama List em aba vigiada.
@@ -693,6 +693,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | V01 | Exclusão com propagação em segundo plano (Job não deixa pods órfãos) e precondição de UID guardado no alvo da ação | este commit |
 | 26/10/2026 | V06 | `LogsDoPod` avisa quando o log é da execução anterior (quadro e painel dizem), leitura com `LimitBytes` de 1 MiB e YAML sem `managedFields` nem last-applied | este commit |
+| 26/10/2026 | V03 | Com a aba vigiada o tique só sonda `/version` (`monitor.Sondador`) em vez de listar; `fetchPodMetrics` e `Pod.CPU`/`Memory` removidos | este commit |
 
 ### Fase 7 · Pendências
 

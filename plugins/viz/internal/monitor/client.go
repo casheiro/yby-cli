@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -141,60 +140,34 @@ func NovoK8sClient(c Conexao) (*K8sClient, error) {
 	return &K8sClient{clientset: clientset, restConfig: config, kubeconfig: c.Kubeconfig, contexto: contexto, namespace: namespace}, nil
 }
 
-// podMetricsResult representa a resposta da API de métricas de pods.
-type podMetricsResult struct {
-	Items []struct {
-		Metadata struct {
-			Name      string `json:"name"`
-			Namespace string `json:"namespace"`
-		} `json:"metadata"`
-		Containers []struct {
-			Usage struct {
-				CPU    string `json:"cpu"`
-				Memory string `json:"memory"`
-			} `json:"usage"`
-		} `json:"containers"`
-	} `json:"items"`
+// Sondador confirma que o cluster responde sem listar nada: é o sinal de
+// conexão do relógio nas abas cuja lista vem do watch.
+type Sondador interface {
+	// Sondar pede a versão do servidor; o erro é o da conexão.
+	Sondar() error
 }
 
-// podMetricsKey gera uma chave única para identificar um pod nas métricas.
-func podMetricsKey(namespace, name string) string {
-	return namespace + "/" + name
-}
+var (
+	_ Sondador = (*K8sClient)(nil)
+	_ Sondador = (*RetryClient)(nil)
+)
 
-// fetchPodMetrics busca métricas de CPU e memória do metrics-server.
-// Retorna um mapa de "namespace/name" -> {cpu, memory}. Falha silenciosamente.
-func (c *K8sClient) fetchPodMetrics() map[string][2]string {
-	result := make(map[string][2]string)
+// prazoDaSonda limita a espera da sonda: cluster que não responde vira erro.
+const prazoDaSonda = 10 * time.Second
 
+// Sondar faz GET /version, a leitura mais barata do servidor. Sem REST (o
+// clientset falso dos testes), não há o que sondar.
+func (c *K8sClient) Sondar() error {
 	rc := c.clientset.Discovery().RESTClient()
 	if rc == nil {
-		return result // client sem REST (o falso dos testes)
+		return nil
 	}
-	data, err := rc.
-		Get().
-		AbsPath("/apis/metrics.k8s.io/v1beta1/pods").
-		DoRaw(context.Background())
-	if err != nil {
-		return result // metrics-server indisponível
+	ctx, cancelar := context.WithTimeout(context.Background(), prazoDaSonda)
+	defer cancelar()
+	if _, err := rc.Get().AbsPath("/version").DoRaw(ctx); err != nil {
+		return fmt.Errorf("falha ao sondar o cluster: %w", err)
 	}
-
-	var metrics podMetricsResult
-	if err := json.Unmarshal(data, &metrics); err != nil {
-		return result
-	}
-
-	for _, item := range metrics.Items {
-		var totalCPU, totalMem string
-		if len(item.Containers) > 0 {
-			totalCPU = item.Containers[0].Usage.CPU
-			totalMem = item.Containers[0].Usage.Memory
-		}
-		key := podMetricsKey(item.Metadata.Namespace, item.Metadata.Name)
-		result[key] = [2]string{totalCPU, totalMem}
-	}
-
-	return result
+	return nil
 }
 
 // GetPods lista pods com filtros opcionais de namespace e label.
@@ -209,26 +182,21 @@ func (c *K8sClient) GetPods(filter ListFilter) ([]Pod, error) {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
 
-	// Buscar métricas (fallback graceful se metrics-server indisponível)
-	metrics := c.fetchPodMetrics()
-
 	var pods []Pod
 	for i := range list.Items {
-		pods = append(pods, podDeK8s(&list.Items[i], metrics))
+		pods = append(pods, podDeK8s(&list.Items[i]))
 	}
 	return pods, nil
 }
 
 // podDeK8s converte o pod da API: estado como o kubectl mostra, contêineres
-// prontos, reinícios, nó, IP e as métricas, quando o metrics-server responde.
-func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
+// prontos, reinícios, nó e IP.
+func podDeK8s(p *corev1.Pod) Pod {
 	pod := Pod{
 		Name:       p.Name,
 		Namespace:  p.Namespace,
 		UID:        string(p.UID),
 		Status:     statusDoPod(p),
-		CPU:        "N/A",
-		Memory:     "N/A",
 		Containers: int32(len(p.Spec.Containers)),
 		No:         p.Spec.NodeName,
 		IP:         p.Status.PodIP,
@@ -239,14 +207,6 @@ func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
 		Dono:       donoDoPod(p),
 		Recursos:   recursosDe(p.Spec.Containers),
 		Conteiner:  conteinerDoLog(p),
-	}
-	if m, ok := metrics[podMetricsKey(p.Namespace, p.Name)]; ok {
-		if m[0] != "" {
-			pod.CPU = m[0]
-		}
-		if m[1] != "" {
-			pod.Memory = m[1]
-		}
 	}
 	for _, c := range p.Status.ContainerStatuses {
 		if c.Ready {

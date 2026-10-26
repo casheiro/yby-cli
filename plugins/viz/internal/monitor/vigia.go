@@ -283,7 +283,7 @@ func listaDoCache(kind string, objs []any) any {
 	sort.Slice(objs, func(i, j int) bool { return chaves[objs[i]] < chaves[objs[j]] })
 	switch kind {
 	case "pod":
-		return converter(objs, func(p *corev1.Pod) Pod { return podDeK8s(p, nil) })
+		return converter(objs, func(p *corev1.Pod) Pod { return podDeK8s(p) })
 	case "deployment":
 		return converter(objs, deploymentDeK8s)
 	case "statefulset":

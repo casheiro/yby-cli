@@ -10,8 +10,6 @@ type Pod struct {
 	// Status é o estado como o kubectl mostra: o motivo do contêiner quando há
 	// um (CrashLoopBackOff, Completed, OOMKilled), senão a fase do pod.
 	Status     string
-	CPU        string
-	Memory     string
 	Prontos    int32 // contêineres prontos
 	Containers int32 // contêineres no pod
 	Reinicios  int32 // soma dos reinícios dos contêineres
