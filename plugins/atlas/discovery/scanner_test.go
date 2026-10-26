@@ -623,3 +623,126 @@ func TestScan_DetectsHelmRelations(t *testing.T) {
 		t.Errorf("esperado relação 'deploys' entre charts Helm, relações encontradas: %+v", bp.Relations)
 	}
 }
+
+// escreverArquivos grava os arquivos (caminho relativo com '/') sob dir.
+func escreverArquivos(t *testing.T, dir string, arquivos map[string]string) {
+	t.Helper()
+	for nome, conteudo := range arquivos {
+		caminho := filepath.Join(dir, filepath.FromSlash(nome))
+		if err := os.MkdirAll(filepath.Dir(caminho), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(caminho, []byte(conteudo), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// contarRelacoes devolve quantas relações batem com (from, to, tipo).
+func contarRelacoes(rels []Relation, from, to, tipo string) int {
+	n := 0
+	for _, r := range rels {
+		if r.From == from && r.To == to && r.Type == tipo {
+			n++
+		}
+	}
+	return n
+}
+
+func TestScan_DockerfileNaoCasaPontoNemPrefixo(t *testing.T) {
+	tmpDir := t.TempDir()
+	escreverArquivos(t, tmpDir, map[string]string{
+		"go.mod":                   "module github.com/x/mono\n\ngo 1.26\n",
+		"services/api/go.mod":      "module github.com/x/mono/services/api\n\ngo 1.26\n",
+		"services/api/Dockerfile":  "FROM golang:1.26\nCOPY . .\n",
+		"apigateway/go.mod":        "module github.com/x/mono/apigateway\n\ngo 1.26\n",
+		"deploy/Dockerfile":        "FROM golang:1.26\nCOPY apigateway/ .\n",
+		"api/go.mod":               "module github.com/x/mono/api\n\ngo 1.26\n",
+		"services/go.mod":          "module github.com/x/mono/services\n\ngo 1.26\n",
+		"services/api2/go.mod":     "module github.com/x/mono/services/api2\n\ngo 1.26\n",
+		"services/api2/Dockerfile": "FROM golang:1.26\nCOPY . .\n",
+		"tools/Dockerfile":         "FROM golang:1.26\nCOPY services/api2/x .\n",
+	})
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	if contarRelacoes(bp.Relations, "services/api", ".", "builds") != 0 {
+		t.Errorf("COPY . . não pode ligar o componente à raiz: %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "deploy", "api", "builds") != 0 {
+		t.Errorf("'api' não pode casar com 'apigateway': %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "services/api2", "services", "builds") != 0 {
+		t.Errorf("COPY . . não pode ligar o componente ao pai: %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "tools", "services", "builds") != 0 ||
+		contarRelacoes(bp.Relations, "tools", "services/api2", "builds") != 1 {
+		t.Errorf("a origem liga só ao componente mais específico: %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "deploy", "apigateway", "builds") != 1 {
+		t.Errorf("esperada uma relação deploy -> apigateway: %+v", bp.Relations)
+	}
+}
+
+func TestScan_ImportsGoNaoEntraEmPastasIgnoradas(t *testing.T) {
+	tmpDir := t.TempDir()
+	imp := "package p\n\nimport \"github.com/x/mono/lib\"\n"
+	escreverArquivos(t, tmpDir, map[string]string{
+		"go.mod":                "module github.com/x/mono\n\ngo 1.26\n",
+		"lib/go.mod":            "module github.com/x/mono/lib\n\ngo 1.26\n",
+		"node_modules/pkg/p.go": imp,
+		"dist/d.go":             imp,
+		"meu_ignorado/i.go":     imp,
+	})
+
+	ignores := append(append([]string(nil), IgnoradosPadrao...), "meu_ignorado")
+	bp, err := Scan(tmpDir, ignores)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if n := contarRelacoes(bp.Relations, ".", "lib", "imports"); n != 0 {
+		t.Errorf("imports de pastas ignoradas não geram relação: %+v", bp.Relations)
+	}
+
+	// Controle positivo: o mesmo import em pasta não ignorada gera a relação.
+	escreverArquivos(t, tmpDir, map[string]string{"src/s.go": imp})
+	bp, err = Scan(tmpDir, ignores)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if n := contarRelacoes(bp.Relations, ".", "lib", "imports"); n != 1 {
+		t.Errorf("controle positivo: esperada 1 relação . -> lib, veio %d: %+v", n, bp.Relations)
+	}
+}
+
+func TestScan_ImportsGoDeduplicadosEComFronteira(t *testing.T) {
+	tmpDir := t.TempDir()
+	escreverArquivos(t, tmpDir, map[string]string{
+		"go.mod":      "module github.com/x/mono\n\ngo 1.26\n",
+		"lib/go.mod":  "module github.com/x/mono/lib\n\ngo 1.26\n",
+		"lib2/go.mod": "module github.com/x/mono/lib2\n\ngo 1.26\n",
+		"app/go.mod":  "module github.com/x/mono/app\n\ngo 1.26\n",
+		"app/main.go": "package main\n\nimport (\n\t\"github.com/x/mono/lib/a\"\n\t\"github.com/x/mono/lib/b\"\n)\n",
+		// subpastas e import de linha única
+		"app/cmd/serve/serve.go":  "package serve\n\nimport \"github.com/x/mono/lib2\"\n",
+		"app/internal/dep/dep.go": "package dep\n\nimport l \"github.com/x/mono/lib/c\"\n",
+	})
+
+	bp, err := Scan(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	if n := contarRelacoes(bp.Relations, "app", "lib", "imports"); n != 1 {
+		t.Errorf("esperada 1 relação app -> lib (deduplicada), veio %d: %+v", n, bp.Relations)
+	}
+	if n := contarRelacoes(bp.Relations, "app", "lib2", "imports"); n != 1 {
+		t.Errorf("import de linha única em subpasta deveria gerar app -> lib2, veio %d: %+v", n, bp.Relations)
+	}
+	if n := contarRelacoes(bp.Relations, "app", ".", "imports"); n != 0 {
+		t.Errorf("o módulo mais longo vence: não pode haver app -> '.': %+v", bp.Relations)
+	}
+}

@@ -443,7 +443,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 > **Conferência (26/10):** os analyzers ficam em `plugins/atlas/discovery/analyzers/*.go`, e não em `plugins/atlas/analysis/` (lá estão só `diagram.go`, `cycles.go`, `metrics.go` e `diff.go`). O A12 (ordem determinística e goldens) e o A11 (`ToSlash`, caminhos relativos) vêm primeiro, porque os outros verificam por golden e mexem nos mesmos IDs. O A10 precisa reescrever o prompt `AtlasRefine` para manter os IDs do rascunho, senão quase toda resposta válida seria recusada.
 
-- [ ] **A01 · Relações falsas e duplicadas no blueprint**
+- [x] **A01 · Relações falsas e duplicadas no blueprint**
   - **Problema:**
     - `detectDockerfileRelations` faz `strings.Contains(line, relPath)` (`plugins/atlas/discovery/scanner.go:~235-247`): o `.` casa com qualquer COPY e "api" casa com "apigateway";
     - `detectGoImportRelations` cria uma relação por pacote, sem deduplicar, e casa por `HasPrefix` sem fronteira (`~370-387`), lendo só a pasta raiz e só blocos `import (`.
@@ -690,6 +690,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A11 | `relSlash` (ToSlash) em todos os analyzers e no scanner, Kustomize/Helm com `path`, e o blueprint sai com caminhos relativos (`Component.Path`, `Roots=["."]`, `RootPath="."`) | este commit |
 | 26/10/2026 | A05 | Service passa a selecionar só workloads (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob) pelos labels do template do pod e no mesmo namespace | este commit |
 | 26/10/2026 | A09 | Varredura testa o caminho relativo à raiz, ignora também dist/build/target/.venv/.next/.terraform/coverage/__pycache__, respeita o .gitignore via `git ls-files` (com fallback sem git), lê cada YAML uma vez e reconhece SOPS com CRLF | este commit |
+| 26/10/2026 | A01 | Relações do blueprint sem falsos positivos: COPY casa por segmento e nunca a raiz, imports Go pelo módulo mais longo com fronteira `/` (linha única e subpastas via go/parser), relações deduplicadas por (from, to, type) | este commit |
 
 ### Fase 6 · Viz
 
