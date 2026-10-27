@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"context"
+	"reflect"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -191,5 +194,127 @@ func TestVigia_RetryRepassa(t *testing.T) {
 	}
 	if ch := NewRetryClient(&FakeClient{}).Observar(ctx, "payments"); ch != nil {
 		t.Fatal("sem watch no client de dentro, o canal é nil")
+	}
+}
+
+// ultimaAplicada é a annotation que o kubectl apply grava com o manifesto inteiro.
+const ultimaAplicada = "kubectl.kubernetes.io/last-applied-configuration"
+
+// TestParaOCache_ConfigMap: o ConfigMap entra no cache sem os valores, e a aba
+// mostra as mesmas chaves e o mesmo tamanho de antes. O transform pode rodar de
+// novo sobre o objeto já enxuto sem zerar o tamanho.
+func TestParaOCache_ConfigMap(t *testing.T) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "payments", Annotations: map[string]string{
+			ultimaAplicada: strings.Repeat("{}", 512), "dono": "time-a",
+		}},
+		Data:       map[string]string{"a": strings.Repeat("x", 2048)},
+		BinaryData: map[string][]byte{"b": []byte("0123456789")},
+	}
+	esperado := configMapDeK8s(cm.DeepCopy())
+	if esperado.Keys != 2 || esperado.DataSize != "2.0Ki" {
+		t.Fatalf("conversão do objeto inteiro: %+v", esperado)
+	}
+	for vez := 1; vez <= 2; vez++ {
+		o, err := paraOCache(cm)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cm = o.(*corev1.ConfigMap)
+		if cm.Data["a"] != "" || cm.BinaryData["b"] != nil {
+			t.Fatalf("vez %d: o cache guardou os valores: %q %q", vez, cm.Data["a"], cm.BinaryData["b"])
+		}
+		if _, ok := cm.Annotations[ultimaAplicada]; ok || cm.Annotations["dono"] != "time-a" {
+			t.Fatalf("vez %d: annotations: %v", vez, cm.Annotations)
+		}
+		if got := configMapDeK8s(cm); !reflect.DeepEqual(got, esperado) {
+			t.Fatalf("vez %d: a aba mudou:\n%+v\n%+v", vez, got, esperado)
+		}
+	}
+}
+
+// TestParaOCache_Pod: o Pod entra no cache sem env, volumes, args e command
+// (nem nos de init), e a conversão dá o mesmo pod de antes.
+func TestParaOCache_Pod(t *testing.T) {
+	conteiner := func(nome string) corev1.Container {
+		return corev1.Container{
+			Name: nome, Image: "registry.local/" + nome + ":1",
+			Command: []string{"/bin/app"}, Args: []string{"--porta", "8080"},
+			Env:          []corev1.EnvVar{{Name: "SENHA", Value: "x"}},
+			EnvFrom:      []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "app"}}}},
+			VolumeMounts: []corev1.VolumeMount{{Name: "dados", MountPath: "/dados"}},
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi"),
+			}},
+		}
+	}
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "web-1", Namespace: "payments", Labels: map[string]string{"pod-template-hash": "abc"},
+			Annotations:     map[string]string{ultimaAplicada: "{}", "kubectl.kubernetes.io/default-container": "app"},
+			ManagedFields:   []metav1.ManagedFieldsEntry{{Manager: "kubectl"}},
+			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "web-abc", Controller: new(true)}},
+		},
+		Spec: corev1.PodSpec{
+			NodeName:       "no-1",
+			InitContainers: []corev1.Container{conteiner("migra")},
+			Containers:     []corev1.Container{conteiner("app"), conteiner("istio-proxy")},
+			Volumes:        []corev1.Volume{{Name: "dados", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1", ContainerStatuses: []corev1.ContainerStatus{
+			{Name: "app", Ready: true, RestartCount: 2, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+		}},
+	}
+	esperado := podDeK8s(p.DeepCopy())
+	o, err := paraOCache(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = o.(*corev1.Pod)
+	if p.Spec.Volumes != nil || p.ManagedFields != nil {
+		t.Fatalf("volumes ou managedFields no cache: %+v", p)
+	}
+	if _, ok := p.Annotations[ultimaAplicada]; ok {
+		t.Fatal("a last-applied ficou no cache")
+	}
+	for _, c := range append(append([]corev1.Container(nil), p.Spec.InitContainers...), p.Spec.Containers...) {
+		if c.Env != nil || c.EnvFrom != nil || c.Command != nil || c.Args != nil || c.VolumeMounts != nil {
+			t.Fatalf("o contêiner %s ficou inteiro no cache: %+v", c.Name, c)
+		}
+	}
+	if got := podDeK8s(p); !reflect.DeepEqual(got, esperado) {
+		t.Fatalf("a conversão mudou:\n%+v\n%+v", got, esperado)
+	}
+}
+
+// TestParaOCache_SoALastApplied: nos outros tipos sai a last-applied (e as
+// annotations, se só havia ela) e os managedFields; o resto fica.
+func TestParaOCache_SoALastApplied(t *testing.T) {
+	d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name: "api", Namespace: "payments", Annotations: map[string]string{ultimaAplicada: "{}"},
+		ManagedFields: []metav1.ManagedFieldsEntry{{Manager: "kubectl"}}, Labels: map[string]string{"app": "api"},
+	}}
+	o, err := paraOCache(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := o.(*appsv1.Deployment); d.Annotations != nil || d.ManagedFields != nil || d.Labels["app"] != "api" {
+		t.Fatalf("deployment no cache: %+v", d.ObjectMeta)
+	}
+}
+
+// TestVigia_ConfigMapPeloCache: pelo watch, a aba ConfigMaps mostra as chaves
+// e o tamanho de quando o objeto chegou inteiro.
+func TestVigia_ConfigMapPeloCache(t *testing.T) {
+	c, _, _ := vigiado(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "payments"},
+		Data:       map[string]string{"b": strings.Repeat("x", 2048), "a": "1"},
+	})
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+	vistos := ultimos(t, c.Observar(ctx, "payments"), map[string]Retrato{}, todosOsTipos)
+	cms := vistos["configmap"].Lista.([]ConfigMap)
+	if len(cms) != 1 || cms[0].Keys != 2 || cms[0].DataSize != "2.0Ki" || !reflect.DeepEqual(cms[0].Chaves, []string{"a", "b"}) {
+		t.Fatalf("configmaps pelo watch: %+v", cms)
 	}
 }

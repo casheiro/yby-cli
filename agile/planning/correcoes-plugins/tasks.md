@@ -553,20 +553,20 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 6 · Viz
 
-- [ ] **V01 · Exclusão com propagação e UID** ✓
+- [x] **V01 · Exclusão com propagação e UID** ✓
   - **Problema:** `plugins/viz/internal/monitor/actions.go:~29-41` usa `metav1.DeleteOptions{}` em tudo. Job em `batch/v1` deixa os pods órfãos, e a tela promete "O Job e os pods dele somem" (`ui/actions.go:~571`). O alvo é guardado só pelo nome (`ui/actions.go:~108`), então um pod de StatefulSet recriado durante a confirmação é apagado.
   - **Fazer:** `PropagationPolicy: Background` e `Preconditions{UID}`, guardando o UID no alvo (os tipos do monitor ainda não guardam).
   - **Verificar:** teste com reactor do fake conferindo as opções.
-- [ ] **V02 · Viz respeita o ambiente do core** ✓
+- [x] **V02 · Viz respeita o ambiente do core** ✓
   - **Problema:** `plugins/viz/main.go:~95` usa só `req.Args` e descarta `req.Context`, onde vem `infra.kube_context`/`infra.namespace` do ambiente (`-c`/`YBY_ENV`). `yby -c staging viz` abre no current-context.
   - **Fazer:** sem `--context`/`-n` explícitos, usar os do pedido. Contexto inexistente → `ContextoInexistenteError`.
   - **Verificar:** teste em `args_test.go`.
   - **Conferência (26/10):** o Viz nunca recebe contexto (declara só `command`); com o K01, passa a receber o `infra` quando o ambiente for pedido. O cloud dashboard (`cmd/cloud_painel_viz.go:~141`) passa `--context` explícito, e esse caminho não pode regredir.
-- [ ] **V03 · O relógio não faz LIST à toa**
+- [x] **V03 · O relógio não faz LIST à toa** ✓
   - **Problema:** todo tick lê a aba ativa (`ui/model.go:~496-497`) e descarta o resultado quando o watch cobre (`~527-532`). Na aba Pods, `GetPods` chama `fetchPodMetrics` (`monitor/client.go:~165-213`), que busca as métricas do cluster todo, nunca mostradas, e calculadas só com o primeiro contêiner.
   - **Fazer:** com a aba vigiada, o sinal de conexão vira `Discovery().ServerVersion()` ou o estado do watch; tirar `fetchPodMetrics` do `GetPods` (apagar, já que não aparece na tela).
   - **Verificar:** teste de que o tick não chama List em aba vigiada.
-- [ ] **V04 · Memória dos informers**
+- [x] **V04 · Memória dos informers**
   - **Problema:** o transform só tira o `managedFields` (`monitor/vigia.go:~165-170`). ConfigMap inteiro (a aba só mostra quantas chaves e o tamanho), annotation `last-applied-configuration`, spec cheio dos pods e todos os Events ficam em memória.
   - **Fazer:**
     - transform por tipo: ConfigMap sem valores (guardando contagem e tamanho), sem last-applied, Pod sem env/volumes/args/command;
@@ -574,7 +574,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - medir com benchmark antes e depois.
   - **Verificar:** benchmark (V07) e testes da aba ConfigMaps.
   - **Conferência (26/10):** a contagem da aba Eventos tem de continuar exata, como o CLAUDE.md promete. Se os benchmarks do V07 não mostrarem problema de memória nos Events, não limitar; o transform não descarta objetos. O tamanho do ConfigMap é calculado no transform, antes de esvaziar `Data`.
-- [ ] **V05 · Leituras com prazo; retry sem erro permanente; mensagem certa para falta de permissão**
+- [x] **V05 · Leituras com prazo; retry sem erro permanente; mensagem certa para falta de permissão**
   - **Problema:**
     - os `Get*` usam `context.Background()` (`monitor/client.go`) sem timeout no `rest.Config`, e o tick só se reagenda quando a leitura volta (`ui/model.go:~543-544`);
     - o `RetryClient` repete Forbidden/NotFound 3 vezes (`retry_client.go:~45-52`);
@@ -585,11 +585,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Forbidden → "sem permissão para listar X em todos os namespaces" com a dica "n escolhe um namespace", sem reconectar;
     - erro de credencial exec → dica `yby cloud refresh`.
   - **Verificar:** testes.
-- [ ] **V06 · Logs e YAML mostram o que dizem**
+- [x] **V06 · Logs e YAML mostram o que dizem** ✓
   - **Problema:** `LogsDoPod` cai calado no log anterior (`monitor/detalhe.go:~86-93`) enquanto o quadro diz "últimas 100 linhas do log" (`ui/quadro.go:~235`). Não há `LimitBytes` (`detalhe.go:~106`). O YAML vem com `managedFields` (`monitor/yaml.go:~58`).
   - **Fazer:** dizer "execução anterior" quando for; `LimitBytes` ~1 MiB; tirar `managedFields` e last-applied do YAML.
   - **Verificar:** testes e goldens.
-- [ ] **V07 · Render e watch em O(N) por quadro**
+- [x] **V07 · Render e watch em O(N) por quadro**
   - **Problema:** `View` monta `itensDaAba` para as 9 abas e várias vezes para a ativa (`ui/view.go:~36,108-120`, `model.go:~208`, `teclas.go:~60`). `Tabela` desenha todas as linhas e depois corta (`view.go:~219-226`). O watch reconverte a lista inteira a cada lote (`vigia.go:~249-304`). O efeito é **hipótese**: medir antes.
   - **Fazer:** benchmarks de `View` e `listaDoCache` com 10k pods e 20k eventos. Se confirmar: cache de `itensDaAba` por versão e filtros, só a janela visível desenhada, conversão por chave no handler.
   - **Verificar:** benchmark antes e depois.
@@ -707,6 +707,13 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | V01 | Exclusão com propagação em segundo plano (Job não deixa pods órfãos) e precondição de UID guardado no alvo da ação | este commit |
+| 26/10/2026 | V06 | `LogsDoPod` avisa quando o log é da execução anterior (quadro e painel dizem), leitura com `LimitBytes` de 1 MiB e YAML sem `managedFields` nem last-applied | este commit |
+| 26/10/2026 | V03 | Com a aba vigiada o tique só sonda `/version` (`monitor.Sondador`) em vez de listar; `fetchPodMetrics` e `Pod.CPU`/`Memory` removidos | este commit |
+| 26/10/2026 | V05 | Listas com prazo de 10 s por contexto (sem `rest.Config.Timeout`), `RetryClient` sem repetir Forbidden/Unauthorized/NotFound/Invalid/credencial exec/prazo, aba negada com "sem permissão para listar X …" sem reconectar e sem LIST no relógio, e dica `yby cloud refresh` para a credencial exec | este commit |
+| 26/10/2026 | V07 | Benchmarks com 10 mil pods e 20 mil eventos confirmaram a hipótese: `itensDaAba` em cache (chave: a lista, os filtros, o segundo e o modo visual), a tabela montada uma vez por lista e só a janela desenhada (`yui.TabelaJanela`) levam a `View` de ~800 ms para ~7 ms nos pods e de ~1,3 s para ~10 ms nos eventos (tecla + quadro de ~1,4 s para ~7 ms, lote + quadro de ~1,1 s para ~55 ms), e `listaDoCache` ordena pela chave calculada uma vez e não copia os eventos (pods ~30→13 ms, eventos ~55→22 ms e 32→4,7 MB por lote); a conversão por chave no handler é hipótese não confirmada (a conversão é ~10% do lote) e ficou de fora | este commit |
+| 26/10/2026 | V04 | Transform por tipo no cache do watch (`paraOCache`): sem last-applied em todo tipo, ConfigMap sem os valores (chaves ficam, tamanho calculado antes numa anotação só do cache: 10 mil ConfigMaps de ~98 MB para ~10 MB) e Pod sem env, volumes, args e command; os Events não foram limitados (20 mil ocupam ~15 MB, e a contagem da aba segue exata) | este commit |
+| 26/10/2026 | V02 | Sem `--context`, `--kubeconfig` e `-n`, o Viz abre no kube_config, no kube_context e no namespace do ambiente que o core manda no pedido (`yby -c staging viz` ou `YBY_ENV`); `--context`/`--kubeconfig` trocam o cluster inteiro, `-n` só o namespace, e o kube_context que o kubeconfig não tem sai como ERR_CONFIG antes da TUI | este commit |
 
 ### Fase 7 · Pendências
 

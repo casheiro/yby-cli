@@ -184,7 +184,7 @@ func TestModel_Update_Scroll(t *testing.T) {
 	model.height = 10
 	for i := 0; i < 20; i++ {
 		model.pods = append(model.pods, monitor.Pod{
-			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi",
+			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default",
 		})
 	}
 
@@ -230,7 +230,7 @@ func TestModel_Update_TabResetScroll(t *testing.T) {
 	model.height = 10
 	for i := 0; i < 20; i++ {
 		model.pods = append(model.pods, monitor.Pod{
-			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi",
+			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default",
 		})
 	}
 
@@ -344,7 +344,7 @@ func TestModel_View_Pods(t *testing.T) {
 	client := &MockClient{}
 	model := NewModel(client)
 	model.pods = []monitor.Pod{
-		{Name: "nginx-pod", Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi"},
+		{Name: "nginx-pod", Status: "Running", Namespace: "default"},
 	}
 
 	view := comJanela(model).View()
@@ -658,7 +658,7 @@ func TestModel_Selection_HomeEnd(t *testing.T) {
 	model := NewModel(client)
 	for i := 0; i < 10; i++ {
 		model.pods = append(model.pods, monitor.Pod{
-			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi",
+			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default",
 		})
 	}
 
@@ -682,8 +682,8 @@ func TestModel_Selection_NoOverflow(t *testing.T) {
 	client := &MockClient{}
 	model := NewModel(client)
 	model.pods = []monitor.Pod{
-		{Name: "pod-0", Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi"},
-		{Name: "pod-1", Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi"},
+		{Name: "pod-0", Status: "Running", Namespace: "default"},
+		{Name: "pod-1", Status: "Running", Namespace: "default"},
 	}
 
 	// Mover até o fim
@@ -706,7 +706,7 @@ func TestModel_Selection_AutoScroll(t *testing.T) {
 	model.height = 8 // visibleHeight = 8-5 = 3
 	for i := 0; i < 10; i++ {
 		model.pods = append(model.pods, monitor.Pod{
-			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default", CPU: "10m", Memory: "64Mi",
+			Name: fmt.Sprintf("pod-%d", i), Status: "Running", Namespace: "default",
 		})
 	}
 

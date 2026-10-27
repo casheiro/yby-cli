@@ -78,20 +78,21 @@ func executar(w io.Writer) int {
 }
 
 func run() error {
-	cmd := novoComando(abrirTUI)
-
 	// O core manda o pedido pela env YBY_PLUGIN_REQUEST (yby viz, RunInteractive), com os
-	// args que vieram depois de "viz"; o manifesto ele pede pelo stdin. Sem pedido, é o
-	// binário chamado direto, com os args da linha de comando.
+	// args que vieram depois de "viz" e, quando o ambiente foi pedido (yby -c staging viz
+	// ou YBY_ENV), o infra dele no contexto; o manifesto ele pede pelo stdin. Sem pedido,
+	// é o binário chamado direto, com os args da linha de comando.
 	req, temPedido, err := pedidoDoCore(os.Getenv, os.Stdin)
 	if err != nil {
 		return err
 	}
+	cmd := novoComando(abrirTUI, monitor.Conexao{})
 	if temPedido {
 		switch req.Hook {
 		case "manifest":
 			return json.NewEncoder(os.Stdout).Encode(PluginResponse{Data: manifesto})
 		case "command":
+			cmd = novoComando(abrirTUI, conexaoDoAmbiente(req.Context))
 			cmd.SetArgs(req.Args)
 		default:
 			return nil
@@ -134,22 +135,46 @@ func pedidoDoCore(getenv func(string) string, stdin *os.File) (PluginRequest, bo
 	return req, false, nil
 }
 
+// conexaoDoAmbiente lê o infra do ambiente que o core manda no contexto do pedido: o
+// kubeconfig, o contexto e o namespace dele. Sem ambiente pedido, o core não manda
+// contexto, e a conexão sai vazia (o current-context do kubeconfig).
+func conexaoDoAmbiente(contexto map[string]interface{}) monitor.Conexao {
+	if contexto == nil {
+		return monitor.Conexao{}
+	}
+	var full plugin.PluginFullContext
+	b, err := json.Marshal(contexto)
+	if err != nil || json.Unmarshal(b, &full) != nil {
+		return monitor.Conexao{}
+	}
+	return monitor.Conexao{Kubeconfig: full.Infra.KubeConfig, Contexto: full.Infra.KubeContext, Namespace: full.Infra.Namespace}
+}
+
 // novoComando monta o yby viz: as flags escolhem o contexto e o namespace, e abrir
-// recebe a escolha.
-func novoComando(abrir func(monitor.Conexao) error) *cobra.Command {
+// recebe a escolha. Sem flags, vale doAmbiente (o ambiente pedido ao core). Escolher o
+// cluster pela flag (--context ou --kubeconfig) descarta o kubeconfig, o contexto e o
+// namespace do ambiente, que são do cluster dele; o -n troca só o namespace.
+func novoComando(abrir func(monitor.Conexao) error, doAmbiente monitor.Conexao) *cobra.Command {
 	var conexao monitor.Conexao
 	cmd := &cobra.Command{
 		Use:   "viz",
 		Short: "Yby Viz: observabilidade do cluster no terminal",
 		Long: "Observa o cluster no terminal, ao vivo: pods, deployments, statefulsets, serviços, " +
 			"nós, jobs, ingresses, configmaps e eventos.\n" +
-			"Abre no contexto atual do kubeconfig e no namespace dele; as flags escolhem outros.",
+			"Abre no contexto atual do kubeconfig e no namespace dele, ou no ambiente pedido ao yby " +
+			"(yby -c staging viz); as flags escolhem outros.",
 		Example: "  " + comandoViz + "\n" +
 			"  " + comandoViz + " --context k3d-yby-local --namespace kube-system",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		RunE: func(*cobra.Command, []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
+			if !c.Flags().Changed("context") && !c.Flags().Changed("kubeconfig") {
+				conexao.Kubeconfig, conexao.Contexto = doAmbiente.Kubeconfig, doAmbiente.Contexto
+				if !c.Flags().Changed("namespace") {
+					conexao.Namespace = doAmbiente.Namespace
+				}
+			}
 			return abrir(conexao)
 		},
 	}

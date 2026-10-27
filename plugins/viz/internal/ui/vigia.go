@@ -89,7 +89,8 @@ func (m Model) vigiada(tab ResourceTab) bool {
 
 // receberLote guarda as listas do lote e espera o próximo. A aba que o watch
 // não conseguiu listar sai do watch (a aba ativa volta ao relógio); sem
-// permissão (RBAC), ela também perde a lista e fica sem número.
+// permissão (RBAC), ela também perde a lista, fica sem número e o relógio não
+// a lista.
 func (m *Model) receberLote(msg loteMsg) tea.Cmd {
 	if msg.id != m.vigia.id || !msg.aberto {
 		return nil // lote de um watch já parado, ou o fim do canal
@@ -104,7 +105,7 @@ func (m *Model) receberLote(msg loteMsg) tea.Cmd {
 			if r.Err != nil {
 				m.vigiadas &^= bit
 				if r.Negado {
-					m.esquecerAba(tab)
+					m.negar(tab, r.Err)
 				}
 				continue
 			}

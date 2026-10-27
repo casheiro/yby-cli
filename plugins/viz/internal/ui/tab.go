@@ -5,11 +5,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -173,15 +175,170 @@ func (d defAba) contar(n int) string {
 
 // itensDaAba devolve as linhas da aba com os filtros da tela (label, status e
 // busca por nome) e na ordem da tela: é a única fonte da lista visível, usada
-// pelo desenho, pela contagem, pela seleção e pelas ações.
+// pelo desenho, pela contagem, pela seleção e pelas ações. A lista sai do
+// cache enquanto nada de que ela depende mudou; quem a recebe só a lê.
 func (m Model) itensDaAba(tab ResourceTab) []itemLista {
-	return m.filtrarEOrdenar(tab, abas[tab].itens(m))
+	if m.cache == nil {
+		return m.filtrarEOrdenar(tab, abas[tab].itens(m))
+	}
+	chave, momento := m.chaveDosItens(tab), m.momentoDosItens()
+	if itens, ok := m.cache.ler(tab, chave, &momento); ok {
+		return itens
+	}
+	itens := m.filtrarEOrdenar(tab, abas[tab].itens(m))
+	m.cache.guardar(tab, chave, momento, itens)
+	return itens
 }
+
+// contagemDaAba é o número de linhas da lista da aba (o da aba e o do "N de
+// M"). Ele não depende da hora nem do modo visual: a lista guardada serve
+// mesmo quando as idades dela já ficaram velhas.
+func (m Model) contagemDaAba(tab ResourceTab) int {
+	if m.cache != nil {
+		if itens, ok := m.cache.ler(tab, m.chaveDosItens(tab), nil); ok {
+			return len(itens)
+		}
+	}
+	return len(m.itensDaAba(tab))
+}
+
+// tamanhoDaFonte é quantos recursos a aba tem antes dos filtros da tela.
+func (m Model) tamanhoDaFonte(tab ResourceTab) int {
+	_, n := m.fonteDaAba(tab)
+	return n
+}
+
+// cacheDeItens guarda a última lista de cada aba. Um quadro pede a mesma lista
+// várias vezes (a contagem das abas, a tabela, o painel, a legenda), e montá-la
+// custa caro num cluster grande: com 10 mil pods, cada montagem passa de 50 ms.
+// O ponteiro é dividido entre as cópias do Model que o Bubble Tea faz a cada
+// Update; a chave leva tudo de que a lista depende, então uma cópia nunca
+// recebe a lista de outra.
+type cacheDeItens struct {
+	mu     sync.Mutex
+	abas   [tabCount]itensGuardados
+	tabela tabelaGuardada // a última tabela desenhada (tabelaDaAba)
+}
+
+// tabelaGuardada são as colunas e linhas que tabelaDaAba montou para uma lista
+// guardada: elas só mudam com a lista, a largura ou a coluna de namespace.
+type tabelaGuardada struct {
+	ok      bool
+	tab     ResourceTab
+	itens   *itemLista // o primeiro item da lista guardada: uma lista nova é outro vetor
+	n       int
+	largura int
+	todosNS bool
+	colunas []yui.Coluna
+	linhas  []yui.Linha
+}
+
+// chaveDosItens é o que decide quais linhas a lista tem: a lista da aba e os
+// filtros da tela.
+type chaveDosItens struct {
+	fonte                any // &m.pods[0]…: uma lista nova é outro vetor (nil se vazia)
+	n                    int // o append no mesmo vetor muda só o tamanho
+	label, status, busca string
+}
+
+// momentoDosItens é o que muda as células e a ordem sem mudar quais linhas
+// entram: a hora (idades e reinício na última hora) e o modo visual (glifos e
+// cores do status).
+type momentoDosItens struct {
+	segundo int64
+	opcoes  yui.Opcoes
+	perfil  termenv.Profile
+	escuro  bool
+}
+
+// itensGuardados é a lista de uma aba e o que ela leva em conta.
+type itensGuardados struct {
+	ok      bool
+	chave   chaveDosItens
+	momento momentoDosItens
+	itens   []itemLista
+}
+
+// ler devolve a lista guardada da aba se ela vale para a chave (e para o
+// momento, quando dado).
+func (c *cacheDeItens) ler(tab ResourceTab, chave chaveDosItens, momento *momentoDosItens) ([]itemLista, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	g := c.abas[tab]
+	if !g.ok || g.chave != chave || (momento != nil && g.momento != *momento) {
+		return nil, false
+	}
+	return g.itens, true
+}
+
+// guardar troca a lista guardada da aba.
+func (c *cacheDeItens) guardar(tab ResourceTab, chave chaveDosItens, momento momentoDosItens, itens []itemLista) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.abas[tab] = itensGuardados{ok: true, chave: chave, momento: momento, itens: itens}
+}
+
+// chaveDosItens monta a chave da lista da aba. As listas do Model nunca mudam
+// no lugar: uma lista que chega é sempre outra fatia.
+func (m Model) chaveDosItens(tab ResourceTab) chaveDosItens {
+	fonte, n := m.fonteDaAba(tab)
+	return chaveDosItens{fonte: fonte, n: n, label: m.filter.LabelSelector, status: m.filter.StatusFilter, busca: m.filter.SearchQuery}
+}
+
+// momentoDosItens é a hora (ao segundo, a menor unidade das idades) e o modo
+// visual de agora.
+func (m Model) momentoDosItens() momentoDosItens {
+	return momentoDosItens{
+		segundo: m.agora().Unix(), opcoes: yui.Atual(),
+		perfil: lipgloss.ColorProfile(), escuro: lipgloss.HasDarkBackground(),
+	}
+}
+
+// fonteDaAba é o primeiro elemento e o tamanho da lista da aba.
+func (m Model) fonteDaAba(tab ResourceTab) (any, int) {
+	switch tab {
+	case TabPods:
+		return inicio(m.pods)
+	case TabDeployments:
+		return inicio(m.deployments)
+	case TabStatefulSets:
+		return inicio(m.statefulsets)
+	case TabServices:
+		return inicio(m.services)
+	case TabNodes:
+		return inicio(m.nodes)
+	case TabJobs:
+		return inicio(m.jobs)
+	case TabIngresses:
+		return inicio(m.ingresses)
+	case TabConfigMaps:
+		return inicio(m.configmaps)
+	case TabEvents:
+		return inicio(m.events)
+	}
+	return nil, 0
+}
+
+// inicio é o ponteiro para o primeiro elemento de s (nil se vazia) e o
+// tamanho dela. O ponteiro também mantém o vetor vivo enquanto está no cache:
+// outra lista não nasce no mesmo endereço.
+func inicio[T any](s []T) (any, int) {
+	if len(s) == 0 {
+		return nil, 0
+	}
+	return &s[0], len(s)
+}
+
+// aoFiltrar é avisado a cada filtrarEOrdenar (os testes contam as filtragens).
+var aoFiltrar func(tab ResourceTab)
 
 // filtrarEOrdenar aplica label, status (só nas abas em que ele vale) e busca
 // e ordena como a aba diz: problemas primeiro ou por nome (ordenação estável:
 // no empate vale a ordem da API); os eventos ficam na ordem do tempo.
 func (m Model) filtrarEOrdenar(tab ResourceTab, todos []itemLista) []itemLista {
+	if aoFiltrar != nil {
+		aoFiltrar(tab)
+	}
 	d := abas[tab]
 	busca := strings.ToLower(m.filter.SearchQuery)
 	var seletor labels.Selector
@@ -500,8 +657,31 @@ func itensEventos(m Model) []itemLista {
 // com todos os namespaces na tela.
 func (m Model) tabelaDaAba(tab ResourceTab, itens []itemLista) ([]yui.Coluna, []yui.Linha) {
 	d := abas[tab]
-	colunas := append([]yui.Coluna(nil), d.colunas...)
 	todosNS := m.filter.Namespace == "" && !d.semNamespace
+	largura := m.larguraDaLista()
+	if m.cache == nil || len(itens) == 0 {
+		return montarTabela(d, itens, todosNS, largura)
+	}
+	// Num cluster grande, montar e medir todas as linhas custa mais que desenhar a
+	// janela: a tabela da mesma lista guardada sai do cache.
+	c := m.cache
+	c.mu.Lock()
+	g := c.tabela
+	c.mu.Unlock()
+	if g.ok && g.tab == tab && g.itens == &itens[0] && g.n == len(itens) && g.largura == largura && g.todosNS == todosNS {
+		return g.colunas, g.linhas
+	}
+	colunas, linhas := montarTabela(d, itens, todosNS, largura)
+	c.mu.Lock()
+	c.tabela = tabelaGuardada{ok: true, tab: tab, itens: &itens[0], n: len(itens), largura: largura, todosNS: todosNS, colunas: colunas, linhas: linhas}
+	c.mu.Unlock()
+	return colunas, linhas
+}
+
+// montarTabela monta as colunas e as linhas da aba e tira as colunas que não
+// cabem na largura.
+func montarTabela(d defAba, itens []itemLista, todosNS bool, largura int) ([]yui.Coluna, []yui.Linha) {
+	colunas := append([]yui.Coluna(nil), d.colunas...)
 	if todosNS {
 		colunas = append(colunas, colunaNamespace)
 	}
@@ -516,7 +696,7 @@ func (m Model) tabelaDaAba(tab ResourceTab, itens []itemLista) ([]yui.Coluna, []
 		}
 		linhas[i] = yui.Linha{Celulas: celulas, Concluida: it.grupo == grupoConcluido}
 	}
-	return caberNaLargura(colunas, linhas, m.larguraDaLista())
+	return caberNaLargura(colunas, linhas, largura)
 }
 
 // espacoEntreColunas é o espaço que yui.Tabela põe entre as colunas.

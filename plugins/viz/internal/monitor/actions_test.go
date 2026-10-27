@@ -45,3 +45,31 @@ func TestEscalar_MandaAsReplicasPedidas(t *testing.T) {
 		}
 	}
 }
+
+// TestExcluir_MandaPropagacaoEUID: toda exclusão pede propagação em segundo
+// plano (o Job não pode deixar os pods órfãos) e, com UID, a precondição dele;
+// sem UID, nenhuma precondição.
+func TestExcluir_MandaPropagacaoEUID(t *testing.T) {
+	for _, kind := range []string{"pod", "deployment", "service", "statefulset", "job", "configmap", "ingress"} {
+		for _, uid := range []string{"", "u-123"} {
+			cs := fake.NewClientset()
+			var opcoes metav1.DeleteOptions
+			cs.PrependReactor("delete", "*", func(a k8stesting.Action) (bool, runtime.Object, error) {
+				opcoes = a.(k8stesting.DeleteAction).GetDeleteOptions()
+				return true, nil, nil
+			})
+			if err := DeleteResource(cs, kind, "x", "loja", uid); err != nil {
+				t.Fatalf("%s: %v", kind, err)
+			}
+			if opcoes.PropagationPolicy == nil || *opcoes.PropagationPolicy != metav1.DeletePropagationBackground {
+				t.Errorf("%s: propagação = %v, quero Background", kind, opcoes.PropagationPolicy)
+			}
+			switch {
+			case uid == "" && opcoes.Preconditions != nil:
+				t.Errorf("%s: sem UID não pode haver precondição: %+v", kind, opcoes.Preconditions)
+			case uid != "" && (opcoes.Preconditions == nil || opcoes.Preconditions.UID == nil || string(*opcoes.Preconditions.UID) != uid):
+				t.Errorf("%s: precondição = %+v, quero UID %s", kind, opcoes.Preconditions, uid)
+			}
+		}
+	}
+}

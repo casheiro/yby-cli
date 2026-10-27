@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	yui "github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -17,6 +18,7 @@ const (
 	textoAoVivo    = "ao vivo · 2 s"
 	todosOsNS      = "todos os namespaces"
 	dicaConexao    = "Confira se o cluster está no ar e se o kubeconfig (~/.kube/config ou KUBECONFIG) aponta para ele."
+	dicaCredencial = "O plugin de credencial do kubeconfig não entregou o token: renove-o com 'yby cloud refresh' e tecle r."
 	espacoContexto = "   "
 )
 
@@ -111,7 +113,7 @@ func (m Model) linhaAbas() (normais, compactas string) {
 	for t := ResourceTab(0); t < tabCount; t++ {
 		n := -1
 		if m.carregadas&(1<<uint(t)) != 0 {
-			n = len(m.itensDaAba(t))
+			n = m.contagemDaAba(t)
 		}
 		lista[t] = yui.Aba{Titulo: strconv.Itoa(int(t)+1) + " " + abas[t].titulo, Contagem: n}
 		curtas[t] = yui.Aba{Titulo: abas[t].titulo, Contagem: n}
@@ -147,7 +149,7 @@ func (m Model) linhaFiltros(itens []itemLista) string {
 	prefixo := s.TintaSuave.Render("ordem") + " " + s.Tinta.Render(abas[m.activeTab].ordem) + "   "
 	resto := m.width - lipgloss.Width(prefixo)
 	if chips := m.chips(); len(chips) > 0 {
-		total := len(abas[m.activeTab].itens(m)) // a lista inteira do namespace: os filtros são da tela
+		total := m.tamanhoDaFonte(m.activeTab) // a lista inteira do namespace: os filtros são da tela
 		return prefixo + yui.Filtros(chips, len(itens), total, resto)
 	}
 	// Sem espaço para tudo, a dica de busca sai antes do resumo.
@@ -213,17 +215,19 @@ func (m Model) corpoLista(itens []itemLista) string {
 	if m.err != nil {
 		return "\n" + m.estadoErro()
 	}
+	if err := m.negadas[m.activeTab]; err != nil {
+		return "\n" + m.estadoNegado(err)
+	}
 	if len(itens) == 0 {
 		return "\n" + m.listaVazia()
 	}
 	colunas, linhas := m.tabelaDaAba(m.activeTab, itens)
-	// A tabela inteira mede as colunas (a largura não muda ao rolar); a janela
-	// mostra o cabeçalho e as linhas a partir de scrollY.
-	tabela := strings.Split(yui.Tabela(colunas, linhas, m.selectedIndex, m.larguraDaLista()), "\n")
+	// A tabela inteira mede as colunas (a largura não muda ao rolar); só o
+	// cabeçalho e as linhas da janela, a partir de scrollY, são desenhados.
 	m.clampScroll(len(itens))
 	ini := m.scrollY
 	fim := min(len(itens), ini+m.linhasDeDados())
-	corpo := append(tabela[:1], tabela[1+ini:1+fim]...)
+	corpo := strings.Split(yui.TabelaJanela(colunas, linhas, m.selectedIndex, m.larguraDaLista(), ini, fim), "\n")
 	if ini > 0 || fim < len(itens) {
 		corpo = append(corpo, m.avisoRolagem(ini, len(itens)-fim))
 	}
@@ -268,19 +272,46 @@ func (m Model) listaVazia() string {
 	return yui.NovoEstadoVazio("nenhum "+d.singular+" "+onde, "").View()
 }
 
-// estadoErro mostra a falha de conexão, o erro e o que conferir.
+// estadoErro mostra a falha de conexão, o erro e o que conferir: a
+// credencial do plugin exec do kubeconfig ou o cluster e o kubeconfig.
 func (m Model) estadoErro() string {
-	s := yui.S()
 	dica := "q sai"
 	if m.client != nil {
 		dica = "r tenta de novo"
 	}
-	linhas := []string{yui.NovoEstadoErro("sem acesso ao cluster", dica).View(), ""}
-	for _, l := range strings.Split(ansi.Wrap(m.err.Error(), max(20, m.width), ""), "\n") {
-		linhas = append(linhas, s.TintaSuave.Render(l))
+	conferir := dicaConexao
+	if monitor.ErroDeCredencial(m.err) {
+		conferir = dicaCredencial
 	}
-	for _, l := range strings.Split(ansi.Wrap(dicaConexao, max(20, m.width), ""), "\n") {
-		linhas = append(linhas, s.TintaSuave.Render(l))
+	return m.estadoComErro(yui.NovoEstadoErro("sem acesso ao cluster", dica), m.err, conferir)
+}
+
+// estadoNegado mostra a aba que o RBAC não deixa listar: o que falta, onde e
+// o que tentar (outro namespace, quando o recurso é de namespace).
+func (m Model) estadoNegado(err error) string {
+	d := abas[m.activeTab]
+	onde, dica := "em "+m.filter.Namespace, "n troca o namespace"
+	switch {
+	case d.semNamespace:
+		onde, dica = "no cluster", "r tenta de novo"
+	case m.filter.Namespace == "":
+		onde, dica = "em "+todosOsNS, "n escolhe um namespace"
+	}
+	return m.estadoComErro(yui.NovoEstadoErro("sem permissão para listar "+d.plural+" "+onde, dica), err, "")
+}
+
+// estadoComErro é o estado de erro com o erro e o texto de apoio embaixo,
+// quebrados na largura da janela.
+func (m Model) estadoComErro(estado yui.Estado, err error, apoio string) string {
+	s := yui.S()
+	linhas := []string{estado.View(), ""}
+	for _, texto := range []string{err.Error(), apoio} {
+		if texto == "" {
+			continue
+		}
+		for _, l := range strings.Split(ansi.Wrap(texto, max(20, m.width), ""), "\n") {
+			linhas = append(linhas, s.TintaSuave.Render(l))
+		}
 	}
 	return strings.Join(linhas, "\n")
 }

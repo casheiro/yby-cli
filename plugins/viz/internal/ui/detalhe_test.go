@@ -19,6 +19,7 @@ type clienteComDetalhe struct {
 	clienteStaging
 	eventos  map[string][]monitor.Event // por "Kind/nome"
 	logs     map[string]string          // por pod
+	anterior map[string]bool            // por pod: o log é o da execução anterior
 	yaml     string
 	err      error
 	leituras []string
@@ -33,12 +34,12 @@ func (c *clienteComDetalhe) EventosDoObjeto(kind, nome, _ string, limite int) ([
 	return e, c.err
 }
 
-func (c *clienteComDetalhe) LogsDoPod(nome, _, conteiner string, _ int64) (string, error) {
+func (c *clienteComDetalhe) LogsDoPod(nome, _, conteiner string, _ int64) (string, bool, error) {
 	if conteiner != "" {
 		nome += "/" + conteiner // o contêiner só entra na anotação quando vem
 	}
 	c.leituras = append(c.leituras, "logs "+nome)
-	return c.logs[nome], c.err
+	return c.logs[nome], c.anterior[nome], c.err
 }
 
 func (c *clienteComDetalhe) YAMLDoRecurso(kind, nome, _ string) (string, error) {
@@ -144,6 +145,21 @@ func TestTelaQuadroDeLogs(t *testing.T) {
 		if !strings.Contains(tela, quer) {
 			t.Errorf("o quadro de logs deveria mostrar %q", quer)
 		}
+	}
+}
+
+// TestTelaQuadroDeLogs_anterior: com o log atual vazio, o quadro diz que o
+// texto é da execução anterior.
+func TestTelaQuadroDeLogs_anterior(t *testing.T) {
+	usarModo(t, modo{"escuro", yui.TemaEscuro, false, termenv.TrueColor})
+	c := clienteDetalheDaPrancha()
+	c.anterior = map[string]bool{"worker-5d8b6-q7tvn": true}
+	m := telaDaPranchaCom(t, c, 140, 32)
+	m, pedido := teclas(t, m, "l")
+	m, _ = atualizar(m, pedido())
+	tela := ansi.Strip(conferirTela(t, m, 140, 32))
+	if !strings.Contains(tela, "execução anterior: últimas 100 linhas do log") {
+		t.Error("o quadro deveria dizer que o log é da execução anterior")
 	}
 }
 
