@@ -366,7 +366,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - campo `scope` no achado.
   - **Verificar:** testes com fake.
   - **Conferência (26/10):** os checks internos `rbac_cluster_admin`, `rbac_wildcard` e `rbac_secrets_access` também olham o cluster todo; os checks RBAC do Polaris (`clusterrolebinding*`) passam o filtro de `polaris.go:~117`. O OPA não avalia RoleBindings (cluster-admin dado por RoleBinding passa), o wildcard ignora Roles e a mensagem diz sempre "ClusterRole".
-- [ ] **S05 · Severidade e categoria reais do Polaris**
+- [x] **S05 · Severidade e categoria reais do Polaris**
   - **Problema:** a categoria é fixa em "pod-security" (`polaris.go:~190`) e danger/warning viram crítico/alto (`~203-211`), descartando `ResultMessage.Category` (Security, Efficiency, Reliability). "Defina a priority class" sai como alto em segurança; "tag da imagem", como crítico.
   - **Fazer:**
     - Security danger→crítico;
@@ -688,6 +688,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
 | 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
 | 26/10/2026 | S03 | O achado agrupado do Polaris leva `Resources` (lista inteira, `Resource` é o primeiro, sem "(+N)"); a tela mostra "N recursos" e a lista embaixo (até 5, "e mais K"), o JSON e o relatório trazem todos | este commit |
+| 26/10/2026 | S05 | O Polaris usa a categoria do próprio check: Security danger é crítico e warning é alto ou médio por tabela (endurecimento é médio), os checks de RBAC, rede e secrets vão para as seções deles, e Reliability e Efficiency viram as seções "confiabilidade" e "eficiência" (danger médio, warning baixo), na tela e no relatório, que passa a ter uma seção por categoria | este commit |
 
 ### Fase 5 · Atlas
 

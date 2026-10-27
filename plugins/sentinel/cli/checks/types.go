@@ -29,6 +29,10 @@ const (
 	CategoryNetwork     Category = "network"
 	CategorySecrets     Category = "secrets"
 	CategorySupplyChain Category = "supply-chain"
+	// CategoryReliability e CategoryEfficiency recebem os checks de Reliability e de
+	// Efficiency do Polaris (probes, réplicas, requests e limits), que não são de segurança.
+	CategoryReliability Category = "reliability"
+	CategoryEfficiency  Category = "efficiency"
 )
 
 // SecurityFinding representa uma vulnerabilidade encontrada por um check.

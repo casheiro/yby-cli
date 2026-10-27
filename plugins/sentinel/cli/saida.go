@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
@@ -65,14 +66,17 @@ func posicaoSeveridade(s string) int {
 var ordemCategorias = []checks.Category{
 	checks.CategoryPodSecurity, checks.CategoryRBAC, checks.CategoryNetwork,
 	checks.CategorySecrets, checks.CategorySupplyChain,
+	checks.CategoryReliability, checks.CategoryEfficiency,
 }
 
 var nomesCategorias = map[checks.Category]string{
 	checks.CategoryPodSecurity: "segurança dos pods",
-	checks.CategoryRBAC:        "rbac",
+	checks.CategoryRBAC:        "RBAC",
 	checks.CategoryNetwork:     "rede",
 	checks.CategorySecrets:     "secrets",
 	checks.CategorySupplyChain: "cadeia de suprimentos",
+	checks.CategoryReliability: "confiabilidade",
+	checks.CategoryEfficiency:  "eficiência",
 }
 
 func nomeCategoria(c checks.Category) string {
@@ -83,6 +87,14 @@ func nomeCategoria(c checks.Category) string {
 		return "outros"
 	}
 	return string(c)
+}
+
+// tituloDaCategoria é o nome da categoria com a inicial maiúscula, para os títulos das
+// seções do relatório markdown.
+func tituloDaCategoria(c checks.Category) string {
+	nome := []rune(nomeCategoria(c))
+	nome[0] = unicode.ToUpper(nome[0])
+	return string(nome)
 }
 
 func posicaoCategoria(c checks.Category) int {
@@ -230,11 +242,10 @@ func recursosDoAchado(w io.Writer, f checks.SecurityFinding, tipo ui.TipoCheck) 
 	continuarCheck(w, tipo, recuoDoCheck(tipo), linhas)
 }
 
-// escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
-// achado (glifo e palavra da severidade, recurso e mensagem), a remediação do dry-run, o
-// resumo por severidade, as fontes e o caminho do relatório.
-func escreverScan(w io.Writer, report ScanReport, patches []remediation.RemediationPatch, op opcoes, caminho string, errRelatorio error) {
-	achados := append([]checks.SecurityFinding(nil), report.Findings...)
+// achadosPorSecao devolve uma cópia dos achados na ordem das seções do scan (categoria,
+// severidade, recurso e mensagem), a mesma na tela e no relatório.
+func achadosPorSecao(findings []checks.SecurityFinding) []checks.SecurityFinding {
+	achados := append([]checks.SecurityFinding(nil), findings...)
 	sort.SliceStable(achados, func(i, j int) bool {
 		a, b := achados[i], achados[j]
 		if pa, pb := posicaoCategoria(a.Category), posicaoCategoria(b.Category); pa != pb {
@@ -251,6 +262,14 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 		}
 		return a.Message < b.Message
 	})
+	return achados
+}
+
+// escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
+// achado (glifo e palavra da severidade, recurso e mensagem), a remediação do dry-run, o
+// resumo por severidade, as fontes e o caminho do relatório.
+func escreverScan(w io.Writer, report ScanReport, patches []remediation.RemediationPatch, op opcoes, caminho string, errRelatorio error) {
+	achados := achadosPorSecao(report.Findings)
 
 	col := ui.Colunas{Nome: 12, Versao: 0}
 	for _, f := range achados {

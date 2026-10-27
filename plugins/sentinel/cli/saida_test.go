@@ -213,7 +213,7 @@ func TestScan_Golden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("relatório não foi salvo: %v", err)
 	}
-	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 críticos, 1 alto, 1 médio, 1 baixo\n") {
+	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 críticos, 1 alto, 1 médio, 2 baixos\n") {
 		t.Errorf("relatório fora do formato:\n%s", md)
 	}
 	if !strings.Contains(string(md), "**Allowlist:** 2 ignorados\n") {
@@ -253,7 +253,7 @@ func TestScan_JSONNoStdoutSemTituloNemEtapas(t *testing.T) {
 	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
 		t.Fatalf("stdout tem de ser só o JSON: %v\n%s", err, saida)
 	}
-	if rel.Namespace != "payments" || len(rel.Findings) != 5 || strings.Join(rel.Sources, ",") != "polaris,opa" {
+	if rel.Namespace != "payments" || len(rel.Findings) != len(achadosDeExemplo()) || strings.Join(rel.Sources, ",") != "polaris,opa" {
 		t.Errorf("relatório JSON inesperado: %+v", rel)
 	}
 	if rel.IgnoradosPelaAllowlist != 2 || !strings.Contains(saida, `"ignored_by_allowlist": 2`) {
@@ -324,7 +324,7 @@ func TestScan_JSONEmArquivo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var rel ScanReport
-	if err := json.Unmarshal(dados, &rel); err != nil || len(rel.Findings) != 5 {
+	if err := json.Unmarshal(dados, &rel); err != nil || len(rel.Findings) != len(achadosDeExemplo()) {
 		t.Errorf("arquivo JSON inesperado (%v): %s", err, dados)
 	}
 	if !strings.Contains(saida, "◆ YBY  SENTINEL") || !strings.Contains(saida, "✓ relatório") {

@@ -1,15 +1,12 @@
 [38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  SENTINEL[0m                        [38;2;161;147;121mscan · namespace payments[0m
 
-  [38;2;167;188;113m✓[0m [38;2;221;208;181mpolaris[0m   [38;2;161;147;121m3 achados[0m                                    [38;2;161;147;121m1,5 s[0m
+  [38;2;167;188;113m✓[0m [38;2;221;208;181mpolaris[0m   [38;2;161;147;121m4 achados[0m                                    [38;2;161;147;121m1,5 s[0m
   [38;2;167;188;113m✓[0m [38;2;221;208;181mopa[0m   [38;2;161;147;121m2 achados[0m                                        [38;2;161;147;121m1,5 s[0m
   [38;2;167;188;113m✓[0m [38;2;221;208;181mrecomendações da IA[0m   [38;2;161;147;121mfalso[0m                            [38;2;161;147;121m1,5 s[0m
 
 [38;2;161;147;121mSEGURANÇA DOS PODS[0m
   [38;2;217;131;97m✕[0m [38;2;221;208;181mDeployment/api                  crítico  O contêiner não deve poder rodar como root[0m
-  [38;2;217;174;95m▲[0m [38;2;221;208;181m3 recursos                      alto     Defina o limite de memória[0m
-    [38;2;221;208;181mDeployment/web[0m
-    [38;2;221;208;181mDeployment/worker[0m
-    [38;2;221;208;181mDeployment/local-path-provisioner-com-nome-bem-comprido[0m
+  [38;2;217;174;95m▲[0m [38;2;221;208;181mDeployment/web                  alto     Volumes hostPath não são permitidos[0m
 
 [38;2;161;147;121mRBAC[0m
   [38;2;217;131;97m✕[0m [38;2;221;208;181mClusterRoleBinding/ci-deployer  crítico  ServiceAccount payments/ci com cluster-admin[0m
@@ -17,13 +14,19 @@
 [38;2;161;147;121mREDE[0m
   [38;2;217;174;95m▲[0m [38;2;221;208;181mNamespace/payments              médio    Namespace sem NetworkPolicy default-deny[0m
 
-[38;2;161;147;121mCADEIA DE SUPRIMENTOS[0m
+[38;2;161;147;121mCONFIABILIDADE[0m
   [38;2;161;147;121m○ StatefulSet/redis               baixo    A imagePullPolicy deve ser Always[0m
+
+[38;2;161;147;121mEFICIÊNCIA[0m
+  [38;2;161;147;121m○ 3 recursos                      baixo    Defina o limite de memória[0m
+    [38;2;161;147;121mDeployment/web[0m
+    [38;2;161;147;121mDeployment/worker[0m
+    [38;2;161;147;121mDeployment/local-path-provisioner-com-nome-bem-comprido[0m
 
 [38;2;161;147;121mRECOMENDAÇÕES DA IA[0m
   [38;2;221;208;181m1. Tire o cluster-admin do ci-deployer.[0m
 
-[38;2;161;147;121mRESUMO[0m  [38;2;217;131;97m2 críticos[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 alto[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 médio[0m[38;2;161;147;121m · [0m[38;2;161;147;121m1 baixo[0m
+[38;2;161;147;121mRESUMO[0m  [38;2;217;131;97m2 críticos[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 alto[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 médio[0m[38;2;161;147;121m · [0m[38;2;161;147;121m2 baixos[0m
   [38;2;161;147;121mfontes     [0m[38;2;221;208;181mpolaris, opa[0m
   [38;2;161;147;121mallowlist  [0m[38;2;221;208;181m2 ignorados[0m
   [38;2;161;147;121mrelatório  [0m[38;2;221;208;181m~/.yby/reports/sentinel-scan-payments-2026-10-25.md[0m

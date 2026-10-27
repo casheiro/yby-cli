@@ -387,11 +387,17 @@ func exportScanMarkdown(report ScanReport) string {
 		sb.WriteString("**Allowlist:** " + t + "\n")
 	}
 	sb.WriteString("\n")
-	sb.WriteString("## Vulnerabilidades\n\n")
+	sb.WriteString("## Vulnerabilidades\n")
 
-	for _, f := range report.Findings {
+	// Uma seção por categoria, na ordem da tela.
+	var categoria checks.Category
+	for i, f := range achadosPorSecao(report.Findings) {
+		if i == 0 || f.Category != categoria {
+			categoria = f.Category
+			sb.WriteString("\n### " + tituloDaCategoria(categoria) + "\n\n")
+		}
 		icon := glifoDoRelatorio(severidades[severidadeDe(f)].tipo)
-		sb.WriteString(fmt.Sprintf("- %s **[%s]** %s: %s\n", icon, f.Category, recursosEmCodigo(f), f.Description))
+		sb.WriteString(fmt.Sprintf("- %s %s: %s\n", icon, recursosEmCodigo(f), f.Description))
 	}
 
 	if report.Recommendations != "" {

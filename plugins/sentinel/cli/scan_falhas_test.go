@@ -281,7 +281,7 @@ func TestScan_SemIA(t *testing.T) {
 	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
 		t.Fatalf("stdout tem de ser só o JSON: %v\n%s", err, saida)
 	}
-	if prov.chamadas != 0 || rel.Recommendations != "" || len(rel.Findings) != 5 {
+	if prov.chamadas != 0 || rel.Recommendations != "" || len(rel.Findings) != len(achadosDeExemplo()) {
 		t.Errorf("a IA foi chamada %d vezes; relatório: %+v", prov.chamadas, rel)
 	}
 	if strings.Contains(erros, "recomendações da IA") {

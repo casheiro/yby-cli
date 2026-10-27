@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"sort"
+	"strings"
 
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/kube"
@@ -105,6 +106,7 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 	// Agrupar: checkID+severity → lista de recursos afetados
 	type checkGroup struct {
 		id             string
+		category       string
 		severity       string
 		message        string
 		recommendation string
@@ -126,7 +128,7 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 			if msg.Success {
 				return
 			}
-			sev := mapPolarisSeverity(msg.Severity)
+			cat, sev := classificarPolaris(checkID, msg)
 			if sev == "info" {
 				return
 			}
@@ -135,6 +137,7 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 			if !ok {
 				g = &checkGroup{
 					id:             checkID,
+					category:       cat,
 					severity:       sev,
 					message:        msg.Message,
 					recommendation: formatRecommendation(msg.Details),
@@ -184,7 +187,7 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 			ID:             fmt.Sprintf("polaris/%s", g.id),
 			Source:         "polaris",
 			Severity:       g.severity,
-			Category:       "pod-security",
+			Category:       g.category,
 			Resource:       resources[0],
 			Resources:      resources,
 			Namespace:      namespace,
@@ -196,17 +199,73 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 	return findings
 }
 
-// mapPolarisSeverity converte a severidade do Polaris para o formato do Sentinel.
-// Mapeamento: danger → critical, warning → high, ignore → info.
-func mapPolarisSeverity(severity polarisconfig.Severity) string {
-	switch severity {
-	case polarisconfig.SeverityDanger:
-		return "critical"
-	case polarisconfig.SeverityWarning:
-		return "high"
-	default:
-		return "info"
+// categoriasDeSeguranca dá a seção dos checks de Security do Polaris que não são do pod:
+// RBAC, rede e secrets ficam junto dos achados do OPA e dos checks internos. Os outros
+// checks de Security ficam em "pod-security".
+var categoriasDeSeguranca = map[string]string{
+	"clusterrolebindingClusterAdmin":      "rbac",
+	"clusterrolebindingPodExecAttach":     "rbac",
+	"clusterrolePodExecAttach":            "rbac",
+	"rolebindingClusterAdminClusterRole":  "rbac",
+	"rolebindingClusterAdminRole":         "rbac",
+	"rolebindingClusterRolePodExecAttach": "rbac",
+	"rolebindingRolePodExecAttach":        "rbac",
+	"rolePodExecAttach":                   "rbac",
+	"missingNetworkPolicy":                "network",
+	"tlsSettingsMissing":                  "network",
+	"sensitiveContainerEnvVar":            "secrets",
+	"sensitiveConfigmapContent":           "secrets",
+}
+
+// avisosDeSegurancaMedios são os checks de Security que o Polaris marca como warning e
+// que são endurecimento (defesa em profundidade), não uma porta aberta: saem como médio.
+// Os outros warnings de Security, inclusive os que não estão aqui (hostPathSet,
+// hostProcess, procMount e os checks customizados), saem como alto.
+var avisosDeSegurancaMedios = map[string]bool{
+	"automountServiceAccountToken": true,
+	"hostPortSet":                  true,
+	"insecureCapabilities":         true,
+	"linuxHardening":               true,
+	"missingNetworkPolicy":         true,
+	"notReadOnlyRootFilesystem":    true,
+	"tlsSettingsMissing":           true,
+}
+
+// classificarPolaris dá a categoria e a severidade do Sentinel a um check do Polaris,
+// pela categoria do próprio check (ResultMessage.Category):
+//   - Reliability e Efficiency vão para "reliability" e "efficiency", com danger como
+//     médio e warning como baixo: não são falhas de segurança;
+//   - Security (e o check sem categoria) vai para a seção de categoriasDeSeguranca, com
+//     danger como crítico e warning como alto ou médio (avisosDeSegurancaMedios).
+//
+// ignore (ou severidade vazia) vira info, que o scan descarta.
+func classificarPolaris(checkID string, msg validator.ResultMessage) (categoria, severidade string) {
+	switch msg.Category {
+	case "Reliability", "Efficiency":
+		categoria = strings.ToLower(msg.Category)
+		switch msg.Severity {
+		case polarisconfig.SeverityDanger:
+			return categoria, "medium"
+		case polarisconfig.SeverityWarning:
+			return categoria, "low"
+		}
+		return categoria, "info"
 	}
+
+	categoria = "pod-security"
+	if c, ok := categoriasDeSeguranca[checkID]; ok {
+		categoria = c
+	}
+	switch msg.Severity {
+	case polarisconfig.SeverityDanger:
+		return categoria, "critical"
+	case polarisconfig.SeverityWarning:
+		if avisosDeSegurancaMedios[checkID] {
+			return categoria, "medium"
+		}
+		return categoria, "high"
+	}
+	return categoria, "info"
 }
 
 // formatRecommendation formata os detalhes de um check como recomendação legível.

@@ -1,15 +1,30 @@
 # Relatório de Segurança Sentinel — payments
 
-**Resumo:** 2 críticos, 1 alto, 1 médio, 1 baixo
+**Resumo:** 2 críticos, 1 alto, 1 médio, 2 baixos
 **Backends:** polaris, opa
 
 ## Vulnerabilidades
 
-- ▲ **[pod-security]** `Deployment/web`, `Deployment/worker`, `Deployment/local-path-provisioner-com-nome-bem-comprido`: Memory limits should be set
-- ✕ **[rbac]** `ClusterRoleBinding/ci-deployer`: ServiceAccount payments/ci com cluster-admin
-- ✕ **[pod-security]** `Deployment/api`: Should not be allowed to run as root
-- ▲ **[network]** `Namespace/payments`: Namespace sem NetworkPolicy default-deny
-- ○ **[supply-chain]** `StatefulSet/redis`: Image pull policy should be Always
+### Segurança dos pods
+
+- ✕ `Deployment/api`: Should not be allowed to run as root
+- ▲ `Deployment/web`: HostPath volumes must be forbidden
+
+### RBAC
+
+- ✕ `ClusterRoleBinding/ci-deployer`: ServiceAccount payments/ci com cluster-admin
+
+### Rede
+
+- ▲ `Namespace/payments`: Namespace sem NetworkPolicy default-deny
+
+### Confiabilidade
+
+- ○ `StatefulSet/redis`: Image pull policy should be Always
+
+### Eficiência
+
+- ○ `Deployment/web`, `Deployment/worker`, `Deployment/local-path-provisioner-com-nome-bem-comprido`: Memory limits should be set
 
 ## Recomendações
 

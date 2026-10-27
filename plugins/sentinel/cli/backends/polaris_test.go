@@ -37,27 +37,65 @@ func TestPolarisBackendImplementsInterface(t *testing.T) {
 	var _ SecurityBackend = (*PolarisBackend)(nil)
 }
 
-// TestMapPolarisSeverity verifica o mapeamento de severidades Polaris → Sentinel.
-func TestMapPolarisSeverity(t *testing.T) {
+// TestClassificarPolaris verifica a categoria e a severidade que cada check do Polaris
+// recebe: Security danger é crítico, Security warning é alto ou médio pela tabela, e
+// Reliability e Efficiency são médio (danger) ou baixo (warning), nas seções próprias.
+func TestClassificarPolaris(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string // simula o valor da severidade
-		expected string
+		check, categoria, severidade string
+		esperaCategoria, esperaSev   string
 	}{
-		{"danger para critical", "danger", "critical"},
-		{"warning para high", "warning", "high"},
-		{"ignore para info", "ignore", "info"},
-		{"vazio para info", "", "info"},
+		{"priorityClassNotSet", "Reliability", "warning", "reliability", "low"},
+		{"tagNotSpecified", "Reliability", "danger", "reliability", "medium"},
+		{"memoryLimitsMissing", "Efficiency", "warning", "efficiency", "low"},
+		{"cpuLimitsMissing", "Efficiency", "danger", "efficiency", "medium"},
+		{"runAsRootAllowed", "Security", "danger", "pod-security", "critical"},
+		{"hostPathSet", "Security", "warning", "pod-security", "high"},
+		{"procMount", "Security", "warning", "pod-security", "high"},
+		{"linuxHardening", "Security", "warning", "pod-security", "medium"},
+		{"automountServiceAccountToken", "Security", "warning", "pod-security", "medium"},
+		{"clusterrolebindingClusterAdmin", "Security", "danger", "rbac", "critical"},
+		{"rolePodExecAttach", "Security", "danger", "rbac", "critical"},
+		{"missingNetworkPolicy", "Security", "warning", "network", "medium"},
+		{"tlsSettingsMissing", "Security", "warning", "network", "medium"},
+		{"sensitiveContainerEnvVar", "Security", "danger", "secrets", "critical"},
+		// check de segurança fora da tabela (customizado): alto, como antes
+		{"meuCheckCustomizado", "Security", "warning", "pod-security", "high"},
+		// sem categoria: tratado como segurança
+		{"semCategoria", "", "danger", "pod-security", "critical"},
+		{"runAsRootAllowed", "Security", "ignore", "pod-security", "info"},
+		{"priorityClassNotSet", "Reliability", "", "reliability", "info"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// mapPolarisSeverity recebe polarisconfig.Severity que é type string
-			got := mapPolarisSeverity(polarisconfig.Severity(tt.input))
-			if got != tt.expected {
-				t.Errorf("mapPolarisSeverity(%q) = %q, esperado %q", tt.input, got, tt.expected)
+		t.Run(tt.check+"/"+tt.categoria+"/"+tt.severidade, func(t *testing.T) {
+			cat, sev := classificarPolaris(tt.check, validator.ResultMessage{
+				ID: tt.check, Category: tt.categoria, Severity: polarisconfig.Severity(tt.severidade),
+			})
+			if cat != tt.esperaCategoria || sev != tt.esperaSev {
+				t.Errorf("classificarPolaris(%s, %s, %s) = %s/%s, esperado %s/%s",
+					tt.check, tt.categoria, tt.severidade, cat, sev, tt.esperaCategoria, tt.esperaSev)
 			}
 		})
+	}
+}
+
+// TestMapPolarisResults_CategoriaESeveridadeReais: o achado leva a categoria e a
+// severidade do check, e não "pod-security" com danger crítico e warning alto.
+func TestMapPolarisResults_CategoriaESeveridadeReais(t *testing.T) {
+	audit := validator.AuditData{Results: []validator.Result{resultadoPolaris("Deployment", "api", "payments")}}
+	esperado := map[string][2]string{
+		"polaris/deploymentMissingReplicas": {"reliability", "low"},
+		"polaris/runAsRootAllowed":          {"pod-security", "critical"},
+	}
+	achados := mapPolarisResults(audit, "payments")
+	if len(achados) != len(esperado) {
+		t.Fatalf("esperava %d findings, obtido %d: %+v", len(esperado), len(achados), achados)
+	}
+	for _, f := range achados {
+		if e := esperado[f.ID]; f.Category != e[0] || f.Severity != e[1] {
+			t.Errorf("%s: %s/%s, esperado %s/%s", f.ID, f.Category, f.Severity, e[0], e[1])
+		}
 	}
 }
 
@@ -86,16 +124,16 @@ func TestFormatRecommendation(t *testing.T) {
 // resultadoPolaris monta um resultado do Polaris com um check que falhou no controller e
 // outro no contêiner.
 func resultadoPolaris(kind, nome, namespace string) validator.Result {
-	falha := func(id string, sev polarisconfig.Severity) validator.ResultMessage {
-		return validator.ResultMessage{ID: id, Message: "falhou " + id, Severity: sev}
+	falha := func(id, categoria string, sev polarisconfig.Severity) validator.ResultMessage {
+		return validator.ResultMessage{ID: id, Message: "falhou " + id, Severity: sev, Category: categoria}
 	}
 	return validator.Result{
 		Kind: kind, Name: nome, Namespace: namespace,
-		Results: validator.ResultSet{"deploymentMissingReplicas": falha("deploymentMissingReplicas", polarisconfig.SeverityWarning)},
+		Results: validator.ResultSet{"deploymentMissingReplicas": falha("deploymentMissingReplicas", "Reliability", polarisconfig.SeverityWarning)},
 		PodResult: &validator.PodResult{
 			ContainerResults: []validator.ContainerResult{{
 				Name:    "app",
-				Results: validator.ResultSet{"runAsRootAllowed": falha("runAsRootAllowed", polarisconfig.SeverityDanger)},
+				Results: validator.ResultSet{"runAsRootAllowed": falha("runAsRootAllowed", "Security", polarisconfig.SeverityDanger)},
 			}},
 		},
 	}

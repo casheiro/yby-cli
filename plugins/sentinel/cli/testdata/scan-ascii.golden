@@ -1,14 +1,11 @@
 * [1mYBY  SENTINEL[0m                        scan · namespace payments
 
-  v polaris   3 achados                                    1,5 s
+  v polaris   4 achados                                    1,5 s
   v opa   2 achados                                        1,5 s
 
 SEGURANÇA DOS PODS
   x Deployment/api                  crítico  O contêiner não deve poder rodar como root
-  ! 3 recursos                      alto     Defina o limite de memória
-    Deployment/web
-    Deployment/worker
-    Deployment/local-path-provisioner-com-nome-bem-comprido
+  ! Deployment/web                  alto     Volumes hostPath não são permitidos
 
 RBAC
   x ClusterRoleBinding/ci-deployer  crítico  ServiceAccount payments/ci com cluster-admin
@@ -16,10 +13,16 @@ RBAC
 REDE
   ! Namespace/payments              médio    Namespace sem NetworkPolicy default-deny
 
-CADEIA DE SUPRIMENTOS
+CONFIABILIDADE
   o StatefulSet/redis               baixo    A imagePullPolicy deve ser Always
 
-RESUMO  2 críticos · 1 alto · 1 médio · 1 baixo
+EFICIÊNCIA
+  o 3 recursos                      baixo    Defina o limite de memória
+    Deployment/web
+    Deployment/worker
+    Deployment/local-path-provisioner-com-nome-bem-comprido
+
+RESUMO  2 críticos · 1 alto · 1 médio · 2 baixos
   fontes     polaris, opa
   allowlist  2 ignorados
   relatório  ~/.yby/reports/sentinel-scan-payments-2026-10-25.md
