@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
 )
 
 // QualityBreakdown detalha os critérios avaliados.
@@ -31,20 +33,21 @@ type QualityScore struct {
 var reHeader = regexp.MustCompile(`(?m)^#{2,}\s+.+$`)
 var reCodeBlock = regexp.MustCompile("(?s)```[\\s\\S]*?```")
 var reLink = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
-var reTitle = regexp.MustCompile(`(?m)^#\s+(.+)$`)
 
-// ScoreUKI avalia a qualidade de um documento UKI.
+// reContexto acha a seção que abre um UKI na especificação (Contexto nas regras e
+// métricas, Problema nas decisões, Quando usar nos padrões, Visão geral nas
+// referências), em qualquer caixa, em qualquer nível de seção e com numeração.
+var reContexto = regexp.MustCompile(`(?mi)^#{2,}\s+(?:\d+[.)]?\s*)?(contexto|context|problema|problem|quando usar|vis[aã]o geral|overview)\b`)
+
+// ScoreUKI avalia a qualidade de um documento UKI. Os metadados saem do frontmatter (ou
+// das linhas em negrito do formato antigo); o resto da nota olha só o corpo.
 func ScoreUKI(content string) QualityScore {
 	score := QualityScore{}
-
-	// Extrair título
-	if matches := reTitle.FindStringSubmatch(content); len(matches) > 1 {
-		score.Title = strings.TrimSpace(matches[1])
-	}
+	meta, content := uki.Ler(content)
+	score.Title = meta.Titulo
 
 	// Verificar contexto
-	lower := strings.ToLower(content)
-	score.Breakdown.HasContext = strings.Contains(lower, "## context") || strings.Contains(lower, "## contexto")
+	score.Breakdown.HasContext = reContexto.MatchString(content)
 	if score.Breakdown.HasContext {
 		score.Score += 15
 	}
@@ -91,11 +94,8 @@ func ScoreUKI(content string) QualityScore {
 		score.Score += 10
 	}
 
-	// Metadata (ID, Type, Status)
-	hasID := strings.Contains(content, "**ID:**")
-	hasType := strings.Contains(content, "**Type:**") || strings.Contains(content, "**Tipo:**")
-	hasStatus := strings.Contains(content, "**Status:**")
-	score.Breakdown.HasMetadata = hasID && hasType && hasStatus
+	// Metadados (ID, tipo e status)
+	score.Breakdown.HasMetadata = meta.Completos()
 	if score.Breakdown.HasMetadata {
 		score.Score += 15
 	}
@@ -103,27 +103,22 @@ func ScoreUKI(content string) QualityScore {
 	return score
 }
 
-// ScoreAll avalia todos os UKIs em um diretório.
+// ScoreAll avalia todos os UKIs de um diretório e das subpastas de domínio.
 func ScoreAll(ukiDir string) ([]QualityScore, error) {
-	entries, err := os.ReadDir(ukiDir)
+	arquivos, err := uki.Listar(ukiDir)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao ler diretório de UKIs: %w", err)
+		return nil, err
 	}
 
 	var scores []QualityScore
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-
-		filePath := filepath.Join(ukiDir, entry.Name())
-		data, err := os.ReadFile(filePath)
+	for _, a := range arquivos {
+		data, err := os.ReadFile(a.Caminho)
 		if err != nil {
 			continue
 		}
 
 		qs := ScoreUKI(string(data))
-		qs.Path = filePath
+		qs.Path = a.Caminho
 		scores = append(scores, qs)
 	}
 

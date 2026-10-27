@@ -219,3 +219,38 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestScoreUKI_FrontmatterDaEspecificacao: um UKI só com o frontmatter da especificação
+// tem metadados, e o contexto vale em qualquer caixa e com numeração.
+func TestScoreUKI_FrontmatterDaEspecificacao(t *testing.T) {
+	content := "---\nid: cli.ux.saida\ntipo: regra\nstatus: ativo\ncriado_em: 2026-10-26\n" +
+		"atualizado_em: 2026-10-26\ntags: [cli]\n---\n\n# Saída\n\n## 1. CONTEXTO e definição\n\nTexto.\n"
+	qs := ScoreUKI(content)
+	if !qs.Breakdown.HasMetadata || !qs.Breakdown.HasContext || qs.Title != "Saída" {
+		t.Errorf("esperado metadados, contexto e título, obtido %+v (%q)", qs.Breakdown, qs.Title)
+	}
+	// as palavras do frontmatter não contam no tamanho
+	if qs.Breakdown.WordCount != 8 {
+		t.Errorf("esperadas 8 palavras no corpo, obtido %d", qs.Breakdown.WordCount)
+	}
+}
+
+// TestScoreAll_Subpastas: o UKI de uma subpasta de domínio também ganha nota.
+func TestScoreAll_Subpastas(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "dominio"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, nome := range []string{"A.md", filepath.Join("dominio", "B.md")} {
+		if err := os.WriteFile(filepath.Join(dir, nome), []byte("# "+nome), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scores, err := ScoreAll(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scores) != 2 {
+		t.Errorf("esperados 2 UKIs, obtido %d", len(scores))
+	}
+}

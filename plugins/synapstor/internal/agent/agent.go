@@ -16,14 +16,37 @@ import (
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/scanner"
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
 )
 
-// SynapstorResponse defines the expected JSON output from the AI
+// SynapstorResponse é o JSON que a IA devolve. O frontmatter do UKI sai do ID, do tipo e
+// das tags; o status e as datas são do código.
 type SynapstorResponse struct {
 	Title    string `json:"title"`
+	ID       string `json:"id"`
+	Tipo     string `json:"tipo"`
+	Tags     tags   `json:"tags"`
 	Filename string `json:"filename"`
 	Content  string `json:"content"`
 	Summary  string `json:"summary"`
+}
+
+// tags aceita a lista de tags em JSON ou num texto separado por vírgulas, que é como os
+// modelos menores às vezes respondem.
+type tags []string
+
+func (t *tags) UnmarshalJSON(b []byte) error {
+	var lista []string
+	if err := json.Unmarshal(b, &lista); err == nil {
+		*t = lista
+		return nil
+	}
+	var texto string
+	if err := json.Unmarshal(b, &texto); err != nil {
+		return err
+	}
+	*t = strings.Split(texto, ",")
+	return nil
 }
 
 // Resultado é o UKI gravado por Capture ou Study.
@@ -46,6 +69,8 @@ type Agent struct {
 	// Etapas recebe o andamento (estruturar com a IA, conferir a resposta, gravar); o
 	// agente não escreve na tela.
 	Etapas shared.Etapas
+	// agora dá a data do criado_em e do atualizado_em (nos testes, uma data fixa).
+	agora func() time.Time
 }
 
 func NewAgent(provider ai.Provider, rootDir string) *Agent {
@@ -61,6 +86,16 @@ func (a *Agent) etapas() shared.Etapas {
 		return shared.EtapasMudas{}
 	}
 	return a.Etapas
+}
+
+// hoje é a data do dia, para o frontmatter do UKI.
+func (a *Agent) hoje() time.Time {
+	agora := time.Now
+	if a.agora != nil {
+		agora = a.agora
+	}
+	ano, mes, dia := agora().Date()
+	return time.Date(ano, mes, dia, 0, 0, 0, 0, time.UTC)
 }
 
 // semProvider é o erro de quando nenhum provider de IA responde.
@@ -82,7 +117,7 @@ func (a *Agent) Capture(ctx context.Context, input string) (*Resultado, error) {
 	if err != nil {
 		return nil, err
 	}
-	return a.saveResponse(ctx, respJSON)
+	return a.saveResponse(ctx, respJSON, "")
 }
 
 // Study scans code and generates documentation
@@ -129,7 +164,8 @@ func (a *Agent) Study(ctx context.Context, query string) (*Resultado, error) {
 	if err != nil {
 		return nil, err
 	}
-	return a.saveResponse(ctx, respJSON)
+	// o study documenta o código: sem tipo na resposta, o UKI é uma referência
+	return a.saveResponse(ctx, respJSON, uki.TipoReferencia)
 }
 
 // perguntar pede à IA o UKI, na etapa "estruturar com a IA".
@@ -155,8 +191,10 @@ func erroDaIA(err error, p ai.Provider) error {
 	return ye
 }
 
-// validateResponse valida os campos obrigatórios da resposta da IA.
-func validateResponse(resp *SynapstorResponse) error {
+// validateResponse valida os campos obrigatórios da resposta da IA. O tipo vem do JSON,
+// do metadado que a IA tenha escrito no content ou do tipoPadrao, e tem de ser um dos da
+// especificação.
+func validateResponse(resp *SynapstorResponse, tipoPadrao string) error {
 	if strings.TrimSpace(resp.Title) == "" {
 		return fmt.Errorf("campo 'title' está vazio")
 	}
@@ -167,8 +205,51 @@ func validateResponse(resp *SynapstorResponse) error {
 		return fmt.Errorf("campo 'content' está vazio")
 	}
 
+	original := strings.TrimSpace(resp.Tipo)
+	resp.Tipo = uki.NormalizarTipo(original)
+	if resp.Tipo == "" {
+		meta, _ := uki.Ler(resp.Content)
+		resp.Tipo = meta.Tipo
+	}
+	if resp.Tipo == "" {
+		resp.Tipo = tipoPadrao
+	}
+	switch {
+	case resp.Tipo == "":
+		return fmt.Errorf("campo 'tipo' está vazio (use %s)", strings.Join(uki.Tipos, ", "))
+	case !uki.TipoValido(resp.Tipo):
+		return fmt.Errorf("campo 'tipo' fora da especificação: %q (use %s)", original, strings.Join(uki.Tipos, ", "))
+	}
+
 	resp.Filename = nomeDoUKI(resp.Filename, resp.Title)
 	return nil
+}
+
+// montarUKI é o arquivo do UKI no formato da especificação: o frontmatter (ID, tipo e
+// tags da IA, status rascunho e as datas do dia) e o content sem o frontmatter que a IA
+// tenha escrito. Sem ID válido, ele sai do título.
+func (a *Agent) montarUKI(resp SynapstorResponse) string {
+	meta, corpo := uki.Ler(resp.Content)
+	id := uki.LimparID(resp.ID)
+	if id == "" {
+		id = uki.LimparID(meta.ID)
+	}
+	if id == "" {
+		id = uki.LimparID(resp.Title)
+	}
+	tags := uki.LimparTags(resp.Tags)
+	if len(tags) == 0 {
+		tags = uki.LimparTags(meta.Tags)
+	}
+	hoje := a.hoje()
+	return uki.Montar(uki.Metadados{
+		ID:           id,
+		Tipo:         resp.Tipo,
+		Status:       uki.StatusRascunho,
+		CriadoEm:     hoje,
+		AtualizadoEm: hoje,
+		Tags:         tags,
+	}, corpo)
 }
 
 // nomeDoUKI devolve um nome de arquivo seguro no padrão UKI-<n>-<slug>.md. O nome da IA
@@ -249,26 +330,29 @@ func respostaInvalida(err error, resposta string) error {
 		WithHint("rode de novo; se repetir, troque o modelo com YBY_AI_MODEL (com YBY_LOG_LEVEL=debug a resposta sai no log)")
 }
 
-func (a *Agent) saveResponse(ctx context.Context, respJSON string) (*Resultado, error) {
+// saveResponse confere a resposta da IA (pedindo uma correção, se faltar algo) e grava o
+// UKI; tipoPadrao vale quando a resposta não traz o tipo.
+func (a *Agent) saveResponse(ctx context.Context, respJSON, tipoPadrao string) (*Resultado, error) {
 	et := a.etapas()
 	et.Iniciar("conferir a resposta")
 	cleanJSON := limparJSON(respJSON)
 
-	var uki SynapstorResponse
-	if err := json.Unmarshal([]byte(cleanJSON), &uki); err != nil {
+	var resp SynapstorResponse
+	if err := json.Unmarshal([]byte(cleanJSON), &resp); err != nil {
 		et.Falhar("")
 		return nil, respostaInvalida(err, respJSON)
 	}
 
 	corrigida := false
 	// Validar resposta
-	if err := validateResponse(&uki); err != nil {
+	if err := validateResponse(&resp, tipoPadrao); err != nil {
 		// Tentar retry com prompt corretivo (1x)
 		slog.Debug("resposta da IA incompleta; pedindo correção", "erro", err)
 		correctionPrompt := fmt.Sprintf(
 			"A resposta anterior teve o seguinte problema de validação: %v\n"+
-				"Corrija e reenvie no formato JSON correto com os campos: title, filename (formato UKI-TIMESTAMP-SLUG.md), content, summary.\n"+
-				"Resposta original:\n%s", err, cleanJSON)
+				"Corrija e reenvie no formato JSON correto com os campos: title, id, tipo (%s), tags, "+
+				"filename (formato UKI-TIMESTAMP-SLUG.md), content, summary.\n"+
+				"Resposta original:\n%s", err, strings.Join(uki.Tipos, ", "), cleanJSON)
 
 		retryJSON, retryErr := a.Provider.Completion(ctx, prompts.Get("synapstor.capture"), correctionPrompt)
 		if retryErr != nil {
@@ -276,14 +360,14 @@ func (a *Agent) saveResponse(ctx context.Context, respJSON string) (*Resultado, 
 			return nil, erroDaIA(retryErr, a.Provider)
 		}
 
-		uki = SynapstorResponse{}
-		if err := json.Unmarshal([]byte(limparJSON(retryJSON)), &uki); err != nil {
+		resp = SynapstorResponse{}
+		if err := json.Unmarshal([]byte(limparJSON(retryJSON)), &resp); err != nil {
 			et.Falhar("")
 			return nil, respostaInvalida(err, retryJSON)
 		}
 
 		// Validar novamente (sem retry desta vez)
-		if err := validateResponse(&uki); err != nil {
+		if err := validateResponse(&resp, tipoPadrao); err != nil {
 			et.Falhar("")
 			return nil, respostaInvalida(err, retryJSON)
 		}
@@ -306,7 +390,7 @@ func (a *Agent) saveResponse(ctx context.Context, respJSON string) (*Resultado, 
 
 	// O nome já vem limpo do validateResponse; o Base é a última garantia de que nada é
 	// gravado fora de .synapstor/.uki.
-	nome, err := gravarSemSobrescrever(synapstorDir, filepath.Base(uki.Filename), []byte(uki.Content))
+	nome, err := gravarSemSobrescrever(synapstorDir, filepath.Base(resp.Filename), []byte(a.montarUKI(resp)))
 	if err != nil {
 		et.Falhar("")
 		return nil, yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para gravar o UKI").
@@ -315,7 +399,7 @@ func (a *Agent) saveResponse(ctx context.Context, respJSON string) (*Resultado, 
 	et.Concluir("")
 
 	return &Resultado{
-		Titulo:    uki.Title,
+		Titulo:    resp.Title,
 		Arquivo:   filepath.Join(".synapstor", ".uki", nome),
 		Corrigida: corrigida,
 	}, nil

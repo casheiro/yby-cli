@@ -260,7 +260,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - modelo local multilíngue como padrão (multilingual-e5-small ou paraphrase-multilingual-MiniLM-L12-v2: conferir o formato que o `local_embedding.go` carrega e o tamanho). A troca de modelo depende do Y01;
     - remover o erro morto.
   - **Verificar:** teste do resumo; teste manual de busca em PT-BR.
-- [ ] **Y07 · Um formato só de UKI**
+- [x] **Y07 · Um formato só de UKI**
   - **Problema:**
     - `.synapstor/UKI_SPEC.md` exige frontmatter (`uki_id`, `type`, `status`, `created_at`, `updated_at`, `tags`) e subpastas `.uki/<dominio>/`;
     - os prompts geram `**ID:**`/`**Tipo:**` sem frontmatter (`pkg/ai/prompts/defaults.go:~94-104`);
@@ -683,6 +683,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y04 | `VectorStore.Search` limita o topK ao número de documentos e devolve vazio com a coleção vazia, sem o erro do chromem; a unificação do corte de relevância com o Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |
+| 26/10/2026 | Y07 | O pacote `internal/uki` lista os UKIs com as subpastas de domínio e lê os metadados do frontmatter em PT-BR, do em inglês e das linhas em negrito; quality, decay, export e index usam os dois, o export sai com um frontmatter só, o capture e o study gravam o frontmatter da especificação (ID, tipo e tags da IA; status e datas do código) e o `UKI_SPEC.md` foi traduzido, com os tipos `regra`, `decisao`, `padrao`, `metrica` e `referencia`. | este commit |
 
 ### Fase 4 · Sentinel
 

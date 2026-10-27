@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -164,4 +165,21 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestSynapstor_FormatoDaEspecificacao: capture e study pedem o JSON com tipo, id e tags
+// (o código monta o frontmatter e as datas) e não pedem mais as linhas em negrito.
+func TestSynapstor_FormatoDaEspecificacao(t *testing.T) {
+	for nome, p := range map[string]string{"capture": SynapsotorCapture, "study": SynapsotorStudy} {
+		for _, campo := range []string{`"tipo"`, `"id"`, `"tags"`, "decisao", "regra", "padrao", "metrica", "referencia"} {
+			if !strings.Contains(p, campo) {
+				t.Errorf("%s não fala de %s", nome, campo)
+			}
+		}
+		for _, antigo := range []string{"**ID:**", "**Tipo:**", "**Type:**", "**Status:**"} {
+			if strings.Contains(p, antigo) {
+				t.Errorf("%s ainda pede o formato antigo %s", nome, antigo)
+			}
+		}
+	}
 }

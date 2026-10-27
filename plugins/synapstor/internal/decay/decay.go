@@ -2,7 +2,6 @@
 package decay
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
 )
 
 // DecayInfo contém informações de obsolescência de um UKI.
@@ -27,9 +28,6 @@ const StaleThresholdDays = 90
 
 // reTimestamp extrai o timestamp do nome do arquivo UKI (UKI-TIMESTAMP-slug.md).
 var reTimestamp = regexp.MustCompile(`UKI-(\d+)-`)
-
-// reTitle extrai o título do conteúdo markdown.
-var reTitle = regexp.MustCompile(`(?m)^#\s+(.+)$`)
 
 // CommandRunner abstrai a execução de comandos para facilitar testes.
 type CommandRunner interface {
@@ -53,20 +51,16 @@ func AnalyzeDecay(ukiDir, projectDir string) ([]DecayInfo, error) {
 
 // AnalyzeDecayWithRunner analisa a obsolescência usando um runner customizável.
 func AnalyzeDecayWithRunner(ukiDir, projectDir string, runner CommandRunner) ([]DecayInfo, error) {
-	entries, err := os.ReadDir(ukiDir)
+	arquivos, err := uki.Listar(ukiDir)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao ler diretório de UKIs: %w", err)
+		return nil, err
 	}
 
 	now := time.Now()
 	var infos []DecayInfo
 
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-
-		filePath := filepath.Join(ukiDir, entry.Name())
+	for _, a := range arquivos {
+		filePath := a.Caminho
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			continue
@@ -76,16 +70,15 @@ func AnalyzeDecayWithRunner(ukiDir, projectDir string, runner CommandRunner) ([]
 			Path: filePath,
 		}
 
-		// Extrair título
-		content := string(data)
-		if matches := reTitle.FindStringSubmatch(content); len(matches) > 1 {
-			info.Title = strings.TrimSpace(matches[1])
-		} else {
-			info.Title = entry.Name()
+		// Título do corpo; data de criação do frontmatter ou, sem ela, do nome do arquivo
+		meta, _ := uki.Ler(string(data))
+		info.Title = meta.Titulo
+		if info.Title == "" {
+			info.Title = filepath.Base(filePath)
 		}
+		info.CreatedAt = meta.CriadoEm
 
-		// Extrair data de criação do filename
-		if matches := reTimestamp.FindStringSubmatch(entry.Name()); len(matches) > 1 {
+		if matches := reTimestamp.FindStringSubmatch(filepath.Base(filePath)); info.CreatedAt.IsZero() && len(matches) > 1 {
 			ts, err := strconv.ParseInt(matches[1], 10, 64)
 			if err == nil {
 				info.CreatedAt = time.Unix(ts, 0)

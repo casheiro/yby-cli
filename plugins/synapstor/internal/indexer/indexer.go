@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
 )
 
 // IndexManifest rastreia o estado de indexação de cada arquivo.
@@ -443,9 +445,19 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 func (i *Indexer) scanFiles() ([]string, error) {
 	candidates := []string{}
 
-	// Targets: .synapstor/.uki and docs/wiki
+	// Os UKIs saem da mesma lista do quality, do decay e do export (com as subpastas de
+	// domínio); a pasta que não existe fica de fora.
+	ukis, err := uki.Listar(filepath.Join(i.RootDir, ".synapstor", ".uki"))
+	if err == nil {
+		for _, a := range ukis {
+			candidates = append(candidates, a.Caminho)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+
+	// As páginas da wiki, sem as de navegação
 	targets := []string{
-		filepath.Join(i.RootDir, ".synapstor", ".uki"),
 		filepath.Join(i.RootDir, "docs", "wiki"),
 	}
 

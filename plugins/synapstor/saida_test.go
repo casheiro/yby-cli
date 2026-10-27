@@ -535,7 +535,8 @@ func TestDecay_Golden(t *testing.T) {
 }
 
 // respostaDoUKI é a resposta falsa da IA no capture e no study.
-const respostaDoUKI = "```json\n{\"title\": \"Rollback do payments\", \"filename\": \"UKI-1761390300-rollback.md\", " +
+const respostaDoUKI = "```json\n{\"title\": \"Rollback do payments\", \"id\": \"deploy.argo.rollback\", \"tipo\": \"padrao\", " +
+	"\"tags\": [\"argo-cd\", \"rollback\"], \"filename\": \"UKI-1761390300-rollback.md\", " +
 	"\"content\": \"# Rollback do payments\\n\\nUse o histórico do Argo CD.\", \"summary\": \"rollback\"}\n```"
 
 func TestCapture_Golden(t *testing.T) {
@@ -550,13 +551,17 @@ func TestCapture_Golden(t *testing.T) {
 	}
 	conferirGolden(t, "capture.golden", saida)
 
-	// o UKI gravado não muda de formato: é o content da IA, como veio
+	// o UKI gravado é o content da IA com o frontmatter da especificação, montado pelo
+	// código (status rascunho e as datas do dia)
 	uki, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".uki", "UKI-1761390300-rollback.md"))
 	if err != nil {
 		t.Fatalf("UKI não gravado: %v", err)
 	}
-	if string(uki) != "# Rollback do payments\n\nUse o histórico do Argo CD." {
-		t.Errorf("conteúdo do UKI mudou: %q", uki)
+	hoje := time.Now().Format(time.DateOnly)
+	esperado := "---\nid: deploy.argo.rollback\ntipo: padrao\nstatus: rascunho\ncriado_em: " + hoje +
+		"\natualizado_em: " + hoje + "\ntags: [argo-cd, rollback]\n---\n\n# Rollback do payments\n\nUse o histórico do Argo CD."
+	if string(uki) != esperado {
+		t.Errorf("UKI fora do formato da especificação:\n%s", uki)
 	}
 	if prov.chamadas != 1 {
 		t.Errorf("esperada 1 chamada à IA, houve %d", prov.chamadas)

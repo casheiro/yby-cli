@@ -175,3 +175,33 @@ func TestAnalyzeDecayWithRunner_ExtraiTimestampDoFilename(t *testing.T) {
 		t.Errorf("esperado ano %d, obtido %d", targetDate.Year(), infos[0].CreatedAt.Year())
 	}
 }
+
+// TestAnalyzeDecay_SubpastasEFrontmatter: o UKI de uma subpasta de domínio também entra,
+// com o título do corpo e a data de criação do frontmatter.
+func TestAnalyzeDecay_SubpastasEFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "dominio"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "UKI-1-a.md"), []byte("# A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := "---\nid: d.b\ntipo: regra\nstatus: ativo\ncriado_em: 2026-01-02\n---\n\n# Regra B\n"
+	if err := os.WriteFile(filepath.Join(dir, "dominio", "B.md"), []byte(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	infos, err := AnalyzeDecayWithRunner(dir, dir, &MockRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 2 {
+		t.Fatalf("esperados 2 UKIs, obtido %d", len(infos))
+	}
+	for _, info := range infos {
+		if filepath.Base(info.Path) == "B.md" {
+			if info.Title != "Regra B" || !info.CreatedAt.Equal(time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)) {
+				t.Errorf("esperado título e data do frontmatter, obtido %+v", info)
+			}
+		}
+	}
+}

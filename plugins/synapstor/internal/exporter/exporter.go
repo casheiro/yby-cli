@@ -7,14 +7,53 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
 )
 
 // UKIFile representa um arquivo UKI para exportação.
 type UKIFile struct {
-	Path    string   `json:"path"`
-	Title   string   `json:"title"`
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
+	Path string `json:"path"`
+	// Relativo é o caminho dentro da pasta dos UKIs, com /; o export repete as subpastas
+	// de domínio no destino. Vazio, vale o nome do arquivo.
+	Relativo string   `json:"relativo"`
+	Title    string   `json:"title"`
+	Content  string   `json:"content"`
+	Tags     []string `json:"tags"`
+}
+
+// destino é o caminho do UKI na pasta de saída, com as subpastas de domínio já criadas.
+func (u UKIFile) destino(pasta string) (string, error) {
+	rel := u.Relativo
+	if rel == "" {
+		rel = filepath.Base(u.Path)
+	}
+	caminho := filepath.Join(pasta, filepath.FromSlash(rel))
+	return caminho, os.MkdirAll(filepath.Dir(caminho), 0755)
+}
+
+// cabecalho devolve o frontmatter do export (o título, as linhas extras e as tags) e o
+// corpo do UKI sem o frontmatter dele, para o arquivo exportado ter um bloco --- só.
+func cabecalho(u UKIFile, extras ...string) (string, string) {
+	meta, corpo := uki.Ler(u.Content)
+	tags := u.Tags
+	if len(tags) == 0 {
+		tags = meta.Tags
+	}
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("title: %q\n", u.Title))
+	for _, e := range extras {
+		sb.WriteString(e + "\n")
+	}
+	if len(tags) > 0 {
+		sb.WriteString("tags:\n")
+		for _, tag := range tags {
+			sb.WriteString(fmt.Sprintf("  - %s\n", tag))
+		}
+	}
+	sb.WriteString("---\n\n")
+	return sb.String(), corpo
 }
 
 // Exporter define a interface para exportadores de UKI.
@@ -36,37 +75,34 @@ func NewExporter(format string) (Exporter, error) {
 	}
 }
 
-// LoadUKIs carrega todos os UKIs de um diretório.
+// LoadUKIs carrega todos os UKIs de um diretório e das subpastas de domínio, com o
+// título do corpo e as tags do frontmatter.
 func LoadUKIs(ukiDir string) ([]UKIFile, error) {
-	entries, err := os.ReadDir(ukiDir)
+	arquivos, err := uki.Listar(ukiDir)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao ler diretório de UKIs: %w", err)
+		return nil, err
 	}
 
-	reTitle := regexp.MustCompile(`(?m)^#\s+(.+)$`)
 	var ukis []UKIFile
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-
-		filePath := filepath.Join(ukiDir, entry.Name())
-		data, err := os.ReadFile(filePath)
+	for _, a := range arquivos {
+		data, err := os.ReadFile(a.Caminho)
 		if err != nil {
 			continue
 		}
 
 		content := string(data)
-		title := entry.Name()
-		if matches := reTitle.FindStringSubmatch(content); len(matches) > 1 {
-			title = strings.TrimSpace(matches[1])
+		meta, _ := uki.Ler(content)
+		title := meta.Titulo
+		if title == "" {
+			title = filepath.Base(a.Caminho)
 		}
 
 		ukis = append(ukis, UKIFile{
-			Path:    filePath,
-			Title:   title,
-			Content: content,
+			Path:     a.Caminho,
+			Relativo: a.Relativo,
+			Title:    title,
+			Content:  content,
+			Tags:     meta.Tags,
 		})
 	}
 
@@ -85,24 +121,15 @@ func (e *DocusaurusExporter) Export(ukis []UKIFile, outputDir string) error {
 		return fmt.Errorf("erro ao criar diretório docs: %w", err)
 	}
 
-	for i, uki := range ukis {
-		var sb strings.Builder
-		sb.WriteString("---\n")
-		sb.WriteString(fmt.Sprintf("title: %q\n", uki.Title))
-		sb.WriteString(fmt.Sprintf("sidebar_position: %d\n", i+1))
-		if len(uki.Tags) > 0 {
-			sb.WriteString("tags:\n")
-			for _, tag := range uki.Tags {
-				sb.WriteString(fmt.Sprintf("  - %s\n", tag))
-			}
-		}
-		sb.WriteString("---\n\n")
-		sb.WriteString(uki.Content)
+	for i, u := range ukis {
+		frontmatter, corpo := cabecalho(u, fmt.Sprintf("sidebar_position: %d", i+1))
 
-		filename := filepath.Base(uki.Path)
-		outPath := filepath.Join(docsDir, filename)
-		if err := os.WriteFile(outPath, []byte(sb.String()), 0644); err != nil {
-			return fmt.Errorf("erro ao exportar %s: %w", filename, err)
+		outPath, err := u.destino(docsDir)
+		if err == nil {
+			err = os.WriteFile(outPath, []byte(frontmatter+corpo), 0644)
+		}
+		if err != nil {
+			return fmt.Errorf("erro ao exportar %s: %w", filepath.Base(u.Path), err)
 		}
 	}
 
@@ -122,22 +149,15 @@ func (e *ObsidianExporter) Export(ukis []UKIFile, outputDir string) error {
 		return fmt.Errorf("erro ao criar diretório de saída: %w", err)
 	}
 
-	for _, uki := range ukis {
+	for _, u := range ukis {
 		var sb strings.Builder
 
 		// Frontmatter YAML
-		sb.WriteString("---\n")
-		sb.WriteString(fmt.Sprintf("title: %q\n", uki.Title))
-		if len(uki.Tags) > 0 {
-			sb.WriteString("tags:\n")
-			for _, tag := range uki.Tags {
-				sb.WriteString(fmt.Sprintf("  - %s\n", tag))
-			}
-		}
-		sb.WriteString("---\n\n")
+		frontmatter, corpo := cabecalho(u)
+		sb.WriteString(frontmatter)
 
 		// Converter links markdown para wikilinks
-		content := reMarkdownLink.ReplaceAllStringFunc(uki.Content, func(match string) string {
+		content := reMarkdownLink.ReplaceAllStringFunc(corpo, func(match string) string {
 			submatches := reMarkdownLink.FindStringSubmatch(match)
 			if len(submatches) < 3 {
 				return match
@@ -148,10 +168,12 @@ func (e *ObsidianExporter) Export(ukis []UKIFile, outputDir string) error {
 		})
 		sb.WriteString(content)
 
-		filename := filepath.Base(uki.Path)
-		outPath := filepath.Join(outputDir, filename)
-		if err := os.WriteFile(outPath, []byte(sb.String()), 0644); err != nil {
-			return fmt.Errorf("erro ao exportar %s: %w", filename, err)
+		outPath, err := u.destino(outputDir)
+		if err == nil {
+			err = os.WriteFile(outPath, []byte(sb.String()), 0644)
+		}
+		if err != nil {
+			return fmt.Errorf("erro ao exportar %s: %w", filepath.Base(u.Path), err)
 		}
 	}
 
@@ -171,13 +193,16 @@ func (e *MarkdownExporter) Export(ukis []UKIFile, outputDir string) error {
 
 	// Copiar arquivos sem modificação
 	var indexEntries []string
-	for _, uki := range ukis {
-		filename := filepath.Base(uki.Path)
-		outPath := filepath.Join(outputDir, filename)
-		if err := os.WriteFile(outPath, []byte(uki.Content), 0644); err != nil {
-			return fmt.Errorf("erro ao exportar %s: %w", filename, err)
+	for _, u := range ukis {
+		outPath, err := u.destino(outputDir)
+		if err == nil {
+			err = os.WriteFile(outPath, []byte(u.Content), 0644)
 		}
-		indexEntries = append(indexEntries, fmt.Sprintf("- [%s](%s)", uki.Title, filename))
+		if err != nil {
+			return fmt.Errorf("erro ao exportar %s: %w", filepath.Base(u.Path), err)
+		}
+		rel, _ := filepath.Rel(outputDir, outPath)
+		indexEntries = append(indexEntries, fmt.Sprintf("- [%s](%s)", u.Title, filepath.ToSlash(rel)))
 	}
 
 	// Criar índice README.md
