@@ -109,7 +109,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 2 · Bard
 
-- [ ] **B01 · Descoberta dos plugins com `.exe` e com confiança** ▶
+- [x] **B01 · Descoberta dos plugins com `.exe` e com confiança** ▶
   - **Problema:** `plugins/bard/tools/plugin_helper.go:~16-34` procura `yby-plugin-<nome>` e `<nome>` sem `.exe`, então no Windows o Sentinel e o Atlas nunca rodam pelo Bard. Também roda `./.yby/plugins/<nome>` do diretório atual sem a verificação de confiança do core: um repo clonado pode trazer um binário.
   - **Fazer:** de preferência, o core passa ao Bard os caminhos já resolvidos e confiáveis dos plugins (no pedido ou numa env, ex.: `YBY_PLUGINS` com JSON nome→caminho), e o Bard usa só esses. Sem o core (binário direto), procurar com `.exe` no Windows e só em `~/.yby/plugins`.
   - **Verificar:** teste por GOOS; teste de que `./.yby/plugins` sem confiança não roda.
@@ -677,6 +677,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B03 | O classificador recebe todos os intents com o esquema de parâmetros e o cluster/namespace da sessão (sem a regra do "default"), lê JSON no meio do texto e número como texto, registra falhas em debug, e o Fluxo não executa ferramenta sem os parâmetros obrigatórios; registry em ordem estável. | este commit |
 | 26/10/2026 | B06 | A saída e o erro de toda ferramenta passam pelo `pkg/redacao` no `Fluxo` (prompt e "↵ ver"); o `kubectl_get` lista só em wide ou name (sem yaml, json, jsonpath, go-template em nenhum recurso, Secrets inclusive); resource, name, pod, namespace e tail da IA são conferidos antes do kubectl e do Sentinel, e valor com "-" no começo não vira flag. | este commit |
 | 26/10/2026 | B04 | Tools YAML com os intents, a do projeto vencendo a global e só com confiança (`yby plugin trust <arquivo>` grava o SHA-256 do arquivo em `pkg/confianca`; sem ela, ou mudado, aparece no `/ferramentas` com o motivo), o mesmo para os prompts de `.yby/prompts`; o `command` roda sem shell, com cada `{{param}}` como argumento inteiro, valor com "-" recusado, `YBY_PARAM_<NOME>` no env, contexto do Bard e prazo de 2 min; no Windows o programa que de fato roda pelo cmd.exe, resolvido pelo PATHEXT mesmo em caminho relativo sem extensão (`cmd`, `.bat`, `.cmd` como o `az.cmd`) recusa valor com metacaractere do cmd (aspas, `%`, `&`, barra vertical, `<`, `>`, `^`, `!`, parênteses ou quebra de linha), e comando que só funciona num shell (ou shell com `{{}}`) não carrega. | este commit |
+| 26/10/2026 | B01 | O Bard acha o Sentinel e o Atlas como o core (`~/.yby/plugins` e depois `./.yby/plugins`, `yby-plugin-<nome>` com `.exe` no Windows, sem os nomes legados) e só roda o binário que passa no `plugin.IsTrusted`, o mesmo registro do core; sem confiança, o `/ferramentas` diz "não confiável · rode yby plugin trust". Sem contrato novo: o `$YBY_BIN sentinel` perderia o `--context` da sessão (o Sentinel lê o kube_context só do pedido) e o `YBY_PLUGINS` faria o core calcular o SHA-256 de todo plugin a cada comando. | este commit |
 
 ### Fase 3 · Synapstor
 

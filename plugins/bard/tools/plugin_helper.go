@@ -3,35 +3,62 @@ package tools
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
 
-// discoverPluginBinary busca o binário de um plugin nos paths padrão.
-// Retorna o caminho absoluto ou erro se não encontrado.
+var (
+	// errPluginAusente é o plugin que não está em nenhuma das pastas de plugins.
+	errPluginAusente = errors.New("plugin não instalado")
+	// errNaoConfiavel é o plugin achado que não está registrado como confiável, ou cujo
+	// binário mudou depois do registro.
+	errNaoConfiavel = errors.New("plugin não registrado como confiável")
+)
+
+// nomeDoBinario é o arquivo do plugin: yby-plugin-<nome>, com .exe no Windows.
+func nomeDoBinario(nome, goos string) string {
+	if goos == "windows" {
+		return "yby-plugin-" + nome + ".exe"
+	}
+	return "yby-plugin-" + nome
+}
+
+// discoverPluginBinary acha o binário de um plugin como o core: ~/.yby/plugins e depois
+// ./.yby/plugins, e vale o primeiro achado. Só devolve o binário registrado como confiável
+// (yby plugin trust, ou o install), com o mesmo registro e a mesma verificação do core: um
+// repositório clonado pode trazer um .yby/plugins.
 func discoverPluginBinary(name string) (string, error) {
-	// Nomes possíveis: "yby-plugin-{name}" (padrão) e "{name}" (legado)
-	binaryName := "yby-plugin-" + name
-	home, _ := os.UserHomeDir()
-	paths := []string{
-		filepath.Join(".yby", "plugins", binaryName),
-		filepath.Join(home, ".yby", "plugins", binaryName),
-		filepath.Join(".yby", "plugins", name),
-		filepath.Join(home, ".yby", "plugins", name),
+	arquivo := nomeDoBinario(name, runtime.GOOS)
+	var pastas []string
+	if home, err := os.UserHomeDir(); err == nil {
+		pastas = append(pastas, filepath.Join(home, ".yby", "plugins"))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		pastas = append(pastas, filepath.Join(cwd, ".yby", "plugins"))
 	}
 
-	for _, p := range paths {
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p, nil
+	for _, pasta := range pastas {
+		caminho := filepath.Join(pasta, arquivo)
+		if info, err := os.Stat(caminho); err != nil || info.IsDir() {
+			continue
 		}
+		ok, err := plugin.IsTrusted(caminho)
+		if err != nil {
+			return "", fmt.Errorf("falha ao conferir a confiança de %s: %w", caminho, err)
+		}
+		if !ok {
+			return "", fmt.Errorf("%w: %s (rode yby plugin trust %s)", errNaoConfiavel, caminho, name)
+		}
+		return caminho, nil
 	}
-
-	return "", fmt.Errorf("binário do plugin '%s' não encontrado nos paths: %v", name, paths)
+	return "", fmt.Errorf("%w: %s não está em ~/.yby/plugins nem em .yby/plugins (rode yby plugin install %s)", errPluginAusente, arquivo, name)
 }
 
 // invokePlugin executa um plugin como subprocesso e retorna a resposta.

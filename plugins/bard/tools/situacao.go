@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"os/exec"
 	"sort"
 	"strings"
@@ -63,7 +64,11 @@ func situacoes(procurar, plugin func(string) (string, error)) []Situacao {
 				nota = "kubectl não está no PATH"
 			}
 		case "sentinel", "atlas":
-			if _, err := plugin(familia); err != nil {
+			_, err := plugin(familia)
+			switch {
+			case errors.Is(err, errNaoConfiavel):
+				nota = "plugin " + familia + " não confiável · rode yby plugin trust " + familia
+			case err != nil:
 				nota = "plugin " + familia + " não instalado"
 			}
 		}
