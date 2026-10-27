@@ -399,7 +399,12 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 		return report, nil
 	}
 
-	// 5. Inicializar Vector Store
+	// 5. O modelo local baixa no primeiro uso, numa etapa própria.
+	if err := ai.PrepararEmbeddings(ctx, i.Provider, et); err != nil {
+		return nil, err
+	}
+
+	// 6. Inicializar Vector Store
 	et.Iniciar("gerar embeddings")
 	vs, err := ai.NewVectorStore(ctx, storePath, i.Provider)
 	if err != nil {
@@ -416,7 +421,7 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 
 	vs.AoAvancar = func(feitos, total int) { et.Avancar(float64(feitos) / float64(total)) }
 
-	// 6. Indexar
+	// 7. Indexar
 	if err := vs.AddDocuments(ctx, allChunks, allMetadatas, allIDs); err != nil {
 		et.Falhar("")
 		return nil, err
@@ -424,7 +429,7 @@ func (i *Indexer) Run(ctx context.Context) (*IndexReport, error) {
 
 	report.EmbeddingsCreated = len(allChunks)
 
-	// 7. Salvar manifest atualizado
+	// 8. Salvar manifest atualizado
 	if err := i.saveManifest(newManifest); err != nil {
 		et.Falhar("")
 		return nil, fmt.Errorf("erro ao salvar manifest de indexação: %w", err)

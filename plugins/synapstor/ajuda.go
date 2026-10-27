@@ -93,7 +93,9 @@ var ajudas = map[string]func() ui.Ajuda{
 				{Nome: "    --full", Descricao: "indexa tudo de novo, mesmo o que não mudou"},
 				flagAjuda,
 			},
-			Rodape: "Os embeddings vêm do Ollama, do Gemini ou da OpenAI; os CLIs claude e gemini não geram embeddings.",
+			Rodape: "Os embeddings vêm do Ollama, se ele estiver rodando, ou do Gemini e da OpenAI configurados " +
+				"em ai.embedding; sem eles, de um modelo local que entende português, baixado no primeiro uso " +
+				"(~120 MB, em ~/.yby/models). Os CLIs claude e gemini não geram embeddings.",
 		}
 	},
 	"quality": func() ui.Ajuda {

@@ -89,9 +89,6 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	}
 
 	provider := provedorDeEmbeddings(ctx)
-	if provider == nil {
-		return semEmbeddings()
-	}
 
 	ui.Title(saida, "synapstor", "search · "+aspas(query))
 	fmt.Fprintln(saida)
@@ -99,12 +96,17 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	parar := animar(prog, erros)
 	defer parar()
 
-	prog.Iniciar("buscar no índice")
 	storePath := filepath.Join(raiz, ".synapstor", ".index")
 	if _, err := os.Stat(storePath); err != nil {
-		prog.Falhar("")
 		return indiceVazio()
 	}
+	// O modelo local baixa no primeiro uso, numa etapa antes da busca; sem índice, nada
+	// é baixado.
+	if err := ai.PrepararEmbeddings(ctx, provider, prog); err != nil {
+		return erroDoDownload(err)
+	}
+
+	prog.Iniciar("buscar no índice")
 	vs, err := ai.NewVectorStore(ctx, storePath, provider)
 	if err != nil {
 		prog.Falhar("")
@@ -138,7 +140,7 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	prog.Concluir(plural(len(docs), "parecido", "parecidos"))
 	parar()
 
-	escreverResultados(saida, results, foraDoCorte)
+	escreverResultados(saida, results, foraDoCorte, nomeDosEmbeddings(ctx, provider))
 	return nil
 }
 
@@ -197,9 +199,9 @@ func resultadosDaBusca(docs []ai.UnknownDocument, topK int) ([]searchResult, int
 }
 
 // escreverResultados escreve a seção RESULTADOS e o resumo da busca: cada resultado em
-// três linhas (pontuação e título, caminho e o começo do texto), e fora quantos ficaram
-// abaixo de minScore.
-func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int) {
+// três linhas (pontuação e título, caminho e o começo do texto), fora quantos ficaram
+// abaixo de minScore e de onde vêm os embeddings.
+func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int, embeddings string) {
 	corte := pontuacao(minScore)
 	if len(results) == 0 {
 		fmt.Fprintln(w)
@@ -209,6 +211,7 @@ func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int) {
 			frase = plural(foraDoCorte, "abaixo de "+corte+" ficou de fora", "abaixo de "+corte+" ficaram de fora")
 		}
 		ui.SummaryCom(w, []ui.ParteResumo{{Texto: "0 resultados", Tipo: ui.CheckNeutro}}, frase)
+		ui.Campos(w, ui.Campo{Rotulo: "embeddings", Valor: embeddings})
 		return
 	}
 
@@ -243,6 +246,7 @@ func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int) {
 		frase = plural(foraDoCorte, "abaixo de "+corte+" ficou de fora", "abaixo de "+corte+" ficaram de fora")
 	}
 	ui.SummaryCom(w, []ui.ParteResumo{{Texto: plural(len(results), "resultado", "resultados"), Tipo: ui.CheckOk}}, frase)
+	ui.Campos(w, ui.Campo{Rotulo: "embeddings", Valor: embeddings})
 }
 
 // pontuacao formata a pontuação com duas casas e vírgula, como "0,82".

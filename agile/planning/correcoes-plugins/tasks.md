@@ -252,7 +252,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - ignorar `_Footer.md`/`_Sidebar.md`.
   - **Verificar:** testes do split e do corte.
   - **Conferência (26/10):** apagar os trechos do arquivo (por `source`) antes de readicionar, senão um UKI que encolhe deixa trechos órfãos. O resumo do `index` passa a contar trechos e arquivos. A injeção no Bard (`tui/fluxo.go`) fica na onda 2.
-- [ ] **Y06 · Embeddings: dizer qual é, avisar o download e usar modelo que entende PT-BR**
+- [x] **Y06 · Embeddings: dizer qual é, avisar o download e usar modelo que entende PT-BR**
   - **Problema:** `GetEmbeddingProvider` nunca devolve nil, então `semEmbeddings` e as checagens de nil (`comandos.go:~46-50,152-155`, `search.go:~87-90`) nunca rodam. Sem Ollama, tudo "funciona" com o all-MiniLM-L6-v2, que só entende inglês, contra UKIs em PT-BR. O primeiro uso baixa ~90 MB só com `slog.Info`.
   - **Fazer:**
     - campo "embeddings: <provider/modelo>" no resumo do `index` e do `search`;
@@ -682,6 +682,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y09 | Arquivo que não abre mantém a entrada antiga no manifest e no índice, com aviso; cada arquivo é lido uma vez e o hash sai do conteúdo lido; o `index` pega uma trava do sistema (`gofrs/flock`) em `.synapstor/.index/index.lock`, que sai sozinha quando o processo cai, e o segundo `index` para com "outro yby synapstor index está rodando neste projeto". | este commit |
 | 26/10/2026 | Y04 | `VectorStore.Search` limita o topK ao número de documentos e devolve vazio com a coleção vazia, sem o erro do chromem; a unificação do corte de relevância com o Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
+| 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |
 
 ### Fase 4 · Sentinel
 
