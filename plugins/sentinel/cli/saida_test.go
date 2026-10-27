@@ -142,15 +142,16 @@ func (p *provedorFalso) Completion(_ context.Context, _, contexto string) (strin
 func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.SecurityBackend, cs []checks.SecurityCheck, prov *provedorFalso) {
 	t.Helper()
 	k, b, c, p, r, te, l := novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida
-	nc, ec := nomeDoContexto, execCommand
+	nc, np, ec := nomeDoContexto, namespacePadrao, execCommand
 	et, cf := entradaTerminal, confirmar
 	t.Cleanup(func() {
 		novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida = k, b, c, p, r, te, l
-		entradaTerminal, confirmar, nomeDoContexto, execCommand = et, cf, nc, ec
+		entradaTerminal, confirmar, nomeDoContexto, namespacePadrao, execCommand = et, cf, nc, np, ec
 		os.RemoveAll(filepath.Join(homeDeTeste, ".yby"))
 	})
 	entradaTerminal = func() bool { return false }
 	nomeDoContexto = func() string { return "kind-yby" }
+	namespacePadrao = func() string { return "default" }
 	// Sem kubectl: o kubectl top falha sempre, e as goldens não dependem do kubectl da
 	// máquina nem de um cluster de verdade.
 	execCommand = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {

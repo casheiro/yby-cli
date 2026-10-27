@@ -117,7 +117,7 @@ func comando(ctx context.Context, args []string, saida, erros io.Writer) error {
 		return scanNamespace(ctx, saida, erros, op)
 	}
 
-	// Pod e namespace: flag > contexto do yby > default.
+	// Pod e namespace: flag > ambiente do yby > contexto do kubeconfig > default.
 	fullCtx := sdk.GetFullContext()
 	if op.pod == "" && fullCtx != nil {
 		if p, ok := fullCtx.Data["pod"]; ok {
@@ -125,11 +125,7 @@ func comando(ctx context.Context, args []string, saida, erros io.Writer) error {
 		}
 	}
 	if op.namespace == "" {
-		if fullCtx != nil && fullCtx.Infra.Namespace != "" {
-			op.namespace = fullCtx.Infra.Namespace
-		} else {
-			op.namespace = "default"
-		}
+		op.namespace = namespacePadrao()
 	}
 	if op.pod == "" {
 		return yerrors.New(yerrors.ErrCodeValidation, "falta o nome do pod").

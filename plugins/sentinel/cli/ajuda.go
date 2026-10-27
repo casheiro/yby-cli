@@ -70,7 +70,7 @@ func ajudaScan() ui.Ajuda {
 			yby sentinel scan -n payments --scope cluster
 			yby sentinel scan -n payments --fix-dry-run`,
 		Flags: []ui.Termo{
-			{Nome: "-n, --namespace texto", Descricao: "namespace a examinar (padrão default)"},
+			{Nome: "-n, --namespace texto", Descricao: "namespace a examinar (padrão: o do ambiente pedido ou do contexto do kubeconfig, ou default)"},
 			{Nome: "-o, --output formato", Descricao: "terminal, json ou markdown (padrão terminal)"},
 			{Nome: "-f, --file arquivo", Descricao: "grava o json ou o markdown no arquivo em vez de na tela"},
 			{Nome: "-p, --profile perfil", Descricao: "deixa só os achados do perfil, de todos os motores: " + listaComOu(nomesDosPerfis())},
@@ -97,7 +97,7 @@ func ajudaInvestigate() ui.Ajuda {
 			yby sentinel investigate worker-5d8b6-q7tvn -n payments
 			yby sentinel investigate worker-5d8b6-q7tvn -n payments -o markdown -f worker.md`,
 		Flags: []ui.Termo{
-			{Nome: "-n, --namespace texto", Descricao: "namespace do pod (padrão: o do contexto, ou default)"},
+			{Nome: "-n, --namespace texto", Descricao: "namespace do pod (padrão: o do ambiente pedido ou do contexto do kubeconfig, ou default)"},
 			{Nome: "-o, --output formato", Descricao: "terminal, json ou markdown (padrão terminal)"},
 			{Nome: "-f, --file arquivo", Descricao: "grava o json ou o markdown no arquivo em vez de na tela"},
 			{Nome: "    --no-cache", Descricao: "ignora a análise guardada e pergunta à IA de novo"},

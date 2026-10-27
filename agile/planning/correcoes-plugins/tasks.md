@@ -27,7 +27,7 @@ A conferência de 26/10/2026 (um agente por fase, só leitura) mapeou os arquivo
 | 1 | bard (`feat/correcoes-bard`) | B05, B08, B10, B03, B06, B04, B01, B09, B11, B14, B13 | onda 0 |
 | 2 | contratos (`feat/correcoes-contratos`) | K02, K04, K03, B07, B02, B12, B15 (o lado do Bard no Y01, Y04 e Y05) | integração local das trilhas da onda 1 |
 | 3 | fecho | P01, P03, P02 | onda 2 e a release |
-| 4 | pós-release (`feat/correcoes-pos-release`) | P02 (CHANGELOG e CLAUDE.md), P05, P04, S16 | a v5.8.2 |
+| 4 | pós-release (`feat/correcoes-pos-release`) | P02 (CHANGELOG e CLAUDE.md), P05, P04, S16, S17 | a v5.8.2 |
 
 **Arquivos quentes entre trilhas** (merge com cuidado): `pkg/ai/prompts/defaults.go` (B03, B11, K03, Y07, Y08, Y13, A02, A10, cada um no seu prompt), `pkg/ai/factory.go` (B13 e B14 no `GetProvider`; Y01 e Y06 no `GetEmbeddingProvider`), `CLAUDE.md`.
 
@@ -635,6 +635,10 @@ A conferência da wiki contra o código da v5.8.2 achou três erros. Branch `fea
   - **Problema:** desde o K01, sem `-c`/`YBY_ENV` o contexto do core não vem e o `investigate` pula o `kubectl top`, embora leia o pod no current-context.
   - **Fazer:** sem contexto do core, rodar o `kubectl top` no mesmo cluster que o resto do `investigate`.
   - **Verificar:** teste com o `execCommand` falso.
+- [x] **S17 · Sentinel começa no namespace do contexto do kubeconfig** (decisão do usuário, 27/10)
+  - **Problema:** sem `-n` e sem ambiente pedido, o `scan` e o `investigate` usavam `default`, e não o namespace do contexto do kubeconfig, onde o kubectl e o Viz começam. O `scan` também ignorava o namespace do ambiente pedido.
+  - **Fazer:** `-n` > namespace do ambiente pedido > namespace do contexto do kubeconfig que o cliente usa > `default`, no `scan` e no `investigate`.
+  - **Verificar:** testes com kubeconfig falso; golden da ajuda.
 
 ---
 
@@ -805,3 +809,4 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 27/10/2026 | S16 | Sem contexto do core, o `kubectl top` do `investigate` roda no kubeconfig padrão com `--context` no current-context (o mesmo cluster do cliente); com ambiente, como antes. A chave do cache de análises ganha o contexto atual também sem ambiente. O `top` roda com prazo de 5 s e o ctx do investigate (`exec.CommandContext`), e prazo estourado vira "indisponíveis". Testes com kubectl falso por processo auxiliar; as goldens não dependem mais do kubectl da máquina. Fica para o usuário: sem ambiente, o namespace padrão continua `default`, não o do contexto do kubeconfig | este commit |
 | 27/10/2026 | P04 e P05 | Com a verificação de confiança ligada (agora também no `yby plugin` e no `yby init`, que não a ligavam), a descoberta não roda o `manifest` de binário não confiável: ele entra com manifesto sintético ("não confiável · rode yby plugin trust <nome>", hook `command`), fica fora do gen-docs e o `yby <nome>` cai no erro do executor, que agora usa o nome que o `trust` aceita (e chega à tela com a dica, pelo `falhaComHint`). O registro guarda caminho, tamanho e mtime: a descoberta só recalcula o hash quando mudam (o executor sempre recalcula), relê o registro antes de gravar o carimbo e grava por temporário e `Rename`. Plugin nenhum toma `help`, `completion` ou `__complete`; `untrust` no Windows sem diferenciar maiúsculas e com `.exe`. Limites que ficam: janela de milissegundos entre a releitura e o `Rename` (só lock de arquivo fecha), leitura rara com "Acesso negado" no Windows durante o `Rename` (o plugin é recusado naquele comando) e o `manifest` confiando no carimbo quando alguém forja o mtime | este commit |
+| 27/10/2026 | S17 | `namespaceDoKube` (`kubeclient.go`): `-n` > namespace do ambiente pedido > namespace do contexto do kubeconfig que o cliente usa > `default`, no `scan` (que antes ignorava até o ambiente) e no `investigate`, pela dependência trocável `namespacePadrao`. Ajuda e golden atualizadas; seção "Próxima versão" no CHANGELOG com S17, P04/P05 e S16. A wiki (Plugins.md) acompanha depois da próxima release | este commit |

@@ -36,7 +36,7 @@ EXEMPLOS
   yby sentinel scan -n payments --fix-dry-run
 
 FLAGS
-  -n, --namespace texto  namespace a examinar (padrão default)
+  -n, --namespace texto  namespace a examinar (padrão: o do ambiente pedido ou do contexto do kubeconfig, ou default)
   -o, --output formato   terminal, json ou markdown (padrão terminal)
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
   -p, --profile perfil   deixa só os achados do perfil, de todos os motores: cis-l1, cis-l2, pci-dss ou soc2
@@ -62,7 +62,7 @@ EXEMPLOS
   yby sentinel investigate worker-5d8b6-q7tvn -n payments -o markdown -f worker.md
 
 FLAGS
-  -n, --namespace texto  namespace do pod (padrão: o do contexto, ou default)
+  -n, --namespace texto  namespace do pod (padrão: o do ambiente pedido ou do contexto do kubeconfig, ou default)
   -o, --output formato   terminal, json ou markdown (padrão terminal)
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
       --no-cache         ignora a análise guardada e pergunta à IA de novo
