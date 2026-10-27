@@ -35,7 +35,7 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 		return "", fmt.Errorf("sentinel não disponível: %w", err)
 	}
 
-	resp, err := invokePlugin(binaryPath, pedidoSentinelInvestigate(pod, params))
+	resp, err := invokePlugin(ctx, binaryPath, pedidoSentinelInvestigate(pod, params))
 	if err != nil {
 		return "", err
 	}

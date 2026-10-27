@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -61,14 +63,17 @@ func discoverPluginBinary(name string) (string, error) {
 	return "", fmt.Errorf("%w: %s não está em ~/.yby/plugins nem em .yby/plugins (rode yby plugin install %s)", errPluginAusente, arquivo, name)
 }
 
-// invokePlugin executa um plugin como subprocesso e retorna a resposta.
-func invokePlugin(binaryPath string, req plugin.PluginRequest) (*plugin.PluginResponse, error) {
+// invokePlugin executa um plugin como subprocesso e retorna a resposta. O cancelamento do
+// ctx (esc na TUI) mata o plugin.
+func invokePlugin(ctx context.Context, binaryPath string, req plugin.PluginRequest) (*plugin.PluginResponse, error) {
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao serializar request: %w", err)
 	}
 
-	cmd := exec.Command(binaryPath)
+	cmd := exec.CommandContext(ctx, binaryPath)
+	// Sem filhos presos ao stdout, o Wait volta logo depois do kill; o prazo cobre o resto.
+	cmd.WaitDelay = 2 * time.Second
 	// O pedido do core ao Bard (variável ou arquivo) fica de fora: vale só o desta chamada.
 	env := make([]string, 0, len(os.Environ())+1)
 	for _, kv := range os.Environ() {

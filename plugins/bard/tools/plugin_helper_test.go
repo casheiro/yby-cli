@@ -1,12 +1,14 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -122,5 +124,32 @@ func TestDiscoverPluginBinary_Ausente(t *testing.T) {
 	_, err := discoverPluginBinary("sentinel")
 	if !errors.Is(err, errPluginAusente) {
 		t.Errorf("o sentinel não está instalado: %v", err)
+	}
+}
+
+// envPluginLento faz o binário de teste rodar como um plugin que dorme 30 s.
+const envPluginLento = "YBY_BARD_TOOLS_PLUGIN_LENTO"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(envPluginLento) == "1" {
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// O esc (cancelamento do ctx) mata o plugin em andamento em vez de esperar ele terminar.
+func TestInvokePlugin_CancelamentoMataOPlugin(t *testing.T) {
+	t.Setenv(envPluginLento, "1")
+	ctx, cancelar := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancelar()
+
+	inicio := time.Now()
+	_, err := invokePlugin(ctx, os.Args[0], plugin.PluginRequest{Hook: "command"})
+	if err == nil {
+		t.Fatal("esperava erro do plugin cancelado")
+	}
+	if d := time.Since(inicio); d > 5*time.Second {
+		t.Fatalf("o cancelamento não matou o plugin: voltou em %v", d)
 	}
 }

@@ -29,7 +29,7 @@ func executeSentinelScan(ctx context.Context, params map[string]string) (string,
 		return "", fmt.Errorf("sentinel não disponível: %w", err)
 	}
 
-	resp, err := invokePlugin(binaryPath, pedidoSentinelScan(params))
+	resp, err := invokePlugin(ctx, binaryPath, pedidoSentinelScan(params))
 	if err != nil {
 		return "", err
 	}

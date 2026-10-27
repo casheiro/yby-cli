@@ -29,7 +29,7 @@ func executeAtlasBlueprint(ctx context.Context, params map[string]string) (strin
 		Hook: "context",
 	}
 
-	resp, err := invokePlugin(binaryPath, req)
+	resp, err := invokePlugin(ctx, binaryPath, req)
 	if err != nil {
 		return "", err
 	}

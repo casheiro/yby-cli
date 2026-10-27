@@ -30,7 +30,16 @@ import (
 // de processo exercitarem o stdin, o stdout e o stderr de verdade.
 const envProcessoTeste = "YBY_BARD_TESTE_PROCESSO"
 
+// envKubectlLento faz o binário de teste rodar como um kubectl lento: grava os args no
+// arquivo dado e dorme 30 s.
+const envKubectlLento = "YBY_BARD_TESTE_KUBECTL_LENTO"
+
 func TestMain(m *testing.M) {
+	if arq := os.Getenv(envKubectlLento); arq != "" {
+		_ = os.WriteFile(arq, []byte(strings.Join(os.Args[1:], " ")), 0o600)
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
 	if os.Getenv(envProcessoTeste) == "1" {
 		os.Exit(executar())
 	}
