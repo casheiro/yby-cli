@@ -2,7 +2,7 @@
 
 As notas completas de cada versão, geradas a partir dos commits, ficam nas [releases do GitHub](https://github.com/casheiro/yby-cli/releases). Aqui ficam as mudanças que pedem atenção de quem já usa o yby: teclas que mudaram, códigos de saída e comportamentos novos.
 
-## Próxima versão
+## v5.8.3: plugins não confiáveis e namespace do Sentinel
 
 - **`yby sentinel scan` e `investigate` sem `-n`** examinam o namespace do ambiente pedido (`yby -c <ambiente> sentinel …`) ou, sem ele, o do contexto do kubeconfig, como o kubectl e o Viz; `default` só quando nenhum dos dois diz. Antes, era sempre `default`. Em scripts, passe `-n`.
 - **Plugins não confiáveis** (fora de `yby plugin trust`) não rodam nem para a descoberta: aparecem na ajuda e no `yby plugin list` como "não confiável · rode yby plugin trust <nome>", e o erro ao abrir um deles dá o nome certo para o `trust`.
