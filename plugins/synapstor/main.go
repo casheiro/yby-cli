@@ -130,7 +130,7 @@ func comando(ctx context.Context, raiz string, args []string, saida, erros io.Wr
 // um só embrulho (o de respond): {"data": {"synapstor_…": …}}.
 func handleContextHook(w io.Writer) {
 	cwd, _ := os.Getwd()
-	manifestPath := filepath.Join(cwd, ".synapstor", ".index_manifest.json")
+	manifestPath := filepath.Join(cwd, ".synapstor", ".index", "manifest.json")
 
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {

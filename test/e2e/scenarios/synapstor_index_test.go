@@ -64,6 +64,7 @@ func TestSynapstor_HookContext(t *testing.T) {
 
 	// Criar manifest pré-populado
 	manifestDir := filepath.Join(workDir, ".synapstor")
+	manifestDir = filepath.Join(manifestDir, ".index")
 	require.NoError(t, os.MkdirAll(manifestDir, 0755))
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -82,7 +83,7 @@ func TestSynapstor_HookContext(t *testing.T) {
 	manifestJSON, err := json.Marshal(manifest)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(
-		filepath.Join(manifestDir, ".index_manifest.json"),
+		filepath.Join(manifestDir, "manifest.json"),
 		manifestJSON, 0644,
 	))
 

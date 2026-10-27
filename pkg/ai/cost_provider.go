@@ -53,6 +53,9 @@ func NewCostTrackingProvider(inner Provider, model string) *CostTrackingProvider
 	return &CostTrackingProvider{inner: inner, model: model}
 }
 
+// Unwrap devolve o provider embrulhado.
+func (c *CostTrackingProvider) Unwrap() Provider { return c.inner }
+
 func (c *CostTrackingProvider) Name() string                         { return c.inner.Name() }
 func (c *CostTrackingProvider) IsAvailable(ctx context.Context) bool { return c.inner.IsAvailable(ctx) }
 

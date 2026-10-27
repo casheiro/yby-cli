@@ -75,6 +75,9 @@ func NewTokenAwareProvider(inner Provider, model string) *TokenAwareProvider {
 	return &TokenAwareProvider{inner: inner, model: model}
 }
 
+// Unwrap devolve o provider embrulhado.
+func (t *TokenAwareProvider) Unwrap() Provider { return t.inner }
+
 func (t *TokenAwareProvider) Name() string                         { return t.inner.Name() }
 func (t *TokenAwareProvider) IsAvailable(ctx context.Context) bool { return t.inner.IsAvailable(ctx) }
 

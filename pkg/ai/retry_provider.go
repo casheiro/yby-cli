@@ -37,6 +37,9 @@ func NewRetryProvider(inner Provider, opts retry.Options, statuses map[int]bool)
 	return &RetryProvider{inner: inner, opts: opts, retryableStatuses: statuses}
 }
 
+// Unwrap devolve o provider embrulhado.
+func (r *RetryProvider) Unwrap() Provider { return r.inner }
+
 func (r *RetryProvider) Name() string                         { return r.inner.Name() }
 func (r *RetryProvider) IsAvailable(ctx context.Context) bool { return r.inner.IsAvailable(ctx) }
 

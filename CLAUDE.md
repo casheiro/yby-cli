@@ -270,8 +270,8 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 - **Capture**: transforma texto livre em UKI estruturado via IA
 - **Study**: analisa codigo do projeto e gera documentacao tecnica via IA
-- **Search**: busca semantica nos UKIs via embeddings (Ollama local ou API)
-- **Index**: indexacao incremental com SHA-256 tracking e embeddings configuráveis por provider
+- **Search**: busca semantica nos UKIs via embeddings (Ollama, API configurada em `ai.embedding` ou, sem eles, o modelo local paraphrase-multilingual-MiniLM-L12-v2 em int8, que entende PT-BR, `pkg/ai/local_embedding.go`); o resumo do `index` e do `search` diz de onde vêm os embeddings
+- **Index**: indexacao incremental com SHA-256 tracking e embeddings configuráveis por provider; o primeiro uso do modelo local baixa ~120 MB para `~/.yby/models` numa etapa própria (`ai.PrepararEmbeddings`)
 - **Quality Scoring**: score 0-100 por UKI (contexto, exemplos, headers, links, metadata)
 - **Knowledge Decay**: deteccao de UKIs stale (>90 dias sem atividade git)
 - **Export multi-formato**: Docusaurus, Obsidian, Markdown puro

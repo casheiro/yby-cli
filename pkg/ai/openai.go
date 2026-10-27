@@ -283,6 +283,11 @@ func getEmbeddingModelForOpenAI() string {
 	return "text-embedding-3-small"
 }
 
+// IdentidadeDosEmbeddings diz que os embeddings vêm da OpenAI e com que modelo.
+func (p *OpenAIProvider) IdentidadeDosEmbeddings(context.Context) (IdentidadeDoIndice, error) {
+	return IdentidadeDoIndice{Provider: "openai", Modelo: getEmbeddingModelForOpenAI()}, nil
+}
+
 func (p *OpenAIProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	reqBody := openAIEmbeddingRequest{
 		Input:          texts,
