@@ -1,0 +1,8 @@
+flowchart TD
+  subgraph Networking["Networking"]
+    Service_api["api\n(Service)"]
+  end
+  subgraph Workloads["Workloads"]
+    grupo_Deployment["60 recursos\n(Deployment)"]
+  end
+  Service_api -->|selects| grupo_Deployment

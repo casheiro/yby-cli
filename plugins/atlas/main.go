@@ -296,7 +296,7 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 		ui.Passos(saida, "yby atlas diagram --detail full mostra todos os recursos")
 		return nil
 	}
-	prog.Concluir(fmt.Sprintf("%s · %s", plural(stats.VisibleResources, "nó", "nós"), plural(stats.Relations, "relação", "relações")))
+	prog.Concluir(fmt.Sprintf("%s · %s", plural(stats.Nodes, "nó", "nós"), plural(stats.Relations, "relação", "relações")))
 
 	// Tentar refinar com IA (se disponível e habilitado)
 	prog.Iniciar("refinar com a IA")
@@ -339,6 +339,10 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	prog.Concluir("")
 	parar()
 
+	recursos := fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)
+	if stats.Agrupados > 0 {
+		recursos += fmt.Sprintf(" · %d agrupados por tipo", stats.Agrupados)
+	}
 	nivel := "full"
 	if op.detail == analysis.DetailOverview {
 		nivel = "overview · --detail full mostra todos os recursos"
@@ -346,7 +350,7 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	ui.Section(saida, "diagrama")
 	ui.Campos(saida,
 		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(arquivoDoDiagrama), Caminho: true},
-		ui.Campo{Rotulo: "recursos", Valor: fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)},
+		ui.Campo{Rotulo: "recursos", Valor: recursos},
 		ui.Campo{Rotulo: "relações", Valor: fmt.Sprintf("%d", stats.Relations)},
 		ui.Campo{Rotulo: "analisadores", Valor: strings.Join(stats.Analyzers, ", ")},
 		ui.Campo{Rotulo: "nível", Valor: nivel},

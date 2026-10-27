@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -360,6 +361,32 @@ func TestDiagram_SemInfra(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(".yby", "atlas-diagram.mmd")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("sem infraestrutura, nenhum diagrama é gravado")
+	}
+}
+
+// No overview, acima do teto, a etapa conta os nós desenhados e o resumo diz
+// quantos recursos foram agrupados.
+func TestDiagram_OverviewComTetoContaOsNosDesenhados(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	usarDependencias(t)
+	raiz := t.TempDir()
+	var manifesto strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&manifesto, "---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: app-%02d\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(raiz, "deploys.yaml"), []byte(manifesto.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(raiz)
+
+	saida, _, err := rodar(t, "diagram", "--no-ai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, trecho := range []string{"1 nó · 0 relações", "30 de 30 no diagrama · 30 agrupados por tipo"} {
+		if !strings.Contains(saida, trecho) {
+			t.Errorf("faltou %q na saída:\n%s", trecho, saida)
+		}
 	}
 }
 

@@ -458,7 +458,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** o refinamento roda em qualquer nível (`plugins/atlas/main.go:~305-310`) com o prompt "no maximo 15-25 nos" (`pkg/ai/prompts/defaults.go:~181,190`). As estatísticas impressas são do diagrama programático, não do gravado.
   - **Fazer:** pular a IA no `full` (ou usar um prompt que preserve todos os nós); estatísticas do que foi gravado.
   - **Verificar:** teste.
-- [ ] **A03 · Overview sem sumir com o que não tem relação; teto programático**
+- [x] **A03 · Overview sem sumir com o que não tem relação; teto programático**
   - **Problema:** `diagram.go:~326-333` tira todo recurso sem aresta, e Terraform e Compose sem `depends_on` somem. `GetInfraStats` (`~394-403`) não aplica o mesmo filtro. O "max 25 nós" do CLAUDE.md só existe no prompt da IA, e com `--no-ai` não há teto.
   - **Fazer:** manter workloads, charts, módulos e serviços isolados; teto programático (agrupar por kind acima de N); estatísticas dos nós desenhados.
   - **Verificar:** goldens (A12).
@@ -695,6 +695,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A01 | Relações do blueprint sem falsos positivos: COPY casa por segmento e nunca a raiz, imports Go pelo módulo mais longo com fronteira `/` (linha única e subpastas via go/parser), relações deduplicadas por (from, to, type) | este commit |
 | 26/10/2026 | A04 | Kustomize: Kustomization identificada pelo diretório relativo (referências resolvidas pelo caminho), ligada aos recursos dos manifests que lista, patches fora do analyzer K8s e namespace herdado aplicado antes das relações (uma cópia por overlay), com fixture base+overlays e golden | este commit |
 | 26/10/2026 | A08 | Terraform: IDs prefixados com o diretório, a chamada `module.x` com source local liga ao nó do diretório resolvido (que liga aos blocos dele, sem o laço de antes) e referências `tipo.nome`/`data.`/`module.` viram relações `references`, sem contar comentários e texto de strings, com fixture envs/dev+prod e golden | este commit |
+| 26/10/2026 | A03 | Overview mantém workloads, charts, apps, módulos e serviços do compose isolados (e tudo, se nada mais sobrar), agrupa por kind acima de 25 nós (`MaxNosOverview`, arestas reapontadas e sem repetir) e o `GetInfraStats` conta os nós e arestas desenhados, com testes e golden do teto | este commit |
 
 ### Fase 6 · Viz
 
