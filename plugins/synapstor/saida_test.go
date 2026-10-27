@@ -525,6 +525,7 @@ func TestDecay_Golden(t *testing.T) {
 			{Title: "Deploy com Argo CD", DaysSinceActivity: 3},
 			{Title: "Charts do Helm", DaysSinceActivity: 120, IsStale: true},
 			{Path: "UKI-1761390200-rascunho.md", DaysSinceActivity: 1},
+			{Title: "Rollback do payments", DaysSinceActivity: 5, IsStale: true, CodeCommits: 3},
 		}, nil
 	}
 	saida, _, err := rodar(t, projetoDeExemplo(t), "decay")

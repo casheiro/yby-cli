@@ -23,7 +23,7 @@ func ajudaSynapstor() ui.Ajuda {
 			{Nome: "search \"consulta\"", Descricao: "busca semântica nos UKIs indexados"},
 			{Nome: "index", Descricao: "indexa os UKIs com embeddings (só o que mudou)"},
 			{Nome: "quality", Descricao: "dá uma nota de 0 a 100 a cada UKI"},
-			{Nome: "decay", Descricao: "aponta os UKIs sem atividade no git há mais de 90 dias"},
+			{Nome: "decay", Descricao: "aponta os UKIs sem atividade no git há mais de 90 dias ou com o código citado alterado"},
 			{Nome: "export", Descricao: "exporta os UKIs para Docusaurus, Obsidian ou markdown"},
 		},
 		Exemplos: `
@@ -111,8 +111,8 @@ var ajudas = map[string]func() ui.Ajuda{
 	"decay": func() ui.Ajuda {
 		return ui.Ajuda{
 			Comando: "yby synapstor decay",
-			Descricao: "Aponta os UKIs de .synapstor/.uki sem atividade no git há mais de 90 dias, que " +
-				"podem estar desatualizados.",
+			Descricao: "Aponta os UKIs de .synapstor/.uki sem atividade no git há mais de 90 dias, ou cujos " +
+				"arquivos citados tiveram commits depois da nota; podem estar desatualizados.",
 			Uso:   []string{"yby synapstor decay"},
 			Flags: []ui.Termo{flagAjuda},
 		}

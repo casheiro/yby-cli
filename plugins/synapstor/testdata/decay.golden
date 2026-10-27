@@ -4,5 +4,6 @@
   [38;2;167;188;113m✓[0m [38;2;221;208;181mDeploy com Argo CD          3 dias[0m
   [38;2;217;174;95m▲[0m [38;2;221;208;181mCharts do Helm              120 dias  pode estar desatualizado[0m
   [38;2;167;188;113m✓[0m [38;2;221;208;181mUKI-1761390200-rascunho.md  1 dia[0m
+  [38;2;217;174;95m▲[0m [38;2;221;208;181mRollback do payments        5 dias    3 commits no código desde a nota[0m
 
-[38;2;161;147;121mRESUMO[0m  [38;2;167;188;113m2 em dia[0m[38;2;161;147;121m · [0m[38;2;217;174;95m1 desatualizado[0m
+[38;2;161;147;121mRESUMO[0m  [38;2;167;188;113m2 em dia[0m[38;2;161;147;121m · [0m[38;2;217;174;95m2 desatualizados[0m

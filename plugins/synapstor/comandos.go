@@ -349,7 +349,7 @@ func runDecay(raiz string, saida io.Writer) error {
 	return nil
 }
 
-// escreverDecay escreve a idade de cada UKI (▲ nos desatualizados) e o resumo.
+// escreverDecay escreve a idade de cada UKI e os commits no código que ela cita (▲ nos desatualizados) e o resumo.
 func escreverDecay(w io.Writer, infos []decay.DecayInfo) {
 	ui.Title(w, "synapstor", fmt.Sprintf("decay · limite de %d dias", decay.StaleThresholdDays))
 	if len(infos) == 0 {
@@ -371,7 +371,11 @@ func escreverDecay(w io.Writer, infos []decay.DecayInfo) {
 		idade := plural(info.DaysSinceActivity, "dia", "dias")
 		if info.IsStale {
 			desatualizados++
-			ui.CheckCom(w, col, ui.CheckAviso, nomes[i], idade, "pode estar desatualizado")
+			detalhe := "pode estar desatualizado"
+			if info.CodeCommits > 0 {
+				detalhe = plural(info.CodeCommits, "commit", "commits") + " no código desde a nota"
+			}
+			ui.CheckCom(w, col, ui.CheckAviso, nomes[i], idade, detalhe)
 			continue
 		}
 		ui.CheckCom(w, col, ui.CheckOk, nomes[i], idade, "")

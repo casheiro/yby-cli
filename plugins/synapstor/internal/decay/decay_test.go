@@ -3,6 +3,7 @@ package decay
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -203,5 +204,87 @@ func TestAnalyzeDecay_SubpastasEFrontmatter(t *testing.T) {
 				t.Errorf("esperado título e data do frontmatter, obtido %+v", info)
 			}
 		}
+	}
+}
+
+// git roda o git num repositório temporário, com identidade fixa.
+func git(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	args = append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
+	if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func escrever(t *testing.T, caminho, conteudo string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(caminho), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(caminho, []byte(conteudo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAnalyzeDecay_ContaCommitsNoCodigo: a nota que cita pkg/x/y.go fica desatualizada
+// quando o código muda depois dela, mesmo com a nota recém-commitada.
+func TestAnalyzeDecay_ContaCommitsNoCodigo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git indisponível")
+	}
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	escrever(t, filepath.Join(dir, "pkg", "x", "y.go"), "package x\n")
+	escrever(t, filepath.Join(dir, ".synapstor", ".uki", "regra.md"),
+		"# Regra\n\nVeja `pkg/x/y.go` e `pkg/nao/existe.go` e https://exemplo.com/a/b.go.\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "nota")
+	for i := 0; i < 3; i++ {
+		escrever(t, filepath.Join(dir, "pkg", "x", "y.go"), fmt.Sprintf("package x\n// %d\n", i))
+		git(t, dir, "commit", "-q", "-am", fmt.Sprintf("muda %d", i))
+	}
+
+	infos, err := AnalyzeDecay(filepath.Join(dir, ".synapstor", ".uki"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("esperado 1 UKI, obtido %d", len(infos))
+	}
+	if infos[0].CodeCommits != 3 {
+		t.Errorf("esperados 3 commits no código, obtido %d", infos[0].CodeCommits)
+	}
+	if len(infos[0].CodePaths) != 1 || infos[0].CodePaths[0] != "pkg/x/y.go" {
+		t.Errorf("só o arquivo que existe deveria entrar: %v", infos[0].CodePaths)
+	}
+	if !infos[0].IsStale {
+		t.Error("código mudou depois da nota: deveria estar desatualizado")
+	}
+}
+
+// TestAnalyzeDecay_TimestampImplausivel: UKI-20261026-x não é um unix de 1970.
+func TestAnalyzeDecay_TimestampImplausivel(t *testing.T) {
+	dir := t.TempDir()
+	escrever(t, filepath.Join(dir, "UKI-20261026-x.md"), "# X\n")
+	infos, err := AnalyzeDecayWithRunner(dir, dir, &MockRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 || !infos[0].CreatedAt.IsZero() || infos[0].IsStale || infos[0].DaysSinceActivity != 0 {
+		t.Errorf("timestamp inválido do nome deveria ser ignorado: %+v", infos)
+	}
+}
+
+// TestAnalyzeDecay_UsaAtualizadoEm: sem histórico git, o updated_at do frontmatter vale.
+func TestAnalyzeDecay_UsaAtualizadoEm(t *testing.T) {
+	dir := t.TempDir()
+	antigo := time.Now().AddDate(0, 0, -200).Format(time.DateOnly)
+	escrever(t, filepath.Join(dir, "regra.md"), "---\nid: a.b\ntipo: regra\nstatus: ativo\nupdated_at: "+antigo+"\n---\n\n# R\n")
+	infos, err := AnalyzeDecayWithRunner(dir, dir, &MockRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 || !infos[0].IsStale || infos[0].DaysSinceActivity < 190 {
+		t.Errorf("updated_at de 200 dias deveria sair desatualizado: %+v", infos)
 	}
 }
