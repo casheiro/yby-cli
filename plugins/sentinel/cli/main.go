@@ -20,7 +20,7 @@ import (
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 )
 
-var execCommand = exec.Command
+var execCommand = exec.CommandContext
 
 func main() {
 	os.Exit(executar())

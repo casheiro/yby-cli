@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -141,15 +142,20 @@ func (p *provedorFalso) Completion(_ context.Context, _, contexto string) (strin
 func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.SecurityBackend, cs []checks.SecurityCheck, prov *provedorFalso) {
 	t.Helper()
 	k, b, c, p, r, te, l := novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida
-	nc := nomeDoContexto
+	nc, ec := nomeDoContexto, execCommand
 	et, cf := entradaTerminal, confirmar
 	t.Cleanup(func() {
 		novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida = k, b, c, p, r, te, l
-		entradaTerminal, confirmar, nomeDoContexto = et, cf, nc
+		entradaTerminal, confirmar, nomeDoContexto, execCommand = et, cf, nc, ec
 		os.RemoveAll(filepath.Join(homeDeTeste, ".yby"))
 	})
 	entradaTerminal = func() bool { return false }
 	nomeDoContexto = func() string { return "kind-yby" }
+	// Sem kubectl: o kubectl top falha sempre, e as goldens não dependem do kubectl da
+	// máquina nem de um cluster de verdade.
+	execCommand = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, filepath.Join(homeDeTeste, "kubectl-inexistente"))
+	}
 	// Os namespaces dos testes existem no cluster falso: o scan confere o namespace antes
 	// das etapas.
 	if fc, ok := client.(*fake.Clientset); ok {

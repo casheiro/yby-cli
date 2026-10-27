@@ -631,7 +631,7 @@ A conferência da wiki contra o código da v5.8.2 achou três erros. Branch `fea
   - **Problema:** a dica do erro de confiança manda rodar `yby plugin trust yby-plugin-<nome>`, mas o `trust` procura pelo nome do plugin, então seguir a dica dá "plugin não encontrado".
   - **Fazer:** a mensagem e a dica usam o nome que o `trust` aceita.
   - **Verificar:** teste da dica.
-- [ ] **S16 · `investigate` sem métricas fora do ambiente pedido**
+- [x] **S16 · `investigate` sem métricas fora do ambiente pedido**
   - **Problema:** desde o K01, sem `-c`/`YBY_ENV` o contexto do core não vem e o `investigate` pula o `kubectl top`, embora leia o pod no current-context.
   - **Fazer:** sem contexto do core, rodar o `kubectl top` no mesmo cluster que o resto do `investigate`.
   - **Verificar:** teste com o `execCommand` falso.
@@ -803,3 +803,4 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 27/10/2026 | S16 | Sem contexto do core, o `kubectl top` do `investigate` roda no kubeconfig padrão com `--context` no current-context (o mesmo cluster do cliente); com ambiente, como antes. A chave do cache de análises ganha o contexto atual também sem ambiente. O `top` roda com prazo de 5 s e o ctx do investigate (`exec.CommandContext`), e prazo estourado vira "indisponíveis". Testes com kubectl falso por processo auxiliar; as goldens não dependem mais do kubectl da máquina. Fica para o usuário: sem ambiente, o namespace padrão continua `default`, não o do contexto do kubeconfig | este commit |
