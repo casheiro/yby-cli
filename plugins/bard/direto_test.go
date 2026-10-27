@@ -199,29 +199,35 @@ type iaClassifica struct {
 
 func (p *iaClassifica) Completion(_ context.Context, _, _ string) (string, error) { return p.json, nil }
 
-// buscadorComErro é a busca do Synapstor que sempre falha com err.
-type buscadorComErro struct{ err error }
+// buscadorComErro é a busca do Synapstor que falha com err depois de espera.
+type buscadorComErro struct {
+	err    error
+	espera time.Duration
+}
 
 func (b buscadorComErro) Search(context.Context, string, int) ([]ai.UnknownDocument, error) {
+	time.Sleep(b.espera)
 	return nil, b.err
 }
 
-// O índice de outro modelo: a etapa diz o comando e o aviso inteiro fica abaixo dela no
-// terminal; fora dele, o stderr continua vazio e a resposta sai sem as notas.
+// O índice de outro modelo: a etapa diz o que houve e o aviso inteiro, com o comando, fica
+// abaixo dela no terminal; fora dele, o stderr continua vazio e a resposta sai sem as notas.
 func TestDireto_IndiceDeOutroModelo(t *testing.T) {
 	erro := &ai.IndiceDeOutroModeloError{
 		Indice: ai.IdentidadeDoIndice{Provider: "ollama", Modelo: "nomic-embed-text", Dimensao: 768},
 		Atual:  ai.IdentidadeDoIndice{Provider: "local", Modelo: "multilingual-e5-small", Dimensao: 384},
 	}
 	d, saida, erros := novoDiretoDeTeste(t, &iaFalsa{}, true, false)
-	d.fluxo.Buscador = buscadorComErro{err: erro}
+	// A busca demora como a real: a coluna do tempo aparece e encurta o espaço da nota.
+	d.fluxo.Buscador = buscadorComErro{err: erro, espera: 60 * time.Millisecond}
 	if err := d.perguntar(context.Background(), "o que houve?"); err != nil {
 		t.Fatalf("a pergunta segue sem as notas: %v", err)
 	}
 	tela := ansi.Strip(erros.String())
-	// A linha da etapa corta a nota, mas não o comando; o aviso vem inteiro abaixo.
-	for _, trecho := range []string{"✕ contexto do projeto   rode yby synapstor index --full",
-		"o índice foi feito com ollama/nomic-embed-text (768 dimensões)"} {
+	// A nota cabe inteira na linha da etapa, mesmo com o tempo; o comando vem no aviso.
+	for _, trecho := range []string{"✕ contexto do projeto   " + tui.NotaIndiceDeOutroModelo + " ",
+		"o índice foi feito com ollama/nomic-embed-text (768 dimensões)",
+		"rode yby synapstor index --full para refazer o índice"} {
 		if !strings.Contains(tela, trecho) {
 			t.Errorf("stderr sem %q:\n%s", trecho, tela)
 		}
