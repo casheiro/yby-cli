@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -31,28 +32,30 @@ func (c *ClusterAdminCheck) Run(ctx context.Context, client kubernetes.Interface
 
 	var findings []SecurityFinding
 	for _, binding := range bindings.Items {
-		if binding.RoleRef.Name == "cluster-admin" {
-			// Ignorar bindings do sistema e de controllers conhecidos
-			if shouldSkipRBACResource(binding.Name) {
+		if binding.RoleRef.Name != "cluster-admin" {
+			continue
+		}
+		antes := len(findings)
+		for _, subject := range allowlist.SujeitosDe(binding.Subjects) {
+			// A allowlist casa pelo subject (system:masters, SAs de controllers
+			// conhecidos), nunca pelo nome do binding.
+			if allowlist.Padrao.SujeitoPermitido(subject) {
 				continue
 			}
-			for _, subject := range binding.Subjects {
-				// Ignorar system:masters (admin padrão do K8s)
-				if subject.Kind == "Group" && subject.Name == "system:masters" {
-					continue
-				}
-				findings = append(findings, SecurityFinding{
-					CheckID:        c.ID(),
-					Severity:       SeverityCritical,
-					Category:       CategoryRBAC,
-					Namespace:      subject.Namespace,
-					Resource:       binding.Name,
-					Message:        fmt.Sprintf("ClusterRoleBinding '%s' concede cluster-admin a %s '%s'", binding.Name, subject.Kind, subject.Name),
-					Recommendation: "Substitua cluster-admin por roles mais restritivos seguindo o princípio do menor privilégio",
-					Type:           "critical",
-					Description:    fmt.Sprintf("ClusterRoleBinding '%s' concede cluster-admin a %s '%s'", binding.Name, subject.Kind, subject.Name),
-				})
-			}
+			findings = append(findings, SecurityFinding{
+				CheckID:        c.ID(),
+				Severity:       SeverityCritical,
+				Category:       CategoryRBAC,
+				Namespace:      subject.Namespace,
+				Resource:       binding.Name,
+				Message:        fmt.Sprintf("ClusterRoleBinding '%s' concede cluster-admin a %s '%s'", binding.Name, subject.Kind, subject.Nome),
+				Recommendation: "Substitua cluster-admin por roles mais restritivos seguindo o princípio do menor privilégio",
+				Type:           "critical",
+				Description:    fmt.Sprintf("ClusterRoleBinding '%s' concede cluster-admin a %s '%s'", binding.Name, subject.Kind, subject.Nome),
+			})
+		}
+		if len(findings) == antes && len(binding.Subjects) > 0 {
+			allowlist.Ignorar(ctx, "ClusterRoleBinding/"+binding.Name)
 		}
 	}
 	return findings, nil

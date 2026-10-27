@@ -18,6 +18,7 @@ import (
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
@@ -33,6 +34,9 @@ type ScanReport struct {
 	Findings        []checks.SecurityFinding `json:"findings"`
 	Sources         []string                 `json:"sources,omitempty"`
 	Recommendations string                   `json:"recommendations,omitempty"`
+	// IgnoradosPelaAllowlist conta os recursos de RBAC que a allowlist deixou de fora
+	// (cada um uma vez, mesmo que mais de uma verificação o ignore).
+	IgnoradosPelaAllowlist int `json:"ignored_by_allowlist"`
 }
 
 // Dependências do scan e do investigate, substituíveis nos testes.
@@ -152,7 +156,10 @@ func escreverResultadoScan(saida io.Writer, c coleta, namespace string, op opcoe
 		} else {
 			ui.Check(saida, ui.CheckOk, "nenhum problema de segurança encontrado", "", "")
 		}
-		ui.Campos(saida, ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)})
+		ui.Campos(saida,
+			ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
+			ui.Campo{Rotulo: "allowlist", Valor: textoDaAllowlist(report.IgnoradosPelaAllowlist)},
+		)
 		return nil
 	}
 	caminho, errRelatorio := saveReportToGlobal(report, namespace)
@@ -180,6 +187,8 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	var sources []string
 	consultou := false
 	var primeiroErro error
+	// Os backends e os checks registram nesta contagem o que a allowlist deixou de fora.
+	ctx, ignorados := allowlist.ComContagem(ctx)
 
 	// 1. Backends de segurança (Polaris, OPA)
 	for _, b := range backendsDoScan() {
@@ -262,7 +271,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 
 	// 3. Deduplicar findings (mesmo recurso + mesma mensagem)
 	findings = deduplicateFindings(findings)
-	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources}
+	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total()}
 	if len(findings) == 0 {
 		return c, nil
 	}
@@ -372,6 +381,9 @@ func exportScanMarkdown(report ScanReport) string {
 	sb.WriteString("**Resumo:** " + resumoDoRelatorio(report.Findings) + "\n")
 	if len(report.Sources) > 0 {
 		sb.WriteString(fmt.Sprintf("**Backends:** %s\n", strings.Join(report.Sources, ", ")))
+	}
+	if t := textoDaAllowlist(report.IgnoradosPelaAllowlist); t != "" {
+		sb.WriteString("**Allowlist:** " + t + "\n")
 	}
 	sb.WriteString("\n")
 	sb.WriteString("## Vulnerabilidades\n\n")

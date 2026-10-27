@@ -258,6 +258,7 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 
 	ui.Campos(w,
 		ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
+		ui.Campo{Rotulo: "allowlist", Valor: textoDaAllowlist(report.IgnoradosPelaAllowlist)},
 		ui.Campo{Rotulo: "relatório", Valor: filepath.ToSlash(caminho), Caminho: true},
 	)
 	if errRelatorio != nil {
@@ -415,6 +416,15 @@ func nomesDasFontes(fontes []string) string {
 		nomes[i] = strings.ReplaceAll(f, "checks-internos", "checks internos")
 	}
 	return strings.Join(nomes, ", ")
+}
+
+// textoDaAllowlist diz quantos recursos de RBAC a allowlist deixou de fora ("3
+// ignorados", ao lado do rótulo allowlist); com nenhum, fica vazio e a linha não aparece.
+func textoDaAllowlist(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return contar(n, "ignorado", "ignorados")
 }
 
 // larguraQuadro é a largura dos quadros do investigate em w.

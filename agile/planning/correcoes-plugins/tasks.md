@@ -399,7 +399,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - herdar o `securityContext` do pod;
     - listar os pods uma vez só.
   - **Verificar:** testes de tabela.
-- [ ] **S09 · Allowlist única e por subject**
+- [x] **S09 · Allowlist única e por subject**
   - **Problema:** são quatro cópias divergentes (`checks/rbac_allowlist.go:~44-76` e três no Rego em `backends/opa.go:~25-127`), e o casamento pelo nome deixa um `helm-qualquer` dar cluster-admin calado (`opa.go:~43-45`).
   - **Fazer:** uma fonte só, passada ao Rego como `data`; casar por subject (namespace/SA) e labels `managed-by`, não pelo nome do binding; "N ignorados pela allowlist" na tela e no JSON.
   - **Verificar:** testes do Rego.
@@ -686,6 +686,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
 | 26/10/2026 | S13 | O OPA compila cada política Rego uma vez (PrepareForEval em cache) e lista os ClusterRoles uma só vez por scan, mantendo as falhas em FalhaParcial | este commit |
 | 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
+| 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
 
 ### Fase 5 · Atlas
 

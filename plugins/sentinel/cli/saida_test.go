@@ -19,6 +19,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/charmbracelet/lipgloss"
@@ -89,11 +90,16 @@ type backendFalso struct {
 	nome    string
 	achados []backends.Finding
 	err     error
+	// ignorados são os recursos que o backend diz ter deixado de fora pela allowlist.
+	ignorados []string
 }
 
 func (b backendFalso) Name() string      { return b.nome }
 func (b backendFalso) IsAvailable() bool { return true }
-func (b backendFalso) ScanCluster(context.Context, kubernetes.Interface, string) ([]backends.Finding, error) {
+func (b backendFalso) ScanCluster(ctx context.Context, _ kubernetes.Interface, _ string) ([]backends.Finding, error) {
+	for _, r := range b.ignorados {
+		allowlist.Ignorar(ctx, r)
+	}
 	return b.achados, b.err
 }
 
@@ -160,7 +166,8 @@ func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.S
 
 // backendsDeExemplo divide os achados de exemplo entre um Polaris e um OPA falsos.
 func backendsDeExemplo() []backends.SecurityBackend {
-	polaris, opa := backendFalso{nome: "polaris"}, backendFalso{nome: "opa"}
+	polaris := backendFalso{nome: "polaris"}
+	opa := backendFalso{nome: "opa", ignorados: []string{"ClusterRoleBinding/cluster-admin", "ClusterRole/admin"}}
 	for _, f := range achadosDeExemplo() {
 		bf := backends.Finding{ID: f.CheckID, Severity: string(f.Severity), Category: string(f.Category), Resource: f.Resource, Namespace: f.Namespace, Message: f.Message, Recommendation: f.Recommendation}
 		if strings.HasPrefix(f.CheckID, "opa/") {
@@ -208,6 +215,9 @@ func TestScan_Golden(t *testing.T) {
 	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 críticos, 1 alto, 1 médio, 1 baixo\n") {
 		t.Errorf("relatório fora do formato:\n%s", md)
 	}
+	if !strings.Contains(string(md), "**Allowlist:** 2 ignorados\n") {
+		t.Errorf("o relatório diz quantos a allowlist deixou de fora:\n%s", md)
+	}
 }
 
 func TestScan_GoldenASCIISemCor(t *testing.T) {
@@ -244,6 +254,9 @@ func TestScan_JSONNoStdoutSemTituloNemEtapas(t *testing.T) {
 	}
 	if rel.Namespace != "payments" || len(rel.Findings) != 5 || strings.Join(rel.Sources, ",") != "polaris,opa" {
 		t.Errorf("relatório JSON inesperado: %+v", rel)
+	}
+	if rel.IgnoradosPelaAllowlist != 2 || !strings.Contains(saida, `"ignored_by_allowlist": 2`) {
+		t.Errorf("o JSON traz os ignorados pela allowlist: %d\n%s", rel.IgnoradosPelaAllowlist, saida)
 	}
 	if !strings.Contains(erros, "✓ polaris") || strings.Contains(erros, "YBY") {
 		t.Errorf("as etapas vão para o stderr, sem título:\n%s", erros)

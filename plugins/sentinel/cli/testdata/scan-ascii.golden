@@ -18,4 +18,5 @@ CADEIA DE SUPRIMENTOS
 
 RESUMO  2 críticos · 1 alto · 1 médio · 1 baixo
   fontes     polaris, opa
+  allowlist  2 ignorados
   relatório  ~/.yby/reports/sentinel-scan-payments-2026-10-25.md

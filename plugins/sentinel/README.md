@@ -21,6 +21,7 @@ plugins/sentinel/
     ├── cache.go             # Cache de investigacoes (~/.yby/sentinel/cache/)
     ├── report.go            # Geracao de relatorios (JSON/Markdown)
     ├── prompts.go           # Prompts de IA para scan e investigacao
+    ├── allowlist/           # Allowlist unica de RBAC (checks internos e OPA), por subject
     ├── backends/            # Backends de seguranca reais
     │   ├── types.go         # Interface SecurityBackend + Finding
     │   ├── polaris.go       # Polaris SDK — pod security, best practices
@@ -28,7 +29,6 @@ plugins/sentinel/
     ├── checks/              # Checks artesanais (fallback se backends falham)
     │   ├── types.go         # Interface SecurityCheck + SecurityFinding
     │   ├── registry.go      # Registro global de checks
-    │   ├── rbac_allowlist.go # Allowlists de recursos do sistema K8s
     │   └── *.go             # 20 checks individuais
     ├── profiles/            # Perfis de compliance
     │   ├── cis.go           # CIS Benchmark Level 1 e 2
@@ -46,9 +46,11 @@ O Sentinel usa ferramentas de seguranca reais como backends em vez de checks art
 | Backend | SDK | O que escaneia | Allowlists |
 |---------|-----|----------------|------------|
 | **Polaris** | `fairwindsops/polaris` | Pod security, best practices, resource limits, probes, topology | Built-in do Polaris |
-| **OPA** | `open-policy-agent/opa` | RBAC (cluster-admin, wildcard, secrets), NetworkPolicy | Rego embarcado com exclusoes de system:* e controllers conhecidos |
+| **OPA** | `open-policy-agent/opa` | RBAC (cluster-admin, wildcard, secrets), NetworkPolicy | Rego embarcado; a allowlist do pacote `allowlist` entra como `data.allowlist` |
 
 **Fallback**: se nenhum backend funcionar, cai nos checks artesanais internos.
+
+**Allowlist de RBAC**: uma lista so (`cli/allowlist`), lida pelos checks internos em Go e pelo OPA como `data.allowlist`. Ela casa pelo subject, nunca pelo nome do binding ou do role: um binding de cluster-admin so fica de fora quando todos os subjects sao `system:masters` ou ServiceAccounts de controllers conhecidos no namespace deles (Argo CD em `argocd`, cert-manager em `cert-manager`, Helm do k3s em `kube-system`...); um role com acesso a secrets ou curinga, quando todos os subjects ligados a ele (ClusterRoleBindings e RoleBindings) estao na lista. `admin`, `edit`, `view` e `cluster-admin` ligados por RoleBinding (valem num namespace so) ficam de fora; ligados por ClusterRoleBinding (valem no cluster todo), so quando quem recebe e do plano de controle ou esta na lista: um ClusterRoleBinding que da `edit` a `default/app` deixa a SA ler os secrets do cluster todo e aparece. Os ClusterRoles `system:*` ficam de fora enquanto ligados so ao plano de controle. Labels como `app.kubernetes.io/managed-by` nao contam: quem cria o binding poe o label que quiser. O scan diz quantos recursos ficaram de fora ("allowlist 3 ignorados" na tela, `ignored_by_allowlist` no JSON). Os checks de RBAC do Polaris nao passam pela allowlist.
 
 **Deduplicacao**: findings do mesmo check sao agrupados — mostra "Deployment/api (+5)" em vez de repetir pra cada workload.
 

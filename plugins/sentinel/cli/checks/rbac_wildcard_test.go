@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -71,5 +73,49 @@ func TestWildcardRBACCheck_SemWildcard(t *testing.T) {
 	}
 	if len(findings) != 0 {
 		t.Errorf("esperava zero findings, obteve %d", len(findings))
+	}
+}
+
+// TestWildcardRBACCheck_AllowlistPorSubject: o role curinga ligado só à SA do Argo CD fica
+// de fora e é contado; o mesmo nome ligado também a uma SA qualquer (por um RoleBinding de
+// outro namespace) aparece, e o nome do role não decide nada.
+func TestWildcardRBACCheck_AllowlistPorSubject(t *testing.T) {
+	curinga := func(nome string) *rbacv1.ClusterRole {
+		return &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: nome},
+			Rules:      []rbacv1.PolicyRule{{Verbs: []string{"*"}, Resources: []string{"*"}, APIGroups: []string{"*"}}},
+		}
+	}
+	argo := rbacv1.Subject{Kind: "ServiceAccount", Name: "argocd-server", Namespace: "argocd"}
+	client := fake.NewSimpleClientset(
+		curinga("argocd-server"),
+		curinga("argocd-maligno"),
+		&rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "argocd-server"},
+			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "argocd-server"},
+			Subjects:   []rbacv1.Subject{argo},
+		},
+		&rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "argocd-maligno"},
+			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "argocd-maligno"},
+			Subjects:   []rbacv1.Subject{argo},
+		},
+		&rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "qualquer", Namespace: "loja"},
+			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "argocd-maligno"},
+			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "app", Namespace: "loja"}},
+		},
+	)
+	ctx, contagem := allowlist.ComContagem(context.Background())
+
+	findings, err := (&WildcardRBACCheck{}).Run(ctx, client, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Resource != "ClusterRole/argocd-maligno" {
+		t.Errorf("esperava só o argocd-maligno: %+v", findings)
+	}
+	if contagem.Total() != 1 {
+		t.Errorf("ignorados pela allowlist = %d, queria 1", contagem.Total())
 	}
 }
