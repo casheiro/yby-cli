@@ -258,6 +258,43 @@ func TestAnalyzeDecay_ContaCommitsNoCodigo(t *testing.T) {
 	}
 }
 
+// TestAnalyzeDecay_NotaNaoCommitadaValeODia: o updated_at só com a data não pode contar os
+// commits do mesmo dia; os de um dia seguinte contam.
+func TestAnalyzeDecay_NotaNaoCommitadaValeODia(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git indisponível")
+	}
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	codigo := filepath.Join(dir, "pkg", "x", "y.go")
+	escrever(t, codigo, "package x\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "codigo")
+	escrever(t, codigo, "package x\n// mudou\n")
+	git(t, dir, "commit", "-q", "-am", "muda hoje")
+	hoje := time.Now().UTC().Format(time.DateOnly)
+	escrever(t, filepath.Join(dir, ".synapstor", ".uki", "regra.md"),
+		"---\nid: a.b\ntipo: regra\nstatus: ativo\nupdated_at: "+hoje+"\n---\n\nVeja `pkg/x/y.go:12`.\n")
+
+	analisar := func() DecayInfo {
+		infos, err := AnalyzeDecay(filepath.Join(dir, ".synapstor", ".uki"), dir)
+		if err != nil || len(infos) != 1 {
+			t.Fatalf("infos=%v err=%v", infos, err)
+		}
+		return infos[0]
+	}
+	if i := analisar(); i.CodeCommits != 0 || i.IsStale {
+		t.Errorf("commit do mesmo dia não conta: %+v", i)
+	}
+
+	escrever(t, codigo, "package x\n// mudou de novo\n")
+	t.Setenv("GIT_COMMITTER_DATE", time.Now().Add(48*time.Hour).Format(time.RFC3339))
+	git(t, dir, "commit", "-q", "-am", "muda depois")
+	if i := analisar(); i.CodeCommits != 1 || !i.IsStale {
+		t.Errorf("commit de um dia seguinte deveria contar: %+v", i)
+	}
+}
+
 // TestAnalyzeDecay_TimestampImplausivel: UKI-20261026-x não é um unix de 1970.
 func TestAnalyzeDecay_TimestampImplausivel(t *testing.T) {
 	dir := t.TempDir()

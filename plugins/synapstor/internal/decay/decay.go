@@ -160,8 +160,8 @@ func caminhosCitados(texto, projectDir string) []string {
 }
 
 // commitsNoCodigo conta os commits distintos, nos arquivos citados, depois do último
-// commit do UKI; sem commit do UKI, os depois da data de referência. Sem nenhum dos dois,
-// não há como medir.
+// commit do UKI; sem commit do UKI, os depois da data de referência (data sem hora vale
+// o dia inteiro). Sem nenhum dos dois, não há como medir.
 func commitsNoCodigo(runner CommandRunner, projectDir, ukiPath string, ref time.Time, caminhos []string) int {
 	if len(caminhos) == 0 {
 		return 0
@@ -170,6 +170,11 @@ func commitsNoCodigo(runner CommandRunner, projectDir, ukiPath string, ref time.
 	if out, err := runner.Run("git", "-C", projectDir, "log", "-1", "--format=%H", "--", ukiPath); err == nil && reHash.MatchString(out) {
 		filtro = out + "..HEAD"
 	} else if !ref.IsZero() {
+		// O atualizado_em do capture e do study traz só a data (meia-noite UTC): vale o
+		// dia inteiro, e só contam os commits dos dias seguintes.
+		if ref.Equal(ref.UTC().Truncate(24 * time.Hour)) {
+			ref = ref.Add(24 * time.Hour)
+		}
 		filtro = "--since=" + ref.Format(time.RFC3339)
 	} else {
 		return 0

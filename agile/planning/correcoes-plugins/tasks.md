@@ -690,6 +690,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y07 | O pacote `internal/uki` lista os UKIs com as subpastas de domínio e lê os metadados do frontmatter em PT-BR, do em inglês e das linhas em negrito; quality, decay, export e index usam os dois, o export sai com um frontmatter só, o capture e o study gravam o frontmatter da especificação (ID, tipo e tags da IA; status e datas do código) e o `UKI_SPEC.md` foi traduzido, com os tipos `regra`, `decisao`, `padrao`, `metrica` e `referencia`. | este commit |
 | 26/10/2026 | Y08 | O `study` quebra a pergunta em termos sem palavras vazias, pontua nome > caminho > conteúdo e só então corta em 50, usa `git ls-files` (respeita o `.gitignore`), pula testes e goldens, devolve caminhos com barras, pede e corrige a resposta com o prompt `synapstor.study` e a mensagem ao modelo saiu em PT-BR. | este commit |
 | 26/10/2026 | Y13 | Saíram o `internal/graph` e o `internal/tagger` (sem uso fora dos testes), o prompt `synapstor.tagger`, `quality.FormatScore` e `decay.FindStale` (os testes de decay filtram `IsStale` por helper) e o campo `Summary` da resposta, que saiu do prompt e do JSON; `splitMarkdown` e `semEmbeddings` já tinham saído nos Y05 e Y06. | este commit |
+| 26/10/2026 | Y10 | Ajuste da revisão: sem commit da nota, o `updated_at` só com a data vale o dia inteiro, e os commits do mesmo dia (feitos antes da nota) deixam de marcá-la como desatualizada. | este commit |
 
 ### Fase 4 · Sentinel
 
