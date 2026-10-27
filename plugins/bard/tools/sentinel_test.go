@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,93 @@ func TestFormatScanResults_Nil(t *testing.T) {
 	result := formatScanResults(nil)
 	if result != "Nenhum finding reportado." {
 		t.Errorf("resultado inesperado: %q", result)
+	}
+}
+
+// scanFalso monta o Data de um scan com n achados: um critical a cada 50, um high a cada
+// 10 e o resto low; o primeiro critical agrupa 30 recursos.
+func scanFalso(n int) map[string]interface{} {
+	var achados []interface{}
+	for i := 0; i < n; i++ {
+		sev := "low"
+		switch {
+		case i%50 == 7:
+			sev = "critical"
+		case i%10 == 3:
+			sev = "high"
+		}
+		achado := map[string]interface{}{
+			"check_id": fmt.Sprintf("polaris/check-%03d", i),
+			"severity": sev,
+			"type":     sev,
+			"resource": fmt.Sprintf("Deployment/app-%03d", i),
+			"message":  fmt.Sprintf("mensagem do achado %03d", i),
+			"scope":    "namespace",
+		}
+		if i == 7 {
+			var recursos []interface{}
+			for r := 0; r < 30; r++ {
+				recursos = append(recursos, fmt.Sprintf("Deployment/grupo-%02d", r))
+			}
+			achado["resources"] = recursos
+		}
+		achados = append(achados, achado)
+	}
+	return map[string]interface{}{"namespace": "payments", "scope": "namespace", "findings": achados}
+}
+
+// Um scan com 500 achados vira resumo: a contagem por severidade e os mais graves, com os
+// recursos de cada um até um teto; o resto fica numa linha.
+func TestFormatScanResults_Resumo(t *testing.T) {
+	texto := formatScanResults(scanFalso(500))
+
+	if len(texto) > 6*1024 {
+		t.Errorf("o resumo deveria ser curto: %d bytes\n%s", len(texto), texto)
+	}
+	for _, trecho := range []string{
+		"500 achados: 10 critical, 50 high, 440 low",
+		"polaris/check-007",
+		"Deployment/grupo-00",
+		"e mais 20 recursos",
+		fmt.Sprintf("e mais %d achados", 500-maxAchadosResumo),
+	} {
+		if !strings.Contains(texto, trecho) {
+			t.Errorf("o resumo deveria ter %q:\n%s", trecho, texto)
+		}
+	}
+	if strings.Count(texto, "\n- [") != maxAchadosResumo {
+		t.Errorf("o resumo deveria listar %d achados:\n%s", maxAchadosResumo, texto)
+	}
+	// Os mais graves primeiro: com 10 critical, nenhum low entra na lista.
+	if strings.Contains(texto, "[low]") {
+		t.Errorf("achado low não deveria passar na frente dos críticos:\n%s", texto)
+	}
+	if strings.Contains(texto, "\n  ") {
+		t.Errorf("nada de JSON indentado:\n%s", texto)
+	}
+}
+
+// O que não é um relatório de scan reconhecível vai como JSON compacto.
+func TestFormatScanResults_ForaDoFormatoCompacto(t *testing.T) {
+	texto := formatScanResults(map[string]interface{}{"outra": map[string]interface{}{"coisa": 1}})
+	if texto != `{"outra":{"coisa":1}}` {
+		t.Errorf("esperava JSON compacto: %q", texto)
+	}
+}
+
+// O investigate vai compacto, com os logs no fim, em linhas, para o corte do Fluxo deixar
+// as últimas.
+func TestFormatInvestigateResults_Compacto(t *testing.T) {
+	texto := formatInvestigateResults(map[string]interface{}{
+		"healthy": false,
+		"phase":   "Running",
+		"logs":    "linha 1\nlinha 2\n",
+	})
+	if !strings.HasPrefix(texto, `{"healthy":false,"phase":"Running"}`) {
+		t.Errorf("esperava JSON compacto sem os logs: %q", texto)
+	}
+	if !strings.HasSuffix(texto, "linha 1\nlinha 2\n") {
+		t.Errorf("os logs deveriam vir no fim, em linhas: %q", texto)
 	}
 }
 

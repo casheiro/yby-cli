@@ -228,11 +228,12 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		usadas = append(usadas, ferramenta.Name)
 		// A saída de toda ferramenta (logs, describe, achados do Sentinel, tools
 		// externas) e o erro dela, que costuma trazer a saída junto, passam pela
-		// redação antes do prompt. O "↵ ver" mostra o mesmo texto que a IA recebeu.
-		saida := redacao.Redigir(res.saida)
+		// redação e depois pelo teto (a redação vê o texto inteiro) antes do prompt.
+		// O "↵ ver" mostra o mesmo texto que a IA recebeu.
+		saida := Cortar(redacao.Redigir(res.saida), TetoFerramenta)
 		msg := EtapaMsg{Etapa: EtapaFerramenta, Rotulo: rotulo, Estado: ui.EtapaFeita, Nota: alvo, Duracao: time.Since(t0), Saida: saida}
 		if res.err != nil {
-			saida = redacao.Redigir(fmt.Sprintf("Erro: %v", res.err))
+			saida = Cortar(redacao.Redigir(fmt.Sprintf("Erro: %v", res.err)), TetoFerramenta)
 			msg.Estado = ui.EtapaFalha
 			msg.Nota = primeiraLinha(redacao.Redigir(res.err.Error()))
 			msg.Saida = saida
@@ -307,13 +308,25 @@ func (f *Fluxo) buscarContexto(ctx context.Context, entrada string) contextoBusc
 	if err != nil {
 		return contextoBuscado{nota: "Synapstor indisponível"}
 	}
+	// As notas vão na ordem da busca até o teto: a que não cabe inteira entra cortada, se
+	// ainda houver espaço para um trecho útil, e as seguintes ficam de fora.
 	var sb strings.Builder
 	n := 0
 	for _, res := range resultados {
-		if float64(res.Score) >= f.Limiar {
-			n++
-			fmt.Fprintf(&sb, "\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content)
+		if float64(res.Score) < f.Limiar {
+			continue
 		}
+		cabecalho := fmt.Sprintf("\n--- Contexto: %s ---\n", res.Metadata["title"])
+		resta := TetoNotas - sb.Len() - len(cabecalho) - 1
+		conteudo := res.Content
+		if len(conteudo) > resta {
+			if resta < minimoNota {
+				break
+			}
+			conteudo = Cortar(conteudo, resta)
+		}
+		n++
+		sb.WriteString(cabecalho + conteudo + "\n")
 	}
 	switch n {
 	case 0:

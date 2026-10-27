@@ -158,7 +158,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - aplicar `sanitizeContent` à saída de toda tool antes do prompt.
   - **Verificar:** testes.
   - **Conferência (26/10):** usa o `pkg/redacao` do R01. Entra também a injeção de flag: valores da IA que começam com `-` viram flags do kubectl em todas as `kubectl_*` (`--as=system:admin`, `--raw=…`); validar nomes e recursos. O bloqueio cobre `secret`, `secrets` e `sec`.
-- [ ] **B07 · Orçamento de tamanho do que vai à IA**
+- [x] **B07 · Orçamento de tamanho do que vai à IA**
   - **Problema:** nada limita o tamanho:
     - blueprint com `MarshalIndent`;
     - 20 mensagens inteiras de histórico;
@@ -694,6 +694,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
 | 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
 | 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
+| 26/10/2026 | B07 | Orçamento do que vai à IA (`plugins/bard/tui/orcamento.go`: `Cortar` por linhas com "… N linhas omitidas", `Recentes` e os tetos por bloco): saída de ferramenta ≤ 8 KB, notas do Synapstor ≤ 8 KB somadas, histórico ≤ 4 KB (1 KB por mensagem), cluster ≤ 3 KB com 20 pods (os com problema primeiro); scan do Sentinel resumido (contagem por severidade, os 10 mais graves com até 10 recursos, o que não rodou), investigate em JSON compacto com os logs no fim, `kubectl_events` com os 50 últimos e `--tail` até 200; `GetModelMetadata` casa pelo nome base sem a tag do Ollama (`llama3.1:8b`, `qwen2.5:7b`). | este commit |
 
 ### Fase 3 · Synapstor
 

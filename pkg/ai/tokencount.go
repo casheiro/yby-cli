@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/casheiro/yby-cli/pkg/errors"
 )
@@ -45,20 +46,32 @@ var knownModels = map[string]ModelMetadata{
 	"anthropic.claude-3-haiku-20240307-v1:0":    {Name: "claude-3-haiku-bedrock", ContextWindow: 200_000},
 	"amazon.titan-embed-text-v2:0":              {Name: "titan-embed-v2", ContextWindow: 8_192},
 
-	// Ollama (modelos comuns — limites variam por quantização)
-	"llama3":    {Name: "llama3", ContextWindow: 8_192},
-	"llama3.1":  {Name: "llama3.1", ContextWindow: 128_000},
-	"mistral":   {Name: "mistral", ContextWindow: 32_768},
-	"mixtral":   {Name: "mixtral", ContextWindow: 32_768},
-	"codellama": {Name: "codellama", ContextWindow: 16_384},
+	// Ollama (modelos comuns — limites variam por quantização). O nome vale com qualquer
+	// tag ("llama3.1:8b", "qwen2.5:7b-instruct-q4_K_M").
+	"llama3":        {Name: "llama3", ContextWindow: 8_192},
+	"llama3.1":      {Name: "llama3.1", ContextWindow: 128_000},
+	"llama3.2":      {Name: "llama3.2", ContextWindow: 128_000},
+	"llama3.3":      {Name: "llama3.3", ContextWindow: 128_000},
+	"qwen2.5":       {Name: "qwen2.5", ContextWindow: 32_768},
+	"qwen2.5-coder": {Name: "qwen2.5-coder", ContextWindow: 32_768},
+	"mistral":       {Name: "mistral", ContextWindow: 32_768},
+	"mixtral":       {Name: "mixtral", ContextWindow: 32_768},
+	"codellama":     {Name: "codellama", ContextWindow: 16_384},
 }
 
 const defaultContextWindow = 8_192
 
 // GetModelMetadata retorna os metadados de um modelo conhecido, ou um fallback com context window padrão.
+// O nome exato vale primeiro (os IDs do Bedrock têm ":" no meio); sem ele, o nome base
+// antes da tag do Ollama ("llama3.1:8b" é o llama3.1). Name continua o nome pedido.
 func GetModelMetadata(model string) ModelMetadata {
 	if meta, ok := knownModels[model]; ok {
 		return meta
+	}
+	if base, _, ok := strings.Cut(model, ":"); ok {
+		if meta, ok := knownModels[base]; ok {
+			return ModelMetadata{Name: model, ContextWindow: meta.ContextWindow}
+		}
 	}
 	return ModelMetadata{Name: model, ContextWindow: defaultContextWindow}
 }

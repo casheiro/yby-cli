@@ -47,6 +47,25 @@ func TestGetModelMetadata_UnknownModel(t *testing.T) {
 	assert.Equal(t, defaultContextWindow, meta.ContextWindow)
 }
 
+// O Ollama nomeia os modelos com a tag do tamanho ou da quantização ("llama3.1:8b"): a
+// janela é a do nome base, sem a tag. O nome exato vale primeiro (os IDs do Bedrock têm
+// ":" no meio).
+func TestGetModelMetadata_TagDoOllama(t *testing.T) {
+	casos := map[string]int{
+		"llama3.1:8b":              128_000,
+		"llama3.1:70b-instruct-q4": 128_000,
+		"llama3:latest":            8_192,
+		"qwen2.5:7b":               32_768,
+		"mistral:7b":               32_768,
+		"anthropic.claude-3-5-sonnet-20241022-v2:0": 200_000,
+		"desconhecido:7b": defaultContextWindow,
+	}
+	for modelo, janela := range casos {
+		assert.Equal(t, janela, GetModelMetadata(modelo).ContextWindow, modelo)
+	}
+	assert.Equal(t, "llama3.1:8b", GetModelMetadata("llama3.1:8b").Name)
+}
+
 // mockProvider implementa Provider para testes do TokenAwareProvider.
 type mockProviderForToken struct {
 	name string

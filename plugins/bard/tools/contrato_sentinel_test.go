@@ -50,8 +50,9 @@ func TestContrato_SentinelScanPedido(t *testing.T) {
 }
 
 // O JSON do scan gravado pelo Sentinel passa pelo mesmo caminho da ferramenta
-// (respostaDoPlugin e formatScanResults) e chega à IA com os achados inteiros: todos os
-// recursos de um achado agrupado, o escopo e o que não rodou.
+// (respostaDoPlugin e formatScanResults) e chega à IA resumido: a contagem por
+// severidade, os achados do mais grave para o menos, com todos os recursos de um achado
+// agrupado e o escopo, e o que não rodou.
 func TestContrato_SentinelScan(t *testing.T) {
 	resp, err := respostaDoPlugin(lerContratoSentinel(t, "contrato-scan.json"))
 	if err != nil {
@@ -69,10 +70,17 @@ func TestContrato_SentinelScan(t *testing.T) {
 		"critical",
 		"rbac-wildcard",
 		"sem permissão para acessar os clusterroles",
+		"6 achados: 2 critical, 1 high, 1 medium, 2 low",
+		"namespace payments",
+		"kind-yby",
 	} {
 		if !strings.Contains(texto, trecho) {
 			t.Errorf("o texto para a IA deveria ter %q:\n%s", trecho, texto)
 		}
+	}
+	// Os críticos vêm antes dos de severidade baixa, na ordem em que o Sentinel os mandou.
+	if strings.Index(texto, "polaris/runAsRootAllowed") > strings.Index(texto, "polaris/memoryLimitsMissing") {
+		t.Errorf("os achados deveriam vir do mais grave para o menos:\n%s", texto)
 	}
 }
 

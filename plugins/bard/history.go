@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/redacao"
+	"github.com/casheiro/yby-cli/plugins/bard/tui"
 )
 
 const maxHistoryEntries = 20
@@ -74,8 +75,9 @@ func loadAllEntries() ([]HistoryEntry, error) {
 	return entries, nil
 }
 
-// loadHistory lê o arquivo de histórico JSONL e retorna as últimas
-// maxHistoryEntries entradas. Se o arquivo não existir, retorna slice vazio.
+// loadHistory lê o arquivo de histórico JSONL e retorna, das últimas maxHistoryEntries
+// entradas, as que cabem no orçamento do prompt (historicoNoOrcamento). Se o arquivo não
+// existir, retorna slice vazio.
 func loadHistory() []HistoryEntry {
 	entries, _ := loadAllEntries()
 
@@ -83,7 +85,21 @@ func loadHistory() []HistoryEntry {
 		entries = entries[len(entries)-maxHistoryEntries:]
 	}
 
-	return entries
+	return historicoNoOrcamento(entries)
+}
+
+// historicoNoOrcamento devolve o histórico que vai ao system prompt: cada mensagem cortada
+// em tui.TetoMensagem e, delas, as mais recentes que cabem juntas em tui.TetoHistorico,
+// como o formatHistoryContext as escreve.
+func historicoNoOrcamento(entries []HistoryEntry) []HistoryEntry {
+	cortadas := make([]HistoryEntry, len(entries))
+	tamanhos := make([]int, len(entries))
+	for i, e := range entries {
+		e.Content = tui.Cortar(e.Content, tui.TetoMensagem)
+		cortadas[i] = e
+		tamanhos[i] = len(formatarEntrada(e))
+	}
+	return cortadas[len(cortadas)-tui.Recentes(tamanhos, tui.TetoHistorico):]
 }
 
 // loadSessionHistory filtra entries pela sessão especificada e retorna
@@ -254,12 +270,17 @@ func formatHistoryContext(entries []HistoryEntry) string {
 
 	result := "## Histórico de Conversas Anteriores\n"
 	for _, e := range entries {
-		label := "Usuário"
-		if e.Role == "assistant" {
-			label = "Assistente"
-		}
-		result += fmt.Sprintf("\n**%s** (%s):\n%s\n", label, e.Timestamp, e.Content)
+		result += formatarEntrada(e)
 	}
 
 	return result
+}
+
+// formatarEntrada escreve uma entrada do histórico como ela vai ao system prompt.
+func formatarEntrada(e HistoryEntry) string {
+	label := "Usuário"
+	if e.Role == "assistant" {
+		label = "Assistente"
+	}
+	return fmt.Sprintf("\n**%s** (%s):\n%s\n", label, e.Timestamp, e.Content)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 )
 
@@ -15,7 +16,7 @@ func init() {
 		Parameters: []ToolParam{
 			{Name: "pod", Description: "Nome do pod", Required: true},
 			{Name: "namespace", Description: "Namespace alvo", Required: false},
-			{Name: "tail", Description: "Número de linhas do final. Padrão: 50", Required: false},
+			{Name: "tail", Description: "Número de linhas do final (até 200). Padrão: 50", Required: false},
 		},
 		Execute: executeKubectlLogs,
 	})
@@ -30,17 +31,7 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 		return "", err
 	}
 
-	args := []string{"logs", pod}
-
-	if ns := namespaceDe(params); ns != "" {
-		args = append(args, "-n", ns)
-	}
-
-	tail := params["tail"]
-	if tail == "" {
-		tail = "50"
-	}
-	args = append(args, "--tail", tail)
+	args := argsKubectlLogs(pod, params)
 
 	slog.Debug("executando kubectl", "args", strings.Join(args, " "))
 
@@ -51,4 +42,25 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 	}
 
 	return string(output), nil
+}
+
+// maxLinhasLogs é o teto do --tail: a IA pedindo mais leva estas linhas, que já passam do
+// que cabe no prompt (o Fluxo guarda o fim delas).
+const maxLinhasLogs = 200
+
+// argsKubectlLogs monta os args do kubectl logs, com o --tail pedido (50 sem pedido) até
+// maxLinhasLogs. O tail já foi conferido como número.
+func argsKubectlLogs(pod string, params map[string]string) []string {
+	args := []string{"logs", pod}
+	if ns := namespaceDe(params); ns != "" {
+		args = append(args, "-n", ns)
+	}
+	tail := params["tail"]
+	if tail == "" {
+		tail = "50"
+	}
+	if n, err := strconv.Atoi(tail); err != nil || n > maxLinhasLogs {
+		tail = strconv.Itoa(maxLinhasLogs)
+	}
+	return append(args, "--tail", tail)
 }

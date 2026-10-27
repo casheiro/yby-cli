@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -104,6 +105,51 @@ func TestKubectlEvents_Parametros(t *testing.T) {
 
 	if tool.Parameters[0].Required {
 		t.Error("parâmetro 'namespace' deveria ser opcional")
+	}
+}
+
+// O kubectl_events ordena do mais antigo para o mais novo: ficam o cabeçalho e os últimos
+// eventos, com a contagem dos que saíram.
+func TestUltimosEventos(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("LAST SEEN   TYPE      REASON   OBJECT   MESSAGE\n")
+	for i := 1; i <= 300; i++ {
+		fmt.Fprintf(&sb, "%ds   Warning   BackOff   pod/worker   evento %03d\n", i, i)
+	}
+	texto := ultimosEventos(sb.String())
+
+	if !strings.HasPrefix(texto, "LAST SEEN") {
+		t.Errorf("o cabeçalho deveria ficar: %q", texto[:40])
+	}
+	if strings.Count(texto, "evento ") != maxEventos {
+		t.Errorf("esperava os %d últimos eventos:\n%s", maxEventos, texto)
+	}
+	if !strings.Contains(texto, "evento 300") || strings.Contains(texto, "evento 001") {
+		t.Errorf("deveriam ficar os mais recentes:\n%s", texto)
+	}
+	if !strings.Contains(texto, fmt.Sprintf("… %d eventos mais antigos omitidos", 300-maxEventos)) {
+		t.Errorf("faltou a contagem dos omitidos:\n%s", texto)
+	}
+
+	poucos := "LAST SEEN   TYPE\n1s   Normal\n"
+	if got := ultimosEventos(poucos); got != poucos {
+		t.Errorf("com poucos eventos a saída fica igual: %q", got)
+	}
+}
+
+// O tail do kubectl_logs tem teto: a IA pedindo 100000 linhas leva maxLinhasLogs.
+func TestArgsKubectlLogs_TetoDoTail(t *testing.T) {
+	DefinirKube("", "")
+	casos := map[string]string{
+		"":       "50",
+		"30":     "30",
+		"100000": fmt.Sprint(maxLinhasLogs),
+	}
+	for tail, esperado := range casos {
+		args := argsKubectlLogs("worker-1", map[string]string{"tail": tail})
+		if got := strings.Join(args, " "); got != "logs worker-1 --tail "+esperado {
+			t.Errorf("tail %q: args %q", tail, got)
+		}
 	}
 }
 

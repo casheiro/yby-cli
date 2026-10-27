@@ -43,16 +43,34 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 	return formatInvestigateResults(resp.Data), nil
 }
 
-// formatInvestigateResults converte os dados do investigate em texto para a IA.
+// formatInvestigateResults converte os dados do investigate em texto para a IA: JSON
+// compacto e, depois dele, os logs do pod em linhas. Dentro do JSON os logs seriam uma
+// linha só, e o teto do Fluxo, que guarda o fim de uma saída longa, perderia o fim deles.
 func formatInvestigateResults(data interface{}) string {
 	if data == nil {
 		return "Nenhuma informação de segurança encontrada para o pod."
 	}
-	formatted, err := json.MarshalIndent(data, "", "  ")
+	logs := ""
+	if campos, ok := data.(map[string]interface{}); ok {
+		if l, ok := campos["logs"].(string); ok {
+			logs = l
+			semLogs := make(map[string]interface{}, len(campos))
+			for k, v := range campos {
+				if k != "logs" {
+					semLogs[k] = v
+				}
+			}
+			data = semLogs
+		}
+	}
+	formatted, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Sprintf("%v", data)
 	}
-	return string(formatted)
+	if logs == "" {
+		return string(formatted)
+	}
+	return string(formatted) + "\n\nLogs do pod (fim):\n" + logs
 }
 
 // pedidoSentinelInvestigate é o pedido ao Sentinel para investigar o pod, no cluster e no

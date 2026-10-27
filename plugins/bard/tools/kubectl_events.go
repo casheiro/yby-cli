@@ -37,5 +37,20 @@ func executeKubectlEvents(ctx context.Context, params map[string]string) (string
 		return string(output), fmt.Errorf("kubectl events falhou: %w\n%s", err, string(output))
 	}
 
-	return string(output), nil
+	return ultimosEventos(string(output)), nil
+}
+
+// maxEventos é quantos eventos o kubectl_events leva à IA: os mais recentes.
+const maxEventos = 50
+
+// ultimosEventos deixa o cabeçalho e os últimos maxEventos da saída, que o
+// --sort-by=.lastTimestamp põe do mais antigo para o mais novo, e conta os que saíram.
+func ultimosEventos(saida string) string {
+	linhas := strings.Split(strings.TrimRight(saida, "\n"), "\n")
+	if len(linhas) <= maxEventos+1 {
+		return saida
+	}
+	omitidos := len(linhas) - 1 - maxEventos
+	partes := append([]string{linhas[0], fmt.Sprintf("… %d eventos mais antigos omitidos", omitidos)}, linhas[len(linhas)-maxEventos:]...)
+	return strings.Join(partes, "\n") + "\n"
 }
