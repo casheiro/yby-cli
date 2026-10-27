@@ -143,11 +143,13 @@ func fluxoDeTeste(p *provedorFalso) *Fluxo {
 	return f
 }
 
-// coletar lê eventos até o canal fechar, com prazo para não travar o teste.
+// coletar lê eventos até o canal fechar, com prazo para não travar o teste. O prazo pega
+// fluxo travado, não mede desempenho: com -race no CI, os testes de orçamento (200 KB de
+// ferramenta) passaram de 5 s.
 func coletar(t *testing.T, ch <-chan tea.Msg, aoReceber func(tea.Msg)) []tea.Msg {
 	t.Helper()
 	var eventos []tea.Msg
-	prazo := time.After(5 * time.Second)
+	prazo := time.After(30 * time.Second)
 	for {
 		select {
 		case msg, ok := <-ch:
