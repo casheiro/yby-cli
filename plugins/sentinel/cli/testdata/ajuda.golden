@@ -47,7 +47,7 @@ FLAGS
       --no-ai            não pede as recomendações da IA
   -h, --help             mostra esta ajuda
 
-  No formato terminal, o resumo sai na tela e o relatório completo vai para ~/.yby/reports/sentinel-scan-<namespace>-<data>.md.
+  No formato terminal, o resumo sai na tela e o relatório completo vai para ~/.yby/reports/sentinel-scan-<namespace>-<contexto>-<data>-<hora>.md.
 
 $ yby sentinel investigate -h
 ◆ YBY  SENTINEL INVESTIGATE                                ajuda

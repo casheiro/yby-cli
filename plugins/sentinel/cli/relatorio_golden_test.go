@@ -64,6 +64,11 @@ func TestRelatorioMarkdown_NaoMuda(t *testing.T) {
 		Findings:        achadosDeExemplo(),
 		Sources:         []string{"polaris", "opa"},
 		Recommendations: "1. Tire o cluster-admin do ci-deployer.\n2. Defina limites de memória.",
+		Contexto:        "kind-yby",
+		GeradoEm:        quandoGolden,
+		Perfil:          "pci-dss",
+		ForaDoPerfil:    2,
+		NaoRodaram:      []NaoRodou{{Backend: "opa", Motivo: "sem permissão para listar ClusterRoles"}},
 	})
 	conferirGolden(t, "relatorio-scan.md", scan)
 

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
@@ -48,6 +49,10 @@ type ScanReport struct {
 	// ele deixou de fora.
 	Perfil       string `json:"perfil,omitempty"`
 	ForaDoPerfil int    `json:"fora_do_perfil,omitempty"`
+	// Contexto é o contexto do kubeconfig que o scan olhou; GeradoEm é a hora em que o
+	// relatório foi gravado (só entra no markdown e no nome do arquivo).
+	Contexto string    `json:"contexto,omitempty"`
+	GeradoEm time.Time `json:"-"`
 }
 
 // NaoRodou registra as verificações de uma fonte que ficaram de fora. Verificacoes vazio
@@ -61,6 +66,7 @@ type NaoRodou struct {
 // Dependências do scan e do investigate, substituíveis nos testes.
 var (
 	novoClienteKube = getKubeClient
+	nomeDoContexto  = contextoDoKube
 	backendsDoScan  = func() []backends.SecurityBackend {
 		return []backends.SecurityBackend{backends.NewPolarisBackend(getRestConfig), backends.NewOPABackend()}
 	}
@@ -340,7 +346,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	// os do perfil, venham de que motor vierem; a IA e o --fix só veem estes.
 	findings = deduplicateFindings(normalizarAchados(findings))
 	findings, fora := filtrarPeloPerfil(findings, op.perfil)
-	c.report = ScanReport{Namespace: namespace, Scope: string(escopo.De(ctx)), Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou, Perfil: op.perfil, ForaDoPerfil: fora}
+	c.report = ScanReport{Namespace: namespace, Scope: string(escopo.De(ctx)), Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou, Perfil: op.perfil, ForaDoPerfil: fora, Contexto: nomeDoContexto()}
 	if len(findings) == 0 {
 		return c, nil
 	}
@@ -508,16 +514,55 @@ func saveReportToGlobal(report ScanReport, namespace string) (string, error) {
 		return "", err
 	}
 
-	date := relogio().Format("2006-01-02")
-	filename := fmt.Sprintf("sentinel-scan-%s-%s.md", namespace, date)
-	reportPath := filepath.Join(reportsDir, filename)
-
-	content := exportScanMarkdown(report)
-	if err := os.WriteFile(reportPath, []byte(content), 0644); err != nil {
-		return "", err
+	// O nome traz o contexto e a hora, para o segundo scan do dia (ou de outro cluster)
+	// não apagar o primeiro.
+	report.GeradoEm = relogio()
+	base := "sentinel-scan-" + namespace
+	if ctx := nomeSeguro(report.Contexto); ctx != "" {
+		base += "-" + ctx
 	}
+	base += "-" + report.GeradoEm.Format("2006-01-02-150405")
 
-	return reportPath, nil
+	content := []byte(exportScanMarkdown(report))
+	// Dois scans no mesmo segundo ganham um sufixo em vez de um sobrescrever o outro.
+	for i := 1; ; i++ {
+		nome := base + ".md"
+		if i > 1 {
+			nome = fmt.Sprintf("%s-%d.md", base, i)
+		}
+		reportPath := filepath.Join(reportsDir, nome)
+		f, err := os.OpenFile(reportPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, err = f.Write(content)
+		if errClose := f.Close(); err == nil {
+			err = errClose
+		}
+		if err != nil {
+			return "", err
+		}
+		return reportPath, nil
+	}
+}
+
+// nomeSeguro deixa só o que cabe num nome de arquivo em qualquer sistema: o nome de um
+// contexto pode ser um ARN do EKS (com ":" e "/"). Letras, números, ponto e hífen ficam;
+// o resto vira "-".
+func nomeSeguro(nome string) string {
+	var sb strings.Builder
+	for _, r := range nome {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			sb.WriteRune(r)
+		default:
+			sb.WriteRune('-')
+		}
+	}
+	return strings.Trim(sb.String(), "-.")
 }
 
 // exportScanMarkdown gera o relatório de scan em formato Markdown.
@@ -525,6 +570,12 @@ func exportScanMarkdown(report ScanReport) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("# Relatório de Segurança Sentinel — %s\n\n", report.Namespace))
 
+	if report.Contexto != "" {
+		sb.WriteString("**Contexto:** " + report.Contexto + "\n")
+	}
+	if !report.GeradoEm.IsZero() {
+		sb.WriteString("**Gerado em:** " + report.GeradoEm.Format("2006-01-02 15:04:05") + "\n")
+	}
 	sb.WriteString("**Resumo:** " + resumoDoRelatorio(report.Findings) + "\n")
 	if t := textoDoPerfil(report); t != "" {
 		sb.WriteString("**Perfil:** " + t + "\n")

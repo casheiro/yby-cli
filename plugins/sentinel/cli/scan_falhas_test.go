@@ -487,7 +487,7 @@ func TestScan_RelatorioComTil(t *testing.T) {
 	if err := comando(context.Background(), []string{"scan", "-n", "payments"}, &saida, &erros); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(saida.String(), "relatório  ~/.yby/reports/sentinel-scan-payments-2026-10-25.md") || strings.Contains(saida.String(), homeDeTeste) {
+	if !strings.Contains(saida.String(), "relatório  ~/.yby/reports/sentinel-scan-payments-kind-yby-2026-10-25-0930") || strings.Contains(saida.String(), homeDeTeste) {
 		t.Errorf("o relatório sai como ~/.yby/reports/…:\n%s", saida.String())
 	}
 }

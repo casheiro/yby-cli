@@ -4,8 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,10 +76,7 @@ func TestScan_PerfilNaTelaENoRelatorio(t *testing.T) {
 	if strings.Contains(saida, "priority class") {
 		t.Errorf("o achado fora do perfil não aparece na tela:\n%s", saida)
 	}
-	md, err := os.ReadFile(filepath.Join(homeDeTeste, ".yby", "reports", "sentinel-scan-payments-2026-10-25.md"))
-	if err != nil {
-		t.Fatalf("relatório não foi salvo: %v", err)
-	}
+	md := lerRelatorio(t)
 	if !strings.Contains(string(md), "**Perfil:** pci-dss · 1 achado fora do perfil\n") {
 		t.Errorf("o relatório diz o perfil aplicado:\n%s", md)
 	}

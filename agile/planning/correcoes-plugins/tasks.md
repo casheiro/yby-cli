@@ -430,7 +430,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `rego.New`+`Eval` por recurso (`backends/opa.go:~469-476`) e ClusterRoles listados duas vezes.
   - **Fazer:** `PrepareForEval` por política e listar uma vez só.
   - **Verificar:** testes existentes; benchmark simples.
-- [ ] **S14 · O relatório não se sobrescreve e diz o cluster**
+- [x] **S14 · O relatório não se sobrescreve e diz o cluster**
   - **Problema:** `sentinel-scan-<ns>-<dia>.md` (`scan.go:~352-353`) faz o segundo scan do dia apagar o primeiro; o markdown não traz contexto, hora, perfil nem o que não rodou.
   - **Fazer:** contexto e hora no nome e no conteúdo, além do perfil e de "não rodaram"; atualizar a menção ao caminho na ajuda, no README e no CLAUDE.md.
   - **Verificar:** golden.
@@ -685,6 +685,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S11 | Investigate redige logs, eventos e métricas e o scan redige os achados com o pkg/redacao antes da IA; o pkg/redacao passou a redigir o value de env com name sensível e o valor de ConfigMap no kubectl describe | este commit |
 | 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
 | 26/10/2026 | S13 | O OPA compila cada política Rego uma vez (PrepareForEval em cache) e lista os ClusterRoles uma só vez por scan, mantendo as falhas em FalhaParcial | este commit |
+| 26/10/2026 | S14 | O relatório do scan leva contexto e hora no nome e no conteúdo (dois scans não se sobrescrevem; contexto sanitizado) e a ajuda, o README e o CLAUDE.md citam o novo caminho | este commit |
 | 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
 | 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
 | 26/10/2026 | S03 | O achado agrupado do Polaris leva `Resources` (lista inteira, `Resource` é o primeiro, sem "(+N)"); a tela mostra "N recursos" e a lista embaixo (até 5, "e mais K"), o JSON e o relatório trazem todos | este commit |

@@ -82,7 +82,7 @@ func ajudaScan() ui.Ajuda {
 			flagAjuda,
 		},
 		Rodape: "No formato terminal, o resumo sai na tela e o relatório completo vai para " +
-			"~/.yby/reports/sentinel-scan-<namespace>-<data>.md.",
+			"~/.yby/reports/sentinel-scan-<namespace>-<contexto>-<data>-<hora>.md.",
 	}
 }
 

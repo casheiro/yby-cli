@@ -99,7 +99,7 @@ Isso evita desperdicar chamadas de IA e gerar "recomendacoes" para pods que nao 
 
 O scan gera automaticamente:
 - **Terminal**: resumo por severidade e categoria + path do relatorio
-- **Arquivo**: `~/.yby/reports/sentinel-scan-{namespace}-{data}.md` com findings detalhados + recomendacoes IA
+- **Arquivo**: `~/.yby/reports/sentinel-scan-{namespace}-{contexto}-{data}-{hora}.md` com findings detalhados + recomendacoes IA
 
 ## Providers de IA
 

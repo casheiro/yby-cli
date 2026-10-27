@@ -141,13 +141,15 @@ func (p *provedorFalso) Completion(_ context.Context, _, contexto string) (strin
 func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.SecurityBackend, cs []checks.SecurityCheck, prov *provedorFalso) {
 	t.Helper()
 	k, b, c, p, r, te, l := novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida
+	nc := nomeDoContexto
 	et, cf := entradaTerminal, confirmar
 	t.Cleanup(func() {
 		novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida = k, b, c, p, r, te, l
-		entradaTerminal, confirmar = et, cf
+		entradaTerminal, confirmar, nomeDoContexto = et, cf, nc
 		os.RemoveAll(filepath.Join(homeDeTeste, ".yby"))
 	})
 	entradaTerminal = func() bool { return false }
+	nomeDoContexto = func() string { return "kind-yby" }
 	// Os namespaces dos testes existem no cluster falso: o scan confere o namespace antes
 	// das etapas.
 	if fc, ok := client.(*fake.Clientset); ok {
@@ -213,11 +215,8 @@ func TestScan_Golden(t *testing.T) {
 	conferirGolden(t, "scan.golden", saida)
 
 	// o relatório completo continua no formato de sempre
-	md, err := os.ReadFile(filepath.Join(homeDeTeste, ".yby", "reports", "sentinel-scan-payments-2026-10-25.md"))
-	if err != nil {
-		t.Fatalf("relatório não foi salvo: %v", err)
-	}
-	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 críticos, 1 alto, 1 médio, 2 baixos\n") {
+	md := lerRelatorio(t)
+	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Contexto:** kind-yby\n**Gerado em:** 2026-10-25 09:30:") || !strings.Contains(string(md), "**Resumo:** 2 críticos, 1 alto, 1 médio, 2 baixos\n") {
 		t.Errorf("relatório fora do formato:\n%s", md)
 	}
 	if !strings.Contains(string(md), "**Allowlist:** 2 ignorados\n") {
@@ -850,5 +849,58 @@ func TestScan_CheckNaoVerificadoNaoViraAchado(t *testing.T) {
 	}
 	if prov.chamadas != 0 {
 		t.Error("sem achados, a IA não é chamada")
+	}
+}
+
+// lerRelatorio devolve o único relatório gravado em ~/.yby/reports.
+func lerRelatorio(t *testing.T) []byte {
+	t.Helper()
+	arquivos, _ := filepath.Glob(filepath.Join(homeDeTeste, ".yby", "reports", "sentinel-scan-*.md"))
+	if len(arquivos) != 1 {
+		t.Fatalf("esperava um relatório salvo, achei %v", arquivos)
+	}
+	md, err := os.ReadFile(arquivos[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return md
+}
+
+// TestScan_RelatoriosNaoSeSobrescrevem: dois scans do mesmo dia, às 09:30 e às 14:10,
+// gravam dois arquivos, cada um com o contexto e a hora no nome e no conteúdo; um
+// contexto com ":" e "/" (ARN do EKS) vira um nome de arquivo válido.
+func TestScan_RelatoriosNaoSeSobrescrevem(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	usarDependencias(t, fake.NewSimpleClientset(), backendsDeExemplo(), nil, nil)
+	nomeDoContexto = func() string { return "arn:aws:eks:us-east-1:123:cluster/prod" }
+
+	horas := []time.Time{
+		time.Date(2026, 10, 25, 9, 30, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 14, 10, 0, 0, time.UTC),
+	}
+	for _, h := range horas {
+		relogio = func() time.Time { return h }
+		if _, _, err := rodar(t, "scan", "-n", "payments", "--no-ai"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// o mesmo segundo não sobrescreve
+	if _, _, err := rodar(t, "scan", "-n", "payments", "--no-ai"); err != nil {
+		t.Fatal(err)
+	}
+
+	pasta := filepath.Join(homeDeTeste, ".yby", "reports")
+	for _, nome := range []string{
+		"sentinel-scan-payments-arn-aws-eks-us-east-1-123-cluster-prod-2026-10-25-093000.md",
+		"sentinel-scan-payments-arn-aws-eks-us-east-1-123-cluster-prod-2026-10-25-141000.md",
+		"sentinel-scan-payments-arn-aws-eks-us-east-1-123-cluster-prod-2026-10-25-141000-2.md",
+	} {
+		md, err := os.ReadFile(filepath.Join(pasta, nome))
+		if err != nil {
+			t.Fatalf("faltou o relatório %s: %v", nome, err)
+		}
+		if !strings.Contains(string(md), "**Contexto:** arn:aws:eks:us-east-1:123:cluster/prod\n") || !strings.Contains(string(md), "**Gerado em:** 2026-10-25 ") {
+			t.Errorf("%s sem contexto ou hora:\n%s", nome, md)
+		}
 	}
 }
