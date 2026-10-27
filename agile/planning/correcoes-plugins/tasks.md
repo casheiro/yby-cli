@@ -604,7 +604,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 7 · Pendências antigas
 
-- [ ] **P01 · `yby cloud dashboard` a 72×20**
+- [x] **P01 · `yby cloud dashboard` a 72×20**
   - **Problema:** o detalhe por cima do painel fica sem a auditoria.
   - **Fazer:** mostrar a auditoria também nesse tamanho.
   - **Verificar:** golden.
@@ -773,3 +773,4 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 27/10/2026 | P01 | O detalhe por cima ganhou um aperto novo (`semBranco`: AUDITORIA RECENTE logo abaixo da IDENTIDADE, sem a linha em branco, só em coluna única) antes de perder a auditoria; a 72×20 o quadro mostra a identidade, o token e o último registro, com o aviso de rolagem da tabela; só o golden de 72×20 mudou, e a 80×16 (duas colunas, limite de 5 linhas) segue sem a auditoria | este commit |

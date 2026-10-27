@@ -512,3 +512,16 @@ func TestPainelCloud_AjudaASCIISemPontoMedio(t *testing.T) {
 	assert.Contains(t, tela, "LISTA / CLUSTERS")
 	assert.NotContains(t, tela, "·")
 }
+
+// A 72×20 o detalhe por cima traz a auditoria: a linha em branco entre IDENTIDADE e
+// AUDITORIA RECENTE sai antes da seção inteira, e o aviso de rolagem da tabela fica.
+func TestPainelCloud_DetalhePorCimaComAuditoriaA72x20(t *testing.T) {
+	usarSaidaTexto(t, false)
+	m := teclar(t, painelCarregado(t, novasFontesDeExemplo(), 72, 20), baixo, enter)
+	require.Equal(t, layoutPorCima, m.layout())
+	tela := ansi.Strip(m.View())
+	assert.Contains(t, tela, "AUDITORIA RECENTE")
+	assert.Contains(t, tela, "11:55  ✕ renova")
+	assert.Contains(t, tela, "↓ 2 clusters abaixo")
+	conferirTela(t, m.View(), 72, 20)
+}
