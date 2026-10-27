@@ -59,14 +59,14 @@ As notas completas de cada versão, geradas a partir dos commits, ficam nas [rel
 
 ### Viz
 
-- `yby -c staging viz` (ou `YBY_ENV=staging yby viz`) abre no kubeconfig, no contexto e no namespace do ambiente do `.yby/environments.yaml`. `--context` e `--kubeconfig` trocam o cluster inteiro, `-n` troca só o namespace, e um `kube_context` que o kubeconfig não tem dá `ERR_CONFIG` antes de abrir a TUI. Sem ambiente pedido, nada muda: vale o current-context do kubeconfig.
+- `yby -c staging viz` (ou `YBY_ENV=staging yby viz`) abre no kubeconfig, no contexto e no namespace do ambiente do `.yby/environments.yaml`. `--context` e `--kubeconfig` trocam o cluster inteiro, `-n` troca só o namespace, e um `kube_context` que o kubeconfig não tem dá `ERR_CONFIG_INVALID` antes de abrir a TUI. Sem ambiente pedido, nada muda: vale o current-context do kubeconfig.
 - O quadro de logs (`l`) avisa quando o texto é da execução anterior do contêiner e lê no máximo 1 MiB; o YAML (`y`) sai sem `managedFields` nem a anotação `last-applied`.
 - Aba que o RBAC não deixa listar mostra "sem permissão para listar …" em vez de ficar reconectando; quando o plugin de credencial do kubeconfig não entrega o token, a tela de erro sugere `yby cloud refresh`. As listas têm prazo de 10 s.
 
 ### Para autores de plugin
 
 - **Manifesto:** campo novo `consome_contexto` (booleano, `PluginManifest.ConsomeContexto`). Declarar o hook `context` agora é fornecer contexto (o `yby init` usa), não consumir. Só quem declara `"consome_contexto": true` recebe no `command` o contexto caro (overview, backlog e os hooks `context` dos outros plugins); nenhum plugin nativo declara. Antes, quem tinha o hook `context` recebia tudo, o que levava `yby atlas …` e `yby synapstor …` a varrer o repositório a cada comando.
-- **Contexto barato para todo plugin:** `project_name`, `environment`, `infra` (com o `kube_config` do ambiente, o `kube_context` e o `namespace`) e `values` vão no pedido a qualquer plugin, mas só quando o ambiente foi pedido: `yby -c staging <plugin>` (a flag vem antes do nome do plugin, em qualquer forma do pflag, inclusive `-cstaging`) ou `YBY_ENV`. Sem isso, nenhum ambiente vai (o `current` do `environments.yaml` não conta). Ambiente pedido que não existe é `ERR_VALIDATION`; flag que não é do core antes do nome do plugin também. Args com `-h` ou `--help` abrem sem contexto.
+- **Contexto barato para todo plugin:** `project_name`, `environment`, `infra` (com o `kube_config` do ambiente, o `kube_context` e o `namespace`) e `values` vão no pedido a qualquer plugin, mas só quando o ambiente foi pedido: `yby -c staging <plugin>` (a flag vem antes do nome do plugin, em qualquer forma do pflag, inclusive `-cstaging`) ou `YBY_ENV`. Sem isso, nenhum ambiente vai (o `current` do `environments.yaml` não conta). Ambiente pedido que não existe é `ERR_CONFIG_INVALID`; flag que não é do core antes do nome do plugin é `ERR_VALIDATION`. Args com `-h` ou `--help` abrem sem contexto.
 - O `UKIIndex` deixou de existir no contexto do core, e o Synapstor recebe o payload sem o embrulho duplo.
 - O hook `context` do Atlas aceita o argumento `infra`, que acrescenta `infra` (o `InfraBlueprint`) ao lado de `blueprint`; só a ferramenta do Bard pede.
 

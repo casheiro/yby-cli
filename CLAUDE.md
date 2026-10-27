@@ -265,7 +265,7 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 ### Plugin Sentinel — Auditoria K8s (v1.0.0)
 
 - **Backends reais**: Polaris SDK (pod security, best practices) + OPA SDK (RBAC, network) em vez de checks artesanais
-- **Agrupamento inteligente**: findings deduplicados por check, mostra "Deployment/api (+5)" em vez de repetir por workload
+- **Agrupamento inteligente**: findings deduplicados por check; a linha mostra "3 recursos" e os nomes vêm embaixo (até 5, depois "e mais N"), e o JSON e o relatório trazem a lista inteira em `resources`
 - **Allowlists**: RBAC ignora automaticamente `system:*`, controllers conhecidos (argocd, cert-manager, traefik, etc.)
 - **Investigacao IA inteligente**: verifica saude do pod antes de chamar IA — so aciona quando detecta problemas reais
 - **Remediacao**: `--fix-dry-run` (dry-run no servidor) e `--fix` (confirma; sem terminal, exige `--yes`) com strategic-merge patches no template do dono do pod (`ownerReferences`), só as correções seguras (escalação de privilégios, capabilities); recusa recurso do Argo CD, pod sem dono e Job solto
