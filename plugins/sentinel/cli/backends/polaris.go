@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/kube"
 	"github.com/fairwindsops/polaris/pkg/validator"
@@ -78,8 +79,36 @@ func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Inte
 		return nil, fmt.Errorf("falha ao executar auditoria polaris: %w", err)
 	}
 
+	// Os recursos sem namespace (ClusterRoles e ClusterRoleBindings dos checks de RBAC)
+	// passam pelo recorte do escopo: no escopo namespace, só os que valem no namespace.
+	dentro := func(string, string) bool { return true }
+	var falhaDoRecorte error
+	if escopo.De(ctx) == escopo.Namespace && temRecursoSemNamespace(auditData) {
+		recorte, err := escopo.Ler(ctx, client, namespace)
+		if err != nil {
+			// Sem o recorte, não há como saber quais valem no namespace: ficam de fora, e
+			// o scan diz que essa parte não rodou.
+			falhaDoRecorte = err
+		}
+		dentro = recorte.Inclui
+	}
+
 	// Mapear resultados para o formato unificado
-	return mapPolarisResults(auditData, namespace), nil
+	findings := mapPolarisResults(auditData, namespace, dentro)
+	if falhaDoRecorte != nil {
+		return findings, &FalhaParcial{Falhas: []string{"RBAC do cluster"}, Causa: falhaDoRecorte}
+	}
+	return findings, nil
+}
+
+// temRecursoSemNamespace diz se a auditoria trouxe algum recurso sem namespace.
+func temRecursoSemNamespace(auditData validator.AuditData) bool {
+	for _, r := range auditData.Results {
+		if r.Namespace == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // clienteDinamico cria o cliente dinâmico Kubernetes a partir do config injetado.
@@ -97,15 +126,17 @@ func (p *PolarisBackend) clienteDinamico() (dynamic.Interface, error) {
 // mapPolarisResults converte os resultados da auditoria Polaris para o formato
 // unificado de findings do Sentinel.
 // Agrupa por check — cada check aparece uma vez com a lista de recursos afetados.
-// Só entram os recursos do namespace pedido (e os sem namespace, como um ClusterRole):
-// o Polaris pode trazer controllers de outros namespaces mesmo com cfg.Namespace. A
-// ordem é determinística: o recurso que representa o check é o primeiro em ordem
+// Só entram os recursos do namespace pedido, que o Polaris pode misturar com controllers
+// de outros namespaces mesmo com cfg.Namespace, e os sem namespace (um ClusterRole) que
+// dentro aceita; estes saem sem namespace e com escopo cluster. dentro nil aceita
+// todos. A ordem é determinística: o recurso que representa o check é o primeiro em ordem
 // alfabética, e os findings saem em ordem de check e severidade, para duas rodadas
 // iguais darem a mesma tela.
-func mapPolarisResults(auditData validator.AuditData, namespace string) []Finding {
+func mapPolarisResults(auditData validator.AuditData, namespace string, dentro func(kind, nome string) bool) []Finding {
 	// Agrupar: checkID+severity → lista de recursos afetados
 	type checkGroup struct {
 		id             string
+		escopo         escopo.Escopo
 		category       string
 		severity       string
 		message        string
@@ -115,11 +146,18 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		// ordem alfabética, para não depender da ordem dos maps do Polaris.
 		primeiro string
 	}
-	groups := make(map[string]*checkGroup) // chave: checkID+severity
+	groups := make(map[string]*checkGroup) // chave: checkID+severity+escopo
 
 	for _, result := range auditData.Results {
 		if result.Namespace != "" && namespace != "" && result.Namespace != namespace {
 			continue
+		}
+		esc := escopo.Namespace
+		if result.Namespace == "" {
+			if dentro != nil && !dentro(result.Kind, result.Name) {
+				continue
+			}
+			esc = escopo.Cluster
 		}
 		resource := fmt.Sprintf("%s/%s", result.Kind, result.Name)
 
@@ -132,11 +170,12 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 			if sev == "info" {
 				return
 			}
-			key := fmt.Sprintf("%s|%s", checkID, sev)
+			key := fmt.Sprintf("%s|%s|%s", checkID, sev, esc)
 			g, ok := groups[key]
 			if !ok {
 				g = &checkGroup{
 					id:             checkID,
+					escopo:         esc,
 					category:       cat,
 					severity:       sev,
 					message:        msg.Message,
@@ -183,6 +222,10 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		}
 		sort.Strings(resources)
 
+		ns := namespace
+		if g.escopo == escopo.Cluster {
+			ns = ""
+		}
 		findings = append(findings, Finding{
 			ID:             fmt.Sprintf("polaris/%s", g.id),
 			Source:         "polaris",
@@ -190,9 +233,10 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 			Category:       g.category,
 			Resource:       resources[0],
 			Resources:      resources,
-			Namespace:      namespace,
+			Namespace:      ns,
 			Message:        g.message,
 			Recommendation: g.recommendation,
+			Scope:          string(g.escopo),
 		})
 	}
 

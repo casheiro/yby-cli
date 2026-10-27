@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -24,14 +24,16 @@ func (c *ClusterAdminCheck) Description() string {
 	return "Detecta ClusterRoleBindings que referenciam o role cluster-admin"
 }
 
+// Run olha os ClusterRoleBindings do recorte do escopo (escopo.Ler): no escopo namespace,
+// só os que dão o papel a uma ServiceAccount do namespace, com os subjects dele.
 func (c *ClusterAdminCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	bindings, err := client.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
+	recorte, err := escopo.Ler(ctx, client, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("falha ao listar ClusterRoleBindings: %w", err)
+		return nil, err
 	}
 
 	var findings []SecurityFinding
-	for _, binding := range bindings.Items {
+	for _, binding := range recorte.ClusterRoleBindings() {
 		if binding.RoleRef.Name != "cluster-admin" {
 			continue
 		}
@@ -50,6 +52,7 @@ func (c *ClusterAdminCheck) Run(ctx context.Context, client kubernetes.Interface
 				Resource:       binding.Name,
 				Message:        fmt.Sprintf("ClusterRoleBinding '%s' concede cluster-admin a %s '%s'", binding.Name, subject.Kind, subject.Nome),
 				Recommendation: "Substitua cluster-admin por roles mais restritivos seguindo o princípio do menor privilégio",
+				Scope:          string(escopo.Cluster),
 				Type:           "critical",
 				Description:    fmt.Sprintf("ClusterRoleBinding '%s' concede cluster-admin a %s '%s'", binding.Name, subject.Kind, subject.Nome),
 			})

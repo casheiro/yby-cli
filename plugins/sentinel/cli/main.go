@@ -17,6 +17,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 )
 
 var execCommand = exec.Command
@@ -141,12 +142,15 @@ func comando(ctx context.Context, args []string, saida, erros io.Writer) error {
 type opcoes struct {
 	pod, namespace, formato, arquivo, perfil string
 	semCache, fix, fixDryRun, semIA          bool
+	// escopo é o do --scope do scan: namespace (o padrão) ou cluster.
+	escopo escopo.Escopo
 }
 
 // lerOpcoes lê as flags de sub, na forma "--flag valor" ou "--flag=valor". Flags que o
 // comando não conhece são ignoradas, como sempre foram (o -c do core pode chegar até aqui).
 func lerOpcoes(sub string, args []string) (opcoes, error) {
-	var op opcoes
+	op := opcoes{escopo: escopo.Namespace}
+	var textoDoEscopo string
 	ajuda := "rode yby sentinel " + sub + " --help para ver as flags"
 	for i := 0; i < len(args); i++ {
 		a, junto, comIgual := args[i], "", false
@@ -166,6 +170,8 @@ func lerOpcoes(sub string, args []string) (opcoes, error) {
 			destino = &op.arquivo
 		case sub == "scan" && (a == "-p" || a == "--profile"):
 			destino = &op.perfil
+		case sub == "scan" && a == "--scope":
+			destino = &textoDoEscopo
 		case sub == "scan" && a == "--fix":
 			liga = &op.fix
 		case sub == "scan" && a == "--fix-dry-run":
@@ -203,6 +209,14 @@ func lerOpcoes(sub string, args []string) (opcoes, error) {
 	}
 	if op.formato == "terminal" {
 		op.formato = ""
+	}
+	switch escopo.Escopo(textoDoEscopo) {
+	case "", escopo.Namespace:
+	case escopo.Cluster:
+		op.escopo = escopo.Cluster
+	default:
+		return op, yerrors.New(yerrors.ErrCodeValidation, fmt.Sprintf("escopo desconhecido: %s", textoDoEscopo)).
+			WithHint("use --scope namespace ou cluster")
 	}
 	return op, nil
 }

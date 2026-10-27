@@ -8,7 +8,6 @@ import (
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 func sa(ns, nome string) Sujeito { return Sujeito{Kind: "ServiceAccount", Nome: nome, Namespace: ns} }
@@ -74,28 +73,23 @@ func TestIgnorarPapel(t *testing.T) {
 	}
 }
 
-func TestLerVinculos(t *testing.T) {
-	client := fake.NewSimpleClientset(
-		&rbacv1.ClusterRoleBinding{
+func TestNovosVinculos(t *testing.T) {
+	v := NovosVinculos(
+		[]rbacv1.ClusterRoleBinding{{
 			ObjectMeta: metav1.ObjectMeta{Name: "a"},
 			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "leitor"},
 			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "argocd-server", Namespace: "argocd"}},
-		},
-		&rbacv1.RoleBinding{
+		}},
+		[]rbacv1.RoleBinding{{
 			ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "loja"},
 			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "leitor"},
 			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "app", Namespace: "loja"}},
-		},
-		&rbacv1.RoleBinding{
+		}, {
 			ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "loja"},
 			RoleRef:    rbacv1.RoleRef{Kind: "Role", Name: "local"},
 			Subjects:   []rbacv1.Subject{{Kind: "User", Name: "ana"}},
-		},
+		}},
 	)
-	v, err := LerVinculos(context.Background(), client)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// O RoleBinding de outro namespace que aponta para o ClusterRole conta: com ele, o
 	// "leitor" deixa de estar ligado só ao Argo CD.
 	got := v.DoClusterRole("leitor")

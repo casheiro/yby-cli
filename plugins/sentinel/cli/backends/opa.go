@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	"github.com/open-policy-agent/opa/v1/rego"
 	"github.com/open-policy-agent/opa/v1/storage/inmem"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -151,7 +152,8 @@ ignorado if {
 }
 ` + regoAllowlist
 
-// regoWildcardPolicy detecta ClusterRoles com permissoes wildcard (*), fora da allowlist.
+// regoWildcardPolicy detecta Roles/ClusterRoles com permissões wildcard (*), fora da
+// allowlist.
 const regoWildcardPolicy = `
 package sentinel
 
@@ -174,7 +176,7 @@ violation contains result if {
 	not papel_permitido(role)
 	has_wildcard(role.rules)
 	result := {
-		"msg": sprintf("ClusterRole '%s' possui permissões wildcard (*)", [role.metadata.name]),
+		"msg": sprintf("%s '%s' possui permissões wildcard (*)", [role.kind, role.metadata.name]),
 		"severity": "high",
 	}
 }
@@ -276,38 +278,37 @@ func (o *OPABackend) IsAvailable() bool {
 // nenhuma política consegue ler o cluster (fora do ar, sem permissão), devolve a primeira
 // falha; quando só algumas falham, devolve os achados das outras e uma *FalhaParcial.
 // As falhas vão para o log de depuração, nunca para a tela: quem chama decide como
-// mostrá-las.
+// mostrá-las. O RBAC olhado é o do escopo do contexto (escopo.De): no escopo namespace,
+// só o que vale no namespace.
 func (o *OPABackend) ScanCluster(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error) {
 	clusterRoles := novaListaClusterRoles(ctx, client)
-	bindings := sync.OnceValues(func() ([]rbacv1.ClusterRoleBinding, error) {
-		lista, err := client.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
+	// O recorte do RBAC (escopo.Ler) diz quais bindings e ClusterRoles entram: no escopo
+	// namespace, só o que vale no namespace; os subjects de cada papel, para a allowlist,
+	// vêm dos bindings do recorte.
+	recorte := sync.OnceValues(func() (escopo.RBAC, error) { return escopo.Ler(ctx, client, namespace) })
+	roles := sync.OnceValues(func() ([]rbacv1.Role, error) {
+		lista, err := client.RbacV1().Roles(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("falha ao listar ClusterRoleBindings: %w", err)
+			return nil, fmt.Errorf("falha ao listar Roles: %w", err)
 		}
 		return lista.Items, nil
 	})
-	// Os subjects de cada role vêm de todos os bindings do cluster: a allowlist casa por
-	// quem recebe as permissões.
-	vinculos := sync.OnceValues(func() (allowlist.Vinculos, error) {
-		crbs, err := bindings()
-		if err != nil {
-			return allowlist.Vinculos{}, err
-		}
-		rbs, err := client.RbacV1().RoleBindings(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return allowlist.Vinculos{}, fmt.Errorf("falha ao listar RoleBindings: %w", err)
-		}
-		return allowlist.NovosVinculos(crbs, rbs.Items), nil
+	papeis := sync.OnceValues(func() ([]papelParaAvaliar, error) {
+		return papeisDoRecorte(namespace, clusterRoles, roles, recorte)
 	})
 	politicas := []struct {
 		nome  string
 		rodar func() ([]Finding, error)
 	}{
-		{"cluster-admin", func() ([]Finding, error) { return o.scanClusterAdmin(ctx, bindings) }},
+		{"cluster-admin", func() ([]Finding, error) { return o.scanClusterAdmin(ctx, recorte) }},
 		{"acesso a secrets", func() ([]Finding, error) {
-			return o.scanSecretsAccess(ctx, client, namespace, clusterRoles, vinculos)
+			return avaliarPapeis(ctx, regoSecretsAccessPolicy, papeis, "opa/rbac_secrets_access",
+				"Restrinja acesso a secrets apenas aos serviços que realmente precisam")
 		}},
-		{"wildcards", func() ([]Finding, error) { return o.scanWildcard(ctx, clusterRoles, vinculos) }},
+		{"wildcards", func() ([]Finding, error) {
+			return avaliarPapeis(ctx, regoWildcardPolicy, papeis, "opa/rbac_wildcard",
+				"Substitua wildcards por verbos e recursos específicos")
+		}},
 		{"default-deny", func() ([]Finding, error) { return o.scanDefaultDeny(ctx, client, namespace) }},
 	}
 
@@ -335,15 +336,16 @@ func (o *OPABackend) ScanCluster(ctx context.Context, client kubernetes.Interfac
 	return findings, nil
 }
 
-// scanClusterAdmin avalia a política de cluster-admin contra todos os ClusterRoleBindings.
-func (o *OPABackend) scanClusterAdmin(ctx context.Context, bindings func() ([]rbacv1.ClusterRoleBinding, error)) ([]Finding, error) {
-	itens, err := bindings()
+// scanClusterAdmin avalia a política de cluster-admin contra os ClusterRoleBindings do
+// recorte (no escopo namespace, só com os subjects do namespace).
+func (o *OPABackend) scanClusterAdmin(ctx context.Context, recorte func() (escopo.RBAC, error)) ([]Finding, error) {
+	rec, err := recorte()
 	if err != nil {
 		return nil, err
 	}
 
 	var findings []Finding
-	for _, binding := range itens {
+	for _, binding := range rec.ClusterRoleBindings() {
 		input := bindingToInput(binding)
 
 		r, err := avaliarPolitica(ctx, regoClusterAdminPolicy, input)
@@ -364,6 +366,7 @@ func (o *OPABackend) scanClusterAdmin(ctx context.Context, bindings func() ([]rb
 				Resource:       fmt.Sprintf("ClusterRoleBinding/%s", binding.Name),
 				Message:        v.msg,
 				Recommendation: "Substitua cluster-admin por roles mais restritivos seguindo o princípio do menor privilégio",
+				Scope:          string(escopo.Cluster),
 			})
 		}
 	}
@@ -371,49 +374,34 @@ func (o *OPABackend) scanClusterAdmin(ctx context.Context, bindings func() ([]rb
 	return findings, nil
 }
 
-// scanSecretsAccess avalia a política de acesso a secrets contra ClusterRoles e Roles.
-func (o *OPABackend) scanSecretsAccess(ctx context.Context, client kubernetes.Interface, namespace string, clusterRoles listaClusterRoles, vinculos func() (allowlist.Vinculos, error)) ([]Finding, error) {
+// papeisDoRecorte junta os papéis que as políticas de secrets e de wildcard avaliam: os
+// ClusterRoles do recorte e os Roles do namespace, cada um com os subjects ligados a ele
+// pelos bindings do recorte.
+func papeisDoRecorte(namespace string, clusterRoles listaClusterRoles, roles func() ([]rbacv1.Role, error), recorte func() (escopo.RBAC, error)) ([]papelParaAvaliar, error) {
 	itensCR, err := clusterRoles()
 	if err != nil {
 		return nil, err
 	}
-	v, err := vinculos()
+	r, err := recorte()
 	if err != nil {
 		return nil, err
 	}
-	roles, err := client.RbacV1().Roles(namespace).List(ctx, metav1.ListOptions{})
+	itensRoles, err := roles()
 	if err != nil {
-		return nil, fmt.Errorf("falha ao listar Roles: %w", err)
+		return nil, err
 	}
+	v := r.Vinculos()
 
 	var papeis []papelParaAvaliar
 	for _, role := range itensCR {
-		papeis = append(papeis, papelParaAvaliar{"ClusterRole", role.Name, "", role.Rules, v.DoClusterRole(role.Name)})
+		if r.TemClusterRole(role.Name) {
+			papeis = append(papeis, papelParaAvaliar{"ClusterRole", role.Name, "", role.Rules, v.DoClusterRole(role.Name)})
+		}
 	}
-	for _, role := range roles.Items {
+	for _, role := range itensRoles {
 		papeis = append(papeis, papelParaAvaliar{"Role", role.Name, namespace, role.Rules, v.DoRole(namespace, role.Name)})
 	}
-	return avaliarPapeis(ctx, regoSecretsAccessPolicy, papeis, "opa/rbac_secrets_access",
-		"Restrinja acesso a secrets apenas aos serviços que realmente precisam"), nil
-}
-
-// scanWildcard avalia a política de wildcard contra ClusterRoles.
-func (o *OPABackend) scanWildcard(ctx context.Context, clusterRoles listaClusterRoles, vinculos func() (allowlist.Vinculos, error)) ([]Finding, error) {
-	itensCR, err := clusterRoles()
-	if err != nil {
-		return nil, err
-	}
-	v, err := vinculos()
-	if err != nil {
-		return nil, err
-	}
-
-	var papeis []papelParaAvaliar
-	for _, role := range itensCR {
-		papeis = append(papeis, papelParaAvaliar{"ClusterRole", role.Name, "", role.Rules, v.DoClusterRole(role.Name)})
-	}
-	return avaliarPapeis(ctx, regoWildcardPolicy, papeis, "opa/rbac_wildcard",
-		"Substitua wildcards por verbos e recursos específicos"), nil
+	return papeis, nil
 }
 
 // papelParaAvaliar é um Role ou ClusterRole com os subjects ligados a ele.
@@ -426,7 +414,11 @@ type papelParaAvaliar struct {
 // avaliarPapeis avalia a política contra cada papel: as violações viram achados com o id
 // e a recomendação dados, e o que a allowlist deixou de fora entra na contagem do
 // contexto.
-func avaliarPapeis(ctx context.Context, policy string, papeis []papelParaAvaliar, id, recomendacao string) []Finding {
+func avaliarPapeis(ctx context.Context, policy string, lerPapeis func() ([]papelParaAvaliar, error), id, recomendacao string) ([]Finding, error) {
+	papeis, err := lerPapeis()
+	if err != nil {
+		return nil, err
+	}
 	var findings []Finding
 	for _, p := range papeis {
 		recurso := p.kind + "/" + p.nome
@@ -452,10 +444,11 @@ func avaliarPapeis(ctx context.Context, policy string, papeis []papelParaAvaliar
 				Resource:       recurso,
 				Message:        v.msg,
 				Recommendation: recomendacao,
+				Scope:          string(escopo.DoKind(p.kind)),
 			})
 		}
 	}
-	return findings
+	return findings, nil
 }
 
 // scanDefaultDeny avalia a política de default-deny contra NetworkPolicies do namespace.
@@ -492,6 +485,7 @@ func (o *OPABackend) scanDefaultDeny(ctx context.Context, client kubernetes.Inte
 			Resource:       namespace,
 			Message:        v.msg,
 			Recommendation: "Crie NetworkPolicies default-deny com podSelector vazio para Ingress e Egress",
+			Scope:          string(escopo.Namespace),
 		})
 	}
 

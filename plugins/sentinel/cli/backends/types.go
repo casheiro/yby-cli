@@ -23,6 +23,9 @@ type Finding struct {
 	Namespace      string   `json:"namespace"`
 	Message        string   `json:"message"`
 	Recommendation string   `json:"recommendation"`
+	// Scope é o escopo do recurso (escopo.Escopo): "cluster" para um ClusterRole ou um
+	// ClusterRoleBinding, "namespace" para o resto.
+	Scope string `json:"scope"`
 }
 
 // SecurityBackend e a interface que cada integracao de seguranca implementa.

@@ -24,7 +24,7 @@ func TestSecretsAccessCheck_ComAcesso(t *testing.T) {
 	})
 
 	check := &SecretsAccessCheck{}
-	findings, err := check.Run(context.Background(), client, "default")
+	findings, err := check.Run(doCluster(context.Background()), client, "default")
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}

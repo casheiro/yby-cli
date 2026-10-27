@@ -24,7 +24,7 @@ func TestWildcardRBACCheck_ClusterRoleComWildcard(t *testing.T) {
 	})
 
 	check := &WildcardRBACCheck{}
-	findings, err := check.Run(context.Background(), client, "default")
+	findings, err := check.Run(doCluster(context.Background()), client, "default")
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestWildcardRBACCheck_AllowlistPorSubject(t *testing.T) {
 			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "app", Namespace: "loja"}},
 		},
 	)
-	ctx, contagem := allowlist.ComContagem(context.Background())
+	ctx, contagem := allowlist.ComContagem(doCluster(context.Background()))
 
 	findings, err := (&WildcardRBACCheck{}).Run(ctx, client, "default")
 	if err != nil {
@@ -117,5 +117,34 @@ func TestWildcardRBACCheck_AllowlistPorSubject(t *testing.T) {
 	}
 	if contagem.Total() != 1 {
 		t.Errorf("ignorados pela allowlist = %d, queria 1", contagem.Total())
+	}
+}
+
+// TestWildcardRBACCheck_SoORBACDoNamespace: no scan de payments, o ClusterRole curinga sem
+// binding e o ligado por RoleBinding de outro namespace ficam de fora; o ligado por
+// RoleBinding de payments aparece, com escopo cluster.
+func TestWildcardRBACCheck_SoORBACDoNamespace(t *testing.T) {
+	curinga := func(nome string) *rbacv1.ClusterRole {
+		return &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: nome},
+			Rules:      []rbacv1.PolicyRule{{Verbs: []string{"*"}, Resources: []string{"pods"}, APIGroups: []string{""}}},
+		}
+	}
+	rb := func(ns, papel string) *rbacv1.RoleBinding {
+		return &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: ns},
+			RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: papel},
+			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "app", Namespace: ns}},
+		}
+	}
+	client := fake.NewSimpleClientset(curinga("solto"), curinga("da-loja"), curinga("do-payments"),
+		rb("loja", "da-loja"), rb("payments", "do-payments"))
+
+	findings, err := (&WildcardRBACCheck{}).Run(context.Background(), client, "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Resource != "ClusterRole/do-payments" || findings[0].Scope != "cluster" {
+		t.Errorf("esperava só o ClusterRole ligado em payments, com escopo cluster: %+v", findings)
 	}
 }

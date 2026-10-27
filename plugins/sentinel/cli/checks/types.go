@@ -49,6 +49,9 @@ type SecurityFinding struct {
 	Resources      []string `json:"resources,omitempty"`
 	Message        string   `json:"message"`
 	Recommendation string   `json:"recommendation,omitempty"`
+	// Scope é o escopo do recurso (escopo.Escopo): "cluster" para um ClusterRole ou um
+	// ClusterRoleBinding, "namespace" para o resto (o scan preenche quando o check não diz).
+	Scope string `json:"scope"`
 	// Type mantém compatibilidade com o formato antigo (mapeia para severity).
 	Type string `json:"type"`
 	// Description mantém compatibilidade com o formato antigo (mapeia para message).

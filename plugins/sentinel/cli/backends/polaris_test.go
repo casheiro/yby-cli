@@ -88,7 +88,7 @@ func TestMapPolarisResults_CategoriaESeveridadeReais(t *testing.T) {
 		"polaris/deploymentMissingReplicas": {"reliability", "low"},
 		"polaris/runAsRootAllowed":          {"pod-security", "critical"},
 	}
-	achados := mapPolarisResults(audit, "payments")
+	achados := mapPolarisResults(audit, "payments", nil)
 	if len(achados) != len(esperado) {
 		t.Fatalf("esperava %d findings, obtido %d: %+v", len(esperado), len(achados), achados)
 	}
@@ -150,7 +150,7 @@ func TestMapPolarisResults_SoONamespacePedidoEEmOrdem(t *testing.T) {
 		resultadoPolaris("Deployment", "local-path-provisioner", "kube-system"),
 		resultadoPolaris("Job", "migrate", "payments"),
 	}}
-	primeira := mapPolarisResults(audit, "payments")
+	primeira := mapPolarisResults(audit, "payments", nil)
 	if len(primeira) != 2 {
 		t.Fatalf("esperava 2 findings (um por check), obtido %d: %+v", len(primeira), primeira)
 	}
@@ -169,7 +169,7 @@ func TestMapPolarisResults_SoONamespacePedidoEEmOrdem(t *testing.T) {
 		t.Errorf("findings fora de ordem: %s, %s", primeira[0].ID, primeira[1].ID)
 	}
 	for i := 0; i < 20; i++ {
-		if outra := mapPolarisResults(audit, "payments"); !reflect.DeepEqual(outra, primeira) {
+		if outra := mapPolarisResults(audit, "payments", nil); !reflect.DeepEqual(outra, primeira) {
 			t.Fatalf("rodada %d diferente:\n%+v\n%+v", i, outra, primeira)
 		}
 	}
@@ -203,5 +203,25 @@ func TestPolarisBackend_ErroDoRestConfigPropaga(t *testing.T) {
 	_, err := b.ScanCluster(context.Background(), fake.NewSimpleClientset(), "default")
 	if !errors.Is(err, falha) {
 		t.Fatalf("esperava o erro do config, veio %v", err)
+	}
+}
+
+// TestMapPolarisResults_RBACDoClusterSoNoEscopo: os checks de RBAC do Polaris sobre
+// ClusterRoles e ClusterRoleBindings (Namespace vazio) só entram no scan do namespace
+// quando o recorte do RBAC os inclui, e saem sem namespace e com escopo cluster.
+func TestMapPolarisResults_RBACDoClusterSoNoEscopo(t *testing.T) {
+	falha := validator.ResultMessage{ID: "clusterrolePodExecAttach", Message: "exec", Severity: polarisconfig.SeverityWarning, Category: "Security"}
+	papel := func(nome string) validator.Result {
+		return validator.Result{Kind: "ClusterRole", Name: nome, Results: validator.ResultSet{"clusterrolePodExecAttach": falha}}
+	}
+	audit := validator.AuditData{Results: []validator.Result{papel("do-payments"), papel("de-outro")}}
+
+	achados := mapPolarisResults(audit, "payments", func(kind, nome string) bool { return nome == "do-payments" })
+	if len(achados) != 1 {
+		t.Fatalf("esperava só o ClusterRole do recorte, obtido %+v", achados)
+	}
+	f := achados[0]
+	if f.Resource != "ClusterRole/do-payments" || f.Namespace != "" || f.Scope != "cluster" {
+		t.Errorf("ClusterRole no scan de payments: %+v, queria sem namespace e com escopo cluster", f)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,7 +31,10 @@ import (
 
 // ScanReport contém o resultado completo do scan de segurança.
 type ScanReport struct {
-	Namespace       string                   `json:"namespace"`
+	Namespace string `json:"namespace"`
+	// Scope é o escopo do scan: "namespace" (só o RBAC que vale no namespace) ou
+	// "cluster" (o RBAC do cluster todo, com --scope cluster).
+	Scope           string                   `json:"scope"`
 	Findings        []checks.SecurityFinding `json:"findings"`
 	Sources         []string                 `json:"sources,omitempty"`
 	Recommendations string                   `json:"recommendations,omitempty"`
@@ -105,6 +109,9 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 		telaDasEtapas = erros
 	} else {
 		titulo := "scan · namespace " + namespace
+		if op.escopo == escopo.Cluster {
+			titulo += " · escopo cluster"
+		}
 		if op.perfil != "" {
 			titulo += " · perfil " + op.perfil
 		}
@@ -212,8 +219,10 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	backendRodou := false
 	var primeiroErro error
 	var naoRodou []NaoRodou
-	// Os backends e os checks registram nesta contagem o que a allowlist deixou de fora.
+	// Os backends e os checks registram nesta contagem o que a allowlist deixou de fora,
+	// e leem do contexto o escopo do RBAC (só o do namespace, ou o do cluster todo).
 	ctx, ignorados := allowlist.ComContagem(ctx)
+	ctx = escopo.Com(ctx, op.escopo)
 
 	// 1. Backends de segurança (Polaris, OPA)
 	for _, b := range backendsDoScan() {
@@ -256,6 +265,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 				Resources:      f.Resources,
 				Message:        f.Message,
 				Recommendation: f.Recommendation,
+				Scope:          f.Scope,
 				Type:           f.Severity,
 				Description:    f.Message,
 			})
@@ -313,7 +323,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	// os do perfil, venham de que motor vierem; a IA e o --fix só veem estes.
 	findings = deduplicateFindings(normalizarAchados(findings))
 	findings, fora := filtrarPeloPerfil(findings, op.perfil)
-	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou, Perfil: op.perfil, ForaDoPerfil: fora}
+	c.report = ScanReport{Namespace: namespace, Scope: string(escopo.De(ctx)), Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou, Perfil: op.perfil, ForaDoPerfil: fora}
 	if len(findings) == 0 {
 		return c, nil
 	}
@@ -449,6 +459,9 @@ func exportScanMarkdown(report ScanReport) string {
 	sb.WriteString("**Resumo:** " + resumoDoRelatorio(report.Findings) + "\n")
 	if t := textoDoPerfil(report); t != "" {
 		sb.WriteString("**Perfil:** " + t + "\n")
+	}
+	if report.Scope == string(escopo.Cluster) {
+		sb.WriteString("**Escopo:** cluster (RBAC do cluster todo)\n")
 	}
 	if len(report.Sources) > 0 {
 		sb.WriteString(fmt.Sprintf("**Backends:** %s\n", strings.Join(report.Sources, ", ")))

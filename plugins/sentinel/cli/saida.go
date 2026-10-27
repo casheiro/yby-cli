@@ -14,6 +14,7 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -524,12 +525,17 @@ func escreverAnalise(w io.Writer, result AnalysisResult) {
 
 // normalizarAchados deixa os achados coerentes para o JSON e o markdown, num ponto só:
 // o type legado acompanha a severity (os checks internos escrevem os dois à mão e
-// divergem) e as mensagens do Polaris saem em PT-BR, como na tela.
+// divergem), as mensagens do Polaris saem em PT-BR, como na tela, e todo achado diz o
+// escopo.
 func normalizarAchados(findings []checks.SecurityFinding) []checks.SecurityFinding {
 	for i := range findings {
 		f := &findings[i]
 		f.Severity = checks.Severity(severidadeDe(*f))
 		f.Type = string(f.Severity)
+		// Os checks que não dizem o escopo são de recursos do namespace (pods, serviços).
+		if f.Scope == "" {
+			f.Scope = string(escopo.Namespace)
+		}
 		if id, ok := strings.CutPrefix(f.CheckID, "polaris/"); ok {
 			if m, ok := mensagensPolaris[id]; ok {
 				f.Message, f.Description = m, m

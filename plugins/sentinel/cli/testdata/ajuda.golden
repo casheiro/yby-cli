@@ -32,6 +32,7 @@ USO
 EXEMPLOS
   yby sentinel scan -n payments
   yby sentinel scan -n payments -o json -f scan.json
+  yby sentinel scan -n payments --scope cluster
   yby sentinel scan -n payments --fix-dry-run
 
 FLAGS
@@ -39,6 +40,7 @@ FLAGS
   -o, --output formato   terminal, json ou markdown (padrão terminal)
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
   -p, --profile perfil   deixa só os achados do perfil, de todos os motores: cis-l1, cis-l2, pci-dss ou soc2
+      --scope escopo     namespace (padrão: só o RBAC que vale no namespace) ou cluster (o RBAC do cluster todo)
       --fix-dry-run      mostra os patches de remediação sem aplicar
       --fix              aplica os patches de remediação no cluster
       --no-ai            não pede as recomendações da IA

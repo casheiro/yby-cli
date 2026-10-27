@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -34,13 +35,15 @@ func (c *WildcardRBACCheck) Run(ctx context.Context, client kubernetes.Interface
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
 	}
-	// A allowlist decide pelos subjects ligados a cada role.
-	vinculos, err := allowlist.LerVinculos(ctx, client)
+	// Só os ClusterRoles do recorte do escopo entram, e a allowlist decide pelos subjects
+	// que os bindings do recorte ligam a cada role.
+	recorte, err := escopo.Ler(ctx, client, namespace)
 	if err != nil {
 		return nil, err
 	}
+	vinculos := recorte.Vinculos()
 	for _, role := range clusterRoles.Items {
-		if !hasWildcard(role.Rules) {
+		if !recorte.TemClusterRole(role.Name) || !hasWildcard(role.Rules) {
 			continue
 		}
 		if allowlist.Padrao.IgnorarPapel("ClusterRole", role.Name, vinculos.DoClusterRole(role.Name)) {
@@ -52,6 +55,7 @@ func (c *WildcardRBACCheck) Run(ctx context.Context, client kubernetes.Interface
 			Severity:       SeverityHigh,
 			Category:       CategoryRBAC,
 			Resource:       fmt.Sprintf("ClusterRole/%s", role.Name),
+			Scope:          string(escopo.Cluster),
 			Message:        fmt.Sprintf("ClusterRole '%s' possui permissões wildcard (*)", role.Name),
 			Recommendation: "Substitua wildcards por verbos e recursos específicos",
 			Type:           "critical",
@@ -78,6 +82,7 @@ func (c *WildcardRBACCheck) Run(ctx context.Context, client kubernetes.Interface
 			Category:       CategoryRBAC,
 			Namespace:      namespace,
 			Resource:       fmt.Sprintf("Role/%s", role.Name),
+			Scope:          string(escopo.Namespace),
 			Message:        fmt.Sprintf("Role '%s' no namespace '%s' possui permissões wildcard (*)", role.Name, namespace),
 			Recommendation: "Substitua wildcards por verbos e recursos específicos",
 			Type:           "critical",

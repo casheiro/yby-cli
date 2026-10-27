@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 )
 
 // TestOPABackendName verifica que o nome do backend é "opa".
@@ -467,7 +469,7 @@ func TestEvaluateDefaultDenyPolicy(t *testing.T) {
 
 // TestScanClusterWithFakeClient verifica o fluxo completo de scan com cliente fake.
 func TestScanClusterWithFakeClient(t *testing.T) {
-	ctx := context.Background()
+	ctx := doCluster(context.Background())
 	backend := &OPABackend{}
 
 	// Criar cliente fake com um ClusterRoleBinding suspeito
@@ -610,7 +612,7 @@ func TestScanCluster_ListaClusterRolesUmaVez(t *testing.T) {
 		return false, nil, nil
 	})
 
-	if _, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments"); err != nil {
+	if _, err := (&OPABackend{}).ScanCluster(doCluster(context.Background()), client, "payments"); err != nil {
 		t.Fatalf("ScanCluster: %v", err)
 	}
 	if listagens != 1 {
@@ -625,7 +627,7 @@ func TestScanCluster_CompilaCadaPoliticaUmaVez(t *testing.T) {
 	antes := compilacoesRego.Load()
 	client := fake.NewSimpleClientset(clusterRolesFalsos(50)...)
 
-	if _, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments"); err != nil {
+	if _, err := (&OPABackend{}).ScanCluster(doCluster(context.Background()), client, "payments"); err != nil {
 		t.Fatalf("ScanCluster: %v", err)
 	}
 	if got := compilacoesRego.Load() - antes; got > 4 {
@@ -638,7 +640,7 @@ func BenchmarkScanCluster(b *testing.B) {
 	client := fake.NewSimpleClientset(clusterRolesFalsos(500)...)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments"); err != nil {
+		if _, err := (&OPABackend{}).ScanCluster(doCluster(context.Background()), client, "payments"); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -690,7 +692,7 @@ func TestScanCluster_AllowlistPorSubject(t *testing.T) {
 			Subjects:   []rbacv1.Subject{sa("loja", "app")},
 		},
 	)
-	ctx, contagem := allowlist.ComContagem(context.Background())
+	ctx, contagem := allowlist.ComContagem(doCluster(context.Background()))
 
 	findings, err := (&OPABackend{}).ScanCluster(ctx, client, "payments")
 	if err != nil {
@@ -821,3 +823,74 @@ func TestAllowlist_GoERegoDecidemIgual(t *testing.T) {
 		}
 	}
 }
+
+// TestScanCluster_SoORBACDoNamespace: no scan de um namespace só entra o RBAC que vale
+// nele. O cluster-admin dado a other/x, o ClusterRole curinga sem binding e o ligado por
+// RoleBinding em outro namespace ficam de fora; o ClusterRoleBinding que dá cluster-admin
+// a payments/x aparece só com o subject do namespace, o ClusterRole ligado por RoleBinding
+// de payments e o Role curinga de payments aparecem, cada um com o escopo dele.
+func TestScanCluster_SoORBACDoNamespace(t *testing.T) {
+	sa := func(ns, nome string) rbacv1.Subject {
+		return rbacv1.Subject{Kind: "ServiceAccount", Name: nome, Namespace: ns}
+	}
+	rb := func(ns, nome, papel string, s rbacv1.Subject) *rbacv1.RoleBinding {
+		return &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: nome, Namespace: ns},
+			RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: papel},
+			Subjects:   []rbacv1.Subject{s},
+		}
+	}
+	doPayments := crb("pay-admin", "cluster-admin", sa("payments", "x"))
+	doPayments.Subjects = append([]rbacv1.Subject{{Kind: "User", Name: "bob"}}, doPayments.Subjects...)
+	client := fake.NewSimpleClientset(
+		crb("outro-admin", "cluster-admin", sa("other", "x")),
+		doPayments,
+		papelCuringa("curinga-solto"),
+		papelCuringa("curinga-pay"),
+		papelCuringa("curinga-loja"),
+		rb("payments", "app-curinga", "curinga-pay", sa("payments", "app")),
+		rb("loja", "app-curinga", "curinga-loja", sa("loja", "app")),
+		&rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{Name: "faz-tudo", Namespace: "payments"},
+			Rules:      []rbacv1.PolicyRule{{Verbs: []string{"*"}, Resources: []string{"pods"}, APIGroups: []string{""}}},
+		},
+	)
+
+	findings, err := (&OPABackend{}).ScanCluster(context.Background(), client, "payments")
+	if err != nil {
+		t.Fatalf("ScanCluster: %v", err)
+	}
+	var rbac []string
+	for _, f := range findings {
+		if f.Category == "rbac" {
+			rbac = append(rbac, fmt.Sprintf("%s %s %s · %s", f.ID, f.Resource, f.Scope, f.Message))
+		}
+	}
+	sort.Strings(rbac)
+	quer := []string{
+		"opa/rbac_cluster_admin ClusterRoleBinding/pay-admin cluster · ClusterRoleBinding 'pay-admin' concede cluster-admin a ServiceAccount 'x'",
+		"opa/rbac_secrets_access ClusterRole/curinga-pay cluster · ClusterRole 'curinga-pay' permite leitura de secrets",
+		"opa/rbac_wildcard ClusterRole/curinga-pay cluster · ClusterRole 'curinga-pay' possui permissões wildcard (*)",
+		"opa/rbac_wildcard Role/faz-tudo namespace · Role 'faz-tudo' possui permissões wildcard (*)",
+	}
+	if strings.Join(rbac, "\n") != strings.Join(quer, "\n") {
+		t.Errorf("achados de RBAC do namespace:\n%s\nqueria:\n%s", strings.Join(rbac, "\n"), strings.Join(quer, "\n"))
+	}
+
+	// Com --scope cluster, entra o RBAC do cluster todo: os 2 bindings (3 subjects) e os 3
+	// ClusterRoles curinga, cada um nas duas políticas, e o Role curinga.
+	findings, err = (&OPABackend{}).ScanCluster(doCluster(context.Background()), client, "payments")
+	if err != nil {
+		t.Fatalf("ScanCluster: %v", err)
+	}
+	porID := map[string]int{}
+	for _, f := range findings {
+		porID[f.ID]++
+	}
+	if porID["opa/rbac_cluster_admin"] != 3 || porID["opa/rbac_secrets_access"] != 3 || porID["opa/rbac_wildcard"] != 4 {
+		t.Errorf("no escopo cluster, achados por check: %v", porID)
+	}
+}
+
+// doCluster põe o escopo cluster no contexto: os testes que olham o RBAC do cluster todo.
+func doCluster(ctx context.Context) context.Context { return escopo.Com(ctx, escopo.Cluster) }

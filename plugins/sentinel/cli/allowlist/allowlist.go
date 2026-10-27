@@ -13,14 +13,11 @@ package allowlist
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"sync"
 
 	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 // Controlador é uma ferramenta que precisa de permissões amplas por design: as
@@ -223,19 +220,6 @@ func NovosVinculos(crbs []rbacv1.ClusterRoleBinding, rbs []rbacv1.RoleBinding) V
 		v.m[chave] = append(v.m[chave], SujeitosDe(b.Subjects)...)
 	}
 	return v
-}
-
-// LerVinculos lista os ClusterRoleBindings e os RoleBindings de todos os namespaces.
-func LerVinculos(ctx context.Context, client kubernetes.Interface) (Vinculos, error) {
-	crbs, err := client.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return Vinculos{}, fmt.Errorf("falha ao listar ClusterRoleBindings: %w", err)
-	}
-	rbs, err := client.RbacV1().RoleBindings(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return Vinculos{}, fmt.Errorf("falha ao listar RoleBindings: %w", err)
-	}
-	return NovosVinculos(crbs.Items, rbs.Items), nil
 }
 
 // DoClusterRole devolve os subjects ligados ao ClusterRole.

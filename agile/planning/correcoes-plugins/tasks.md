@@ -355,7 +355,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - na tela, a linha do check e embaixo os recursos (até N, depois "e mais K"), sem reticências no meio do nome;
     - JSON e markdown com a lista inteira.
   - **Verificar:** golden da tela; teste do JSON.
-- [ ] **S04 · RBAC de escopo de cluster fora do scan de namespace**
+- [x] **S04 · RBAC de escopo de cluster fora do scan de namespace**
   - **Problema:** `scanClusterAdmin`, `scanWildcard` e `scanSecretsAccess` olham o cluster todo (`backends/opa.go:~268-393`), e o Polaris carimba `Namespace` em todo achado (`polaris.go:~192`). Os mesmos achados se repetem em todo namespace e inflam as contagens.
   - **Fazer:**
     - no scan de namespace, só entram:
@@ -692,6 +692,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S06 | O JSON do scan tem `type` igual à `severity` (normalizado num ponto só), mensagens do Polaris em PT-BR também no JSON e no markdown e o campo `nao_rodaram` (backend, verificações, motivo), também no relatório markdown | este commit |
 | 26/10/2026 | S08 | Checks internos viram plano B (só rodam quando nenhum backend varre; backend limpo vira fonte com 0 achados), pods listados uma vez por scan (cache no contexto), cosign só com chave ou identidade+emissor configurados (senão ErrNaoVerificado, que entra em `nao_rodaram` sem virar achado) e com prazo, env sensível: KEY por palavra (KEYCLOAK_URL não) e PASSWORD/SECRET/TOKEN por trecho (PGPASSWORD sim), `pod_root` e `pod_seccomp` herdam/olham o contêiner | este commit |
 | 26/10/2026 | S07 | O `--profile` filtra os achados de todos os motores por uma tabela check→perfis (cada `polaris/*` e `opa/*` pelo check interno equivalente; hostPath/HostProcess nos CIS e TLS do Ingress no PCI-DSS e no SOC2 pelo próprio ID; confiabilidade e checks customizados fora) e a tela, o JSON (`perfil`, `fora_do_perfil`) e o relatório dizem o perfil aplicado e quantos achados ficaram de fora | este commit |
+| 26/10/2026 | S04 | Pacote `escopo`: no scan de namespace o OPA, os checks internos e os checks de RBAC do Polaris só olham o RBAC que vale nele (Roles e RoleBindings do namespace, ClusterRoles a que eles apontam, ClusterRoleBindings com SA do namespace, reduzidos aos subjects dele, e a allowlist julga cada ClusterRole por quem o recebe ali); `--scope cluster` traz o RBAC do cluster todo; campo `scope` no achado e no relatório JSON; o wildcard do OPA passou a ver os Roles do namespace | este commit |
 
 ### Fase 5 · Atlas
 

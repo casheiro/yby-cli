@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -33,13 +34,15 @@ func (c *SecretsAccessCheck) Run(ctx context.Context, client kubernetes.Interfac
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
 	}
-	// A allowlist decide pelos subjects ligados a cada role.
-	vinculos, err := allowlist.LerVinculos(ctx, client)
+	// Só os ClusterRoles do recorte do escopo entram, e a allowlist decide pelos subjects
+	// que os bindings do recorte ligam a cada role.
+	recorte, err := escopo.Ler(ctx, client, namespace)
 	if err != nil {
 		return nil, err
 	}
+	vinculos := recorte.Vinculos()
 	for _, role := range clusterRoles.Items {
-		if !hasSecretsAccess(role.Rules) {
+		if !recorte.TemClusterRole(role.Name) || !hasSecretsAccess(role.Rules) {
 			continue
 		}
 		if allowlist.Padrao.IgnorarPapel("ClusterRole", role.Name, vinculos.DoClusterRole(role.Name)) {
@@ -51,6 +54,7 @@ func (c *SecretsAccessCheck) Run(ctx context.Context, client kubernetes.Interfac
 			Severity:       SeverityHigh,
 			Category:       CategoryRBAC,
 			Resource:       fmt.Sprintf("ClusterRole/%s", role.Name),
+			Scope:          string(escopo.Cluster),
 			Message:        fmt.Sprintf("ClusterRole '%s' permite leitura de secrets", role.Name),
 			Recommendation: "Restrinja acesso a secrets apenas aos serviços que realmente precisam",
 			Type:           "critical",
@@ -77,6 +81,7 @@ func (c *SecretsAccessCheck) Run(ctx context.Context, client kubernetes.Interfac
 			Category:       CategoryRBAC,
 			Namespace:      namespace,
 			Resource:       fmt.Sprintf("Role/%s", role.Name),
+			Scope:          string(escopo.Namespace),
 			Message:        fmt.Sprintf("Role '%s' no namespace '%s' permite leitura de secrets", role.Name, namespace),
 			Recommendation: "Restrinja acesso a secrets apenas aos serviços que realmente precisam",
 			Type:           "critical",
