@@ -197,6 +197,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	var findings []checks.SecurityFinding
 	var sources []string
 	consultou := false
+	backendRodou := false
 	var primeiroErro error
 	var naoRodou []NaoRodou
 	// Os backends e os checks registram nesta contagem o que a allowlist deixou de fora.
@@ -231,9 +232,8 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			naoRodou = append(naoRodou, NaoRodou{Backend: b.Name(), Verificacoes: parcial.Falhas, Motivo: motivoNaTela(parcial.Causa)})
 			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(parcial.Falhas), "verificação não rodou", "verificações não rodaram"), strings.Join(parcial.Falhas, ", ")))
 		}
-		if len(bf) > 0 {
-			sources = append(sources, b.Name())
-		}
+		backendRodou = true
+		sources = append(sources, b.Name())
 		for _, f := range bf {
 			findings = append(findings, checks.SecurityFinding{
 				CheckID:        f.ID,
@@ -250,14 +250,26 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 	}
 
-	// 2. Sem achados dos backends, os checks internos
-	if len(sources) == 0 {
+	// 2. Os checks internos são o plano B: só rodam quando nenhum backend consegue varrer
+	// (nenhum disponível ou todos falharam). Backend que roda e não acha nada é resultado
+	// limpo, não motivo para repetir a varredura com outro motor.
+	if !backendRodou {
 		sources = append(sources, "checks-internos")
+		// Os pods são listados uma vez só para todos os checks.
+		ctx = checks.ComCachePods(ctx)
 		prog.Iniciar("checks internos")
 		var falhas []string
 		antes := len(findings)
 		for _, check := range selecionados {
 			cf, errCheck := check.Run(ctx, client, namespace)
+			var naoVerif *checks.ErrNaoVerificado
+			if errors.As(errCheck, &naoVerif) {
+				// Não é falha de cluster nem achado: vira "não rodou" com o motivo.
+				naoRodou = append(naoRodou, NaoRodou{Backend: "checks-internos", Verificacoes: []string{check.Name()}, Motivo: naoVerif.Motivo})
+				c.naoRodaram++
+				prog.Avisar(fmt.Sprintf("%s não rodou: %s", check.Name(), naoVerif.Motivo))
+				continue
+			}
 			if errCheck != nil {
 				slog.Debug("o check falhou", "check", check.Name(), "erro", errCheck)
 				falhas = append(falhas, check.Name())

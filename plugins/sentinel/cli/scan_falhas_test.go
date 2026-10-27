@@ -584,3 +584,38 @@ func TestScan_JSONCoerenteEmPTBR(t *testing.T) {
 		}
 	})
 }
+
+// Os checks internos são o plano B: só rodam quando nenhum backend consegue varrer.
+func TestScanChecksInternosSoQuandoOsBackendsFalham(t *testing.T) {
+	interno := checkFalso{achados: []checks.SecurityFinding{
+		{CheckID: "POD_ROOT_CONTAINER", Severity: checks.SeverityHigh, Category: checks.CategoryPodSecurity, Resource: "Pod/api", Message: "roda como root", Description: "roda como root"},
+	}}
+	fontesDe := func(t *testing.T, bs []backends.SecurityBackend) (fontes []string, achados int) {
+		t.Helper()
+		usarDependencias(t, fake.NewSimpleClientset(), bs, []checks.SecurityCheck{interno}, nil)
+		saida, _, err := rodar(t, "scan", "-n", "payments", "-o", "json", "--no-ai")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rel struct {
+			Sources  []string   `json:"sources"`
+			Findings []struct{} `json:"findings"`
+		}
+		if err := json.Unmarshal([]byte(saida), &rel); err != nil {
+			t.Fatalf("json inválido: %v\n%s", err, saida)
+		}
+		return rel.Sources, len(rel.Findings)
+	}
+	t.Run("backend limpo não chama os internos", func(t *testing.T) {
+		fontes, achados := fontesDe(t, []backends.SecurityBackend{backendFalso{nome: "polaris"}})
+		if achados != 0 || strings.Join(fontes, ",") != "polaris" {
+			t.Errorf("fontes = %v, achados = %d; esperava só polaris e nenhum achado", fontes, achados)
+		}
+	})
+	t.Run("backend que falha chama os internos", func(t *testing.T) {
+		fontes, achados := fontesDe(t, []backends.SecurityBackend{backendFalso{nome: "polaris", err: recusado}})
+		if achados != 1 || strings.Join(fontes, ",") != "checks-internos" {
+			t.Errorf("fontes = %v, achados = %d; esperava os checks internos", fontes, achados)
+		}
+	})
+}

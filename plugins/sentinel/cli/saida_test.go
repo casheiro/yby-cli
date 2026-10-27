@@ -647,10 +647,13 @@ func TestScan_NoTerminalRedesenhaEDesviaOLog(t *testing.T) {
 	if !strings.Contains(saida, "\x1b[1A\r\x1b[J") {
 		t.Errorf("no terminal, a etapa atual é redesenhada no lugar:\n%q", saida)
 	}
-	for _, etapa := range []string{"✓ opa", "✓ checks internos"} {
+	for _, etapa := range []string{"✓ opa"} {
 		if n := strings.Count(saida, etapa); n != 1 {
 			t.Errorf("%q sai uma vez só, de vez, obtido %d:\n%q", etapa, n, saida)
 		}
+	}
+	if strings.Contains(saida, "checks internos") {
+		t.Errorf("com o backend rodando limpo, os checks internos não rodam:\n%q", saida)
 	}
 	// o log passa pelo escritor das etapas e vai para o stderr no formato do yby, fora do
 	// trecho redesenhado
@@ -871,5 +874,23 @@ func TestAjuda_Golden(t *testing.T) {
 	semArgs, _, _ := rodar(t)
 	if !strings.HasPrefix(semArgs, "◆ YBY  SENTINEL") {
 		t.Errorf("sem subcomando sai a ajuda:\n%s", semArgs)
+	}
+}
+
+func TestScan_CheckNaoVerificadoNaoViraAchado(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	prov := &provedorFalso{resposta: "nada"}
+	naoVerif := &checks.ErrNaoVerificado{Motivo: "configure YBY_SENTINEL_COSIGN_KEY"}
+	usarDependencias(t, fake.NewSimpleClientset(), nil, []checks.SecurityCheck{checkFalso{err: naoVerif}}, prov)
+
+	saida, _, err := rodar(t, "scan")
+	if err != nil {
+		t.Fatalf("não verificado não é falha do scan: %v", err)
+	}
+	if !strings.Contains(saida, "nenhum problema nas verificações que rodaram") || !strings.Contains(saida, "YBY_SENTINEL_COSIGN_KEY") {
+		t.Errorf("esperava o resultado limpo e o aviso do motivo:\n%s", saida)
+	}
+	if prov.chamadas != 0 {
+		t.Error("sem achados, a IA não é chamada")
 	}
 }

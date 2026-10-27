@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -25,7 +24,7 @@ func (c *CapabilitiesCheck) Description() string {
 }
 
 func (c *CapabilitiesCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := listarPods(ctx, client, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}

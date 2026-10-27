@@ -64,3 +64,12 @@ type SecurityCheck interface {
 	Description() string
 	Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error)
 }
+
+// ErrNaoVerificado é o erro que um check devolve quando não tem como verificar (falta
+// configuração ou ferramenta), o que não é falha de cluster nem achado: o scan registra
+// como "não rodou", com o Motivo, e segue.
+type ErrNaoVerificado struct {
+	Motivo string
+}
+
+func (e *ErrNaoVerificado) Error() string { return e.Motivo }
