@@ -114,26 +114,16 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 		}
 	}
 
-	// 3. Métricas: o client-go não traz a API de métricas; o kubectl top serve quando o
-	// contexto diz qual kubeconfig usar.
+	// 3. Métricas: o client-go não traz a API de métricas; o kubectl top lê no mesmo
+	// cluster do cliente, com ou sem ambiente do yby. Com prazo: um cluster que não
+	// responde não segura a análise, e as métricas ficam indisponíveis.
 	prog.Iniciar("métricas")
 	metricsStr := "métricas indisponíveis"
-	if fullCtx := sdk.GetFullContext(); fullCtx != nil {
-		args := []string{"top", "pod", podName, "-n", namespace, "--no-headers"}
-		if fullCtx.Infra.KubeConfig != "" {
-			args = append(args, "--kubeconfig", fullCtx.Infra.KubeConfig)
-		}
-		if fullCtx.Infra.KubeContext != "" {
-			args = append(args, "--context", fullCtx.Infra.KubeContext)
-		}
-		if out, err := execCommand("kubectl", args...).CombinedOutput(); err == nil {
-			metricsStr = string(out)
-			prog.Concluir("kubectl top")
-		} else {
-			slog.Debug("kubectl top falhou", "erro", err, "saida", string(out))
-			prog.Pular("indisponíveis")
-		}
+	if out, err := rodarKubectlTop(ctx, podName, namespace); err == nil {
+		metricsStr = string(out)
+		prog.Concluir("kubectl top")
 	} else {
+		slog.Debug("kubectl top falhou", "erro", err, "saida", string(out))
 		prog.Pular("indisponíveis")
 	}
 
@@ -415,11 +405,50 @@ func resumirEventos(items []corev1.Event) []eventoResumido {
 	return out
 }
 
-// identidadeDoPod reúne o que distingue um pod de outro no cache de análises.
+// prazoDoKubectlTop é quanto o kubectl top do investigate pode levar; passado o prazo, o
+// processo morre e as métricas ficam indisponíveis.
+var prazoDoKubectlTop = 5 * time.Second
+
+// rodarKubectlTop roda o kubectl top do pod e devolve a saída; passado o
+// prazoDoKubectlTop (ou cancelado o ctx do investigate), mata o processo e devolve erro.
+func rodarKubectlTop(ctx context.Context, podName, namespace string) ([]byte, error) {
+	ctx, cancelar := context.WithTimeout(ctx, prazoDoKubectlTop)
+	defer cancelar()
+	cmd := execCommand(ctx, "kubectl", argsDoKubectlTop(podName, namespace)...)
+	// um filho do kubectl que herde a saída não segura o Wait depois do prazo
+	cmd.WaitDelay = time.Second
+	return cmd.CombinedOutput()
+}
+
+// argsDoKubectlTop monta o kubectl top do pod no cluster em que o cliente do Sentinel lê
+// (sdk.GetRestConfig): o kubeconfig e o contexto do ambiente do yby, quando o core manda
+// um; sem ambiente, o kubeconfig padrão (KUBECONFIG ou ~/.kube/config, que o kubectl lê
+// sozinho) no contexto atual dele, fixado para o top não cair em outro cluster.
+func argsDoKubectlTop(podName, namespace string) []string {
+	args := []string{"top", "pod", podName, "-n", namespace, "--no-headers"}
+	if fc := sdk.GetFullContext(); fc != nil {
+		if fc.Infra.KubeConfig != "" {
+			args = append(args, "--kubeconfig", fc.Infra.KubeConfig)
+		}
+		if fc.Infra.KubeContext != "" {
+			args = append(args, "--context", fc.Infra.KubeContext)
+		}
+		return args
+	}
+	if contexto := nomeDoContexto(); contexto != "" {
+		args = append(args, "--context", contexto)
+	}
+	return args
+}
+
+// identidadeDoPod reúne o que distingue um pod de outro no cache de análises. Sem
+// ambiente do yby, o cluster é o contexto atual do kubeconfig padrão.
 func identidadeDoPod(pod *corev1.Pod) idPod {
 	id := idPod{Namespace: pod.Namespace, Pod: pod.Name, UID: string(pod.UID)}
 	if fc := sdk.GetFullContext(); fc != nil {
 		id.Contexto = fc.Infra.KubeConfig + "|" + fc.Infra.KubeContext
+	} else {
+		id.Contexto = "|" + nomeDoContexto()
 	}
 	for _, cs := range pod.Status.ContainerStatuses {
 		id.Reinicios += cs.RestartCount

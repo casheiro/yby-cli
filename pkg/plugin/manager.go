@@ -30,8 +30,10 @@ var releaseBaseURL = "https://github.com/casheiro/yby-cli/releases/download"
 
 // Manager orchestrates plugin discovery and execution.
 type Manager struct {
-	executor         *Executor
-	manifestExecutor *Executor // Executor sem trust check para discovery de manifestos
+	executor *Executor
+	// manifestExecutor roda o hook manifest na descoberta, sem trust check: com a
+	// verificação ligada, a descoberta só o chama para binários confiáveis.
+	manifestExecutor *Executor
 	plugins          []LoadedPlugin
 	// ambiente é o ambiente pedido pelo usuário (DefinirAmbiente); vazio: nenhum.
 	ambiente string
@@ -51,9 +53,11 @@ func NewManager() *Manager {
 	}
 }
 
-// EnableTrustCheck ativa a verificação de whitelist/checksum no executor principal.
-// Deve ser chamado em ambientes de produção. O manifestExecutor (usado para discovery)
-// permanece sem verificação pois precisa executar plugins ainda não registrados.
+// EnableTrustCheck ativa a verificação de whitelist/checksum no executor principal e na
+// descoberta. Deve ser chamado em ambientes de produção. A descoberta roda em todo comando
+// do yby e um repositório clonado pode trazer um .yby/plugins: com a verificação ligada, o
+// hook manifest só roda nos binários confiáveis, e os outros entram com um manifesto
+// sintético (ver manifestoNaoConfiavel), sem rodar nada.
 func (m *Manager) EnableTrustCheck() {
 	m.executor.SkipTrustCheck = false
 }
@@ -138,7 +142,7 @@ func (m *Manager) scanDirectory(dir string) error {
 
 		// Let's verify by calling "manifest" hook if possible, or just register.
 		// Checking manifest is safer.
-		manifest, err := m.loadManifest(path)
+		manifest, err := m.manifestoDoCandidato(path)
 		if err != nil {
 			slog.Debug("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
 			continue
@@ -166,6 +170,42 @@ func isPluginExecutable(name string, mode os.FileMode) bool {
 		return strings.EqualFold(filepath.Ext(name), ".exe")
 	}
 	return mode&0111 != 0
+}
+
+// manifestoDoCandidato devolve o manifesto de um candidato a plugin. Sem a verificação de
+// confiança, roda o hook manifest como sempre. Com ela, só o binário confiável roda; o não
+// confiável (ou cuja confiança não deu para conferir) entra com o manifesto sintético. A
+// confiança sai do carimbo do registro quando ele bate (a descoberta roda em todo comando),
+// sem ler o binário inteiro.
+func (m *Manager) manifestoDoCandidato(path string) (*PluginManifest, error) {
+	if m.executor.SkipTrustCheck {
+		return m.loadManifest(path)
+	}
+	confiavel, err := confiavelNaDescoberta(path)
+	if err != nil {
+		slog.Debug("Falha ao conferir a confiança do plugin", "path", path, "error", err)
+	}
+	if err != nil || !confiavel {
+		return manifestoNaoConfiavel(path)
+	}
+	return m.loadManifest(path)
+}
+
+// manifestoNaoConfiavel é o manifesto de um binário que a descoberta não executou: o nome
+// sai do arquivo (o que o yby plugin trust aceita) e o único hook é o command, para que
+// "yby <nome>" caia na verificação de confiança do executor e devolva o erro com a dica, e
+// para que o plugin apareça no yby plugin list e no yby --help.
+func manifestoNaoConfiavel(path string) (*PluginManifest, error) {
+	nome := nomeDoArquivo(path)
+	if nome == "" {
+		return nil, fmt.Errorf("nome de plugin vazio em %s", filepath.Base(path))
+	}
+	return &PluginManifest{
+		Name:         nome,
+		Description:  "não confiável · rode yby plugin trust " + nome,
+		Hooks:        []string{"command"},
+		NaoConfiavel: true,
+	}, nil
 }
 
 func (m *Manager) loadManifest(path string) (*PluginManifest, error) {

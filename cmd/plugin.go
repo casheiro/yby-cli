@@ -29,9 +29,13 @@ type gerenciadorPlugins interface {
 	Update(name string) error
 }
 
-// newPluginManager é a factory para criação do gerenciador de plugins (mockável em testes)
+// newPluginManager é a factory para criação do gerenciador de plugins (mockável em testes).
+// Com a verificação de confiança ligada, a descoberta não executa binário não confiável: ele
+// entra na lista pelo nome do arquivo, que é o que o yby plugin trust procura.
 var newPluginManager = func() gerenciadorPlugins {
-	return plugin.NewManager()
+	pm := plugin.NewManager()
+	pm.EnableTrustCheck()
+	return pm
 }
 
 // hintListaPlugins aponta para a lista de plugins quando o nome dado não confere.
@@ -74,6 +78,11 @@ func renderPluginList(w io.Writer, plugins []plugin.PluginManifest) {
 	sort.Slice(ordenados, func(i, j int) bool { return ordenados[i].Name < ordenados[j].Name })
 	linhas := make([]ui.Linha, len(ordenados))
 	for i, p := range ordenados {
+		// O não confiável não rodou o manifest: sem versão nem hooks a mostrar.
+		if p.NaoConfiavel {
+			linhas[i] = ui.Linha{Celulas: []string{p.Name, ui.G().Vazio, ui.Status(ui.StatusAlerta, "não confiável · rode yby plugin trust "+p.Name)}}
+			continue
+		}
 		linhas[i] = ui.Linha{Celulas: []string{p.Name, "v" + strings.TrimPrefix(p.Version, "v"), strings.Join(p.Hooks, ", ")}}
 	}
 	ui.Listagem(w, []ui.Coluna{
@@ -282,10 +291,12 @@ var pluginUntrustCmd = &cobra.Command{
 		}
 
 		pluginName := args[0]
-		if !strings.HasPrefix(pluginName, "yby-plugin-") {
+		if !strings.HasPrefix(strings.ToLower(pluginName), "yby-plugin-") {
 			pluginName = "yby-plugin-" + pluginName
 		}
 
+		// O registro guarda o nome do arquivo; no Windows, o UntrustPlugin o acha sem
+		// diferenciar maiúsculas e com o .exe opcional.
 		if err := plugin.UntrustPlugin(pluginName); err != nil {
 			return errors.Wrap(err, errors.ErrCodePlugin, "erro ao remover confiança do plugin").
 				WithHint(hintListaPlugins)

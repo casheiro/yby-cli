@@ -103,7 +103,7 @@ test/e2e/         → Testes E2E com godog/Cucumber (build tag: e2e)
 ### Protocolo de Plugins
 
 Plugins são binários independentes que se comunicam via JSON:
-- **Descoberta:** Manager escaneia `~/.yby/plugins/` e `./.yby/plugins/`
+- **Descoberta:** Manager escaneia `~/.yby/plugins/` e `./.yby/plugins/` (só `yby-plugin-*`; mesmo nome nas duas, vale o global). Com `EnableTrustCheck` (root, `yby plugin`, `yby init`), binário que não está em `~/.yby/plugins/trusted.json` não roda nem o `manifest`: entra com manifesto sintético (`NaoConfiavel`, "não confiável · rode yby plugin trust <nome>") e o executor o recusa. O registro guarda caminho, tamanho e mtime para a descoberta não recalcular o hash a cada comando; o executor sempre recalcula. Plugin não toma nome de comando do core (`help`, `completion`, `__complete`)
 - **Hooks:** `manifest` (capabilities), `context` (contribui dados), `command` (execução interativa), `assets` (arquivos estáticos)
 - **Execução:** `Run()` captura STDOUT/STDERR parseando JSON; `RunInteractive()` passa contexto via env var `YBY_PLUGIN_REQUEST` e conecta TTY
 - **Contexto do `command`:** declarar o hook `context` é fornecer contexto (o `yby init` e os consumidores o usam), não consumir. O contexto barato (`project_name`, `environment`, `infra` com o `kube_config` resolvido, o `kube_context` e o `namespace`, e os `values`) sai do `.yby/environments.yaml` sem rodar nada e vai a todo plugin, mas só quando o ambiente foi pedido: `-c`/`--context` antes do nome do plugin (`yby -c staging sentinel scan`, em qualquer forma do pflag, inclusive `-cstaging`; depois do nome, a flag é do plugin) ou `YBY_ENV`. Antes do nome, flag que não é do core é erro (`ERR_VALIDATION`), nunca descartada. Sem isso, nenhum ambiente vai (o `current` do environments.yaml não conta: Viz e Sentinel ficam no current-context do kubeconfig); ambiente pedido que não existe é erro. O caro (overview, backlog e os hooks `context` dos outros plugins) vai só para quem declara `"consome_contexto": true` no manifesto (`PluginManifest.ConsomeContexto`); nenhum plugin nativo declara. Args com `-h`/`--help` abrem sem contexto. O core passa o ambiente ao Manager por `DefinirAmbiente` (`cmd/plugin_ambiente.go`)
@@ -265,7 +265,7 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 ### Plugin Sentinel — Auditoria K8s (v1.0.0)
 
 - **Backends reais**: Polaris SDK (pod security, best practices) + OPA SDK (RBAC, network) em vez de checks artesanais
-- **Agrupamento inteligente**: findings deduplicados por check, mostra "Deployment/api (+5)" em vez de repetir por workload
+- **Agrupamento inteligente**: findings deduplicados por check; a linha mostra "3 recursos" e os nomes vêm embaixo (até 5, depois "e mais N"), e o JSON e o relatório trazem a lista inteira em `resources`
 - **Allowlists**: RBAC ignora automaticamente `system:*`, controllers conhecidos (argocd, cert-manager, traefik, etc.)
 - **Investigacao IA inteligente**: verifica saude do pod antes de chamar IA — so aciona quando detecta problemas reais
 - **Remediacao**: `--fix-dry-run` (dry-run no servidor) e `--fix` (confirma; sem terminal, exige `--yes`) com strategic-merge patches no template do dono do pod (`ownerReferences`), só as correções seguras (escalação de privilégios, capabilities); recusa recurso do Argo CD, pod sem dono e Job solto

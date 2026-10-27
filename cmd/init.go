@@ -46,10 +46,16 @@ type gerenciadorPluginsInit interface {
 // testes: sem plugins do usuário, sem IA de verdade e sem helm. aplicarScaffoldInit
 // também, para conferir o relatório sem depender dos templates.
 var (
-	aplicarScaffoldInit        = scaffold.Apply
-	novoGerenciadorPluginsInit = func() gerenciadorPluginsInit { return plugin.NewManager() }
-	obterProvedorIAInit        = ai.GetProvider
-	novoValidadorInit          = func() validate.Service {
+	aplicarScaffoldInit = scaffold.Apply
+	// Com a verificação de confiança: o init roda os hooks manifest, context e assets, e
+	// plugin não confiável (de um .yby/plugins clonado, por exemplo) não roda nenhum.
+	novoGerenciadorPluginsInit = func() gerenciadorPluginsInit {
+		pm := plugin.NewManager()
+		pm.EnableTrustCheck()
+		return pm
+	}
+	obterProvedorIAInit = ai.GetProvider
+	novoValidadorInit   = func() validate.Service {
 		return validate.NewService(&validate.RealHelmRunner{Runner: &shared.RealRunner{}})
 	}
 )
@@ -153,6 +159,16 @@ Suporta execução interativa (Wizard) ou Headless (Flags).`,
 
 // colunasInit são as colunas das linhas do relatório do init (nome e estado).
 var colunasInit = ui.Colunas{Nome: 14, Versao: 15}
+
+// avisoNaoConfiaveis é a nota da linha dos plugins não confiáveis do init: o verbo
+// concorda com a quantidade e, com um só, o comando já leva o nome dele.
+func avisoNaoConfiaveis(nomes []string) string {
+	lista := strings.Join(nomes, ", ")
+	if len(nomes) == 1 {
+		return lista + " · não rodou; rode yby plugin trust " + nomes[0]
+	}
+	return lista + " · não rodaram; rode yby plugin trust <nome>"
+}
 
 // relatorioInit escreve as linhas do init conforme acontecem e conta ok, avisos e erros
 // para o resumo do fim.
@@ -286,12 +302,23 @@ func executarInit(w io.Writer, o *InitOptions) error {
 	if errPlugins != nil {
 		slog.Warn("falha na descoberta de plugins", "erro", errPlugins)
 		rel.linha(ui.CheckAviso, "plugins", "não lidos", errPlugins.Error())
-	} else if plugins := pm.ListPlugins(); len(plugins) > 0 {
-		nomes := make([]string, len(plugins))
-		for i, p := range plugins {
-			nomes[i] = p.Name
+	} else {
+		// O plugin não confiável não rodou nenhum hook: vai numa linha de aviso à parte.
+		var nomes, naoConfiaveis []string
+		for _, p := range pm.ListPlugins() {
+			if p.NaoConfiavel {
+				naoConfiaveis = append(naoConfiaveis, p.Name)
+			} else {
+				nomes = append(nomes, p.Name)
+			}
 		}
-		rel.linha(ui.CheckOk, "plugins", fmt.Sprintf("%d", len(plugins)), strings.Join(nomes, ", "))
+		if len(nomes) > 0 {
+			rel.linha(ui.CheckOk, "plugins", fmt.Sprintf("%d", len(nomes)), strings.Join(nomes, ", "))
+		}
+		if len(naoConfiaveis) > 0 {
+			rel.linha(ui.CheckAviso, "plugins", contagem(len(naoConfiaveis), "não confiável", "não confiáveis"),
+				avisoNaoConfiaveis(naoConfiaveis))
+		}
 	}
 	if errHook != nil {
 		slog.Warn("falha no hook context dos plugins", "erro", errHook)

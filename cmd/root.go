@@ -63,7 +63,32 @@ Atua no bootstrap, governança e operação assistida, complementando o uso do k
 // newRootPluginManager é uma factory mockável para testes
 var newRootPluginManager = plugin.NewManager
 
-// discoverPlugins escaneia e registra plugins como subcomandos do rootCmd.
+// anotacaoNaoConfiavel marca o comando de um plugin que a descoberta não executou por não
+// ser confiável: ele aparece no yby --help com a dica do trust, mas fica fora do gen-docs.
+const anotacaoNaoConfiavel = "yby/nao-confiavel"
+
+// nomesDoCobra são os comandos que o cobra cria só no ExecuteC, depois da descoberta: o
+// cmd.Find ainda não os acha, e um plugin com o nome deles tomaria o lugar (um
+// yby-plugin-help num .yby/plugins clonado viraria o yby help).
+var nomesDoCobra = map[string]bool{
+	"help":                          true,
+	"completion":                    true,
+	cobra.ShellCompRequestCmd:       true,
+	cobra.ShellCompNoDescRequestCmd: true,
+}
+
+// nomeDoCore diz se nome é de um comando do core (ou do cobra), que plugin nenhum toma.
+func nomeDoCore(cmd *cobra.Command, nome string) bool {
+	if nomesDoCobra[nome] {
+		return true
+	}
+	// Find devolve o próprio cmd, sem erro, quando o subcomando não existe
+	foundCmd, _, err := cmd.Find([]string{nome})
+	return err == nil && foundCmd != cmd
+}
+
+// discoverPlugins escaneia e registra plugins como subcomandos do rootCmd. Plugin com o
+// nome de um comando do core, confiável ou não, fica de fora.
 func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 	if err := pm.Discover(); err == nil {
 		for _, p := range pm.ListPlugins() {
@@ -77,10 +102,8 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 			}
 
 			if hasCommandHook {
-				// Evita colisão com comandos existentes
-				// Find retorna o root cmd sem erro quando subcomando não existe,
-				// então comparamos o cmd retornado com o root para detectar colisão real
-				if foundCmd, _, err := cmd.Find([]string{p.Name}); err == nil && foundCmd != cmd {
+				if nomeDoCore(cmd, p.Name) {
+					slog.Debug("Plugin com o nome de um comando do core ignorado", "nome", p.Name)
 					continue
 				}
 
@@ -106,10 +129,15 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 								// o plugin já mostrou o erro: só o código segue
 								return saida
 							}
-							return errors.Wrap(err, errors.ErrCodePlugin, fmt.Sprintf("o plugin %s falhou", pluginName))
+							// a dica do executor (ex.: a do yby plugin trust) segue
+							return falhaComHint(err, errors.ErrCodePlugin, fmt.Sprintf("o plugin %s falhou", pluginName),
+								errors.GetDefaultHint(errors.ErrCodePlugin))
 						}
 						return nil
 					},
+				}
+				if p.NaoConfiavel {
+					pluginCmd.Annotations = map[string]string{anotacaoNaoConfiavel: "sim"}
 				}
 				cmd.AddCommand(pluginCmd)
 			}

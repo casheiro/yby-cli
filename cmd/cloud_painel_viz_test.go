@@ -301,10 +301,10 @@ func TestPainelCloud_VizFechado(t *testing.T) {
 	assert.Contains(t, nm.mensagem(), "instale com yby plugin install viz")
 
 	// o plugin não confiável (ou recompilado): a dica do trust, sem o código entre colchetes
-	confianca := errors.New(errors.ErrCodePlugin, "plugin 'yby-plugin-viz' não está na whitelist de confiança ou seu checksum foi alterado").
-		WithHint("Execute 'yby plugin trust yby-plugin-viz' para registrá-lo como confiável")
+	confianca := errors.New(errors.ErrCodePlugin, "o plugin viz não é confiável: não está registrado ou o binário mudou depois do registro").
+		WithHint("Confira a origem do binário e rode yby plugin trust viz")
 	nm, _ = enviar(t, m, vizFechadoMsg{nome: "staging", err: confianca})
-	assert.Equal(t, "✕ não deu para abrir o Viz em staging · execute 'yby plugin trust yby-plugin-viz' para registrá-lo como confiável", nm.mensagem())
+	assert.Equal(t, "✕ não deu para abrir o Viz em staging · confira a origem do binário e rode yby plugin trust viz", nm.mensagem())
 
 	_, cmd = enviar(t, m, vizFechadoMsg{nome: "staging", err: &plugin.SaidaDoPlugin{Codigo: codigoCtrlC}})
 	assert.True(t, ehQuit(cmd), "ctrl+c no Viz sai de tudo")

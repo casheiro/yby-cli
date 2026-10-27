@@ -67,6 +67,7 @@ type NaoRodou struct {
 var (
 	novoClienteKube = getKubeClient
 	nomeDoContexto  = contextoDoKube
+	namespacePadrao = namespaceDoKube
 	backendsDoScan  = func() []backends.SecurityBackend {
 		return []backends.SecurityBackend{backends.NewPolarisBackend(getRestConfig), backends.NewOPABackend()}
 	}
@@ -86,7 +87,7 @@ func semCluster(err error) error {
 func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 	namespace := op.namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = namespacePadrao()
 	}
 	var selecionados []checks.SecurityCheck
 	if op.perfil != "" {

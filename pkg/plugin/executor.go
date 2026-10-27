@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -87,10 +86,12 @@ func (e *Executor) checkTrust(binaryPath string) error {
 	}
 
 	if !trusted {
-		name := filepath.Base(binaryPath)
+		// O nome é o que o yby plugin trust aceita: o do arquivo, sem yby-plugin- e sem .exe.
+		nome := nomeDoArquivo(binaryPath)
 		return ybyerrors.New(ybyerrors.ErrCodePlugin,
-			fmt.Sprintf("plugin '%s' não está na whitelist de confiança ou seu checksum foi alterado", name)).
-			WithHint(fmt.Sprintf("Execute 'yby plugin trust %s' para registrá-lo como confiável", name))
+			fmt.Sprintf("o plugin %s não é confiável: não está registrado ou o binário mudou depois do registro", nome)).
+			WithHint(fmt.Sprintf("confira a origem do binário e rode yby plugin trust %s", nome)).
+			WithContext("binario", binaryPath)
 	}
 
 	return nil
