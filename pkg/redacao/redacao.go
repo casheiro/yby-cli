@@ -39,9 +39,10 @@ var padroes = []*regexp.Regexp{
 
 // Redigir troca pela Marca os segredos conhecidos do texto: primeiro blocos PEM,
 // tokens com formato próprio e senha em URL; depois, de uma vez, os tokens depois
-// de "Bearer"/"Basic" e os valores de nomes sensíveis.
+// de "Bearer"/"Basic", os valores de nomes sensíveis e os values de env com name
+// sensível.
 //
-// Esses dois últimos são achados sobre o mesmo texto e redigidos pela união dos
+// Esses três últimos são achados sobre o mesmo texto e redigidos pela união dos
 // trechos, sem que um veja o resultado do outro. Aplicados em sequência, um
 // escondia o que o outro precisava ler: em "X-Auth-Token: Bearer x" o par redigia
 // "Bearer" e o token sobrava; em "token: password: x" o primeiro par engolia o
@@ -51,7 +52,8 @@ func Redigir(texto string) string {
 		texto = p.ReplaceAllString(texto, Marca)
 	}
 	texto = redigirURLs(texto)
-	return aplicar(texto, append(intervalosEsquemas(texto), intervalosPares(texto)...))
+	ivs := append(intervalosEsquemas(texto), intervalosPares(texto)...)
+	return aplicar(texto, append(ivs, intervalosEnv(texto)...))
 }
 
 // aplicar troca pela Marca a união dos trechos. Trechos que se tocam viram uma
@@ -177,6 +179,9 @@ var sufixosSensiveis = []string{
 	"privatekey", "sshkey", "signingkey", "encryptionkey", "masterkey", "authkey",
 }
 
+// referencias, como última palavra, fazem do nome a referência a um segredo, e não ele.
+var referencias = map[string]bool{"name": true, "names": true, "ref": true, "refs": true}
+
 // nomeSensivel diz se o nome guarda segredo e se é um cabeçalho Authorization.
 // "key" sozinho não é sensível (key: app em matchExpressions, tolerations e
 // secretKeyRef); em composto é (SSH_KEY, KEY_ID, apiKey, tls.key).
@@ -197,8 +202,16 @@ func nomeSensivel(nome string) (sensivel, autorizacao bool) {
 			autorizacao = true
 		}
 	}
-	if autorizacao || (temKey && len(palavras) > 1) {
-		return true, autorizacao
+	if autorizacao {
+		return true, true
+	}
+	// Nome e referência não são o segredo (secretName, SecretName do describe,
+	// secretKeyRef, secret_ref): quem diagnostica precisa saber qual Secret falta.
+	if n := len(palavras); n > 1 && referencias[palavras[n-1]] {
+		return false, false
+	}
+	if temKey && len(palavras) > 1 {
+		return true, false
 	}
 	// "auth" só como última palavra: auth, basic_auth, basicAuth (authMethod não).
 	if n := len(palavras); n > 0 && palavras[n-1] == "auth" {
@@ -274,6 +287,9 @@ func redigirValor(texto string, i, col int, autorizacao bool) []intervalo {
 	fimLinha := i + indiceByte(texto[i:], '\n')
 	linha := strings.TrimRight(texto[i:fimLinha], " \t\r")
 	if linha == "" {
+		if ivs, ok := valorDescribe(texto, fimLinha); ok {
+			return ivs
+		}
 		return valorAbaixo(texto, fimLinha, col)
 	}
 	if indicadorBloco.MatchString(linha) {
@@ -588,6 +604,57 @@ func valorAbaixo(texto string, nl, col int) []intervalo {
 	return ivs
 }
 
+// separadorDescribe é a linha que o kubectl describe de um ConfigMap põe entre a
+// chave e o valor ("DB_PASSWORD:", "----", o valor, uma linha em branco).
+const separadorDescribe = "----"
+
+// valorDescribe trata o valor de um ConfigMap no kubectl describe: se a linha de
+// baixo de nl é o separador, redige de uma vez tudo o que vem depois dele até a
+// próxima chave (linha "X:" seguida de separador), o BinaryData, o Events ou o fim
+// do texto, inclusive as linhas em branco do meio. ok diz se era esse formato.
+func valorDescribe(texto string, nl int) (ivs []intervalo, ok bool) {
+	if nl >= len(texto) {
+		return nil, false
+	}
+	ini := nl + 1
+	fim := ini + indiceByte(texto[ini:], '\n')
+	if strings.TrimRight(texto[ini:fim], " \t\r") != separadorDescribe {
+		return nil, false
+	}
+	primeiro, ultimo := -1, -1
+	for fim < len(texto) {
+		ini = fim + 1
+		fim = ini + indiceByte(texto[ini:], '\n')
+		linha := strings.TrimRight(texto[ini:fim], " \t\r")
+		if fimDoDescribe(texto, linha, fim) {
+			break
+		}
+		if strings.TrimSpace(linha) != "" {
+			if primeiro < 0 {
+				primeiro = ini
+			}
+			ultimo = ini + len(linha)
+		}
+	}
+	if primeiro < 0 {
+		return nil, true
+	}
+	return []intervalo{{primeiro, ultimo}}, true
+}
+
+// fimDoDescribe diz se a linha (que termina em fim) fecha o valor de um ConfigMap
+// no kubectl describe: a próxima chave, o BinaryData ou o Events.
+func fimDoDescribe(texto, linha string, fim int) bool {
+	if linha == "BinaryData" || strings.HasPrefix(linha, "Events:") {
+		return true
+	}
+	if linha == "" || espaco(linha[0]) || !strings.HasSuffix(linha, ":") || fim >= len(texto) {
+		return false
+	}
+	prox := texto[fim+1:]
+	return strings.TrimRight(prox[:indiceByte(prox, '\n')], " \t\r") == separadorDescribe
+}
+
 // bloco redige as linhas de um escalar em bloco YAML (| ou >): todas as linhas mais
 // indentadas que o nome, com linhas em branco no meio.
 func bloco(texto string, nl, col int) []intervalo {
@@ -608,6 +675,98 @@ func bloco(texto string, nl, col int) []intervalo {
 		ini = fim + 1
 	}
 	return ivs
+}
+
+// ---------------------------------------------------------------------------
+// Env do Kubernetes (name e value)
+
+// chaveEnv casa as chaves name e value de um item de env, em YAML, JSON (inclusive
+// dentro de string, \"name\":) e mapa de fluxo. O separador é só ":".
+var chaveEnv = regexp.MustCompile(`(\\?["']?)(name|value)(\\?["']?)[ \t]*:[ \t]*`)
+
+// nomeDoEnv lê o valor da chave name (o nome da variável), com ou sem aspas.
+var nomeDoEnv = regexp.MustCompile(`^\\?["']?([A-Za-z0-9_.\-]+)`)
+
+// chaveDeEnv é uma chave name ou value achada no texto: ini e fim delimitam a chave
+// com o separador, col é a coluna dela e nomeSensivel diz, numa chave name, se a
+// variável guarda segredo.
+type chaveDeEnv struct {
+	ini, fim, col int
+	ehNome        bool
+	nomeSensivel  bool
+}
+
+// intervalosEnv redige o value dos itens de env cujo name é sensível
+// ("- name: DB_PASSWORD" e "  value: x"), com o value antes ou depois do name e
+// outras chaves no meio. O value é o mais próximo do name, para frente ou para
+// trás, sem outro name no caminho e no mesmo objeto (mesmoItem); assim o value de
+// um item nunca é lido como o de outro, e o name de um secretKeyRef aninhado
+// encerra a busca.
+func intervalosEnv(texto string) []intervalo {
+	var chaves []chaveDeEnv
+	for _, loc := range chaveEnv.FindAllStringSubmatchIndex(texto, -1) {
+		if loc[0] > 0 && strings.IndexByte(caracteresDeNome, texto[loc[0]-1]) >= 0 {
+			continue // parte de outra chave (hostname:, file.name:)
+		}
+		c := chaveDeEnv{ini: loc[0], fim: loc[1], col: coluna(texto, loc[0]), ehNome: texto[loc[4]:loc[5]] == "name"}
+		if c.ehNome {
+			if m := nomeDoEnv.FindStringSubmatch(texto[loc[1]:]); m != nil {
+				c.nomeSensivel, _ = nomeSensivel(m[1])
+			}
+		}
+		chaves = append(chaves, c)
+	}
+	var ivs []intervalo
+	for i, c := range chaves {
+		if !c.nomeSensivel {
+			continue
+		}
+		for _, passo := range []int{1, -1} {
+			j := i + passo
+			if j < 0 || j >= len(chaves) || chaves[j].ehNome {
+				continue
+			}
+			a, b := c, chaves[j]
+			if passo < 0 {
+				a, b = b, c
+			}
+			if mesmoItem(texto, a, b) {
+				v := chaves[j]
+				ivs = append(ivs, redigirValor(texto, v.fim, v.col, false)...)
+			}
+		}
+	}
+	return ivs
+}
+
+// caracteresDeNome são os que podem vir colados antes de uma chave que não é a
+// name ou a value (hostname, file.name).
+const caracteresDeNome = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-"
+
+// mesmoItem diz se as chaves a e b (a antes de b) são do mesmo item de env. Na
+// mesma linha (JSON compacto, mapa de fluxo), não pode haver "{" nem "}" entre
+// elas. Em linhas diferentes (YAML, JSON indentado), as duas estão na mesma coluna,
+// nenhuma linha do meio fica à esquerda dela (fim do objeto, item novo da lista) e
+// a linha de b começa nela: "- value:" abaixo de um name é outro item.
+func mesmoItem(texto string, a, b chaveDeEnv) bool {
+	entre := texto[a.fim:b.ini]
+	if !strings.Contains(entre, "\n") {
+		return !strings.ContainsAny(entre, "{}")
+	}
+	if a.col != b.col {
+		return false
+	}
+	linhas := strings.Split(texto[a.fim:b.ini+1], "\n")[1:]
+	for k, l := range linhas {
+		ind, cont := indentacao(l)
+		if strings.TrimRight(cont, " \t\r") == "" && k < len(linhas)-1 {
+			continue
+		}
+		if ind < b.col || (k == len(linhas)-1 && ind != b.col) {
+			return false
+		}
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------

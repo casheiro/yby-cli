@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -25,7 +25,7 @@ func (c *ExposedSecretsCheck) Description() string {
 }
 
 func (c *ExposedSecretsCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := listarPods(ctx, client, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
@@ -34,12 +34,7 @@ func (c *ExposedSecretsCheck) Run(ctx context.Context, client kubernetes.Interfa
 	for _, pod := range pods.Items {
 		for _, container := range pod.Spec.Containers {
 			for _, env := range container.Env {
-				lowerName := strings.ToLower(env.Name)
-				isSensitive := strings.Contains(lowerName, "password") ||
-					strings.Contains(lowerName, "secret") ||
-					strings.Contains(lowerName, "token") ||
-					strings.Contains(lowerName, "key")
-				if isSensitive && env.ValueFrom == nil {
+				if nomeSensivel(env.Name) && env.ValueFrom == nil {
 					findings = append(findings, SecurityFinding{
 						CheckID:        c.ID(),
 						Severity:       SeverityCritical,
@@ -58,4 +53,44 @@ func (c *ExposedSecretsCheck) Run(ctx context.Context, client kubernetes.Interfa
 		}
 	}
 	return findings, nil
+}
+
+// nomeSensivel diz se o nome da variável de ambiente traz uma palavra de segredo
+// (PASSWORD, SECRET, TOKEN, KEY). PASSWORD, SECRET e TOKEN casam como trecho (PGPASSWORD,
+// JWTSECRET); KEY casa por palavra, separada por "_", "-", "." ou pela troca de minúscula
+// para maiúscula: API_KEY e apiKey casam, KEYCLOAK_URL e MONKEYS não.
+func nomeSensivel(nome string) bool {
+	var palavras []string
+	var atual []rune
+	runas := []rune(nome)
+	for i, r := range runas {
+		eLetraOuDigito := unicode.IsLetter(r) || unicode.IsDigit(r)
+		viraMaiuscula := i > 0 && unicode.IsUpper(r) && unicode.IsLower(runas[i-1])
+		if !eLetraOuDigito || viraMaiuscula {
+			if len(atual) > 0 {
+				palavras = append(palavras, strings.ToLower(string(atual)))
+				atual = nil
+			}
+		}
+		if eLetraOuDigito {
+			atual = append(atual, r)
+		}
+	}
+	if len(atual) > 0 {
+		palavras = append(palavras, strings.ToLower(string(atual)))
+	}
+	for _, p := range palavras {
+		switch p {
+		case "key", "keys", "apikey", "apikeys":
+			return true
+		}
+	}
+	// Palavras que não geram falso positivo valem como trecho: PGPASSWORD, JWTSECRET.
+	minusculo := strings.ToLower(nome)
+	for _, t := range []string{"password", "passwd", "secret", "token"} {
+		if strings.Contains(minusculo, t) {
+			return true
+		}
+	}
+	return false
 }

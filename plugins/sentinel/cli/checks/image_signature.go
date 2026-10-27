@@ -3,19 +3,83 @@
 package checks
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
-// ImageSignatureCheck verifica se imagens possuem assinatura cosign.
+// Variáveis de ambiente que dizem ao cosign como confiar na assinatura: uma chave pública
+// ou uma identidade de certificado (keyless) com o emissor OIDC dela.
+const (
+	envCosignChave      = "YBY_SENTINEL_COSIGN_KEY"
+	envCosignIdentidade = "YBY_SENTINEL_COSIGN_IDENTITY"
+	envCosignEmissor    = "YBY_SENTINEL_COSIGN_ISSUER"
+)
+
+// prazoCosign é o tempo máximo de cada chamada ao cosign.
+const prazoCosign = 30 * time.Second
+
+// ImageSignatureCheck verifica se imagens possuem assinatura cosign. Sem chave nem
+// identidade configuradas não há o que verificar: o `cosign verify` sem elas falha em toda
+// imagem, e isso não é uma imagem sem assinatura. Nesse caso o check devolve ErrNaoVerificado
+// (sem achado), e o mesmo vale para o cosign ausente.
 type ImageSignatureCheck struct {
 	// ExecCommand permite injetar mock para testes.
 	ExecCommand func(name string, args ...string) *exec.Cmd
+	// Chave é a chave pública (ou KMS) das assinaturas; vazia, vale YBY_SENTINEL_COSIGN_KEY.
+	Chave string
+	// Identidade e Emissor são a identidade do certificado keyless e o emissor OIDC dela;
+	// vazios, valem YBY_SENTINEL_COSIGN_IDENTITY e YBY_SENTINEL_COSIGN_ISSUER.
+	Identidade string
+	Emissor    string
+}
+
+// argsDeConfianca devolve as flags do `cosign verify` para a configuração do check (ou do
+// ambiente); vazio quando não há chave nem identidade com emissor.
+func (c *ImageSignatureCheck) argsDeConfianca() []string {
+	pegar := func(valor, env string) string {
+		if valor != "" {
+			return valor
+		}
+		return os.Getenv(env)
+	}
+	if chave := pegar(c.Chave, envCosignChave); chave != "" {
+		return []string{"--key", chave}
+	}
+	identidade, emissor := pegar(c.Identidade, envCosignIdentidade), pegar(c.Emissor, envCosignEmissor)
+	if identidade != "" && emissor != "" {
+		return []string{"--certificate-identity", identidade, "--certificate-oidc-issuer", emissor}
+	}
+	return nil
+}
+
+// rodarComPrazo roda o comando e devolve a saída; passado o prazo (ou cancelado o ctx), mata o processo.
+func rodarComPrazo(ctx context.Context, cmd *exec.Cmd, prazo time.Duration) ([]byte, error) {
+	var saida bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &saida, &saida
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	fim := make(chan error, 1)
+	go func() { fim <- cmd.Wait() }()
+	select {
+	case err := <-fim:
+		return saida.Bytes(), err
+	case <-time.After(prazo):
+		_ = cmd.Process.Kill()
+		<-fim
+		return saida.Bytes(), fmt.Errorf("o cosign passou de %s", prazo)
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		<-fim
+		return saida.Bytes(), ctx.Err()
+	}
 }
 
 func init() { Register(&ImageSignatureCheck{ExecCommand: exec.Command}) }
@@ -29,7 +93,7 @@ func (c *ImageSignatureCheck) Description() string {
 }
 
 func (c *ImageSignatureCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := listarPods(ctx, client, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
@@ -39,19 +103,14 @@ func (c *ImageSignatureCheck) Run(ctx context.Context, client kubernetes.Interfa
 		execCmd = exec.Command
 	}
 
+	confianca := c.argsDeConfianca()
+	if len(confianca) == 0 {
+		return nil, &ErrNaoVerificado{Motivo: "assinatura de imagens não verificada: configure " + envCosignChave + " ou " + envCosignIdentidade + " e " + envCosignEmissor}
+	}
+
 	// Verificar se cosign está disponível
-	if _, err := execCmd("cosign", "version").CombinedOutput(); err != nil {
-		return []SecurityFinding{{
-			CheckID:        c.ID(),
-			Severity:       SeverityInfo,
-			Category:       CategorySupplyChain,
-			Namespace:      namespace,
-			Resource:       "cosign",
-			Message:        "cosign não encontrado — verificação de assinatura de imagens indisponível",
-			Recommendation: "Instale cosign: https://docs.sigstore.dev/cosign/system_config/installation/",
-			Type:           "info",
-			Description:    "cosign não encontrado — verificação de assinatura de imagens indisponível",
-		}}, nil
+	if _, err := rodarComPrazo(ctx, execCmd("cosign", "version"), prazoCosign); err != nil {
+		return nil, &ErrNaoVerificado{Motivo: "cosign não encontrado: instale em https://docs.sigstore.dev/cosign/system_config/installation/"}
 	}
 
 	// Coletar imagens únicas
@@ -66,8 +125,12 @@ func (c *ImageSignatureCheck) Run(ctx context.Context, client kubernetes.Interfa
 
 	var findings []SecurityFinding
 	for image, refs := range imageSet {
-		cmd := execCmd("cosign", "verify", "--output", "text", image)
-		if _, err := cmd.CombinedOutput(); err != nil {
+		args := append([]string{"verify", "--output", "text"}, confianca...)
+		cmd := execCmd("cosign", append(args, image)...)
+		if _, err := rodarComPrazo(ctx, cmd, prazoCosign); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			for _, ref := range refs {
 				parts := strings.SplitN(ref, "/", 2)
 				podName := parts[0]

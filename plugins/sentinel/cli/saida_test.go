@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/charmbracelet/lipgloss"
@@ -89,11 +91,16 @@ type backendFalso struct {
 	nome    string
 	achados []backends.Finding
 	err     error
+	// ignorados são os recursos que o backend diz ter deixado de fora pela allowlist.
+	ignorados []string
 }
 
 func (b backendFalso) Name() string      { return b.nome }
 func (b backendFalso) IsAvailable() bool { return true }
-func (b backendFalso) ScanCluster(context.Context, kubernetes.Interface, string) ([]backends.Finding, error) {
+func (b backendFalso) ScanCluster(ctx context.Context, _ kubernetes.Interface, _ string) ([]backends.Finding, error) {
+	for _, r := range b.ignorados {
+		allowlist.Ignorar(ctx, r)
+	}
 	return b.achados, b.err
 }
 
@@ -111,29 +118,38 @@ func (c checkFalso) Run(context.Context, kubernetes.Interface, string) ([]checks
 	return c.achados, c.err
 }
 
-// provedorFalso responde sempre o mesmo texto e conta as chamadas; nunca há IA de verdade.
+// provedorFalso responde sempre o mesmo texto, conta as chamadas e guarda o que recebeu
+// de contexto; nunca há IA de verdade.
 type provedorFalso struct {
 	ai.Provider
-	resposta string
-	err      error
-	chamadas int
+	resposta  string
+	err       error
+	chamadas  int
+	recebidos []string
 }
 
 func (p *provedorFalso) Name() string { return "falso" }
-func (p *provedorFalso) Completion(context.Context, string, string) (string, error) {
+func (p *provedorFalso) Completion(_ context.Context, _, contexto string) (string, error) {
 	p.chamadas++
+	p.recebidos = append(p.recebidos, contexto)
 	return p.resposta, p.err
 }
 
 // usarDependencias troca o cluster, os backends, os checks e a IA por falsos, fixa o
-// relógio, a largura (64) e a detecção de terminal (fora dele), e restaura tudo no fim.
+// relógio, a largura (64) e a detecção de terminal (fora dele, na saída e na entrada, e o
+// --fix sem --yes nunca abre a confirmação), e restaura tudo no fim.
 func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.SecurityBackend, cs []checks.SecurityCheck, prov *provedorFalso) {
 	t.Helper()
 	k, b, c, p, r, te, l := novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida
+	nc := nomeDoContexto
+	et, cf := entradaTerminal, confirmar
 	t.Cleanup(func() {
 		novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida = k, b, c, p, r, te, l
+		entradaTerminal, confirmar, nomeDoContexto = et, cf, nc
 		os.RemoveAll(filepath.Join(homeDeTeste, ".yby"))
 	})
+	entradaTerminal = func() bool { return false }
+	nomeDoContexto = func() string { return "kind-yby" }
 	// Os namespaces dos testes existem no cluster falso: o scan confere o namespace antes
 	// das etapas.
 	if fc, ok := client.(*fake.Clientset); ok {
@@ -157,9 +173,10 @@ func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.S
 
 // backendsDeExemplo divide os achados de exemplo entre um Polaris e um OPA falsos.
 func backendsDeExemplo() []backends.SecurityBackend {
-	polaris, opa := backendFalso{nome: "polaris"}, backendFalso{nome: "opa"}
+	polaris := backendFalso{nome: "polaris"}
+	opa := backendFalso{nome: "opa", ignorados: []string{"ClusterRoleBinding/cluster-admin", "ClusterRole/admin"}}
 	for _, f := range achadosDeExemplo() {
-		bf := backends.Finding{ID: f.CheckID, Severity: string(f.Severity), Category: string(f.Category), Resource: f.Resource, Namespace: f.Namespace, Message: f.Message, Recommendation: f.Recommendation}
+		bf := backends.Finding{ID: f.CheckID, Severity: string(f.Severity), Category: string(f.Category), Resource: f.Resource, Resources: f.Resources, Namespace: f.Namespace, Message: f.Message, Recommendation: f.Recommendation}
 		if strings.HasPrefix(f.CheckID, "opa/") {
 			opa.achados = append(opa.achados, bf)
 		} else {
@@ -198,12 +215,12 @@ func TestScan_Golden(t *testing.T) {
 	conferirGolden(t, "scan.golden", saida)
 
 	// o relatório completo continua no formato de sempre
-	md, err := os.ReadFile(filepath.Join(homeDeTeste, ".yby", "reports", "sentinel-scan-payments-2026-10-25.md"))
-	if err != nil {
-		t.Fatalf("relatório não foi salvo: %v", err)
-	}
-	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Resumo:** 2 críticos, 1 alto, 1 médio, 1 baixo\n") {
+	md := lerRelatorio(t)
+	if !strings.HasPrefix(string(md), "# Relatório de Segurança Sentinel — payments\n\n**Contexto:** kind-yby\n**Gerado em:** 2026-10-25 09:30:") || !strings.Contains(string(md), "**Resumo:** 2 críticos, 1 alto, 1 médio, 2 baixos\n") {
 		t.Errorf("relatório fora do formato:\n%s", md)
+	}
+	if !strings.Contains(string(md), "**Allowlist:** 2 ignorados\n") {
+		t.Errorf("o relatório diz quantos a allowlist deixou de fora:\n%s", md)
 	}
 }
 
@@ -239,14 +256,60 @@ func TestScan_JSONNoStdoutSemTituloNemEtapas(t *testing.T) {
 	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
 		t.Fatalf("stdout tem de ser só o JSON: %v\n%s", err, saida)
 	}
-	if rel.Namespace != "payments" || len(rel.Findings) != 5 || strings.Join(rel.Sources, ",") != "polaris,opa" {
+	if rel.Namespace != "payments" || len(rel.Findings) != len(achadosDeExemplo()) || strings.Join(rel.Sources, ",") != "polaris,opa" {
 		t.Errorf("relatório JSON inesperado: %+v", rel)
+	}
+	if rel.IgnoradosPelaAllowlist != 2 || !strings.Contains(saida, `"ignored_by_allowlist": 2`) {
+		t.Errorf("o JSON traz os ignorados pela allowlist: %d\n%s", rel.IgnoradosPelaAllowlist, saida)
 	}
 	if !strings.Contains(erros, "✓ polaris") || strings.Contains(erros, "YBY") {
 		t.Errorf("as etapas vão para o stderr, sem título:\n%s", erros)
 	}
 	if _, err := os.Stat(filepath.Join(homeDeTeste, ".yby", "reports")); err == nil {
 		t.Error("com -o json o relatório global não é gravado")
+	}
+}
+
+// TestScan_JSONTrazTodosOsRecursos: o achado agrupado leva a lista inteira, sem "(+N)".
+func TestScan_JSONTrazTodosOsRecursos(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	usarDependencias(t, fake.NewSimpleClientset(), backendsDeExemplo(), nil, nil)
+
+	saida, _, err := rodar(t, "scan", "-n", "payments", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rel ScanReport
+	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
+		t.Fatal(err)
+	}
+	achou := false
+	for _, f := range rel.Findings {
+		if f.CheckID == "polaris/memoryLimitsMissing" {
+			achou = true
+			if f.Resource != "Deployment/web" || len(f.Resources) != 3 || f.Resources[2] != "Deployment/local-path-provisioner-com-nome-bem-comprido" {
+				t.Errorf("recursos do achado agrupado: %q %v", f.Resource, f.Resources)
+			}
+		}
+	}
+	if !achou || strings.Contains(saida, "(+") {
+		t.Errorf("achado agrupado ausente ou com contagem no nome:\n%s", saida)
+	}
+}
+
+// TestRecursosDoAchado_LimitaEDizQuantosFaltam: acima do limite, a tela lista os
+// primeiros e diz "e mais K"; os nomes saem inteiros.
+func TestRecursosDoAchado_LimitaEDizQuantosFaltam(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	var rs []string
+	for i := 1; i <= 8; i++ {
+		rs = append(rs, fmt.Sprintf("Deployment/servico-com-nome-longo-%d", i))
+	}
+	var buf bytes.Buffer
+	recursosDoAchado(&buf, checks.SecurityFinding{Resource: rs[0], Resources: rs}, ui.CheckAviso)
+	out := buf.String()
+	if !strings.Contains(out, "Deployment/servico-com-nome-longo-5") || strings.Contains(out, "longo-6") || !strings.Contains(out, "e mais 3") || strings.Contains(out, "…") {
+		t.Errorf("lista inesperada:\n%s", out)
 	}
 }
 
@@ -264,7 +327,7 @@ func TestScan_JSONEmArquivo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var rel ScanReport
-	if err := json.Unmarshal(dados, &rel); err != nil || len(rel.Findings) != 5 {
+	if err := json.Unmarshal(dados, &rel); err != nil || len(rel.Findings) != len(achadosDeExemplo()) {
 		t.Errorf("arquivo JSON inesperado (%v): %s", err, dados)
 	}
 	if !strings.Contains(saida, "◆ YBY  SENTINEL") || !strings.Contains(saida, "✓ relatório") {
@@ -272,7 +335,9 @@ func TestScan_JSONEmArquivo(t *testing.T) {
 	}
 }
 
-func TestScan_ChecksInternosComDryRun(t *testing.T) {
+// TestScan_DryRunSemCorrecaoSegura: o runAsNonRoot derrubaria a imagem que roda como root;
+// o achado fica sem patch, contado na remediação, e nada vai ao servidor.
+func TestScan_DryRunSemCorrecaoSegura(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
 	achado := checks.SecurityFinding{
 		CheckID: "POD_ROOT_CONTAINER", Severity: checks.SeverityCritical, Type: "critical",
@@ -285,7 +350,14 @@ func TestScan_ChecksInternosComDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conferirGolden(t, "scan-dry-run.golden", saida)
+	for _, trecho := range []string{"✓ plano de correção   nenhum patch", "REMEDIAÇÃO · DRY-RUN", "○ 1 achado sem correção automática"} {
+		if !strings.Contains(saida, trecho) {
+			t.Errorf("faltou %q:\n%s", trecho, saida)
+		}
+	}
+	if strings.Contains(saida, "nada foi aplicado") {
+		t.Errorf("sem patch, não há o que aplicar:\n%s", saida)
+	}
 }
 
 func TestScan_SemAchados(t *testing.T) {
@@ -587,10 +659,13 @@ func TestScan_NoTerminalRedesenhaEDesviaOLog(t *testing.T) {
 	if !strings.Contains(saida, "\x1b[1A\r\x1b[J") {
 		t.Errorf("no terminal, a etapa atual é redesenhada no lugar:\n%q", saida)
 	}
-	for _, etapa := range []string{"✓ opa", "✓ checks internos"} {
+	for _, etapa := range []string{"✓ opa"} {
 		if n := strings.Count(saida, etapa); n != 1 {
 			t.Errorf("%q sai uma vez só, de vez, obtido %d:\n%q", etapa, n, saida)
 		}
+	}
+	if strings.Contains(saida, "checks internos") {
+		t.Errorf("com o backend rodando limpo, os checks internos não rodam:\n%q", saida)
 	}
 	// o log passa pelo escritor das etapas e vai para o stderr no formato do yby, fora do
 	// trecho redesenhado
@@ -615,61 +690,6 @@ func TestScan_MarkdownNoStdout(t *testing.T) {
 	}
 	if !strings.Contains(erros, "✓ polaris") {
 		t.Errorf("as etapas vão para o stderr:\n%s", erros)
-	}
-}
-
-// achadoRoot é o achado dos checks internos que o --fix sabe corrigir.
-var achadoRoot = checks.SecurityFinding{
-	CheckID: "POD_ROOT_CONTAINER", Severity: checks.SeverityCritical, Type: "critical",
-	Category: checks.CategoryPodSecurity, Pod: "api-7c9f", Container: "app", Namespace: "payments",
-	Resource: "api-7c9f/app", Message: "Container 'app' no pod 'api-7c9f' roda como root (UID 0)",
-}
-
-func TestScan_FixQueFalhaSaiComErro(t *testing.T) {
-	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
-	cs := []checks.SecurityCheck{checkFalso{achados: []checks.SecurityFinding{achadoRoot}}}
-	usarDependencias(t, fake.NewSimpleClientset(), nil, cs, nil)
-
-	saida, _, err := rodar(t, "scan", "-n", "payments", "--fix")
-	var ye *yerrors.YbyError
-	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodePlugin || !strings.Contains(ye.Message, "1 de 1") || !strings.Contains(ye.Hint, "kubectl auth can-i") {
-		t.Fatalf("patches que falharam saem como erro com hint, obtido %v", err)
-	}
-	for _, trecho := range []string{"✕ aplicar patches", "1 de 1 falharam", "not found", "RESUMO"} {
-		if !strings.Contains(saida, trecho) {
-			t.Errorf("faltou %q:\n%s", trecho, saida)
-		}
-	}
-	if strings.Contains(saida, "REMEDIAÇÃO") {
-		t.Errorf("com --fix, os patches aparecem só na etapa:\n%s", saida)
-	}
-
-	// com -o json, o JSON sai inteiro no stdout e o erro continua
-	saida, _, err = rodar(t, "scan", "-n", "payments", "--fix", "-o", "json")
-	var rel ScanReport
-	if jerr := json.Unmarshal([]byte(saida), &rel); jerr != nil || len(rel.Findings) != 1 {
-		t.Errorf("stdout tem de ser o JSON (%v):\n%s", jerr, saida)
-	}
-	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodePlugin {
-		t.Errorf("com -o json, a falha dos patches também sai como erro, obtido %v", err)
-	}
-}
-
-func TestScan_FixAplicado(t *testing.T) {
-	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "api-7c9f", Namespace: "payments"},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
-	}
-	cs := []checks.SecurityCheck{checkFalso{achados: []checks.SecurityFinding{achadoRoot}}}
-	usarDependencias(t, fake.NewSimpleClientset(pod), nil, cs, nil)
-
-	saida, _, err := rodar(t, "scan", "-n", "payments", "--fix")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(saida, "✓ aplicar patches   1 aplicado") {
-		t.Errorf("a etapa mostra os patches aplicados:\n%s", saida)
 	}
 }
 
@@ -811,5 +831,76 @@ func TestAjuda_Golden(t *testing.T) {
 	semArgs, _, _ := rodar(t)
 	if !strings.HasPrefix(semArgs, "◆ YBY  SENTINEL") {
 		t.Errorf("sem subcomando sai a ajuda:\n%s", semArgs)
+	}
+}
+
+func TestScan_CheckNaoVerificadoNaoViraAchado(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	prov := &provedorFalso{resposta: "nada"}
+	naoVerif := &checks.ErrNaoVerificado{Motivo: "configure YBY_SENTINEL_COSIGN_KEY"}
+	usarDependencias(t, fake.NewSimpleClientset(), nil, []checks.SecurityCheck{checkFalso{err: naoVerif}}, prov)
+
+	saida, _, err := rodar(t, "scan")
+	if err != nil {
+		t.Fatalf("não verificado não é falha do scan: %v", err)
+	}
+	if !strings.Contains(saida, "nenhum problema nas verificações que rodaram") || !strings.Contains(saida, "YBY_SENTINEL_COSIGN_KEY") {
+		t.Errorf("esperava o resultado limpo e o aviso do motivo:\n%s", saida)
+	}
+	if prov.chamadas != 0 {
+		t.Error("sem achados, a IA não é chamada")
+	}
+}
+
+// lerRelatorio devolve o único relatório gravado em ~/.yby/reports.
+func lerRelatorio(t *testing.T) []byte {
+	t.Helper()
+	arquivos, _ := filepath.Glob(filepath.Join(homeDeTeste, ".yby", "reports", "sentinel-scan-*.md"))
+	if len(arquivos) != 1 {
+		t.Fatalf("esperava um relatório salvo, achei %v", arquivos)
+	}
+	md, err := os.ReadFile(arquivos[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return md
+}
+
+// TestScan_RelatoriosNaoSeSobrescrevem: dois scans do mesmo dia, às 09:30 e às 14:10,
+// gravam dois arquivos, cada um com o contexto e a hora no nome e no conteúdo; um
+// contexto com ":" e "/" (ARN do EKS) vira um nome de arquivo válido.
+func TestScan_RelatoriosNaoSeSobrescrevem(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	usarDependencias(t, fake.NewSimpleClientset(), backendsDeExemplo(), nil, nil)
+	nomeDoContexto = func() string { return "arn:aws:eks:us-east-1:123:cluster/prod" }
+
+	horas := []time.Time{
+		time.Date(2026, 10, 25, 9, 30, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 14, 10, 0, 0, time.UTC),
+	}
+	for _, h := range horas {
+		relogio = func() time.Time { return h }
+		if _, _, err := rodar(t, "scan", "-n", "payments", "--no-ai"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// o mesmo segundo não sobrescreve
+	if _, _, err := rodar(t, "scan", "-n", "payments", "--no-ai"); err != nil {
+		t.Fatal(err)
+	}
+
+	pasta := filepath.Join(homeDeTeste, ".yby", "reports")
+	for _, nome := range []string{
+		"sentinel-scan-payments-arn-aws-eks-us-east-1-123-cluster-prod-2026-10-25-093000.md",
+		"sentinel-scan-payments-arn-aws-eks-us-east-1-123-cluster-prod-2026-10-25-141000.md",
+		"sentinel-scan-payments-arn-aws-eks-us-east-1-123-cluster-prod-2026-10-25-141000-2.md",
+	} {
+		md, err := os.ReadFile(filepath.Join(pasta, nome))
+		if err != nil {
+			t.Fatalf("faltou o relatório %s: %v", nome, err)
+		}
+		if !strings.Contains(string(md), "**Contexto:** arn:aws:eks:us-east-1:123:cluster/prod\n") || !strings.Contains(string(md), "**Gerado em:** 2026-10-25 ") {
+			t.Errorf("%s sem contexto ou hora:\n%s", nome, md)
+		}
 	}
 }

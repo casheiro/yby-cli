@@ -10,10 +10,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -65,14 +66,17 @@ func posicaoSeveridade(s string) int {
 var ordemCategorias = []checks.Category{
 	checks.CategoryPodSecurity, checks.CategoryRBAC, checks.CategoryNetwork,
 	checks.CategorySecrets, checks.CategorySupplyChain,
+	checks.CategoryReliability, checks.CategoryEfficiency,
 }
 
 var nomesCategorias = map[checks.Category]string{
 	checks.CategoryPodSecurity: "segurança dos pods",
-	checks.CategoryRBAC:        "rbac",
+	checks.CategoryRBAC:        "RBAC",
 	checks.CategoryNetwork:     "rede",
 	checks.CategorySecrets:     "secrets",
 	checks.CategorySupplyChain: "cadeia de suprimentos",
+	checks.CategoryReliability: "confiabilidade",
+	checks.CategoryEfficiency:  "eficiência",
 }
 
 func nomeCategoria(c checks.Category) string {
@@ -83,6 +87,14 @@ func nomeCategoria(c checks.Category) string {
 		return "outros"
 	}
 	return string(c)
+}
+
+// tituloDaCategoria é o nome da categoria com a inicial maiúscula, para os títulos das
+// seções do relatório markdown.
+func tituloDaCategoria(c checks.Category) string {
+	nome := []rune(nomeCategoria(c))
+	nome[0] = unicode.ToUpper(nome[0])
+	return string(nome)
 }
 
 func posicaoCategoria(c checks.Category) int {
@@ -102,9 +114,9 @@ func contar(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// mensagensPolaris traduz, só na tela, as mensagens dos checks do Polaris, que a
-// biblioteca escreve em inglês. O JSON e o relatório markdown continuam com o texto
-// original; um check fora da lista também.
+// mensagensPolaris traduz as mensagens dos checks do Polaris, que a
+// biblioteca escreve em inglês, na tela, no JSON e no markdown (normalizarAchados); um
+// check fora da lista fica com o texto original.
 var mensagensPolaris = map[string]string{
 	"automountServiceAccountToken":             "O token da ServiceAccount é montado automaticamente",
 	"clusterrolebindingClusterAdmin":           "O ClusterRoleBinding aponta para o cluster-admin ou para um ClusterRole com curinga",
@@ -203,11 +215,37 @@ func reticenciasNoMeio(s string, n int) string {
 	return string(runas[:esq]) + reticencias + string(runas[len(runas)-dir:])
 }
 
-// escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
-// achado (glifo e palavra da severidade, recurso e mensagem), a remediação do dry-run, o
-// resumo por severidade, as fontes e o caminho do relatório.
-func escreverScan(w io.Writer, report ScanReport, patches []remediation.RemediationPatch, op opcoes, caminho string, errRelatorio error) {
-	achados := append([]checks.SecurityFinding(nil), report.Findings...)
+// maxRecursosNaTela é quantos recursos de um achado agrupado a tela lista embaixo da linha
+// do check; os outros viram "e mais K" (o JSON e o relatório trazem a lista inteira).
+const maxRecursosNaTela = 5
+
+// nomeDoAchado é o que a coluna de recursos mostra: o recurso, ou, quando o achado agrupa
+// vários, a contagem deles (a lista vem embaixo, sem cortar os nomes).
+func nomeDoAchado(f checks.SecurityFinding) string {
+	if len(f.Resources) > 1 {
+		return contar(len(f.Resources), "recurso", "recursos")
+	}
+	return f.Resource
+}
+
+// recursosDoAchado escreve embaixo da linha do check os recursos de um achado agrupado
+// (até maxRecursosNaTela, depois "e mais K"), com os nomes inteiros.
+func recursosDoAchado(w io.Writer, f checks.SecurityFinding, tipo ui.TipoCheck) {
+	if len(f.Resources) < 2 {
+		return
+	}
+	linhas := f.Resources
+	if len(linhas) > maxRecursosNaTela {
+		resto := len(linhas) - maxRecursosNaTela
+		linhas = append(append([]string(nil), linhas[:maxRecursosNaTela]...), fmt.Sprintf("e mais %d", resto))
+	}
+	continuarCheck(w, tipo, recuoDoCheck(tipo), linhas)
+}
+
+// achadosPorSecao devolve uma cópia dos achados na ordem das seções do scan (categoria,
+// severidade, recurso e mensagem), a mesma na tela e no relatório.
+func achadosPorSecao(findings []checks.SecurityFinding) []checks.SecurityFinding {
+	achados := append([]checks.SecurityFinding(nil), findings...)
 	sort.SliceStable(achados, func(i, j int) bool {
 		a, b := achados[i], achados[j]
 		if pa, pb := posicaoCategoria(a.Category), posicaoCategoria(b.Category); pa != pb {
@@ -224,10 +262,19 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 		}
 		return a.Message < b.Message
 	})
+	return achados
+}
+
+// escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
+// achado (glifo e palavra da severidade, recurso e mensagem), o plano de correção do
+// --fix e do --fix-dry-run, o resumo por severidade, as fontes e o caminho do relatório.
+func escreverScan(w io.Writer, c coleta, op opcoes, caminho string, errRelatorio error) {
+	report := c.report
+	achados := achadosPorSecao(report.Findings)
 
 	col := ui.Colunas{Nome: 12, Versao: 0}
 	for _, f := range achados {
-		col.Nome = max(col.Nome, min(lipgloss.Width(f.Resource)+2, maxColunaRecurso))
+		col.Nome = max(col.Nome, min(lipgloss.Width(nomeDoAchado(f))+2, maxColunaRecurso))
 		col.Versao = max(col.Versao, lipgloss.Width(severidades[severidadeDe(f)].singular)+2)
 	}
 
@@ -240,11 +287,12 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 		}
 		sev := severidadeDe(f)
 		contagem[sev]++
-		checkNaColuna(w, col, severidades[sev].tipo, encurtarRecurso(f.Resource, col.Nome-2), severidades[sev].singular, mensagemNaTela(f))
+		checkNaColuna(w, col, severidades[sev].tipo, encurtarRecurso(nomeDoAchado(f), col.Nome-2), severidades[sev].singular, mensagemNaTela(f))
+		recursosDoAchado(w, f, severidades[sev].tipo)
 	}
 
 	if op.fixDryRun || op.fix {
-		escreverRemediacao(w, patches, op)
+		escreverRemediacao(w, c, op)
 	}
 	escreverRecomendacoes(w, report.Recommendations, caminho != "")
 
@@ -257,7 +305,9 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 	ui.SummaryCom(w, partes, "")
 
 	ui.Campos(w,
+		ui.Campo{Rotulo: "perfil", Valor: textoDoPerfil(report)},
 		ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
+		ui.Campo{Rotulo: "allowlist", Valor: textoDaAllowlist(report.IgnoradosPelaAllowlist)},
 		ui.Campo{Rotulo: "relatório", Valor: filepath.ToSlash(caminho), Caminho: true},
 	)
 	if errRelatorio != nil {
@@ -383,28 +433,51 @@ func linhaSemMarkdown(l string) string {
 	return strings.NewReplacer("**", "", "__", "", "`", "").Replace(l)
 }
 
-// escreverRemediacao lista os patches do --fix-dry-run (o --fix já os mostrou como etapa)
-// ou avisa que os achados não têm patch.
-func escreverRemediacao(w io.Writer, patches []remediation.RemediationPatch, op opcoes) {
-	if len(patches) > 0 && !op.fixDryRun {
-		return
-	}
+// escreverRemediacao mostra o plano de correção do --fix e do --fix-dry-run: cada patch
+// com o que muda no template (✓ quando o servidor o aceitou no dry-run, ✕ com o motivo
+// quando recusou), os recursos que o --fix não corrige e por quê, e quantos achados não
+// têm correção automática. No --fix, a confirmação vem depois do resultado.
+func escreverRemediacao(w io.Writer, c coleta, op opcoes) {
 	titulo := "remediação"
 	if op.fixDryRun {
 		titulo += " · dry-run"
 	}
 	ui.Section(w, titulo)
-	if len(patches) == 0 {
-		ui.Check(w, ui.CheckNeutro, "nenhum patch de remediação para estes achados", "", "")
-		return
+	// Os recursos dos patches e das recusas ficam numa coluna só.
+	col := ui.Colunas{Nome: 12}
+	for _, p := range c.plano.Patches {
+		col.Nome = max(col.Nome, min(lipgloss.Width(p.Recurso())+2, maxColunaRecurso))
 	}
-	itens := make([]string, len(patches))
-	for i, p := range patches {
-		itens[i] = fmt.Sprintf("%s %s/%s · %s · patch %s", p.ResourceKind, p.Namespace, p.ResourceName, p.Description, p.Patch)
+	for _, r := range c.plano.Recusas {
+		col.Nome = max(col.Nome, min(lipgloss.Width(r.Recurso)+2, maxColunaRecurso))
 	}
-	ui.Passos(w, itens...)
-	fmt.Fprintln(w)
-	ui.Check(w, ui.CheckNeutro, "nada foi aplicado; rode com --fix para aplicar", "", "")
+	recusado := map[string]error{}
+	for _, f := range c.recusados {
+		recusado[f.Patch.Recurso()] = f.Err
+	}
+	for _, p := range c.plano.Patches {
+		tipo, nota := ui.CheckOk, p.Description
+		if err, ok := recusado[p.Recurso()]; ok {
+			tipo, nota = ui.CheckErro, "o servidor recusou: "+motivoNaTela(err)
+		}
+		checkNaColuna(w, col, tipo, encurtarRecurso(p.Recurso(), col.Nome-2), "", nota)
+		continuarCheck(w, tipo, recuoDoCheck(tipo), p.Mudancas)
+	}
+	for _, r := range c.plano.Recusas {
+		checkNaColuna(w, col, ui.CheckAviso, encurtarRecurso(r.Recurso, col.Nome-2), "", r.Motivo)
+	}
+	if n := c.plano.SemCorrecao; n > 0 {
+		// runAsNonRoot, readOnlyRootFilesystem, limites e afins mudam o comportamento do
+		// workload: ficam com a recomendação do achado.
+		ui.Check(w, ui.CheckNeutro, contar(n, "achado", "achados")+" sem correção automática (mudaria o workload)", "", "")
+	}
+	if len(c.plano.Patches) == 0 && len(c.plano.Recusas) == 0 && c.plano.SemCorrecao == 0 {
+		ui.Check(w, ui.CheckNeutro, "nada a corrigir: os recursos já têm as correções", "", "")
+	}
+	if op.fixDryRun && len(c.validos) > 0 {
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckNeutro, "nada foi aplicado; rode com --fix para aplicar", "", "")
+	}
 }
 
 // nomesDasFontes devolve as fontes do scan como aparecem na tela; no JSON e no relatório
@@ -415,6 +488,15 @@ func nomesDasFontes(fontes []string) string {
 		nomes[i] = strings.ReplaceAll(f, "checks-internos", "checks internos")
 	}
 	return strings.Join(nomes, ", ")
+}
+
+// textoDaAllowlist diz quantos recursos de RBAC a allowlist deixou de fora ("3
+// ignorados", ao lado do rótulo allowlist); com nenhum, fica vazio e a linha não aparece.
+func textoDaAllowlist(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return contar(n, "ignorado", "ignorados")
 }
 
 // larguraQuadro é a largura dos quadros do investigate em w.
@@ -462,4 +544,26 @@ func escreverAnalise(w io.Writer, result AnalysisResult) {
 			fmt.Fprintln(w, "  "+s.Negrito.Render(strings.TrimRight(l, " \r")))
 		}
 	}
+}
+
+// normalizarAchados deixa os achados coerentes para o JSON e o markdown, num ponto só:
+// o type legado acompanha a severity (os checks internos escrevem os dois à mão e
+// divergem), as mensagens do Polaris saem em PT-BR, como na tela, e todo achado diz o
+// escopo.
+func normalizarAchados(findings []checks.SecurityFinding) []checks.SecurityFinding {
+	for i := range findings {
+		f := &findings[i]
+		f.Severity = checks.Severity(severidadeDe(*f))
+		f.Type = string(f.Severity)
+		// Os checks que não dizem o escopo são de recursos do namespace (pods, serviços).
+		if f.Scope == "" {
+			f.Scope = string(escopo.Namespace)
+		}
+		if id, ok := strings.CutPrefix(f.CheckID, "polaris/"); ok {
+			if m, ok := mensagensPolaris[id]; ok {
+				f.Message, f.Description = m, m
+			}
+		}
+	}
+	return findings
 }

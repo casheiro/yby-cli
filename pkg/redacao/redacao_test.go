@@ -240,6 +240,20 @@ var casosSegredo = []casoSegredo{
 	{"bearer solto com digito", "Bearer abc12345", []string{"abc12345"}, nil},
 	{"basic solto", "basic dXNlcjpwYXNz", []string{"dXNlcjpwYXNz"}, nil},
 	{"basic solto com =", "Basic YWRtaW46c2VuaGE=", []string{"YWRtaW46c2VuaGE"}, nil},
+
+	// Formatos do Kubernetes: env com name/value e o kubectl describe de ConfigMap.
+	{"env yaml", "env:\n- name: DB_PASSWORD\n  value: s3nh4\n- name: LOG\n  value: info", []string{"s3nh4"}, []string{"name: DB_PASSWORD", "value: info"}},
+	{"env yaml entre aspas", "- name: DB_PASSWORD\n  value: \"s3nh4\"", []string{"s3nh4"}, nil},
+	{"env yaml value antes", "- value: s3nh4\n  name: DB_PASSWORD\n- name: LOG\n  value: info", []string{"s3nh4"}, []string{"value: info"}},
+	{"env yaml outra chave no meio", "- name: API_TOKEN\n  type: x\n  value: tk123", []string{"tk123"}, nil},
+	{"env json", `{"name":"DB_PASSWORD","value":"s3nh4"}`, []string{"s3nh4"}, nil},
+	{"env json lista", `[{"name":"LOG","value":"info"},{"name":"API_TOKEN","value":"tk123"}]`, []string{"tk123"}, []string{`"value":"info"`}},
+	{"env json value antes", `{"value":"s3nh4","name":"DB_PASSWORD"}`, []string{"s3nh4"}, nil},
+	{"env json indentado", "{\n    \"name\": \"DB_PASSWORD\",\n    \"value\": \"s3nh4\"\n}", []string{"s3nh4"}, nil},
+	{"env json escapado", `{\"name\":\"DB_PASSWORD\",\"value\":\"s3nh4\"}`, []string{"s3nh4"}, nil},
+	{"env fluxo", "env: [{name: DB_PASSWORD, value: s3nh4}]", []string{"s3nh4"}, nil},
+	{"describe configmap", "Data\n====\nDB_PASSWORD:\n----\ns3nh4\n\nLOG_LEVEL:\n----\ninfo\n\nBinaryData\n====\n", []string{"s3nh4"}, []string{"LOG_LEVEL:\n----\ninfo", "BinaryData"}},
+	{"describe configmap varias linhas", "password:\n----\nlinha1\n\nlinha2\n\nuser:\n----\nana\n\nEvents:  <none>", []string{"linha1", "linha2"}, []string{"user:\n----\nana", "Events:  <none>"}},
 }
 
 func TestRedigir_Segredos(t *testing.T) {
@@ -288,6 +302,9 @@ func TestRedigir_Exato(t *testing.T) {
 		{"**Password:** hunter2 fim", "**Password:** [REDIGIDO] fim"},
 		{`"tokens": ["a1", "b2"]`, `"tokens": [[REDIGIDO]]`},
 		{"(Bearer xxLIWPc)", "(Bearer [REDIGIDO])"},
+		{"- name: DB_PASSWORD\n  value: s3nh4\n- name: LOG\n  value: info", "- name: DB_PASSWORD\n  value: [REDIGIDO]\n- name: LOG\n  value: info"},
+		{`{"name":"DB_PASSWORD","value":"s3nh4"}`, `{"name":"DB_PASSWORD","value":"[REDIGIDO]"}`},
+		{"DB_PASSWORD:\n----\ns3nh4\n\nLOG:\n----\ninfo", "DB_PASSWORD:\n----\n[REDIGIDO]\n\nLOG:\n----\ninfo"},
 	}
 	for _, c := range casos {
 		if got := Redigir(c.entrada); got != c.saida {
@@ -311,12 +328,24 @@ func TestRedigir_NaoRedige(t *testing.T) {
 		"git@github.com:org/repo.git",
 		"nome: web\nreplicas: 3",
 		"sem segredo nenhum aqui",
+		// Nome e referência de Secret não são o segredo: o Bard e o Sentinel precisam
+		// deles para dizer qual Secret falta.
+		"secretName: db-creds",
+		"    SecretName:  a-tls\n    Optional:    false",
+		"tls:\n- secretName: web-tls\n  hosts: [a]",
+		"secretKeyRef: {name: db, key: password}",
+		"secret_ref: db",
 		// "key" sozinho não é sensível.
 		"- key: app\n  operator: In\n  values:\n  - web",
 		"tolerations:\n- key: node-role.kubernetes.io/master\n  operator: Exists\n  effect: NoSchedule",
 		"matchExpressions:\n  - key: app\n    operator: In",
 		"env:\n- name: DB\n  valueFrom:\n    secretKeyRef:\n      name: db-creds\n      key: password",
 		"kind: Secret\nmetadata:\n  name: db",
+		// env que não é segredo; o value de um item não vale para o name de outro.
+		"- name: LOG\n  value: info\n- name: KEYCLOAK_URL\n  value: http://kc",
+		`[{"name":"LOG","value":"info"},{"name":"DB_PASSWORD","valueFrom":{"fieldRef":{"fieldPath":"status.podIP"}}}]`,
+		"- value: info\n  name: LOG\n- name: DB_PASSWORD\n  valueFrom:\n    secretKeyRef:\n      name: db",
+		"LOG_LEVEL:\n----\ninfo\n",
 		// Basic e bearer em prosa.
 		"Basic authentication is enabled",
 		"use a basic configuration",
@@ -339,14 +368,12 @@ func TestRedigir_NaoRedige(t *testing.T) {
 // prefere redigir demais a vazar.
 func TestRedigir_ExageroAceito(t *testing.T) {
 	for _, s := range []string{
-		"**Secret:** use o Vault",                 // rótulo de markdown em prosa: some o "use"
-		"secretName: db-creds",                    // nome de objeto Secret, não o segredo
-		"max_tokens: 100",                         // contagem de tokens
-		"Configure o token:\nfoo",                 // primeira palavra da linha de baixo
-		"--password-file /etc/pwd",                // caminho depois de flag sensível
-		"secretKeyRef: {name: db, key: password}", // referência em mapa de fluxo
-		"Authorization: Custom realm=x, fim",      // esquema desconhecido: o resto da linha
-		"bearer well-known",                       // hífen depois de bearer conta como token
+		"**Secret:** use o Vault",            // rótulo de markdown em prosa: some o "use"
+		"max_tokens: 100",                    // contagem de tokens
+		"Configure o token:\nfoo",            // primeira palavra da linha de baixo
+		"--password-file /etc/pwd",           // caminho depois de flag sensível
+		"Authorization: Custom realm=x, fim", // esquema desconhecido: o resto da linha
+		"bearer well-known",                  // hífen depois de bearer conta como token
 	} {
 		if got := Redigir(s); !strings.Contains(got, Marca) {
 			t.Errorf("Redigir(%q) = %q, esperava redação (exagero aceito)", s, got)

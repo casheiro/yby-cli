@@ -14,6 +14,9 @@ func init() {
 			"POD_PRIVILEGED",
 			"POD_HOST_NAMESPACES",
 			"POD_SERVICE_ACCOUNT_TOKEN",
+			// hostPath e HostProcess (CIS 5.2.12 e 5.2.11); só o Polaris verifica
+			"polaris/hostPathSet",
+			"polaris/hostProcess",
 		},
 	})
 
@@ -34,6 +37,9 @@ func init() {
 			"POD_SECCOMP",
 			"POD_PRIVILEGED",
 			"POD_HOST_PORTS",
+			// hostPath e HostProcess (CIS 5.2.12 e 5.2.11); só o Polaris verifica
+			"polaris/hostPathSet",
+			"polaris/hostProcess",
 			// RBAC
 			"RBAC_CLUSTER_ADMIN",
 			"RBAC_WILDCARD",
