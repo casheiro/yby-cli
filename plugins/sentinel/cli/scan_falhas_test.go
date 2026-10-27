@@ -281,7 +281,7 @@ func TestScan_SemIA(t *testing.T) {
 	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
 		t.Fatalf("stdout tem de ser só o JSON: %v\n%s", err, saida)
 	}
-	if prov.chamadas != 0 || rel.Recommendations != "" || len(rel.Findings) != 5 {
+	if prov.chamadas != 0 || rel.Recommendations != "" || len(rel.Findings) != len(achadosDeExemplo()) {
 		t.Errorf("a IA foi chamada %d vezes; relatório: %+v", prov.chamadas, rel)
 	}
 	if strings.Contains(erros, "recomendações da IA") {
@@ -487,7 +487,7 @@ func TestScan_RelatorioComTil(t *testing.T) {
 	if err := comando(context.Background(), []string{"scan", "-n", "payments"}, &saida, &erros); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(saida.String(), "relatório  ~/.yby/reports/sentinel-scan-payments-2026-10-25.md") || strings.Contains(saida.String(), homeDeTeste) {
+	if !strings.Contains(saida.String(), "relatório  ~/.yby/reports/sentinel-scan-payments-kind-yby-2026-10-25-0930") || strings.Contains(saida.String(), homeDeTeste) {
 		t.Errorf("o relatório sai como ~/.yby/reports/…:\n%s", saida.String())
 	}
 }
@@ -527,4 +527,95 @@ func TestScan_CaminhoDoArquivoQuebraNosSeparadores(t *testing.T) {
 	if len(partes) < 2 || strings.Join(partes, "") != filepath.ToSlash(arquivo) {
 		t.Errorf("o caminho inteiro, em mais de uma linha, com barras normais:\n%s", saida.String())
 	}
+}
+
+// TestScan_JSONCoerenteEmPTBR: no -o json o type acompanha a severity (os checks internos
+// escrevem os dois à mão e divergem), as verificações que não rodaram aparecem em
+// nao_rodaram e a mensagem do Polaris sai em PT-BR, como na tela; o markdown também.
+func TestScan_JSONCoerenteEmPTBR(t *testing.T) {
+	interno := checkFalso{achados: []checks.SecurityFinding{
+		{CheckID: "IMAGE_SIGNATURE", Severity: checks.SeverityHigh, Type: "critical", Category: checks.CategorySupplyChain, Resource: "Pod/api", Message: "sem assinatura", Description: "sem assinatura"},
+	}}
+	t.Run("type acompanha severity", func(t *testing.T) {
+		usarDependencias(t, fake.NewSimpleClientset(), nil, []checks.SecurityCheck{interno, checkFalso{err: recusado}}, nil)
+		saida, _, err := rodar(t, "scan", "-n", "payments", "-o", "json", "--no-ai")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rel struct {
+			Findings []struct{ Severity, Type string }
+			Nao      []struct {
+				Backend      string   `json:"backend"`
+				Verificacoes []string `json:"verificacoes"`
+				Motivo       string   `json:"motivo"`
+			} `json:"nao_rodaram"`
+		}
+		if err := json.Unmarshal([]byte(saida), &rel); err != nil {
+			t.Fatalf("json inválido: %v\n%s", err, saida)
+		}
+		if len(rel.Findings) != 1 || rel.Findings[0].Severity != "high" || rel.Findings[0].Type != "high" {
+			t.Errorf("type deve ser igual à severity: %+v", rel.Findings)
+		}
+		if len(rel.Nao) != 1 || rel.Nao[0].Backend != "checks-internos" || len(rel.Nao[0].Verificacoes) != 1 || rel.Nao[0].Motivo == "" {
+			t.Errorf("nao_rodaram dos checks internos: %+v\n%s", rel.Nao, saida)
+		}
+	})
+	t.Run("falha parcial e mensagem do Polaris", func(t *testing.T) {
+		polaris := backendFalso{nome: "polaris", achados: []backends.Finding{
+			{ID: "polaris/priorityClassNotSet", Severity: "medium", Category: "reliability", Resource: "Deployment/api", Message: "Priority class should be set"},
+		}}
+		parcial := backendFalso{nome: "opa", err: &backends.FalhaParcial{Falhas: []string{"wildcards"}, Causa: proibido("clusterroles")}}
+		usarDependencias(t, fake.NewSimpleClientset(), []backends.SecurityBackend{polaris, parcial}, nil, nil)
+		saida, _, err := rodar(t, "scan", "-n", "payments", "-o", "json", "--no-ai")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, trecho := range []string{`"nao_rodaram"`, `"backend": "opa"`, `"wildcards"`, "Defina a priority class"} {
+			if !strings.Contains(saida, trecho) {
+				t.Errorf("faltou %q no json:\n%s", trecho, saida)
+			}
+		}
+		if strings.Contains(saida, "Priority class should") || strings.Contains(saida, "forbidden") {
+			t.Errorf("o json não pode trazer o texto em inglês:\n%s", saida)
+		}
+		md, _, err := rodar(t, "scan", "-n", "payments", "-o", "markdown", "--no-ai")
+		if err != nil || !strings.Contains(md, "Defina a priority class") || !strings.Contains(md, "wildcards") {
+			t.Errorf("o markdown traduz e lista o que não rodou (err=%v):\n%s", err, md)
+		}
+	})
+}
+
+// Os checks internos são o plano B: só rodam quando nenhum backend consegue varrer.
+func TestScanChecksInternosSoQuandoOsBackendsFalham(t *testing.T) {
+	interno := checkFalso{achados: []checks.SecurityFinding{
+		{CheckID: "POD_ROOT_CONTAINER", Severity: checks.SeverityHigh, Category: checks.CategoryPodSecurity, Resource: "Pod/api", Message: "roda como root", Description: "roda como root"},
+	}}
+	fontesDe := func(t *testing.T, bs []backends.SecurityBackend) (fontes []string, achados int) {
+		t.Helper()
+		usarDependencias(t, fake.NewSimpleClientset(), bs, []checks.SecurityCheck{interno}, nil)
+		saida, _, err := rodar(t, "scan", "-n", "payments", "-o", "json", "--no-ai")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rel struct {
+			Sources  []string   `json:"sources"`
+			Findings []struct{} `json:"findings"`
+		}
+		if err := json.Unmarshal([]byte(saida), &rel); err != nil {
+			t.Fatalf("json inválido: %v\n%s", err, saida)
+		}
+		return rel.Sources, len(rel.Findings)
+	}
+	t.Run("backend limpo não chama os internos", func(t *testing.T) {
+		fontes, achados := fontesDe(t, []backends.SecurityBackend{backendFalso{nome: "polaris"}})
+		if achados != 0 || strings.Join(fontes, ",") != "polaris" {
+			t.Errorf("fontes = %v, achados = %d; esperava só polaris e nenhum achado", fontes, achados)
+		}
+	})
+	t.Run("backend que falha chama os internos", func(t *testing.T) {
+		fontes, achados := fontesDe(t, []backends.SecurityBackend{backendFalso{nome: "polaris", err: recusado}})
+		if achados != 1 || strings.Join(fontes, ",") != "checks-internos" {
+			t.Errorf("fontes = %v, achados = %d; esperava os checks internos", fontes, achados)
+		}
+	})
 }

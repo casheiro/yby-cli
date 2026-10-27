@@ -69,3 +69,30 @@ func TestExposedSecretsCheck_EnvViaSecretKeyRef(t *testing.T) {
 		t.Errorf("esperava zero findings para env via secretKeyRef, obteve %d", len(findings))
 	}
 }
+
+func TestNomeSensivel(t *testing.T) {
+	casos := map[string]bool{
+		"DB_PASSWORD":  true,
+		"API_KEY":      true,
+		"KEY_FILE":     true,
+		"apiKey":       true,
+		"dbPassword":   true,
+		"AUTH_TOKEN":   true,
+		"APP_SECRET":   true,
+		"PGPASSWORD":   true,
+		"DBPASSWORD":   true,
+		"SECRETKEY":    true,
+		"JWTSECRET":    true,
+		"APP_SECRETS":  true,
+		"API_KEYS":     true,
+		"KEYCLOAK_URL": false,
+		"MONKEYS":      false,
+		"HOSTNAME":     false,
+		"LOG_LEVEL":    false,
+	}
+	for nome, want := range casos {
+		if got := nomeSensivel(nome); got != want {
+			t.Errorf("nomeSensivel(%q) = %v, esperava %v", nome, got, want)
+		}
+	}
+}

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -24,7 +24,7 @@ func (c *RootContainerCheck) Description() string {
 }
 
 func (c *RootContainerCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := listarPods(ctx, client, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
@@ -32,7 +32,9 @@ func (c *RootContainerCheck) Run(ctx context.Context, client kubernetes.Interfac
 	var findings []SecurityFinding
 	for _, pod := range pods.Items {
 		for _, container := range pod.Spec.Containers {
-			if container.SecurityContext != nil && container.SecurityContext.RunAsUser != nil && *container.SecurityContext.RunAsUser == 0 {
+			// O securityContext do contêiner vale; o que ele não define vem do pod.
+			runAsUser, runAsNonRoot := usuarioEfetivo(pod.Spec.SecurityContext, container.SecurityContext)
+			if runAsUser != nil && *runAsUser == 0 {
 				findings = append(findings, SecurityFinding{
 					CheckID:        c.ID(),
 					Severity:       SeverityCritical,
@@ -48,8 +50,8 @@ func (c *RootContainerCheck) Run(ctx context.Context, client kubernetes.Interfac
 				})
 			}
 
-			if container.SecurityContext == nil || container.SecurityContext.RunAsNonRoot == nil || !*container.SecurityContext.RunAsNonRoot {
-				if container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil {
+			if runAsNonRoot == nil || !*runAsNonRoot {
+				if runAsUser == nil {
 					findings = append(findings, SecurityFinding{
 						CheckID:        c.ID(),
 						Severity:       SeverityHigh,
@@ -68,4 +70,21 @@ func (c *RootContainerCheck) Run(ctx context.Context, client kubernetes.Interfac
 		}
 	}
 	return findings, nil
+}
+
+// usuarioEfetivo devolve o runAsUser e o runAsNonRoot que valem para o contêiner: os dele
+// e, onde ele não define, os do securityContext do pod.
+func usuarioEfetivo(pod *corev1.PodSecurityContext, container *corev1.SecurityContext) (runAsUser *int64, runAsNonRoot *bool) {
+	if pod != nil {
+		runAsUser, runAsNonRoot = pod.RunAsUser, pod.RunAsNonRoot
+	}
+	if container != nil {
+		if container.RunAsUser != nil {
+			runAsUser = container.RunAsUser
+		}
+		if container.RunAsNonRoot != nil {
+			runAsNonRoot = container.RunAsNonRoot
+		}
+	}
+	return runAsUser, runAsNonRoot
 }

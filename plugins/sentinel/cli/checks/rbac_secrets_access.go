@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -32,22 +34,32 @@ func (c *SecretsAccessCheck) Run(ctx context.Context, client kubernetes.Interfac
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar ClusterRoles: %w", err)
 	}
+	// Só os ClusterRoles do recorte do escopo entram, e a allowlist decide pelos subjects
+	// que os bindings do recorte ligam a cada role.
+	recorte, err := escopo.Ler(ctx, client, namespace)
+	if err != nil {
+		return nil, err
+	}
+	vinculos := recorte.Vinculos()
 	for _, role := range clusterRoles.Items {
-		if shouldSkipRBACResource(role.Name) {
+		if !recorte.TemClusterRole(role.Name) || !hasSecretsAccess(role.Rules) {
 			continue
 		}
-		if hasSecretsAccess(role.Rules) {
-			findings = append(findings, SecurityFinding{
-				CheckID:        c.ID(),
-				Severity:       SeverityHigh,
-				Category:       CategoryRBAC,
-				Resource:       fmt.Sprintf("ClusterRole/%s", role.Name),
-				Message:        fmt.Sprintf("ClusterRole '%s' permite leitura de secrets", role.Name),
-				Recommendation: "Restrinja acesso a secrets apenas aos serviços que realmente precisam",
-				Type:           "critical",
-				Description:    fmt.Sprintf("ClusterRole '%s' permite leitura de secrets", role.Name),
-			})
+		if allowlist.Padrao.IgnorarPapel("ClusterRole", role.Name, vinculos.DoClusterRole(role.Name)) {
+			allowlist.Ignorar(ctx, "ClusterRole/"+role.Name)
+			continue
 		}
+		findings = append(findings, SecurityFinding{
+			CheckID:        c.ID(),
+			Severity:       SeverityHigh,
+			Category:       CategoryRBAC,
+			Resource:       fmt.Sprintf("ClusterRole/%s", role.Name),
+			Scope:          string(escopo.Cluster),
+			Message:        fmt.Sprintf("ClusterRole '%s' permite leitura de secrets", role.Name),
+			Recommendation: "Restrinja acesso a secrets apenas aos serviços que realmente precisam",
+			Type:           "critical",
+			Description:    fmt.Sprintf("ClusterRole '%s' permite leitura de secrets", role.Name),
+		})
 	}
 
 	// Roles no namespace
@@ -56,19 +68,25 @@ func (c *SecretsAccessCheck) Run(ctx context.Context, client kubernetes.Interfac
 		return nil, fmt.Errorf("falha ao listar Roles: %w", err)
 	}
 	for _, role := range roles.Items {
-		if hasSecretsAccess(role.Rules) {
-			findings = append(findings, SecurityFinding{
-				CheckID:        c.ID(),
-				Severity:       SeverityHigh,
-				Category:       CategoryRBAC,
-				Namespace:      namespace,
-				Resource:       fmt.Sprintf("Role/%s", role.Name),
-				Message:        fmt.Sprintf("Role '%s' no namespace '%s' permite leitura de secrets", role.Name, namespace),
-				Recommendation: "Restrinja acesso a secrets apenas aos serviços que realmente precisam",
-				Type:           "critical",
-				Description:    fmt.Sprintf("Role '%s' no namespace '%s' permite leitura de secrets", role.Name, namespace),
-			})
+		if !hasSecretsAccess(role.Rules) {
+			continue
 		}
+		if allowlist.Padrao.IgnorarPapel("Role", role.Name, vinculos.DoRole(namespace, role.Name)) {
+			allowlist.Ignorar(ctx, "Role/"+namespace+"/"+role.Name)
+			continue
+		}
+		findings = append(findings, SecurityFinding{
+			CheckID:        c.ID(),
+			Severity:       SeverityHigh,
+			Category:       CategoryRBAC,
+			Namespace:      namespace,
+			Resource:       fmt.Sprintf("Role/%s", role.Name),
+			Scope:          string(escopo.Namespace),
+			Message:        fmt.Sprintf("Role '%s' no namespace '%s' permite leitura de secrets", role.Name, namespace),
+			Recommendation: "Restrinja acesso a secrets apenas aos serviços que realmente precisam",
+			Type:           "critical",
+			Description:    fmt.Sprintf("Role '%s' no namespace '%s' permite leitura de secrets", role.Name, namespace),
+		})
 	}
 
 	return findings, nil

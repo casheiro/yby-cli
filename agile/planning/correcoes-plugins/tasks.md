@@ -321,7 +321,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 4 · Sentinel
 
-- [ ] **S01 · `--fix` corrige o dono do pod** ✓
+- [x] **S01 · `--fix` corrige o dono do pod** ✓
   - **Problema:**
     - todos os patches são `ResourceKind: "Pod"` (`remediation/generator.go:~62-69`) aplicados no Pod (`remediation/applier.go:~33-35`), e o spec do Pod é imutável nesses campos (422). Nunca corrigiu nada num cluster real; daí os "erros crus";
     - `generatePatch` só conhece os IDs dos checks internos (`generator.go:~27-47`), não os `polaris/*`;
@@ -340,11 +340,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Se isso ficar grande demais, o mínimo honesto é desligar o `--fix` com mensagem clara e registrar.
   - **Verificar:** testes com fake clientset e owner chain; dry-run no servidor com o reactor do fake.
   - **Conferência (26/10):** os achados do Polaris já vêm no controlador (Deployment/x), e o `validator.ResultMessage` tem `Mutations`, que podem gerar os patches `polaris/*`; o achado precisa guardar o contêiner. A cadeia de donos serve aos checks internos. Com o Polaris achando algo, hoje o `--fix` não gera patch nenhum. O `Prompter` está em `cmd/`: usar a confirmação do `pkg/ui`.
-- [ ] **S02 · Polaris no contexto e kubeconfig do yby**
+- [x] **S02 · Polaris no contexto e kubeconfig do yby**
   - **Problema:** `backends/polaris.go:~58,81-92` monta o cliente dinâmico com as regras padrão do kubeconfig, ignorando `Infra.KubeContext`/`KubeConfig` e o token cloud que o `sdk.GetKubeClient` respeita (`pkg/plugin/sdk/sdk_k8s.go`). Um mesmo scan mistura dois clusters.
   - **Fazer:** expor `sdk.GetRestConfig()` e montar os dois clientes a partir dele.
   - **Verificar:** teste do SDK; teste de que o backend recebe o config.
-- [ ] **S03 · "(+N)" não apaga os recursos**
+- [x] **S03 · "(+N)" não apaga os recursos**
   - **Problema:**
     - o grupo é por `check|severidade`, com `Resource = "X (+N)"` (`backends/polaris.go:~114,181-184`);
     - mensagem e recomendação vêm do primeiro recurso;
@@ -355,7 +355,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - na tela, a linha do check e embaixo os recursos (até N, depois "e mais K"), sem reticências no meio do nome;
     - JSON e markdown com a lista inteira.
   - **Verificar:** golden da tela; teste do JSON.
-- [ ] **S04 · RBAC de escopo de cluster fora do scan de namespace**
+- [x] **S04 · RBAC de escopo de cluster fora do scan de namespace**
   - **Problema:** `scanClusterAdmin`, `scanWildcard` e `scanSecretsAccess` olham o cluster todo (`backends/opa.go:~268-393`), e o Polaris carimba `Namespace` em todo achado (`polaris.go:~192`). Os mesmos achados se repetem em todo namespace e inflam as contagens.
   - **Fazer:**
     - no scan de namespace, só entram:
@@ -366,7 +366,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - campo `scope` no achado.
   - **Verificar:** testes com fake.
   - **Conferência (26/10):** os checks internos `rbac_cluster_admin`, `rbac_wildcard` e `rbac_secrets_access` também olham o cluster todo; os checks RBAC do Polaris (`clusterrolebinding*`) passam o filtro de `polaris.go:~117`. O OPA não avalia RoleBindings (cluster-admin dado por RoleBinding passa), o wildcard ignora Roles e a mensagem diz sempre "ClusterRole".
-- [ ] **S05 · Severidade e categoria reais do Polaris**
+- [x] **S05 · Severidade e categoria reais do Polaris**
   - **Problema:** a categoria é fixa em "pod-security" (`polaris.go:~190`) e danger/warning viram crítico/alto (`~203-211`), descartando `ResultMessage.Category` (Security, Efficiency, Reliability). "Defina a priority class" sai como alto em segurança; "tag da imagem", como crítico.
   - **Fazer:**
     - Security danger→crítico;
@@ -374,18 +374,18 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Reliability/Efficiency→baixo ou médio;
     - seções "confiabilidade" e "eficiência" na tela e no relatório.
   - **Verificar:** testes do mapeamento; golden.
-- [ ] **S06 · JSON coerente e em PT-BR**
+- [x] **S06 · JSON coerente e em PT-BR**
   - **Problema:**
     - campos legados se contradizem (`checks/image_signature.go:~80,88`: `Severity: high` com `Type: "critical"`; `checks/pod_root.go:~59-60`);
     - as verificações que não rodaram (`naoRodaram`) só aparecem na tela;
     - as mensagens do Polaris saem em inglês no JSON (`saida.go:~105-107` traduz só na tela).
   - **Fazer:** `type` coerente com `severity` (ou fora do JSON, se ninguém ler); campo `nao_rodaram` (backend, verificações, motivo); mensagens traduzidas também no JSON e no markdown.
   - **Verificar:** testes do JSON.
-- [ ] **S07 · `--profile` faz o que promete**
+- [x] **S07 · `--profile` faz o que promete**
   - **Problema:** o perfil só entra nos checks internos (`scan.go:~61-71,234`), que só rodam quando os backends não acham nada. `--profile pci-dss` devolve o mesmo Polaris.
   - **Fazer:** filtrar os achados de todos os motores pelo perfil, com uma tabela check→perfis que inclua `polaris/*` e `opa/*`, e dizer na tela qual perfil foi aplicado. Se a tabela não for defensável, tirar a flag e registrar.
   - **Verificar:** testes por perfil.
-- [ ] **S08 · Checks internos: papel definido e falsos positivos**
+- [x] **S08 · Checks internos: papel definido e falsos positivos**
   - **Problema:**
     - os internos rodam quando os backends rodam **limpos**, não quando falham (`scan.go:~210-229`);
     - `cosign verify` sem chave nem identidade (`checks/image_signature.go:~69`) provavelmente falha sempre;
@@ -399,11 +399,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - herdar o `securityContext` do pod;
     - listar os pods uma vez só.
   - **Verificar:** testes de tabela.
-- [ ] **S09 · Allowlist única e por subject**
+- [x] **S09 · Allowlist única e por subject**
   - **Problema:** são quatro cópias divergentes (`checks/rbac_allowlist.go:~44-76` e três no Rego em `backends/opa.go:~25-127`), e o casamento pelo nome deixa um `helm-qualquer` dar cluster-admin calado (`opa.go:~43-45`).
   - **Fazer:** uma fonte só, passada ao Rego como `data`; casar por subject (namespace/SA) e labels `managed-by`, não pelo nome do binding; "N ignorados pela allowlist" na tela e no JSON.
   - **Verificar:** testes do Rego.
-- [ ] **S10 · Investigate: saúde, logs e cache**
+- [x] **S10 · Investigate: saúde, logs e cache**
   - **Problema:**
     - um restart antigo deixa o pod "não saudável" para sempre (`investigate.go:~288-293`);
     - pod `Succeeded` conta como problema (`~279`);
@@ -418,23 +418,23 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - chave com contexto, UID e `restartCount`;
     - eventos só com reason, message, count e lastTimestamp.
   - **Verificar:** testes.
-- [ ] **S11 · Redigir segredos antes da IA**
+- [x] **S11 · Redigir segredos antes da IA**
   - **Problema:** `investigate.go:~133` manda logs e eventos crus, e o provider pode ser remoto.
   - **Fazer:** redigir tokens, JWT, chaves AWS, senhas em URL e `Authorization:` antes de enviar (função compartilhada com o B06, se couber em `pkg/`).
   - **Verificar:** testes.
-- [ ] **S12 · `investigate --no-ai`**
+- [x] **S12 · `investigate --no-ai`**
   - **Problema:** coerência com o `scan --no-ai`; é o que o Bard precisa no B12.
   - **Fazer:** parar na coleta e devolver os dados brutos (status, eventos resumidos, fim dos logs) no JSON.
   - **Verificar:** testes.
-- [ ] **S13 · OPA compila uma vez**
+- [x] **S13 · OPA compila uma vez**
   - **Problema:** `rego.New`+`Eval` por recurso (`backends/opa.go:~469-476`) e ClusterRoles listados duas vezes.
   - **Fazer:** `PrepareForEval` por política e listar uma vez só.
   - **Verificar:** testes existentes; benchmark simples.
-- [ ] **S14 · O relatório não se sobrescreve e diz o cluster**
+- [x] **S14 · O relatório não se sobrescreve e diz o cluster**
   - **Problema:** `sentinel-scan-<ns>-<dia>.md` (`scan.go:~352-353`) faz o segundo scan do dia apagar o primeiro; o markdown não traz contexto, hora, perfil nem o que não rodou.
   - **Fazer:** contexto e hora no nome e no conteúdo, além do perfil e de "não rodaram"; atualizar a menção ao caminho na ajuda, no README e no CLAUDE.md.
   - **Verificar:** golden.
-- [ ] **S15 · Dívidas pequenas**
+- [x] **S15 · Dívidas pequenas**
   - **Problema:** `backends/polaris.go:~45-46` silencia o `log` padrão e o logrus do processo inteiro; a dica do `--fix` aponta deployments (some com o S01).
   - **Fazer:** silenciar só durante a chamada do Polaris, ou redirecionar para o slog em debug.
   - **Verificar:** teste.
@@ -681,6 +681,21 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | S10 | Investigate checa a saúde antes do cache (Succeeded saudável, reinício só vale se for de menos de 2 h), lê logs por contêiner com Previous, chave de cache com contexto, UID e reinícios, e eventos resumidos | este commit |
+| 26/10/2026 | S11 | Investigate redige logs, eventos e métricas e o scan redige os achados com o pkg/redacao antes da IA; o pkg/redacao passou a redigir o value de env com name sensível e o valor de ConfigMap no kubectl describe | este commit |
+| 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
+| 26/10/2026 | S13 | O OPA compila cada política Rego uma vez (PrepareForEval em cache) e lista os ClusterRoles uma só vez por scan, mantendo as falhas em FalhaParcial | este commit |
+| 26/10/2026 | S14 | O relatório do scan leva contexto e hora no nome e no conteúdo (dois scans não se sobrescrevem; contexto sanitizado) e a ajuda, o README e o CLAUDE.md citam o novo caminho | este commit |
+| 26/10/2026 | S15 | O Polaris silencia o logrus e o log padrão só durante a chamada e restaura os destinos de antes (a dica do --fix já estava certa desde o S01) | este commit |
+| 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
+| 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
+| 26/10/2026 | S03 | O achado agrupado do Polaris leva `Resources` (lista inteira, `Resource` é o primeiro, sem "(+N)"); a tela mostra "N recursos" e a lista embaixo (até 5, "e mais K"), o JSON e o relatório trazem todos | este commit |
+| 26/10/2026 | S05 | O Polaris usa a categoria do próprio check: Security danger é crítico e warning é alto ou médio por tabela (endurecimento é médio), os checks de RBAC, rede e secrets vão para as seções deles, e Reliability e Efficiency viram as seções "confiabilidade" e "eficiência" (danger médio, warning baixo), na tela e no relatório, que passa a ter uma seção por categoria | este commit |
+| 26/10/2026 | S06 | O JSON do scan tem `type` igual à `severity` (normalizado num ponto só), mensagens do Polaris em PT-BR também no JSON e no markdown e o campo `nao_rodaram` (backend, verificações, motivo), também no relatório markdown | este commit |
+| 26/10/2026 | S08 | Checks internos viram plano B (só rodam quando nenhum backend varre; backend limpo vira fonte com 0 achados), pods listados uma vez por scan (cache no contexto), cosign só com chave ou identidade+emissor configurados (senão ErrNaoVerificado, que entra em `nao_rodaram` sem virar achado) e com prazo, env sensível: KEY por palavra (KEYCLOAK_URL não) e PASSWORD/SECRET/TOKEN por trecho (PGPASSWORD sim), `pod_root` e `pod_seccomp` herdam/olham o contêiner | este commit |
+| 26/10/2026 | S07 | O `--profile` filtra os achados de todos os motores por uma tabela check→perfis (cada `polaris/*` e `opa/*` pelo check interno equivalente; hostPath/HostProcess nos CIS e TLS do Ingress no PCI-DSS e no SOC2 pelo próprio ID; confiabilidade e checks customizados fora) e a tela, o JSON (`perfil`, `fora_do_perfil`) e o relatório dizem o perfil aplicado e quantos achados ficaram de fora | este commit |
+| 26/10/2026 | S04 | Pacote `escopo`: no scan de namespace o OPA, os checks internos e os checks de RBAC do Polaris só olham o RBAC que vale nele (Roles e RoleBindings do namespace, ClusterRoles a que eles apontam, ClusterRoleBindings com SA do namespace, reduzidos aos subjects dele, e a allowlist julga cada ClusterRole por quem o recebe ali); `--scope cluster` traz o RBAC do cluster todo; campo `scope` no achado e no relatório JSON; o wildcard do OPA passou a ver os Roles do namespace | este commit |
+| 26/10/2026 | S01 | O `--fix` sobe do pod ao dono pelos `ownerReferences` (Deployment, StatefulSet, DaemonSet, CronJob) e faz um strategic merge patch por recurso no template, só com as correções seguras (`allowPrivilegeEscalation: false` e `capabilities.drop: [ALL]`, dos checks internos e dos `polaris/*`, com o diff por contêiner); runAsNonRoot, readOnlyRootFilesystem, privileged, limites e automount ficam sem correção automática (contados na tela); pod sem dono, ReplicaSet sem Deployment, Job solto, dono desconhecido e recurso do Argo CD (anotação `tracking-id` ou rótulo `argocd.argoproj.io/instance`) são recusados com o motivo; `--fix-dry-run` e o `--fix` passam pelo dry-run no servidor (`DryRun: [All]`), e o `--fix` mostra o plano e pede confirmação pelo `ui.Confirmar` (sem terminal na entrada, exige `--yes`); a dica de permissão usa o tipo do recurso | este commit |
 
 ### Fase 5 · Atlas
 
