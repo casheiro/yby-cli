@@ -682,6 +682,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
 | 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
 | 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
+| 27/10/2026 | B08 Ajuste (CI do #225) | O CLI que nem inicia (fora do PATH, sem permissão, exec format error) embrulha um `syscall.Errno`, que também é um `net.Error`, e o `ErroRetentavel` o repetia por ~100 s; `*fs.PathError` e `*exec.Error` agora são permanentes. O CLI falso dos testes ganhou o `#!/bin/sh`, sem o qual o Linux nem o inicia | este commit |
 
 ### Fase 3 · Synapstor
 
