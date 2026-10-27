@@ -31,6 +31,9 @@ func executeKubectlDescribe(ctx context.Context, params map[string]string) (stri
 	if name == "" {
 		return "", fmt.Errorf("parâmetro 'name' é obrigatório")
 	}
+	if err := conferirParams(params, "resource", "name", "namespace"); err != nil {
+		return "", err
+	}
 
 	args := []string{"describe", resource, name}
 

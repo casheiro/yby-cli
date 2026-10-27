@@ -26,16 +26,3 @@ type ToolParam struct {
 	Description string
 	Required    bool
 }
-
-// ToolCall representa uma invocação de ferramenta extraída da resposta da IA.
-type ToolCall struct {
-	Name   string            `json:"tool"`
-	Params map[string]string `json:"params"`
-}
-
-// ToolResult contém o resultado da execução de uma ferramenta.
-type ToolResult struct {
-	ToolName string `json:"tool_name"`
-	Output   string `json:"output"`
-	Error    string `json:"error,omitempty"`
-}

@@ -179,7 +179,7 @@ func (m *Model) trocarModelo(mod Modelo, modelo string) tea.Cmd {
 		return m.mostrarAviso(&avisoEstado{ok: true, texto: "a sessão já usa " + juntarIA(mod.Rotulo, modelo)})
 	}
 	if modelo == "" {
-		m.usarProvider(mod.Rotulo, "", mod.Provider)
+		m.usarProvider(mod, "", mod.Provider)
 		return nil
 	}
 	if mod.ComModelo == nil {
@@ -229,7 +229,7 @@ func (m *Model) receberModeloCriado(msg modeloCriadoMsg) tea.Cmd {
 		m.trocaPronta, m.trocando = &msg, juntarIA(msg.mod.Rotulo, msg.modelo)
 		return nil
 	}
-	m.usarProvider(msg.mod.Rotulo, msg.modelo, msg.provider)
+	m.usarProvider(msg.mod, msg.modelo, msg.provider)
 	m.remarcarModelos()
 	return nil
 }
@@ -244,7 +244,8 @@ func (m *Model) remarcarModelos() {
 
 // usarProvider passa a sessão para o provider e registra a troca na conversa; o
 // cabeçalho mostra o provider e o modelo novos na hora.
-func (m *Model) usarProvider(rotulo, modelo string, p ai.Provider) {
+func (m *Model) usarProvider(mod Modelo, modelo string, p ai.Provider) {
+	rotulo := mod.Rotulo
 	nota := "modelo trocado para " + juntarIA(rotulo, modelo)
 	switch {
 	case modelo == "" && rotulo != m.config.AIModel:
@@ -253,7 +254,13 @@ func (m *Model) usarProvider(rotulo, modelo string, p ai.Provider) {
 		nota = "modelo trocado para o padrão do " + rotulo
 	}
 	m.provider = p
-	m.config.AIModel, m.config.ModeloIA = rotulo, modelo
+	// Modelo vazio é o padrão do provider: quando o config fixa um (CLIs), é ele que roda e
+	// o cabeçalho mostra.
+	exibido := modelo
+	if exibido == "" {
+		exibido = mod.Padrao
+	}
+	m.config.AIModel, m.config.ModeloIA = rotulo, exibido
 	f := *m.fluxo
 	f.Provider = p
 	m.fluxo = &f

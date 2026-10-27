@@ -13,6 +13,7 @@ import (
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/cloud"
+	"github.com/casheiro/yby-cli/pkg/confianca"
 	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/services/logs"
@@ -476,6 +477,42 @@ func TestSaidasPlugin_Golden(t *testing.T) {
 	goldenNosDoisModos(t, "plugin_untrust_nao_confiavel", func(t *testing.T) string {
 		raiz := usarProjeto(t, "")
 		return executar(t, pluginUntrustCmd, raiz, "bard")
+	})
+
+	// ferramenta do Bard no projeto: a confiança é do arquivo, sem plugin nenhum
+	ferramentaDoProjeto := func(t *testing.T, raiz string) string {
+		t.Helper()
+		dir := filepath.Join(raiz, ".yby", "tools")
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "backup.yaml"), []byte("name: backup\ncommand: velero backup create x\n"), 0o644))
+		return ".yby/tools/backup.yaml"
+	}
+	goldenNosDoisModos(t, "plugin_trust_arquivo", func(t *testing.T) string {
+		raiz := usarProjeto(t, "")
+		arquivo := ferramentaDoProjeto(t, raiz)
+		saida := executar(t, pluginTrustCmd, raiz, arquivo)
+		dados, err := os.ReadFile(filepath.Join(raiz, filepath.FromSlash(arquivo)))
+		require.NoError(t, err)
+		require.True(t, confianca.Confiavel(arquivo, dados), "o arquivo deveria ficar confiável")
+		return saida
+	})
+	goldenNosDoisModos(t, "plugin_trust_arquivo_inexistente", func(t *testing.T) string {
+		raiz := usarProjeto(t, "")
+		return executar(t, pluginTrustCmd, raiz, ".yby/tools/nao-existe.yaml")
+	})
+	goldenNosDoisModos(t, "plugin_untrust_arquivo", func(t *testing.T) string {
+		raiz := usarProjeto(t, "")
+		arquivo := ferramentaDoProjeto(t, raiz)
+		require.NoError(t, confianca.Confiar(arquivo))
+		saida := executar(t, pluginUntrustCmd, raiz, arquivo)
+		dados, err := os.ReadFile(filepath.Join(raiz, filepath.FromSlash(arquivo)))
+		require.NoError(t, err)
+		require.False(t, confianca.Confiavel(arquivo, dados), "o arquivo deveria sair da confiança")
+		return saida
+	})
+	goldenNosDoisModos(t, "plugin_untrust_arquivo_nao_confiavel", func(t *testing.T) string {
+		raiz := usarProjeto(t, "")
+		return executar(t, pluginUntrustCmd, raiz, ferramentaDoProjeto(t, raiz))
 	})
 
 	// install pelo Manager real, de um arquivo local para a HOME temporária

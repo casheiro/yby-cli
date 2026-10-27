@@ -26,13 +26,16 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 	if pod == "" {
 		return "", fmt.Errorf("parâmetro 'pod' é obrigatório")
 	}
+	if err := conferirParams(params, "pod", "namespace"); err != nil {
+		return "", err
+	}
 
 	binaryPath, err := discoverPluginBinary("sentinel")
 	if err != nil {
 		return "", fmt.Errorf("sentinel não disponível: %w", err)
 	}
 
-	resp, err := invokePlugin(binaryPath, pedidoSentinelInvestigate(pod, params))
+	resp, err := invokePlugin(ctx, binaryPath, pedidoSentinelInvestigate(pod, params))
 	if err != nil {
 		return "", err
 	}

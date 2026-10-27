@@ -30,7 +30,16 @@ import (
 // de processo exercitarem o stdin, o stdout e o stderr de verdade.
 const envProcessoTeste = "YBY_BARD_TESTE_PROCESSO"
 
+// envKubectlLento faz o binário de teste rodar como um kubectl lento: grava os args no
+// arquivo dado e dorme 30 s.
+const envKubectlLento = "YBY_BARD_TESTE_KUBECTL_LENTO"
+
 func TestMain(m *testing.M) {
+	if arq := os.Getenv(envKubectlLento); arq != "" {
+		_ = os.WriteFile(arq, []byte(strings.Join(os.Args[1:], " ")), 0o600)
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
 	if os.Getenv(envProcessoTeste) == "1" {
 		os.Exit(executar())
 	}
@@ -178,7 +187,7 @@ type iaClassifica struct {
 func (p *iaClassifica) Completion(_ context.Context, _, _ string) (string, error) { return p.json, nil }
 
 func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}, parcial: "começo"}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}
 	d, saida, erros := novoDiretoDeTeste(t, ia, true, true)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -192,7 +201,7 @@ func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
 }
 
 func TestDireto_RespostaQueRecomecaNoPipe(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}, parcial: "começo"}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}
 	d, saida, _ := novoDiretoDeTeste(t, ia, false, false)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -262,7 +271,7 @@ func TestDireto_FalhaFinalComRespostaParcial(t *testing.T) {
 // A nova tentativa que começa sem nada da resposta na tela aparece como detalhe da
 // etapa, como a nota "tentativa 2" da TUI.
 func TestDireto_NovaTentativaSemTextoMostraANota(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}}
 	d, saida, erros := novoDiretoDeTeste(t, ia, true, true)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -351,7 +360,7 @@ func TestNovoDireto_SemProvider(t *testing.T) {
 	anterior := obterProvider
 	obterProvider = func(context.Context) ai.Provider { return nil }
 	t.Cleanup(func() { obterProvider = anterior })
-	_, err := novoDireto(context.Background(), nil)
+	_, err := novoDireto(context.Background(), nil, opcoesBard{})
 	var ye *yerrors.YbyError
 	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeConfig {
 		t.Fatalf("esperava ERR_CONFIG, veio %v", err)
@@ -594,4 +603,30 @@ func TestProcesso_SemProviderSemCorNoPipe(t *testing.T) {
 		t.Errorf("stderr inesperado:\n%s", erros)
 	}
 	semControle(t, "stderr", erros)
+}
+
+func TestNovoDireto_ClusterENamespaceDaSessao(t *testing.T) {
+	isolarModoVisual(t, "")
+	antProvider, antCluster := obterProvider, enriquecerCluster
+	obterProvider = func(context.Context) ai.Provider { return &iaFalsa{} }
+	enriquecerCluster = func(_ context.Context, contexto, namespace string) *ClusterContext {
+		return &ClusterContext{Cluster: "atual", Namespace: "default"}
+	}
+	t.Cleanup(func() { obterProvider, enriquecerCluster = antProvider, antCluster })
+
+	d, err := novoDireto(context.Background(), nil, opcoesBard{contexto: "prod", namespace: "payments"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.fluxo.Cluster != "prod" || d.fluxo.Namespace != "payments" {
+		t.Errorf("fluxo com %q/%q, esperava prod/payments", d.fluxo.Cluster, d.fluxo.Namespace)
+	}
+
+	d, err = novoDireto(context.Background(), nil, opcoesBard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.fluxo.Cluster != "atual" || d.fluxo.Namespace != "default" {
+		t.Errorf("sem flags, fluxo com %q/%q, esperava atual/default", d.fluxo.Cluster, d.fluxo.Namespace)
+	}
 }

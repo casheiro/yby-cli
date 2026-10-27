@@ -30,13 +30,13 @@ func (p *ClaudeCLIProvider) IsAvailable(_ context.Context) bool {
 	return err == nil
 }
 
-// args monta os argumentos do claude: -p com o prompt e, com modelo escolhido, --model
-// (o CLI aceita os apelidos sonnet, opus e haiku e os nomes completos).
-func (p *ClaudeCLIProvider) args(prompt string) []string {
+// args monta os argumentos do claude: -p sem texto, que lê o prompt do stdin, e, com modelo
+// escolhido, --model (o CLI aceita os apelidos sonnet, opus e haiku e os nomes completos).
+func (p *ClaudeCLIProvider) args() []string {
 	if p.model == "" {
-		return []string{"-p", prompt}
+		return []string{"-p"}
 	}
-	return []string{"--model", p.model, "-p", prompt}
+	return []string{"--model", p.model, "-p"}
 }
 
 // GenerateGovernance não é suportado pelo CLI.
@@ -44,18 +44,12 @@ func (p *ClaudeCLIProvider) GenerateGovernance(_ context.Context, _ string) (*Go
 	return nil, fmt.Errorf("GenerateGovernance nao suportado pelo %s", p.Name())
 }
 
-// Completion executa claude -p com o prompt e retorna a resposta.
-func (p *ClaudeCLIProvider) Completion(_ context.Context, systemPrompt, userPrompt string) (string, error) {
-	fullPrompt := systemPrompt + "\n\n" + userPrompt
-
-	cmd := exec.Command(p.command, p.args(fullPrompt)...)
-
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("claude cli falhou: %w (stderr: %s)", err, stderr.String())
+// Completion executa claude -p com o prompt pelo stdin e retorna a resposta.
+func (p *ClaudeCLIProvider) Completion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	var stdout strings.Builder
+	stderr, err := executarCLI(ctx, p.command, p.args(), systemPrompt+"\n\n"+userPrompt, &stdout)
+	if err != nil {
+		return "", erroCLI("claude cli", "", err, stderr)
 	}
 
 	result := strings.TrimSpace(stdout.String())
@@ -66,17 +60,10 @@ func (p *ClaudeCLIProvider) Completion(_ context.Context, systemPrompt, userProm
 }
 
 // StreamCompletion executa claude -p e escreve a saída no writer.
-func (p *ClaudeCLIProvider) StreamCompletion(_ context.Context, systemPrompt, userPrompt string, out io.Writer) error {
-	fullPrompt := systemPrompt + "\n\n" + userPrompt
-
-	cmd := exec.Command(p.command, p.args(fullPrompt)...)
-	cmd.Stdout = out
-
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("claude cli streaming falhou: %w (stderr: %s)", err, stderr.String())
+func (p *ClaudeCLIProvider) StreamCompletion(ctx context.Context, systemPrompt, userPrompt string, out io.Writer) error {
+	stderr, err := executarCLI(ctx, p.command, p.args(), systemPrompt+"\n\n"+userPrompt, out)
+	if err != nil {
+		return erroCLI("claude cli", " streaming", err, stderr)
 	}
 	return nil
 }

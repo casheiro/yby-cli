@@ -25,18 +25,16 @@ func Get(name string) *Tool {
 	return registry[name]
 }
 
-// All retorna todas as ferramentas registradas.
+// All retorna todas as ferramentas registradas, por nome.
 func All() []*Tool {
 	mu.RLock()
 	defer mu.RUnlock()
-	result := make([]*Tool, 0, len(registry))
-	for _, t := range registry {
-		result = append(result, t)
-	}
-	return result
+	return ordenadas()
 }
 
-// FormatToolsPrompt gera a descrição das ferramentas disponíveis para injeção no system prompt.
+// FormatToolsPrompt gera a descrição das ferramentas disponíveis para injeção no system
+// prompt. Só descreve: quem escolhe e roda a ferramenta é o classificador do Bard, antes
+// da resposta, e nada do que a IA escrever na resposta é executado.
 func FormatToolsPrompt() string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -46,12 +44,7 @@ func FormatToolsPrompt() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("## Ferramentas Disponíveis\n\n")
-	sb.WriteString("Para executar uma ferramenta, responda com um bloco JSON:\n")
-	sb.WriteString("```json\n{\"tool\": \"nome_da_ferramenta\", \"params\": {\"chave\": \"valor\"}}\n```\n\n")
-	sb.WriteString("Só use ferramentas quando necessário. Responda diretamente quando possível.\n\n")
-
-	for _, tool := range registry {
+	for _, tool := range ordenadas() {
 		sb.WriteString(fmt.Sprintf("### %s\n", tool.Name))
 		sb.WriteString(fmt.Sprintf("%s\n", tool.Description))
 		if len(tool.Parameters) > 0 {
@@ -74,7 +67,7 @@ func FormatToolsPrompt() string {
 func FindByIntent(intent string) *Tool {
 	mu.RLock()
 	defer mu.RUnlock()
-	for _, tool := range registry {
+	for _, tool := range ordenadas() {
 		for _, i := range tool.Intents {
 			if i == intent {
 				return tool

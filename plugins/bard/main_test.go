@@ -584,3 +584,25 @@ func TestSaveMessage_RedigeSegredos(t *testing.T) {
 		}
 	}
 }
+
+// O Bard escolhe e roda as ferramentas pelo classificador: o system prompt não pede
+// chamada em JSON (nada a executaria) nem empurra o runtime do provider a rodar
+// kubectl ou helm por conta própria, fora das guardas do Bard.
+func TestBuildSystemPrompt_SemChamadaJSONNemRuntimeQueEscreve(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Chdir(t.TempDir())
+
+	prompt := buildSystemPrompt(nil, BardConfig{}, nil)
+	if !strings.Contains(prompt, "kubectl_get") {
+		t.Fatalf("o prompt deveria listar as ferramentas nativas:\n%s", prompt)
+	}
+	for _, proibido := range []string{"bloco JSON", `{"tool"`, "kubectl, helm, MCP", "tente usar as capacidades do seu runtime"} {
+		if strings.Contains(prompt, proibido) {
+			t.Errorf("o prompt não deveria conter %q:\n%s", proibido, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "Nunca execute") {
+		t.Errorf("o prompt deveria proibir ações de escrita pelo runtime do provider:\n%s", prompt)
+	}
+}

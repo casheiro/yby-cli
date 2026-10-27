@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"regexp"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -55,4 +57,44 @@ func pedidoAoPlugin(args []string) plugin.PluginRequest {
 	}
 	req.Context = map[string]interface{}{"infra": infra}
 	return req
+}
+
+// Os valores da IA viram argumentos do kubectl e do Sentinel. Um valor começando com "-"
+// viraria flag (pod "--as=system:admin", resource "--raw=/api/…/secrets/x", namespace
+// "--fix" no Sentinel), e um com espaço ("pods -o yaml") não é nome de nada.
+// Por isso os nomes seguem o formato do Kubernetes antes de qualquer execução.
+var (
+	// nomeKube casa nome de objeto e de namespace (DNS-1123, com maiúsculas e "_" de folga).
+	nomeKube = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]{0,252}$`)
+	// tipoKube casa o tipo do recurso como o kubectl aceita: pods, deployments.apps,
+	// pod/nginx, pods,svc.
+	tipoKube = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-/,]{0,252}$`)
+	// linhasKube casa a quantidade de linhas do --tail.
+	linhasKube = regexp.MustCompile(`^[0-9]{1,6}$`)
+)
+
+// conferirParams confere, entre os campos dados, os que a IA preencheu: resource como
+// tipo do kubectl, tail como número e os demais (pod, name, namespace) como nome.
+func conferirParams(params map[string]string, campos ...string) error {
+	for _, campo := range campos {
+		valor := params[campo]
+		if valor == "" {
+			continue
+		}
+		switch campo {
+		case "resource":
+			if !tipoKube.MatchString(valor) {
+				return fmt.Errorf("parâmetro '%s' inválido (%q): use só o tipo do recurso (ex.: pods, deployments), sem espaço e sem começar com \"-\"", campo, valor)
+			}
+		case "tail":
+			if !linhasKube.MatchString(valor) {
+				return fmt.Errorf("parâmetro '%s' inválido (%q): use um número de linhas", campo, valor)
+			}
+		default:
+			if !nomeKube.MatchString(valor) {
+				return fmt.Errorf("parâmetro '%s' inválido (%q): use só o nome do Kubernetes, sem espaço e sem começar com \"-\"", campo, valor)
+			}
+		}
+	}
+	return nil
 }
