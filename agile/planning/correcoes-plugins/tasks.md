@@ -381,7 +381,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - as mensagens do Polaris saem em inglês no JSON (`saida.go:~105-107` traduz só na tela).
   - **Fazer:** `type` coerente com `severity` (ou fora do JSON, se ninguém ler); campo `nao_rodaram` (backend, verificações, motivo); mensagens traduzidas também no JSON e no markdown.
   - **Verificar:** testes do JSON.
-- [ ] **S07 · `--profile` faz o que promete**
+- [x] **S07 · `--profile` faz o que promete**
   - **Problema:** o perfil só entra nos checks internos (`scan.go:~61-71,234`), que só rodam quando os backends não acham nada. `--profile pci-dss` devolve o mesmo Polaris.
   - **Fazer:** filtrar os achados de todos os motores pelo perfil, com uma tabela check→perfis que inclua `polaris/*` e `opa/*`, e dizer na tela qual perfil foi aplicado. Se a tabela não for defensável, tirar a flag e registrar.
   - **Verificar:** testes por perfil.
@@ -691,6 +691,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S05 | O Polaris usa a categoria do próprio check: Security danger é crítico e warning é alto ou médio por tabela (endurecimento é médio), os checks de RBAC, rede e secrets vão para as seções deles, e Reliability e Efficiency viram as seções "confiabilidade" e "eficiência" (danger médio, warning baixo), na tela e no relatório, que passa a ter uma seção por categoria | este commit |
 | 26/10/2026 | S06 | O JSON do scan tem `type` igual à `severity` (normalizado num ponto só), mensagens do Polaris em PT-BR também no JSON e no markdown e o campo `nao_rodaram` (backend, verificações, motivo), também no relatório markdown | este commit |
 | 26/10/2026 | S08 | Checks internos viram plano B (só rodam quando nenhum backend varre; backend limpo vira fonte com 0 achados), pods listados uma vez por scan (cache no contexto), cosign só com chave ou identidade+emissor configurados (senão ErrNaoVerificado, que entra em `nao_rodaram` sem virar achado) e com prazo, env sensível: KEY por palavra (KEYCLOAK_URL não) e PASSWORD/SECRET/TOKEN por trecho (PGPASSWORD sim), `pod_root` e `pod_seccomp` herdam/olham o contêiner | este commit |
+| 26/10/2026 | S07 | O `--profile` filtra os achados de todos os motores por uma tabela check→perfis (cada `polaris/*` e `opa/*` pelo check interno equivalente; hostPath/HostProcess nos CIS e TLS do Ingress no PCI-DSS e no SOC2 pelo próprio ID; confiabilidade e checks customizados fora) e a tela, o JSON (`perfil`, `fora_do_perfil`) e o relatório dizem o perfil aplicado e quantos achados ficaram de fora | este commit |
 
 ### Fase 5 · Atlas
 

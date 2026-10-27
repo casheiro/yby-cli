@@ -38,7 +38,7 @@ FLAGS
   -n, --namespace texto  namespace a examinar (padrão default)
   -o, --output formato   terminal, json ou markdown (padrão terminal)
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
-  -p, --profile perfil   perfil de conformidade dos checks internos: cis-l1, cis-l2, pci-dss ou soc2
+  -p, --profile perfil   deixa só os achados do perfil, de todos os motores: cis-l1, cis-l2, pci-dss ou soc2
       --fix-dry-run      mostra os patches de remediação sem aplicar
       --fix              aplica os patches de remediação no cluster
       --no-ai            não pede as recomendações da IA

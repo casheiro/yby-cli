@@ -52,6 +52,8 @@ O Sentinel usa ferramentas de seguranca reais como backends em vez de checks art
 
 **Allowlist de RBAC**: uma lista so (`cli/allowlist`), lida pelos checks internos em Go e pelo OPA como `data.allowlist`. Ela casa pelo subject, nunca pelo nome do binding ou do role: um binding de cluster-admin so fica de fora quando todos os subjects sao `system:masters` ou ServiceAccounts de controllers conhecidos no namespace deles (Argo CD em `argocd`, cert-manager em `cert-manager`, Helm do k3s em `kube-system`...); um role com acesso a secrets ou curinga, quando todos os subjects ligados a ele (ClusterRoleBindings e RoleBindings) estao na lista. `admin`, `edit`, `view` e `cluster-admin` ligados por RoleBinding (valem num namespace so) ficam de fora; ligados por ClusterRoleBinding (valem no cluster todo), so quando quem recebe e do plano de controle ou esta na lista: um ClusterRoleBinding que da `edit` a `default/app` deixa a SA ler os secrets do cluster todo e aparece. Os ClusterRoles `system:*` ficam de fora enquanto ligados so ao plano de controle. Labels como `app.kubernetes.io/managed-by` nao contam: quem cria o binding poe o label que quiser. O scan diz quantos recursos ficaram de fora ("allowlist 3 ignorados" na tela, `ignored_by_allowlist` no JSON). Os checks de RBAC do Polaris nao passam pela allowlist.
 
+**Perfis de conformidade** (`--profile cis-l1|cis-l2|pci-dss|soc2`): o scan deixa so os achados dos controles do perfil, venham do Polaris, do OPA ou dos checks internos. Cada check do Polaris e do OPA entra pelo check interno equivalente (`polaris/runAsRootAllowed` conta como `POD_ROOT_CONTAINER`, `opa/rbac_cluster_admin` como `RBAC_CLUSTER_ADMIN`; tabela em `profiles/types.go`), e o que so o Polaris verifica entra pelo proprio ID (`polaris/hostPathSet` nos CIS, `polaris/tlsSettingsMissing` no PCI-DSS e no SOC2). Probes, replicas, priority class e os checks customizados ficam fora de todo perfil. A tela, o JSON (`perfil`, `fora_do_perfil`) e o relatorio dizem o perfil aplicado e quantos achados ficaram de fora. Os perfis sao um recorte de controles, nao uma auditoria completa da norma.
+
 **Deduplicacao**: findings do mesmo check sao agrupados — mostra "Deployment/api (+5)" em vez de repetir pra cada workload.
 
 ## Uso
@@ -61,6 +63,7 @@ O Sentinel usa ferramentas de seguranca reais como backends em vez de checks art
 yby sentinel scan -n default
 yby sentinel scan -n nexus-core
 yby sentinel scan -n default --no-ai          # sem as recomendações da IA
+yby sentinel scan -n default --profile pci-dss # só os achados do perfil
 
 # Exportar relatorio
 yby sentinel scan -n default -o json -f scan.json

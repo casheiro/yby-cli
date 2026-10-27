@@ -72,7 +72,7 @@ func ajudaScan() ui.Ajuda {
 			{Nome: "-n, --namespace texto", Descricao: "namespace a examinar (padrão default)"},
 			{Nome: "-o, --output formato", Descricao: "terminal, json ou markdown (padrão terminal)"},
 			{Nome: "-f, --file arquivo", Descricao: "grava o json ou o markdown no arquivo em vez de na tela"},
-			{Nome: "-p, --profile perfil", Descricao: "perfil de conformidade dos checks internos: " + listaComOu(nomesDosPerfis())},
+			{Nome: "-p, --profile perfil", Descricao: "deixa só os achados do perfil, de todos os motores: " + listaComOu(nomesDosPerfis())},
 			{Nome: "    --fix-dry-run", Descricao: "mostra os patches de remediação sem aplicar"},
 			{Nome: "    --fix", Descricao: "aplica os patches de remediação no cluster"},
 			{Nome: "    --no-ai", Descricao: "não pede as recomendações da IA"},

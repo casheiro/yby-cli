@@ -304,6 +304,7 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 	ui.SummaryCom(w, partes, "")
 
 	ui.Campos(w,
+		ui.Campo{Rotulo: "perfil", Valor: textoDoPerfil(report)},
 		ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
 		ui.Campo{Rotulo: "allowlist", Valor: textoDaAllowlist(report.IgnoradosPelaAllowlist)},
 		ui.Campo{Rotulo: "relatório", Valor: filepath.ToSlash(caminho), Caminho: true},

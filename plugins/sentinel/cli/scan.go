@@ -40,6 +40,10 @@ type ScanReport struct {
 	// NaoRodaram diz o que o scan não conseguiu verificar, para o JSON não parecer limpo
 	// quando faltou verificação.
 	NaoRodaram []NaoRodou `json:"nao_rodaram,omitempty"`
+	// Perfil é o perfil de conformidade do --profile; ForaDoPerfil conta os achados que
+	// ele deixou de fora.
+	Perfil       string `json:"perfil,omitempty"`
+	ForaDoPerfil int    `json:"fora_do_perfil,omitempty"`
 }
 
 // NaoRodou registra as verificações de uma fonte que ficaram de fora. Verificacoes vazio
@@ -100,7 +104,11 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 	if op.paraScripts() {
 		telaDasEtapas = erros
 	} else {
-		ui.Title(saida, "sentinel", "scan · namespace "+namespace)
+		titulo := "scan · namespace " + namespace
+		if op.perfil != "" {
+			titulo += " · perfil " + op.perfil
+		}
+		ui.Title(saida, "sentinel", titulo)
 		fmt.Fprintln(saida)
 	}
 
@@ -162,12 +170,16 @@ func escreverResultadoScan(saida io.Writer, c coleta, namespace string, op opcoe
 	}
 	if len(report.Findings) == 0 {
 		fmt.Fprintln(saida)
-		if c.naoRodaram > 0 {
+		switch {
+		case c.naoRodaram > 0:
 			ui.Check(saida, ui.CheckAviso, "nenhum problema nas verificações que rodaram · "+contar(c.naoRodaram, "não rodou", "não rodaram"), "", "")
-		} else {
+		case report.Perfil != "":
+			ui.Check(saida, ui.CheckOk, "nenhum problema do perfil "+report.Perfil, "", "")
+		default:
 			ui.Check(saida, ui.CheckOk, "nenhum problema de segurança encontrado", "", "")
 		}
 		ui.Campos(saida,
+			ui.Campo{Rotulo: "perfil", Valor: textoDoPerfil(report)},
 			ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
 			ui.Campo{Rotulo: "allowlist", Valor: textoDaAllowlist(report.IgnoradosPelaAllowlist)},
 		)
@@ -297,9 +309,11 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 	}
 
-	// 3. Deduplicar findings (mesmo recurso + mesma mensagem)
+	// 3. Deduplicar findings (mesmo recurso + mesma mensagem) e, com --profile, deixar só
+	// os do perfil, venham de que motor vierem; a IA e o --fix só veem estes.
 	findings = deduplicateFindings(normalizarAchados(findings))
-	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou}
+	findings, fora := filtrarPeloPerfil(findings, op.perfil)
+	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou, Perfil: op.perfil, ForaDoPerfil: fora}
 	if len(findings) == 0 {
 		return c, nil
 	}
@@ -343,6 +357,32 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 	}
 	return c, nil
+}
+
+// filtrarPeloPerfil deixa só os achados dos checks do perfil (profiles.Inclui) e conta os
+// que ficaram de fora. Sem perfil, devolve todos.
+func filtrarPeloPerfil(findings []checks.SecurityFinding, perfil string) (dentro []checks.SecurityFinding, fora int) {
+	p, ok := profiles.GetProfile(perfil)
+	if !ok {
+		return findings, 0
+	}
+	for _, f := range findings {
+		if p.Inclui(f.CheckID) {
+			dentro = append(dentro, f)
+		} else {
+			fora++
+		}
+	}
+	return dentro, fora
+}
+
+// textoDoPerfil diz o perfil aplicado e quantos achados ele deixou de fora ("pci-dss · 3
+// achados fora do perfil"); sem perfil, fica vazio e a linha não aparece.
+func textoDoPerfil(report ScanReport) string {
+	if report.Perfil == "" || report.ForaDoPerfil == 0 {
+		return report.Perfil
+	}
+	return report.Perfil + " · " + contar(report.ForaDoPerfil, "achado fora do perfil", "achados fora do perfil")
 }
 
 // gravarRelatorio escreve o json ou o markdown no stdout ou, com -f, no arquivo; neste
@@ -407,6 +447,9 @@ func exportScanMarkdown(report ScanReport) string {
 	sb.WriteString(fmt.Sprintf("# Relatório de Segurança Sentinel — %s\n\n", report.Namespace))
 
 	sb.WriteString("**Resumo:** " + resumoDoRelatorio(report.Findings) + "\n")
+	if t := textoDoPerfil(report); t != "" {
+		sb.WriteString("**Perfil:** " + t + "\n")
+	}
 	if len(report.Sources) > 0 {
 		sb.WriteString(fmt.Sprintf("**Backends:** %s\n", strings.Join(report.Sources, ", ")))
 	}
