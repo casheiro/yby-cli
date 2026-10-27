@@ -299,7 +299,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** um bloco de código vale 20 pontos (`quality.go:~53-56`), o que pune Decisões, e o tamanho vale até 20.
   - **Fazer:** critérios por tipo, vindos do `UKI_SPEC.md` (ex.: Decisão: Problema, Opções, Decisão, Consequências).
   - **Verificar:** testes por tipo.
-- [ ] **Y12 · Export**
+- [x] **Y12 · Export**
   - **Problema:** `Tags` fica sempre vazio (`exporter.go:~17,93-98`), UKIs apagados continuam no destino e o H1 duplica o título.
   - **Fazer:**
     - tags do frontmatter (ou do tipo);
@@ -682,6 +682,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y09 | Arquivo que não abre mantém a entrada antiga no manifest e no índice, com aviso; cada arquivo é lido uma vez e o hash sai do conteúdo lido; o `index` pega uma trava do sistema (`gofrs/flock`) em `.synapstor/.index/index.lock`, que sai sozinha quando o processo cai, e o segundo `index` para com "outro yby synapstor index está rodando neste projeto". | este commit |
 | 26/10/2026 | Y10 | O `decay` conta os commits nos arquivos que o UKI cita (que existem no projeto) depois do último commit da nota e marca como desatualizado se houver algum; usa o `updated_at` do frontmatter, descarta timestamp do nome fora de 2000..amanhã e roda o git com prazo de 15 s. | este commit |
 | 26/10/2026 | Y11 | O `quality` pontua pelas seções do padrão do tipo (regra, decisão, padrão, métrica, referência), com bloco de código só exigido de padrão e UKI sem tipo, e o resumo diz qual seção falta. | este commit |
+| 26/10/2026 | Y12 | O export grava um manifesto `.synapstor-export.json` no destino e apaga só o que ele listou e sumiu da fonte (com as subpastas vazias), e o Docusaurus escapa `{` e `<` fora do código para o MDX; tags e frontmatter único já vinham do Y07. | este commit |
 | 26/10/2026 | Y04 | `VectorStore.Search` limita o topK ao número de documentos e devolve vazio com a coleção vazia, sem o erro do chromem; a unificação do corte de relevância com o Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |

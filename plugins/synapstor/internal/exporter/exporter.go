@@ -2,10 +2,12 @@
 package exporter
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
@@ -30,6 +32,110 @@ func (u UKIFile) destino(pasta string) (string, error) {
 	}
 	caminho := filepath.Join(pasta, filepath.FromSlash(rel))
 	return caminho, os.MkdirAll(filepath.Dir(caminho), 0755)
+}
+
+// nomeManifesto é o arquivo, na raiz do destino, que lista o que o último export gravou.
+// O próximo export apaga só o que está nele e não veio de novo; o que a pessoa pôs na
+// mesma pasta (--output pode ser o site/docs dela) nunca é tocado.
+const nomeManifesto = ".synapstor-export.json"
+
+type manifesto struct {
+	Arquivos []string `json:"arquivos"`
+}
+
+// limparObsoletos apaga do destino os arquivos do export anterior que o atual não gerou
+// e grava o manifesto novo. Caminho do manifesto que sai da pasta é ignorado.
+func limparObsoletos(raiz string, gerados []string) error {
+	atuais := map[string]bool{}
+	for _, g := range gerados {
+		atuais[g] = true
+	}
+	// Toda a limpeza passa pelo os.Root: ele recusa qualquer resolução que saia da raiz,
+	// symlink incluído (um repo clonado pode trazer um link e um manifesto adulterado).
+	root, err := os.OpenRoot(raiz)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+
+	if data, err := root.ReadFile(nomeManifesto); err == nil {
+		var antigo manifesto
+		if json.Unmarshal(data, &antigo) == nil {
+			for _, rel := range antigo.Arquivos {
+				if atuais[rel] || rel == "" || filepath.IsAbs(rel) || !filepath.IsLocal(filepath.FromSlash(rel)) {
+					continue
+				}
+				loc := filepath.FromSlash(rel)
+				if err := root.Remove(loc); err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					// Caminho que atravessa um link para fora da raiz: ignorado.
+					if strings.Contains(err.Error(), "escapes") {
+						continue
+					}
+					return fmt.Errorf("erro ao remover %s: %w", rel, err)
+				}
+				// Subpasta que ficou vazia sai também; com algo dentro, o Remove falha e fica.
+				for d := filepath.Dir(loc); d != "." && d != string(filepath.Separator); d = filepath.Dir(d) {
+					if root.Remove(d) != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(gerados)
+	data, err := json.MarshalIndent(manifesto{Arquivos: gerados}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return root.WriteFile(nomeManifesto, append(data, '\n'), 0644)
+}
+
+// relativoA devolve o caminho de saída relativo à raiz, com /.
+func relativoA(raiz, caminho string) string {
+	rel, err := filepath.Rel(raiz, caminho)
+	if err != nil {
+		return filepath.ToSlash(caminho)
+	}
+	return filepath.ToSlash(rel)
+}
+
+var (
+	reCercaCodigo  = regexp.MustCompile("^\\s*(```|~~~)")
+	reCodigoInline = regexp.MustCompile("`[^`\n]*`")
+)
+
+// escaparMDX protege `{` e `<` fora de blocos e trechos de código: o Docusaurus 3 lê .md
+// como MDX, e `{{ }}`, `<pod>` ou `<https://…>` quebrariam o build do site.
+func escaparMDX(corpo string) string {
+	linhas := strings.Split(corpo, "\n")
+	emCerca := false
+	for i, l := range linhas {
+		if reCercaCodigo.MatchString(l) {
+			emCerca = !emCerca
+			continue
+		}
+		if emCerca {
+			continue
+		}
+		var sb strings.Builder
+		pos := 0
+		for _, loc := range reCodigoInline.FindAllStringIndex(l, -1) {
+			sb.WriteString(trocarMDX(l[pos:loc[0]]))
+			sb.WriteString(l[loc[0]:loc[1]])
+			pos = loc[1]
+		}
+		sb.WriteString(trocarMDX(l[pos:]))
+		linhas[i] = sb.String()
+	}
+	return strings.Join(linhas, "\n")
+}
+
+func trocarMDX(s string) string {
+	s = strings.ReplaceAll(s, "{", "\\{")
+	return strings.ReplaceAll(s, "<", "&lt;")
 }
 
 // cabecalho devolve o frontmatter do export (o título, as linhas extras e as tags) e o
@@ -121,8 +227,10 @@ func (e *DocusaurusExporter) Export(ukis []UKIFile, outputDir string) error {
 		return fmt.Errorf("erro ao criar diretório docs: %w", err)
 	}
 
+	var gerados []string
 	for i, u := range ukis {
 		frontmatter, corpo := cabecalho(u, fmt.Sprintf("sidebar_position: %d", i+1))
+		corpo = escaparMDX(corpo)
 
 		outPath, err := u.destino(docsDir)
 		if err == nil {
@@ -131,9 +239,10 @@ func (e *DocusaurusExporter) Export(ukis []UKIFile, outputDir string) error {
 		if err != nil {
 			return fmt.Errorf("erro ao exportar %s: %w", filepath.Base(u.Path), err)
 		}
+		gerados = append(gerados, relativoA(docsDir, outPath))
 	}
 
-	return nil
+	return limparObsoletos(docsDir, gerados)
 }
 
 // --- ObsidianExporter ---
@@ -149,6 +258,7 @@ func (e *ObsidianExporter) Export(ukis []UKIFile, outputDir string) error {
 		return fmt.Errorf("erro ao criar diretório de saída: %w", err)
 	}
 
+	var gerados []string
 	for _, u := range ukis {
 		var sb strings.Builder
 
@@ -175,9 +285,10 @@ func (e *ObsidianExporter) Export(ukis []UKIFile, outputDir string) error {
 		if err != nil {
 			return fmt.Errorf("erro ao exportar %s: %w", filepath.Base(u.Path), err)
 		}
+		gerados = append(gerados, relativoA(outputDir, outPath))
 	}
 
-	return nil
+	return limparObsoletos(outputDir, gerados)
 }
 
 // --- MarkdownExporter ---
@@ -192,7 +303,7 @@ func (e *MarkdownExporter) Export(ukis []UKIFile, outputDir string) error {
 	}
 
 	// Copiar arquivos sem modificação
-	var indexEntries []string
+	var indexEntries, gerados []string
 	for _, u := range ukis {
 		outPath, err := u.destino(outputDir)
 		if err == nil {
@@ -201,8 +312,9 @@ func (e *MarkdownExporter) Export(ukis []UKIFile, outputDir string) error {
 		if err != nil {
 			return fmt.Errorf("erro ao exportar %s: %w", filepath.Base(u.Path), err)
 		}
-		rel, _ := filepath.Rel(outputDir, outPath)
-		indexEntries = append(indexEntries, fmt.Sprintf("- [%s](%s)", u.Title, filepath.ToSlash(rel)))
+		rel := relativoA(outputDir, outPath)
+		gerados = append(gerados, rel)
+		indexEntries = append(indexEntries, fmt.Sprintf("- [%s](%s)", u.Title, rel))
 	}
 
 	// Criar índice README.md
@@ -217,5 +329,5 @@ func (e *MarkdownExporter) Export(ukis []UKIFile, outputDir string) error {
 		return fmt.Errorf("erro ao criar índice: %w", err)
 	}
 
-	return nil
+	return limparObsoletos(outputDir, append(gerados, "README.md"))
 }
