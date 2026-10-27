@@ -3,6 +3,7 @@ package quality
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -252,5 +253,54 @@ func TestScoreAll_Subpastas(t *testing.T) {
 	}
 	if len(scores) != 2 {
 		t.Errorf("esperados 2 UKIs, obtido %d", len(scores))
+	}
+}
+
+func palavras(n int) string {
+	return strings.TrimSpace(strings.Repeat("palavra ", n))
+}
+
+func TestScoreUKI_DecisaoCompletaSemCodigo(t *testing.T) {
+	content := "---\nid: dec-banco\ntipo: decisao\nstatus: ativo\n---\n# Escolha do banco\n\n" +
+		"## Problema\n" + palavras(30) + "\n\n## Opções\n" + palavras(30) +
+		"\n\n## Decisão\n" + palavras(30) + "\n\n## Consequências\n" + palavras(60) + "\n"
+	score := ScoreUKI(content)
+
+	if score.Score < 70 {
+		t.Errorf("decisão completa sem código deveria ter 70 ou mais, obtido %d", score.Score)
+	}
+	if score.Breakdown.ExigeExemplos {
+		t.Error("decisão não exige exemplo")
+	}
+	if len(score.Breakdown.SecoesFaltando) != 0 {
+		t.Errorf("não deveria faltar seção, faltam %v", score.Breakdown.SecoesFaltando)
+	}
+}
+
+func TestScoreUKI_DecisaoSemSecoesPerdePontos(t *testing.T) {
+	completa := "---\nid: dec-banco\ntipo: decisao\nstatus: ativo\n---\n# T\n\n## Problema\na\n\n## Opções\na\n\n## Decisão\na\n\n## Consequências\na\n"
+	sem := "---\nid: dec-banco\ntipo: decisao\nstatus: ativo\n---\n# T\n\n## Problema\na\n\n## Decisão\na\n"
+	a, b := ScoreUKI(completa), ScoreUKI(sem)
+	if b.Score >= a.Score {
+		t.Errorf("faltando seções a nota deveria cair: %d >= %d", b.Score, a.Score)
+	}
+	if got := strings.Join(b.Breakdown.SecoesFaltando, ","); got != "Opções,Consequências" {
+		t.Errorf("seções faltando = %q", got)
+	}
+}
+
+func TestScoreUKI_PadraoSemExemplo(t *testing.T) {
+	base := "---\nid: pad-erros\ntipo: padrao\nstatus: ativo\n---\n# Erros\n\n## Quando usar\n" + palavras(20) + "\n\n## Antipadrão\n" + palavras(20) + "\n"
+	sem := ScoreUKI(base)
+	com := ScoreUKI(base + "\n## Exemplo\n```go\nreturn err\n```\n")
+
+	if !sem.Breakdown.ExigeExemplos {
+		t.Error("padrão exige exemplo")
+	}
+	if sem.Score >= com.Score {
+		t.Errorf("padrão sem exemplo deveria perder pontos: %d >= %d", sem.Score, com.Score)
+	}
+	if got := strings.Join(sem.Breakdown.SecoesFaltando, ","); got != "Exemplo" {
+		t.Errorf("seções faltando = %q", got)
 	}
 }

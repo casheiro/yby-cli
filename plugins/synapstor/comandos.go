@@ -254,10 +254,12 @@ func oQueFalta(b quality.QualityBreakdown) string {
 	if !b.HasContext {
 		sem = append(sem, "contexto")
 	}
-	if !b.HasExamples {
+	if b.ExigeExemplos && !b.HasExamples {
 		sem = append(sem, "exemplos")
 	}
-	if !b.HasHeaders {
+	if len(b.SecoesFaltando) > 0 {
+		sem = append(sem, "a seção "+strings.Join(b.SecoesFaltando, ", "))
+	} else if b.Tipo == "" && !b.HasHeaders {
 		sem = append(sem, "seções")
 	}
 	if b.LinkCount == 0 {

@@ -295,7 +295,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `decay.go:~116-117` roda `git log` só no próprio UKI. Sem histórico, usa o timestamp do nome (`decay.go:~88-93`), que a IA escolhe (`agent.go:~177-179` aceita qualquer `UKI-…`). Um `UKI-20261026-x` pode ser lido como unix de 1970. UKI não commitado dá 0 dias.
   - **Fazer:** extrair os caminhos citados no UKI e contar os commits neles depois do último commit do UKI; usar o `updated_at` do frontmatter (Y07); validar o timestamp do nome.
   - **Verificar:** testes com repo git temporário.
-- [ ] **Y11 · `quality` pelos critérios da especificação**
+- [x] **Y11 · `quality` pelos critérios da especificação**
   - **Problema:** um bloco de código vale 20 pontos (`quality.go:~53-56`), o que pune Decisões, e o tamanho vale até 20.
   - **Fazer:** critérios por tipo, vindos do `UKI_SPEC.md` (ex.: Decisão: Problema, Opções, Decisão, Consequências).
   - **Verificar:** testes por tipo.
@@ -681,6 +681,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y03 | O manifest passou para `.synapstor/.index/manifest.json` (dentro do que o git ignora); o do lugar antigo conta como vazio e é apagado na primeira gravação. | este commit |
 | 26/10/2026 | Y09 | Arquivo que não abre mantém a entrada antiga no manifest e no índice, com aviso; cada arquivo é lido uma vez e o hash sai do conteúdo lido; o `index` pega uma trava do sistema (`gofrs/flock`) em `.synapstor/.index/index.lock`, que sai sozinha quando o processo cai, e o segundo `index` para com "outro yby synapstor index está rodando neste projeto". | este commit |
 | 26/10/2026 | Y10 | O `decay` conta os commits nos arquivos que o UKI cita (que existem no projeto) depois do último commit da nota e marca como desatualizado se houver algum; usa o `updated_at` do frontmatter, descarta timestamp do nome fora de 2000..amanhã e roda o git com prazo de 15 s. | este commit |
+| 26/10/2026 | Y11 | O `quality` pontua pelas seções do padrão do tipo (regra, decisão, padrão, métrica, referência), com bloco de código só exigido de padrão e UKI sem tipo, e o resumo diz qual seção falta. | este commit |
 | 26/10/2026 | Y04 | `VectorStore.Search` limita o topK ao número de documentos e devolve vazio com a coleção vazia, sem o erro do chromem; a unificação do corte de relevância com o Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |
