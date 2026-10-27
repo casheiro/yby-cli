@@ -65,8 +65,12 @@ func run() error {
 	var req plugin.PluginRequest
 
 	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
-	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
-		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+	envReq, err := plugin.PedidoDoAmbiente(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if envReq != nil {
+		if err := json.Unmarshal(envReq, &req); err != nil {
 			return yerrors.Wrap(err, yerrors.ErrCodePluginRPC, "YBY_PLUGIN_REQUEST inválido")
 		}
 		return handlePluginRequest(req)

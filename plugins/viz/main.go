@@ -108,12 +108,17 @@ func run() error {
 	return nil
 }
 
-// pedidoDoCore lê o pedido do core: primeiro a env YBY_PLUGIN_REQUEST, depois um JSON
-// no stdin quando ele não é um terminal.
+// pedidoDoCore lê o pedido do core: primeiro o do ambiente (a env YBY_PLUGIN_REQUEST ou
+// o arquivo de YBY_PLUGIN_REQUEST_FILE), depois um JSON no stdin quando ele não é um
+// terminal.
 func pedidoDoCore(getenv func(string) string, stdin *os.File) (PluginRequest, bool, error) {
 	var req PluginRequest
-	if env := getenv("YBY_PLUGIN_REQUEST"); env != "" {
-		if err := json.Unmarshal([]byte(env), &req); err != nil {
+	env, err := plugin.PedidoDoAmbiente(getenv)
+	if err != nil {
+		return req, false, err
+	}
+	if env != nil {
+		if err := json.Unmarshal(env, &req); err != nil {
 			return req, false, yerrors.Wrap(err, yerrors.ErrCodePluginRPC, "YBY_PLUGIN_REQUEST inválido")
 		}
 		return req, true, nil

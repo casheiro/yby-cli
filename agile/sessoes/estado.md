@@ -7,10 +7,10 @@
 
 - **Projeto ativo:** `Carta do terminal (redesign das TUIs e saídas)`
 - **Plano:** `agile/planning/tui-redesign/tasks.md`
-- **Branch:** `feat/tui-plugins`
-- **Próxima ação:** com os PRs mergeados, abrir a release da próxima versão (develop → `release/*`, CI) e conferir as notas com o `CHANGELOG.md`; depois escolher entre as pendências menores fora do plano (lista em Atenção).
-- **Aguardando o usuário:** merge, nesta ordem, do #206 (CI sem GH_PAT), do #205 (release v5.7.0 → main, pede uma aprovação) e dos PRs empilhados da carta: #204 (Viz) → #207 (Cloud) → #208 (plugins, cloud beta, documentação). O back-merge da v5.7.0 para a develop falhou (develop protegida); sem conteúdo extra, pode ser ignorado.
-- **Atenção:** plano completo (39/39), tudo com push; a wiki foi publicada (`b8dc3f7`) antes da versão com o Viz novo sair. O cloud está em beta (anotação `yby/beta`); o que falta para sair do beta está no `ROADMAP.md`. Até o #206 entrar, a release só publica com `gh workflow run release.yaml --ref <tag>` (feito na v5.7.0). Pendências menores: cabeçalho do Bard sem o modelo vindo do config; providers CLI sem a cadeia de decorators; `sentinel --fix` com erros crus; gofmt acusa `plugins/sentinel/cli/checks/rbac_allowlist.go`; TestHook* do Atlas podem sair do `skip_base`; `yby version` em texto simples; a 72×20 o detalhe por cima do painel cloud fica sem a auditoria. `~/.yby/plugins` do usuário tem plugins falsos de testes antigos, não apagados. Contêiner de teste `yby-viz-k3s` removido em 25/10.
+- **Branch:** `feat/notas-release-merges`
+- **Próxima ação:** v5.8.0 publicada (26/10/2026, 43 binários, notas limpas à mão). Escolher a próxima frente entre as pendências menores (lista em Atenção) ou a saída do beta do cloud (`ROADMAP.md`).
+- **Aguardando o usuário:** aprovação e merge do #212 (release v5.8.0 → main) e merge do #213 (notas da release sem merges, hashes curtos e link do CHANGELOG, para as próximas versões).
+- **Atenção:** plano completo (39/39), tudo com push; a wiki foi publicada (`b8dc3f7`) antes da versão com o Viz novo sair. O cloud está em beta (anotação `yby/beta`); o que falta para sair do beta está no `ROADMAP.md`. Desde o #206 a release publica sozinha no merge do PR develop → `release/*`; branches de PR para a develop precisam ser `feat/**` (o check obrigatório só roda nelas). Pendências menores: cabeçalho do Bard sem o modelo vindo do config; providers CLI sem a cadeia de decorators; `sentinel --fix` com erros crus; gofmt acusa `plugins/sentinel/cli/checks/rbac_allowlist.go`; TestHook* do Atlas podem sair do `skip_base`; `yby version` em texto simples; a 72×20 o detalhe por cima do painel cloud fica sem a auditoria. `~/.yby/plugins` do usuário tem plugins falsos de testes antigos, não apagados. Contêiner de teste `yby-viz-k3s` removido em 25/10.
 
 ## Ambiente
 

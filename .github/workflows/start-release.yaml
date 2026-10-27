@@ -31,7 +31,7 @@ jobs:
           node-version: "18"
 
       - name: 📦 Install Dependencies
-        run: npm install conventional-recommended-bump semver conventional-changelog-conventionalcommits
+        run: npm install semver
 
       - name: 🕵️ Check for Meaningful Changes
         id: check_changes
@@ -75,7 +75,23 @@ jobs:
         if: steps.check_changes.outputs.meaningful == 'true'
         run: |
           LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "v0.0.0")
-          BUMP=$(npx conventional-recommended-bump --preset=conventionalcommits)
+
+          # Só os commits que a última tag não tem. A tag fica no merge da release/*, que nem
+          # sempre volta para a develop (o back-merge é pulado sem diferença), então a tag
+          # alcançável a partir da develop pode ser a anterior e contaria a versão já lançada.
+          if [ "$LATEST_TAG" = "v0.0.0" ]; then FAIXA=HEAD; else FAIXA="$LATEST_TAG..HEAD"; fi
+          ASSUNTOS=$(git log --no-merges --format='%s' "$FAIXA")
+          echo "Commits desde $LATEST_TAG:"
+          echo "$ASSUNTOS"
+
+          BUMP=""
+          if echo "$ASSUNTOS" | grep -qE '^[a-z]+(\([^)]*\))?!:' || git log --no-merges --format='%b' "$FAIXA" | grep -q 'BREAKING CHANGE'; then
+            BUMP=major
+          elif echo "$ASSUNTOS" | grep -qE '^feat(\([^)]*\))?:'; then
+            BUMP=minor
+          elif echo "$ASSUNTOS" | grep -qE '^(fix|perf|refactor|revert)(\([^)]*\))?:'; then
+            BUMP=patch
+          fi
 
           if [ -z "$BUMP" ]; then
             echo "No version bump recommended based on new commits. Nothing to release."

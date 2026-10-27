@@ -184,8 +184,12 @@ checksum:
   name_template: "checksums.txt"
 snapshot:
   version_template: "{{ .Tag }}-next"
+release:
+  header: |
+    O que pede atenção de quem já usa o yby (teclas que mudaram, códigos de saída, comportamentos novos) está no [CHANGELOG](https://github.com/casheiro/yby-cli/blob/{{ .Tag }}/CHANGELOG.md).
 changelog:
   sort: asc
+  abbrev: 7
   groups:
     - title: Novidades
       regexp: "^.*feat((\\([\\w\\-\\.]+\\))?|!)?:"
@@ -198,3 +202,4 @@ changelog:
   filters:
     exclude:
       - '^(docs|test|chore|typo)(\([\w\-\.]+\))?:'
+      - '^Merge '

@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -262,6 +263,29 @@ func TestScan_RecomendacoesNaTela(t *testing.T) {
 	}
 	if strings.Index(saida, "RECOMENDAÇÕES DA IA") > strings.Index(saida, "RESUMO") {
 		t.Errorf("as recomendações vêm antes do resumo:\n%s", saida)
+	}
+}
+
+// TestScan_SemIA: com --no-ai (o Bard pede assim) a IA não é chamada, a etapa das
+// recomendações não aparece e o relatório sai sem elas.
+func TestScan_SemIA(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	prov := &provedorFalso{resposta: "recomendações"}
+	usarDependencias(t, fake.NewSimpleClientset(), backendsDeExemplo(), nil, prov)
+
+	saida, erros, err := rodar(t, "scan", "-n", "payments", "-o", "json", "--no-ai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rel ScanReport
+	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
+		t.Fatalf("stdout tem de ser só o JSON: %v\n%s", err, saida)
+	}
+	if prov.chamadas != 0 || rel.Recommendations != "" || len(rel.Findings) != 5 {
+		t.Errorf("a IA foi chamada %d vezes; relatório: %+v", prov.chamadas, rel)
+	}
+	if strings.Contains(erros, "recomendações da IA") {
+		t.Errorf("sem IA, a etapa das recomendações não aparece:\n%s", erros)
 	}
 }
 

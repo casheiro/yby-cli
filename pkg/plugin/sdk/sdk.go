@@ -22,9 +22,14 @@ func Init() error {
 	var req plugin.PluginRequest
 	var parsed bool
 
-	// 1. Tentar ler da variável de ambiente YBY_PLUGIN_REQUEST (modo interativo/RunInteractive)
-	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
-		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+	// 1. Tentar ler o pedido do ambiente (modo interativo/RunInteractive): a variável
+	// YBY_PLUGIN_REQUEST ou o arquivo de YBY_PLUGIN_REQUEST_FILE
+	envReq, err := plugin.PedidoDoAmbiente(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if envReq != nil {
+		if err := json.Unmarshal(envReq, &req); err != nil {
 			return fmt.Errorf("failed to decode plugin request from env: %w", err)
 		}
 		parsed = true

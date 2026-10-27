@@ -105,7 +105,8 @@ func (p pedidoBard) args() []string {
 func (p pedidoBard) ambienteDoBard(base []string) []string {
 	env := make([]string, 0, len(base)+1)
 	for _, kv := range base {
-		if strings.HasPrefix(kv, "YBY_PLUGIN_REQUEST=") || (p.kubeconfig != "" && strings.HasPrefix(kv, "KUBECONFIG=")) {
+		if strings.HasPrefix(kv, "YBY_PLUGIN_REQUEST=") || strings.HasPrefix(kv, "YBY_PLUGIN_REQUEST_FILE=") ||
+			(p.kubeconfig != "" && strings.HasPrefix(kv, "KUBECONFIG=")) {
 			continue
 		}
 		env = append(env, kv)

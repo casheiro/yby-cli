@@ -75,6 +75,7 @@ func ajudaScan() ui.Ajuda {
 			{Nome: "-p, --profile perfil", Descricao: "perfil de conformidade dos checks internos: " + listaComOu(nomesDosPerfis())},
 			{Nome: "    --fix-dry-run", Descricao: "mostra os patches de remediação sem aplicar"},
 			{Nome: "    --fix", Descricao: "aplica os patches de remediação no cluster"},
+			{Nome: "    --no-ai", Descricao: "não pede as recomendações da IA"},
 			flagAjuda,
 		},
 		Rodape: "No formato terminal, o resumo sai na tela e o relatório completo vai para " +

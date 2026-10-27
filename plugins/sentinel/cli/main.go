@@ -140,7 +140,7 @@ func comando(ctx context.Context, args []string, saida, erros io.Writer) error {
 // opcoes são as flags de scan e investigate.
 type opcoes struct {
 	pod, namespace, formato, arquivo, perfil string
-	semCache, fix, fixDryRun                 bool
+	semCache, fix, fixDryRun, semIA          bool
 }
 
 // lerOpcoes lê as flags de sub, na forma "--flag valor" ou "--flag=valor". Flags que o
@@ -170,6 +170,8 @@ func lerOpcoes(sub string, args []string) (opcoes, error) {
 			liga = &op.fix
 		case sub == "scan" && a == "--fix-dry-run":
 			liga = &op.fixDryRun
+		case sub == "scan" && a == "--no-ai":
+			liga = &op.semIA
 		case sub == "investigate" && a == "--no-cache":
 			liga = &op.semCache
 		case sub == "investigate" && !strings.HasPrefix(a, "-") && op.pod == "":
