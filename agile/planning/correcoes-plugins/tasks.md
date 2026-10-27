@@ -604,7 +604,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 7 · Pendências antigas
 
-- [ ] **P01 · `yby cloud dashboard` a 72×20**
+- [x] **P01 · `yby cloud dashboard` a 72×20**
   - **Problema:** o detalhe por cima do painel fica sem a auditoria.
   - **Fazer:** mostrar a auditoria também nesse tamanho.
   - **Verificar:** golden.
@@ -616,6 +616,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** o CHANGELOG registra o que pede atenção de quem já usa o yby, e as fases mudam comportamento.
   - **Fazer:** registrar, para a release, o que mudou de comportamento: relatório do Sentinel com novo nome, `--fix` que confirma, seções novas, escopo do RBAC, Synapstor refazendo o índice ao trocar de modelo, formato de UKI, Viz no ambiente do core.
   - **Verificar:** o CHANGELOG cobre cada mudança de comportamento.
+  - **Rascunho (27/10):** o texto está pronto em `changelog-rascunho.md`, nesta pasta, conferido contra o código, com o que quebra scripts no topo e a tabela de conferência por tarefa. O CHANGELOG é escrito no commit da release: a caixa fecha quando o texto for colado ali.
 
 ---
 
@@ -775,3 +776,5 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 27/10/2026 | P01 | O detalhe por cima ganhou um aperto novo (`semBranco`: AUDITORIA RECENTE logo abaixo da IDENTIDADE, sem a linha em branco, só em coluna única) antes de perder a auditoria; a 72×20 o quadro mostra a identidade, o token e o último registro, com o aviso de rolagem da tabela; só o golden de 72×20 mudou, e a 80×16 (duas colunas, limite de 5 linhas) segue sem a auditoria | este commit |
+| 27/10/2026 | P03 (rascunho) | Texto do CHANGELOG para a release dos #220 a #226 em `changelog-rascunho.md`: o que quebra scripts no topo, uma seção por instrumento e para autores de plugin, e a tabela de conferência por tarefa; as afirmações tiradas do Histórico foram conferidas no código (5 corrigidas). A caixa fica aberta até a release | este commit |

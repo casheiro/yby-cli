@@ -481,12 +481,13 @@ type opcaoDetalhe struct {
 	ambiente      bool // a linha do .yby/environments
 	tokenPrimeiro bool // o token logo abaixo de IDENTIDADE, antes de conta e papel
 	semStatus     bool // sem a linha status quando ela só repete a coluna STATUS (cluster ativo)
+	semBranco     bool // AUDITORIA RECENTE logo abaixo da IDENTIDADE, sem a linha em branco (coluna única)
 }
 
 // opcoesDetalhe é a ordem em que o detalhe encolhe quando a altura não comporta: sai o
 // rodapé, depois os registros da auditoria (3, 2, 1), a linha status que só repete a
-// tabela, a linha do ambiente e, por fim, a auditoria inteira, com o token subindo para o
-// alto (e o ambiente, enquanto couber). Se nem assim couber, o quadro corta as linhas de
+// tabela, a linha do ambiente, a linha em branco entre as seções e, por fim, a auditoria
+// inteira, com o token subindo para o alto (e o ambiente, enquanto couber). Se nem assim couber, o quadro corta as linhas de
 // baixo e fecha a borda (com … no lugar da última).
 var opcoesDetalhe = []opcaoDetalhe{
 	{eventos: auditoriaNoDetalhe, rodape: true, ambiente: true},
@@ -495,6 +496,7 @@ var opcoesDetalhe = []opcaoDetalhe{
 	{eventos: 1, ambiente: true},
 	{eventos: 1, ambiente: true, semStatus: true},
 	{eventos: 1, semStatus: true},
+	{eventos: 1, semStatus: true, semBranco: true},
 	{tokenPrimeiro: true, ambiente: true, semStatus: true},
 	{tokenPrimeiro: true, semStatus: true},
 }
@@ -603,7 +605,10 @@ func (m painelCloud) corpoDoDetalhe(c clusterPainel, largura int, op opcaoDetalh
 	}
 	audit := m.linhasAuditoria(c, duas, op)
 	if !duas {
-		return append(append(ident, ""), audit...)
+		if !op.semBranco {
+			ident = append(ident, "")
+		}
+		return append(ident, audit...)
 	}
 	var corpo []string
 	for i := 0; i < max(len(ident), len(audit)); i++ {
