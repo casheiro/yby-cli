@@ -606,3 +606,40 @@ func TestBuildSystemPrompt_SemChamadaJSONNemRuntimeQueEscreve(t *testing.T) {
 		t.Errorf("o prompt deveria proibir ações de escrita pelo runtime do provider:\n%s", prompt)
 	}
 }
+
+// As seções Project Overview, Backlog & Debt e Technical Blueprint nunca recebiam dado
+// (o Bard declara só o hook command): o prompt não promete o que não tem, mesmo que
+// ctxData traga as chaves antigas.
+func TestBuildSystemPrompt_SemSecoesMortas(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Chdir(t.TempDir())
+
+	ctx := map[string]interface{}{"overview": "visão", "backlog": "dívida", "blueprint": map[string]interface{}{"a": 1}}
+	for _, c := range []map[string]interface{}{nil, ctx} {
+		prompt := buildSystemPrompt(c, BardConfig{}, nil)
+		for _, proibido := range []string{"Technical Blueprint", "Nenhum blueprint disponível", "Project Overview", "Backlog & Debt", "Contexto do Projeto", "{{"} {
+			if strings.Contains(prompt, proibido) {
+				t.Errorf("o prompt não deveria conter %q:\n%s", proibido, prompt)
+			}
+		}
+	}
+}
+
+// Override antigo do usuário que ainda usa {{blueprint_json_summary}} segue válido:
+// a variável é trocada por vazio.
+func TestBuildSystemPrompt_OverrideComPlaceholderAntigo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".yby", "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".yby", "prompts", "bard.system.txt"), []byte("A[{{blueprint_json_summary}}]B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := buildSystemPrompt(nil, BardConfig{}, nil); !strings.HasPrefix(got, "A[]B") {
+		t.Errorf("placeholder antigo deveria virar vazio, obteve %q", got)
+	}
+}

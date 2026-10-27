@@ -287,28 +287,11 @@ func aplicarCluster(c *tui.Config, cc *ClusterContext, opcoes opcoesBard) {
 	}
 }
 
-// buildSystemPrompt constrói o system prompt enriquecido com contexto e histórico.
-func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, history []HistoryEntry, clusterCtx ...*ClusterContext) string {
-	overview, _ := ctxData["overview"].(string)
-	backlog, _ := ctxData["backlog"].(string)
-
-	blueprintSummary := "Nenhum blueprint disponível."
-	if bp, ok := ctxData["blueprint"]; ok {
-		bpBytes, _ := json.MarshalIndent(bp, "", "  ")
-		blueprintSummary = string(bpBytes)
-	}
-
-	contextBlock := fmt.Sprintf(`
-## Project Overview
-%s
-
-## Backlog & Debt
-%s
-
-## Technical Blueprint (Atlas)
-%s
-`, overview, backlog, blueprintSummary)
-
+// buildSystemPrompt constrói o system prompt enriquecido com histórico e cluster.
+// O Bard declara só o hook command e não recebe contexto do core: o blueprint chega
+// pela ferramenta atlas_blueprint, não pelo prompt. O primeiro argumento fica por
+// compatibilidade com os chamadores.
+func buildSystemPrompt(_ map[string]interface{}, bardCfg BardConfig, history []HistoryEntry, clusterCtx ...*ClusterContext) string {
 	// Injetar contexto do cluster se disponível
 	clusterSection := ""
 	if len(clusterCtx) > 0 && clusterCtx[0] != nil {
@@ -316,7 +299,8 @@ func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, histo
 	}
 
 	vars := map[string]string{
-		"blueprint_json_summary": contextBlock,
+		// Vazio de propósito: overrides antigos ainda usam {{blueprint_json_summary}}.
+		"blueprint_json_summary": "",
 		"tools_prompt":           tools.FormatToolsPrompt(),
 		"cluster_context":        clusterSection,
 	}

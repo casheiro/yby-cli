@@ -97,7 +97,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - se o `InfraBlueprint` estiver disponível no hook, usá-lo;
     - limite de tamanho (~8 KB).
   - **Verificar:** teste de contrato que gera a saída com o código real do Atlas (chamar `executar()`/`respond` num buffer, ou um golden gerado pelo Atlas) e a passa pelo `formatBlueprintResults` do Bard.
-- [ ] **K03 · Bard sem a seção de blueprint que nunca chega** ✓
+- [x] **K03 · Bard sem a seção de blueprint que nunca chega** ✓
   - **Problema:** o Bard declara só `command`, então `ctxData` chega nil (`plugins/bard/main.go:~120-128`) e a seção "Technical Blueprint (Atlas)" do system prompt (`main.go:~290-296`) sai sempre "Nenhum blueprint disponível."
   - **Fazer:** tirar a seção morta; o blueprint chega pela ferramenta (K02). Se o resumo for pequeno e barato, dá para pedir ao Atlas um resumo compacto e em cache na abertura. Decida pelo custo medido.
   - **Verificar:** o system prompt não promete o que não tem; teste do prompt.
@@ -677,6 +677,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | K01 | Contexto barato (ambiente, infra com kube_config, values) a todo plugin quando o ambiente é pedido (`-c` em qualquer forma do pflag antes do nome, ou `YBY_ENV`); o caro só com `consome_contexto`; `--help` sem contexto; `ExecuteContextHook` com o contexto do chamador; Synapstor sem embrulho duplo; `UKIIndex` removido. | este commit |
 | 26/10/2026 | K02 | O hook `context` do Atlas aceita o argumento `infra` (só a ferramenta do Bard pede) e manda o `InfraBlueprint` ao lado do blueprint; `formatBlueprintResults` desembrulha a resposta real e resume com nomes (componentes, charts, workloads, outros recursos por kind e relações), cortado em 8 KB; contrato no `testdata` do Atlas (pedido e golden gravado pelo `executar`) lido pelo teste do Bard. | este commit |
 | 26/10/2026 | K04 | O Sentinel grava no `testdata` os pedidos do Bard e os goldens do JSON do scan `--no-ai` (recursos, escopo, `type` normalizado, `nao_rodaram`) e do investigate `--no-ai`, rodando o hook command com cluster falso e o relógio injetável no `timestamp`; o Bard confere o pedido do scan e passa os dois goldens pelos formatadores (`formatInvestigateResults` extraído), no lugar dos fixtures inventados. | este commit |
+| 26/10/2026 | K03 | O system prompt do Bard perdeu as seções mortas (Project Overview, Backlog & Debt, Technical Blueprint): o Bard não recebe contexto do core e o blueprint chega pela ferramenta; `{{blueprint_json_summary}}` segue aceito e vira vazio, por compatibilidade com overrides, e o Atlas não é consultado na abertura | este commit |
 
 ### Fase 2 · Bard
 
