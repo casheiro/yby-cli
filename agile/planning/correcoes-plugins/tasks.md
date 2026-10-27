@@ -434,7 +434,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `sentinel-scan-<ns>-<dia>.md` (`scan.go:~352-353`) faz o segundo scan do dia apagar o primeiro; o markdown não traz contexto, hora, perfil nem o que não rodou.
   - **Fazer:** contexto e hora no nome e no conteúdo, além do perfil e de "não rodaram"; atualizar a menção ao caminho na ajuda, no README e no CLAUDE.md.
   - **Verificar:** golden.
-- [ ] **S15 · Dívidas pequenas**
+- [x] **S15 · Dívidas pequenas**
   - **Problema:** `backends/polaris.go:~45-46` silencia o `log` padrão e o logrus do processo inteiro; a dica do `--fix` aponta deployments (some com o S01).
   - **Fazer:** silenciar só durante a chamada do Polaris, ou redirecionar para o slog em debug.
   - **Verificar:** teste.
@@ -686,6 +686,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S12 | O `investigate --no-ai` para na coleta e devolve os dados brutos (fase, contêineres, eventos e fim dos logs, já redigidos) em terminal, json e markdown, sem chamar a IA nem o cache | este commit |
 | 26/10/2026 | S13 | O OPA compila cada política Rego uma vez (PrepareForEval em cache) e lista os ClusterRoles uma só vez por scan, mantendo as falhas em FalhaParcial | este commit |
 | 26/10/2026 | S14 | O relatório do scan leva contexto e hora no nome e no conteúdo (dois scans não se sobrescrevem; contexto sanitizado) e a ajuda, o README e o CLAUDE.md citam o novo caminho | este commit |
+| 26/10/2026 | S15 | O Polaris silencia o logrus e o log padrão só durante a chamada e restaura os destinos de antes (a dica do --fix já estava certa desde o S01) | este commit |
 | 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
 | 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
 | 26/10/2026 | S03 | O achado agrupado do Polaris leva `Resources` (lista inteira, `Resource` é o primeiro, sem "(+N)"); a tela mostra "N recursos" e a lista embaixo (até 5, "e mais K"), o JSON e o relatório trazem todos | este commit |

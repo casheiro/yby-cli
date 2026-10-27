@@ -48,9 +48,9 @@ func (p *PolarisBackend) IsAvailable() bool {
 // ScanCluster executa uma auditoria Polaris no namespace especificado
 // e retorna os findings mapeados para o formato unificado.
 func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error) {
-	// Silenciar logs do Polaris (usa logrus internamente)
-	logrus.SetOutput(io.Discard)
-	log.SetOutput(io.Discard)
+	// Silenciar logs do Polaris (usa logrus internamente) só durante a chamada: o
+	// processo é o do plugin inteiro e o resto do scan precisa do log de volta.
+	defer silenciarLogs()()
 
 	// Carregar configuração padrão do Polaris
 	cfg, err := polarisconfig.MergeConfigAndParseFile("", false)
@@ -121,6 +121,19 @@ func (p *PolarisBackend) clienteDinamico() (dynamic.Interface, error) {
 		return nil, fmt.Errorf("falha ao obter rest config: %w", err)
 	}
 	return dynamic.NewForConfig(restConfig)
+}
+
+// silenciarLogs manda o logrus e o log padrão para io.Discard e devolve a função que
+// restaura os destinos de antes.
+func silenciarLogs() func() {
+	logrusAntes := logrus.StandardLogger().Out
+	logAntes := log.Writer()
+	logrus.SetOutput(io.Discard)
+	log.SetOutput(io.Discard)
+	return func() {
+		logrus.SetOutput(logrusAntes)
+		log.SetOutput(logAntes)
+	}
 }
 
 // mapPolarisResults converte os resultados da auditoria Polaris para o formato

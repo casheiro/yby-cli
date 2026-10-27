@@ -3,14 +3,19 @@
 package backends
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/validator"
+	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 )
@@ -223,5 +228,29 @@ func TestMapPolarisResults_RBACDoClusterSoNoEscopo(t *testing.T) {
 	f := achados[0]
 	if f.Resource != "ClusterRole/do-payments" || f.Namespace != "" || f.Scope != "cluster" {
 		t.Errorf("ClusterRole no scan de payments: %+v, queria sem namespace e com escopo cluster", f)
+	}
+}
+
+// O Polaris silencia o log só durante a chamada: o logrus e o log padrão voltam ao
+// destino de antes, mesmo quando o scan falha cedo.
+func TestPolarisBackend_ScanClusterRestauraOsLogs(t *testing.T) {
+	var logrusAntes, logAntes bytes.Buffer
+	logrus.SetOutput(&logrusAntes)
+	log.SetOutput(&logAntes)
+	t.Cleanup(func() {
+		logrus.SetOutput(os.Stderr)
+		log.SetOutput(os.Stderr)
+	})
+
+	b := NewPolarisBackend(func() (*rest.Config, error) { return nil, errors.New("sem cluster") })
+	if _, err := b.ScanCluster(context.Background(), fake.NewSimpleClientset(), "default"); err == nil {
+		t.Fatal("ScanCluster() deveria falhar sem config do cluster")
+	}
+
+	if logrus.StandardLogger().Out != io.Writer(&logrusAntes) {
+		t.Errorf("logrus ficou em %v, queria o destino de antes", logrus.StandardLogger().Out)
+	}
+	if log.Writer() != io.Writer(&logAntes) {
+		t.Errorf("log padrão ficou em %v, queria o destino de antes", log.Writer())
 	}
 }
