@@ -612,11 +612,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** a wiki ainda não documenta o `sentinel scan --no-ai` (#218) nem as mudanças de comportamento das fases acima.
   - **Fazer:** depois da release que levar o #218 e as fases, acrescentar uma linha em `docs/wiki/Plugins.md` para o `--no-ai`, mais as mudanças que pedirem. A wiki é submódulo e publica direto no push: só depois da release.
   - **Verificar:** a wiki descreve o que a versão publicada faz.
-- [ ] **P03 · CHANGELOG**
+- [x] **P03 · CHANGELOG**
   - **Problema:** o CHANGELOG registra o que pede atenção de quem já usa o yby, e as fases mudam comportamento.
   - **Fazer:** registrar, para a release, o que mudou de comportamento: relatório do Sentinel com novo nome, `--fix` que confirma, seções novas, escopo do RBAC, Synapstor refazendo o índice ao trocar de modelo, formato de UKI, Viz no ambiente do core.
   - **Verificar:** o CHANGELOG cobre cada mudança de comportamento.
-  - **Rascunho (27/10):** o texto está pronto em `changelog-rascunho.md`, nesta pasta, conferido contra o código, com o que quebra scripts no topo e a tabela de conferência por tarefa. O CHANGELOG é escrito no commit da release: a caixa fecha quando o texto for colado ali.
+  - **Rascunho (27/10):** o texto está pronto em `changelog-rascunho.md`, nesta pasta, conferido contra o código, com o que quebra scripts no topo e a tabela de conferência por tarefa. O CHANGELOG é escrito no commit da release: a caixa fecha quando o texto for colado ali. Colado como `v5.8.2` em 27/10, antes do merge do PR da release.
 
 ---
 
@@ -778,3 +778,4 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 27/10/2026 | P01 | O detalhe por cima ganhou um aperto novo (`semBranco`: AUDITORIA RECENTE logo abaixo da IDENTIDADE, sem a linha em branco, só em coluna única) antes de perder a auditoria; a 72×20 o quadro mostra a identidade, o token e o último registro, com o aviso de rolagem da tabela; só o golden de 72×20 mudou, e a 80×16 (duas colunas, limite de 5 linhas) segue sem a auditoria | este commit |
 | 27/10/2026 | P03 (rascunho) | Texto do CHANGELOG para a release dos #220 a #226 em `changelog-rascunho.md`: o que quebra scripts no topo, uma seção por instrumento e para autores de plugin, e a tabela de conferência por tarefa; as afirmações tiradas do Histórico foram conferidas no código (5 corrigidas). A caixa fica aberta até a release | este commit |
+| 27/10/2026 | P03 | Rascunho colado no `CHANGELOG.md` como `v5.8.2: correções dos plugins`, acima da v5.8.0, antes do merge do PR da release (#229), que leva a `develop` com os #220 a #227; a tabela de conferência fica só no rascunho | este commit |

@@ -1,6 +1,6 @@
 # Rascunho do CHANGELOG (P03): correções dos plugins
 
-> Este é o rascunho da tarefa P03. O texto abaixo, da linha `## vX.Y.Z` até a linha `---`, é para colar no `CHANGELOG.md`, acima da seção `## v5.8.0`, no commit da release que levar os PRs #220 a #226. O título da versão (número e subtítulo) fica para a release. A tabela de conferência depois da linha `---` não vai para o CHANGELOG.
+> Colado no `CHANGELOG.md` como `v5.8.2` em 27/10/2026; vale o texto de lá. Este é o rascunho da tarefa P03. O texto abaixo, da linha `## vX.Y.Z` até a linha `---`, é para colar no `CHANGELOG.md`, acima da seção `## v5.8.0`, no commit da release que levar os PRs #220 a #226. O título da versão (número e subtítulo) fica para a release. A tabela de conferência depois da linha `---` não vai para o CHANGELOG.
 
 ## vX.Y.Z: correções dos plugins
 
