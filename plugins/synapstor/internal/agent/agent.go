@@ -28,7 +28,6 @@ type SynapstorResponse struct {
 	Tags     tags   `json:"tags"`
 	Filename string `json:"filename"`
 	Content  string `json:"content"`
-	Summary  string `json:"summary"`
 }
 
 // tags aceita a lista de tags em JSON ou num texto separado por vírgulas, que é como os
@@ -352,7 +351,7 @@ func (a *Agent) saveResponse(ctx context.Context, respJSON, tipoPadrao, promptCo
 		correctionPrompt := fmt.Sprintf(
 			"A resposta anterior teve o seguinte problema de validação: %v\n"+
 				"Corrija e reenvie no formato JSON correto com os campos: title, id, tipo (%s), tags, "+
-				"filename (formato UKI-TIMESTAMP-SLUG.md), content, summary.\n"+
+				"filename (formato UKI-TIMESTAMP-SLUG.md), content.\n"+
 				"Resposta original:\n%s", err, strings.Join(uki.Tipos, ", "), cleanJSON)
 
 		retryJSON, retryErr := a.Provider.Completion(ctx, prompts.Get(promptCorrecao), correctionPrompt)

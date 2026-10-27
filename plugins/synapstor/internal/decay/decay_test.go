@@ -81,7 +81,7 @@ func TestAnalyzeDecayWithRunner_DetectaStale(t *testing.T) {
 	}
 
 	// O documento antigo (>90 dias) deve ser stale
-	stale := FindStale(infos)
+	stale := filtrarStale(infos)
 	if len(stale) == 0 {
 		t.Error("esperado ao menos 1 UKI stale")
 	}
@@ -92,6 +92,18 @@ func TestAnalyzeDecayWithRunner_DetectaStale(t *testing.T) {
 			t.Error("documento recente não deveria ser stale")
 		}
 	}
+}
+
+// filtrarStale devolve só os UKIs marcados como stale; os testes conferem o IsStale pelo
+// próprio resultado, sem uma função de produção só para isso.
+func filtrarStale(infos []DecayInfo) []DecayInfo {
+	var stale []DecayInfo
+	for _, info := range infos {
+		if info.IsStale {
+			stale = append(stale, info)
+		}
+	}
+	return stale
 }
 
 func TestAnalyzeDecayWithRunner_ComAtividadeGit(t *testing.T) {
@@ -114,7 +126,7 @@ func TestAnalyzeDecayWithRunner_ComAtividadeGit(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 
-	stale := FindStale(infos)
+	stale := filtrarStale(infos)
 	if len(stale) != 0 {
 		t.Errorf("nenhum UKI deveria ser stale com atividade git recente, obtido %d", len(stale))
 	}
@@ -125,22 +137,6 @@ func TestAnalyzeDecayWithRunner_DiretorioInexistente(t *testing.T) {
 	_, err := AnalyzeDecayWithRunner("/caminho/inexistente", "/tmp", mock)
 	if err == nil {
 		t.Error("esperado erro para diretório inexistente")
-	}
-}
-
-func TestFindStale_Filtra(t *testing.T) {
-	infos := []DecayInfo{
-		{Title: "Ativo", IsStale: false},
-		{Title: "Obsoleto", IsStale: true},
-		{Title: "Também Ativo", IsStale: false},
-	}
-
-	stale := FindStale(infos)
-	if len(stale) != 1 {
-		t.Errorf("esperado 1 stale, obtido %d", len(stale))
-	}
-	if stale[0].Title != "Obsoleto" {
-		t.Errorf("esperado 'Obsoleto', obtido %q", stale[0].Title)
 	}
 }
 

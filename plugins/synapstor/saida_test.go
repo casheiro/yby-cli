@@ -538,7 +538,7 @@ func TestDecay_Golden(t *testing.T) {
 // respostaDoUKI é a resposta falsa da IA no capture e no study.
 const respostaDoUKI = "```json\n{\"title\": \"Rollback do payments\", \"id\": \"deploy.argo.rollback\", \"tipo\": \"padrao\", " +
 	"\"tags\": [\"argo-cd\", \"rollback\"], \"filename\": \"UKI-1761390300-rollback.md\", " +
-	"\"content\": \"# Rollback do payments\\n\\nUse o histórico do Argo CD.\", \"summary\": \"rollback\"}\n```"
+	"\"content\": \"# Rollback do payments\\n\\nUse o histórico do Argo CD.\"}\n```"
 
 func TestCapture_Golden(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.TrueColor)

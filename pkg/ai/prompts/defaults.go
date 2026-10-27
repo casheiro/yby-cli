@@ -107,8 +107,7 @@ Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de mark
 	"tipo": "regra | decisao | padrao | metrica | referencia",
 	"tags": ["tag", "outra-tag"],
 	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
-	"content": "O documento Markdown inteiro, do título em diante...",
-	"summary": "Resumo curto para o índice de busca"
+	"content": "O documento Markdown inteiro, do título em diante..."
 }`
 
 // SynapsotorStudy e o prompt para documentacao de codigo.
@@ -135,18 +134,8 @@ Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de mark
 	"tipo": "referencia",
 	"tags": ["tag", "outra-tag"],
 	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
-	"content": "O documento Markdown inteiro, do título em diante...",
-	"summary": "Resumo curto para o índice de busca"
+	"content": "O documento Markdown inteiro, do título em diante..."
 }`
-
-// SynapsotorTagger e o prompt para auto-tagging de UKIs.
-const SynapsotorTagger = `Você é um classificador de documentação técnica.
-Dado o conteúdo de um documento, extraia entre 3 e 7 tags relevantes que descrevam os tópicos principais.
-As tags devem ser palavras-chave em inglês, lowercase, sem espaços (use hífen se necessário).
-Exemplos de tags: "kubernetes", "deployment", "networking", "ci-cd", "monitoring", "security", "helm".
-
-Responda APENAS com um JSON array de strings. Exemplo:
-["kubernetes", "deployment", "helm"]`
 
 // BardClassify e o prompt para classificacao de intencao do usuario no Bard.
 const BardClassify = `Voce e um classificador de intencoes. Dada uma mensagem do usuario, identifique qual ferramenta deve ser executada.

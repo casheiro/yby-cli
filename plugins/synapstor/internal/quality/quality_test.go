@@ -192,35 +192,6 @@ func TestScoreAll_DiretorioInexistente(t *testing.T) {
 	}
 }
 
-func TestFormatScore(t *testing.T) {
-	qs := QualityScore{
-		Path:  "/tmp/UKI-1.md",
-		Title: "Teste",
-		Score: 75,
-	}
-
-	result := FormatScore(qs)
-	if result == "" {
-		t.Error("resultado não deve ser vazio")
-	}
-	if !contains(result, "75") {
-		t.Error("resultado deve conter o score")
-	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
 // TestScoreUKI_FrontmatterDaEspecificacao: um UKI só com o frontmatter da especificação
 // tem metadados, e o contexto vale em qualquer caixa e com numeração.
 func TestScoreUKI_FrontmatterDaEspecificacao(t *testing.T) {

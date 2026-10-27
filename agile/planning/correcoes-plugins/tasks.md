@@ -307,7 +307,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - tirar o H1 duplicado;
     - conferir a hipótese do MDX no Docusaurus 3 (`{{ }}`, `<pod>`) e escapar ou documentar.
   - **Verificar:** testes.
-- [ ] **Y13 · Código morto**
+- [x] **Y13 · Código morto**
   - **Problema:** código sem uso:
     - `internal/graph`;
     - `internal/tagger`, a menos que vire as tags do Y12;
@@ -317,6 +317,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o campo `Summary` descartado (`agent.go:~26`): usar como metadado ou tirar do prompt;
     - `semEmbeddings` (Y06).
   - **Fazer:** apagar ou ligar, conforme indicado em cada item.
+  - **Decisão (26/10, execução):** `Summary` sai do prompt e do struct (nada o lê; o índice usa o título e o trecho); `internal/tagger` sai junto com o prompt `synapstor.tagger`, porque as tags já vêm da resposta da IA no capture (Y07); `internal/graph` sai sem consumidor e sem promessa na ajuda ou no README.
   - **Verificar:** `go vet`, testes.
 
 ### Fase 4 · Sentinel
@@ -688,6 +689,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |
 | 26/10/2026 | Y07 | O pacote `internal/uki` lista os UKIs com as subpastas de domínio e lê os metadados do frontmatter em PT-BR, do em inglês e das linhas em negrito; quality, decay, export e index usam os dois, o export sai com um frontmatter só, o capture e o study gravam o frontmatter da especificação (ID, tipo e tags da IA; status e datas do código) e o `UKI_SPEC.md` foi traduzido, com os tipos `regra`, `decisao`, `padrao`, `metrica` e `referencia`. | este commit |
 | 26/10/2026 | Y08 | O `study` quebra a pergunta em termos sem palavras vazias, pontua nome > caminho > conteúdo e só então corta em 50, usa `git ls-files` (respeita o `.gitignore`), pula testes e goldens, devolve caminhos com barras, pede e corrige a resposta com o prompt `synapstor.study` e a mensagem ao modelo saiu em PT-BR. | este commit |
+| 26/10/2026 | Y13 | Saíram o `internal/graph` e o `internal/tagger` (sem uso fora dos testes), o prompt `synapstor.tagger`, `quality.FormatScore` e `decay.FindStale` (os testes de decay filtram `IsStale` por helper) e o campo `Summary` da resposta, que saiu do prompt e do JSON; `splitMarkdown` e `semEmbeddings` já tinham saído nos Y05 e Y06. | este commit |
 
 ### Fase 4 · Sentinel
 

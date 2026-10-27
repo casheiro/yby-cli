@@ -201,14 +201,3 @@ func getLastGitActivity(runner CommandRunner, projectDir, filePath string) time.
 
 	return t
 }
-
-// FindStale filtra apenas os UKIs considerados stale.
-func FindStale(infos []DecayInfo) []DecayInfo {
-	var stale []DecayInfo
-	for _, info := range infos {
-		if info.IsStale {
-			stale = append(stale, info)
-		}
-	}
-	return stale
-}

@@ -60,8 +60,7 @@ func TestCapture(t *testing.T) {
 		"title": "Test UKI",
 		"tipo": "regra",
 		"filename": "UKI-123-test.md",
-		"content": "**ID:** UKI-MOCK-TEST\n# Test UKI\nContent here.",
-		"summary": "Summary"
+		"content": "**ID:** UKI-MOCK-TEST\n# Test UKI\nContent here."
 	}`
 
 	mockProvider := &MockProvider{
@@ -199,14 +198,14 @@ func TestSaveResponse_ComValidacaoERetry(t *testing.T) {
 	// Primeira resposta inválida (título vazio), segunda resposta válida
 	callCount := 0
 	mockProvider := &MockProvider{
-		Response: `{"title": "Corrigido", "tipo": "padrao", "filename": "UKI-123-corrigido.md", "content": "conteúdo corrigido", "summary": "resumo"}`,
+		Response: `{"title": "Corrigido", "tipo": "padrao", "filename": "UKI-123-corrigido.md", "content": "conteúdo corrigido"}`,
 	}
 
 	// Simular resposta inválida na primeira chamada
 	agent := NewAgent(mockProvider, tmpDir)
 
 	// Usar diretamente saveResponse com JSON inválido (título vazio)
-	invalidJson := `{"title": "", "filename": "UKI-123-teste.md", "content": "conteúdo", "summary": "resumo"}`
+	invalidJson := `{"title": "", "filename": "UKI-123-teste.md", "content": "conteúdo"}`
 	res, err := agent.saveResponse(context.Background(), invalidJson, "", "synapstor.capture")
 	if err != nil {
 		t.Fatalf("saveResponse deveria ter corrigido via retry, mas falhou: %v", err)
@@ -288,7 +287,7 @@ func TestCapture_NomeDoArquivoFicaNaPastaDosUKIs(t *testing.T) {
 // ganha um sufixo em vez de apagar o anterior.
 func TestCapture_NaoSobrescreveUKI(t *testing.T) {
 	raiz := t.TempDir()
-	resp := `{"title": "Deploy", "tipo": "regra", "filename": "UKI-1-deploy.md", "content": "# Novo", "summary": ""}`
+	resp := `{"title": "Deploy", "tipo": "regra", "filename": "UKI-1-deploy.md", "content": "# Novo"}`
 	agt := NewAgent(&MockProvider{Response: resp}, raiz)
 	primeiro, err := agt.Capture(context.Background(), "texto")
 	if err != nil {
@@ -331,7 +330,7 @@ func TestNomeDoUKI(t *testing.T) {
 func TestCapture_GravaNoFormatoDaEspecificacao(t *testing.T) {
 	raiz := t.TempDir()
 	resp := `{"title": "Saída em JSON", "id": "CLI.UX.Saída JSON", "tipo": "Decisão", "tags": ["CLI", "json"],
-		"filename": "UKI-1-saida.md", "content": "---\nstatus: active\ncreated_at: 1999-01-01\n---\n# Saída em JSON\n\n## Problema\n", "summary": ""}`
+		"filename": "UKI-1-saida.md", "content": "---\nstatus: active\ncreated_at: 1999-01-01\n---\n# Saída em JSON\n\n## Problema\n"}`
 	agt := NewAgent(&MockProvider{Response: resp}, raiz)
 	agt.agora = func() time.Time { return time.Date(2026, 10, 26, 15, 0, 0, 0, time.Local) }
 	res, err := agt.Capture(context.Background(), "texto")
@@ -393,8 +392,8 @@ func TestStudy_CorrecaoUsaOPromptDoStudy(t *testing.T) {
 		t.Fatal(err)
 	}
 	prov := &provedorQueGrava{respostas: []string{
-		`{"title": "", "filename": "UKI-1-x.md", "content": "c", "summary": "s"}`,
-		`{"title": "Ok", "tipo": "referencia", "filename": "UKI-1-ok.md", "content": "# Ok", "summary": "s"}`,
+		`{"title": "", "filename": "UKI-1-x.md", "content": "c"}`,
+		`{"title": "Ok", "tipo": "referencia", "filename": "UKI-1-ok.md", "content": "# Ok"}`,
 	}}
 	if _, err := NewAgent(prov, raiz).Study(context.Background(), "bootstrap"); err != nil {
 		t.Fatalf("Study falhou: %v", err)

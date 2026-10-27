@@ -2,9 +2,7 @@
 package quality
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -175,9 +173,4 @@ func ScoreAll(ukiDir string) ([]QualityScore, error) {
 	}
 
 	return scores, nil
-}
-
-// FormatScore formata um QualityScore para exibição.
-func FormatScore(qs QualityScore) string {
-	return fmt.Sprintf("[%3d/100] %s (%s)", qs.Score, qs.Title, filepath.Base(qs.Path))
 }
