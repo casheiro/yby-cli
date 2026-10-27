@@ -32,7 +32,9 @@ func All() []*Tool {
 	return ordenadas()
 }
 
-// FormatToolsPrompt gera a descrição das ferramentas disponíveis para injeção no system prompt.
+// FormatToolsPrompt gera a descrição das ferramentas disponíveis para injeção no system
+// prompt. Só descreve: quem escolhe e roda a ferramenta é o classificador do Bard, antes
+// da resposta, e nada do que a IA escrever na resposta é executado.
 func FormatToolsPrompt() string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -42,11 +44,6 @@ func FormatToolsPrompt() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("## Ferramentas Disponíveis\n\n")
-	sb.WriteString("Para executar uma ferramenta, responda com um bloco JSON:\n")
-	sb.WriteString("```json\n{\"tool\": \"nome_da_ferramenta\", \"params\": {\"chave\": \"valor\"}}\n```\n\n")
-	sb.WriteString("Só use ferramentas quando necessário. Responda diretamente quando possível.\n\n")
-
 	for _, tool := range ordenadas() {
 		sb.WriteString(fmt.Sprintf("### %s\n", tool.Name))
 		sb.WriteString(fmt.Sprintf("%s\n", tool.Description))

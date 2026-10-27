@@ -185,7 +185,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `pkg/ai/claude_cli.go` e `pkg/ai/gemini_cli.go` passam system prompt, histórico, blueprint e saída da tool num único argumento de `-p`, com `exec.Command` sem ctx. Isso estoura no Windows (~32 K) e no Linux (128 KiB por argumento), que é a mesma classe do #217, e o esc não mata o `claude`.
   - **Fazer:** prompt pelo stdin (confirmar a forma suportada pelo `claude -p` e pelo `gemini -p` atuais) e `exec.CommandContext`.
   - **Verificar:** teste com comando falso conferindo stdin e cancelamento; teste real local com o `claude` instalado, se houver.
-- [ ] **B11 · System prompt coerente; parser e guardrails mortos**
+- [x] **B11 · System prompt coerente; parser e guardrails mortos**
   - **Problema:**
     - o `BardSystem` diz "Voce NAO precisa chamar nenhuma ferramenta manualmente" (`pkg/ai/prompts/defaults.go:~47-48`) e injeta `FormatToolsPrompt`, que manda responder com bloco JSON (`tools/registry.go:~50-52`);
     - `ParseToolCalls`/`ValidateToolCall` só aparecem nos testes;
@@ -679,6 +679,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B04 | Tools YAML com os intents, a do projeto vencendo a global e só com confiança (`yby plugin trust <arquivo>` grava o SHA-256 do arquivo em `pkg/confianca`; sem ela, ou mudado, aparece no `/ferramentas` com o motivo), o mesmo para os prompts de `.yby/prompts`; o `command` roda sem shell, com cada `{{param}}` como argumento inteiro, valor com "-" recusado, `YBY_PARAM_<NOME>` no env, contexto do Bard e prazo de 2 min; no Windows o programa que de fato roda pelo cmd.exe, resolvido pelo PATHEXT mesmo em caminho relativo sem extensão (`cmd`, `.bat`, `.cmd` como o `az.cmd`) recusa valor com metacaractere do cmd (aspas, `%`, `&`, barra vertical, `<`, `>`, `^`, `!`, parênteses ou quebra de linha), e comando que só funciona num shell (ou shell com `{{}}`) não carrega. | este commit |
 | 26/10/2026 | B01 | O Bard acha o Sentinel e o Atlas como o core (`~/.yby/plugins` e depois `./.yby/plugins`, `yby-plugin-<nome>` com `.exe` no Windows, sem os nomes legados) e só roda o binário que passa no `plugin.IsTrusted`, o mesmo registro do core; sem confiança, o `/ferramentas` diz "não confiável · rode yby plugin trust". Sem contrato novo: o `$YBY_BIN sentinel` perderia o `--context` da sessão (o Sentinel lê o kube_context só do pedido) e o `YBY_PLUGINS` faria o core calcular o SHA-256 de todo plugin a cada comando. | este commit |
 | 26/10/2026 | B09 | `invokePlugin` roda com `exec.CommandContext` (o esc mata o Sentinel/Atlas, com `WaitDelay`); o `EnrichContext` tem prazo total de 5 s e o kubectl leva `--request-timeout=5s`, então cluster fora do ar não segura a abertura da TUI. | este commit |
+| 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
 
 ### Fase 3 · Synapstor
 

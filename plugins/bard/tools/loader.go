@@ -298,8 +298,10 @@ func envParam(nome string) string {
 // inteiro (some se o valor é vazio, e recusa valor começando com "-", que viraria opção);
 // dentro de outra palavra, o valor entra no lugar dele. Os parâmetros declarados vão
 // também em YBY_PARAM_<NOME>. No Windows, se o programa roda pelo cmd.exe (cmd, .bat,
-// .cmd), recusa valor com caractere que o cmd interpretaria (metaCmd). Roda com o
-// contexto do Bard (esc cancela) e com prazo.
+// .cmd), recusa valor com caractere que o cmd interpretaria (metaCmd). Barra a operação
+// destrutiva que os valores montariam (conferirGuardas): as nativas só leem, e as
+// externas são as únicas ferramentas que podem escrever. Roda com o contexto do Bard
+// (esc cancela) e com prazo.
 func executeExternalCommand(ctx context.Context, palavras, declarados []string, params map[string]string) (string, error) {
 	args := make([]string, 0, len(palavras))
 	// usados são os parâmetros que chegam ao programa, por argumento ou por env
@@ -335,6 +337,15 @@ func executeExternalCommand(ctx context.Context, palavras, declarados []string, 
 			}
 		}
 		args = append(args, p)
+	}
+
+	// As guardas olham o comando montado e os valores, que vão também pela env.
+	linha := strings.Join(args, " ")
+	for _, nome := range declarados {
+		linha += "\n" + params[nome]
+	}
+	if err := conferirGuardas(strings.Join(palavras, " "), linha); err != nil {
+		return "", err
 	}
 
 	ctxPrazo, cancelar := context.WithTimeout(ctx, tempoExterna)

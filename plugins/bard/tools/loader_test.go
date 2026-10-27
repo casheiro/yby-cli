@@ -73,6 +73,9 @@ func TestAjudanteExterno(t *testing.T) {
 	if nome := os.Getenv("YBY_AJUDANTE_ENV"); nome != "" {
 		fmt.Println(nome + "=" + os.Getenv(nome))
 	}
+	if marca := os.Getenv("YBY_AJUDANTE_MARCA"); marca != "" {
+		_ = os.WriteFile(marca, []byte("rodou"), 0o644)
+	}
 	if os.Getenv("YBY_AJUDANTE_DORMIR") != "" {
 		time.Sleep(20 * time.Second)
 	}
@@ -279,6 +282,33 @@ func TestExecutarExterna_ValorNaoViraComando(t *testing.T) {
 	esperado := "; touch MARCA\nx $(touch MARCA) `touch MARCA`\nfim"
 	if saida != esperado {
 		t.Errorf("argumentos = %q, esperava %q", saida, esperado)
+	}
+}
+
+// A IA não transforma uma ferramenta externa genérica em "delete namespace": as guardas
+// barram antes de o programa rodar. A mesma ferramenta, com leitura, roda.
+func TestExecutarExterna_GuardasAntesDeRodar(t *testing.T) {
+	home, projeto := usarCasa(t)
+	t.Setenv("YBY_AJUDANTE_EXTERNO", "1")
+	marca := filepath.Join(projeto, "MARCA")
+	t.Setenv("YBY_AJUDANTE_MARCA", marca)
+	escreverTool(t, home, "kube.yaml", toolAjudante("kube", `{{p}} {{q}} prod`))
+	LoadExternalTools()
+
+	_, err := rodar(t, "kube", map[string]string{"p": "delete", "q": "namespace"})
+	if err == nil || !strings.Contains(err.Error(), "operação bloqueada") {
+		t.Fatalf("esperava bloqueio do delete namespace, obteve %v", err)
+	}
+	if _, err := os.Stat(marca); err == nil {
+		t.Fatal("o programa rodou apesar do bloqueio")
+	}
+
+	saida, err := rodar(t, "kube", map[string]string{"p": "get", "q": "pods"})
+	if err != nil {
+		t.Fatalf("leitura não deveria ser bloqueada: %v", err)
+	}
+	if saida != "get\npods\nprod" {
+		t.Errorf("saída = %q", saida)
 	}
 }
 
