@@ -117,14 +117,14 @@ func (a *Agent) Capture(ctx context.Context, input string) (*Resultado, error) {
 	if err != nil {
 		return nil, err
 	}
-	return a.saveResponse(ctx, respJSON, "")
+	return a.saveResponse(ctx, respJSON, "", "synapstor.capture")
 }
 
 // Study scans code and generates documentation
 func (a *Agent) Study(ctx context.Context, query string) (*Resultado, error) {
 	et := a.etapas()
 	et.Iniciar("procurar no código")
-	results, err := scanner.Scan(a.RootDir, query)
+	results, err := scanner.Scan(ctx, a.RootDir, query)
 	if err != nil {
 		et.Falhar("")
 		return nil, yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para ler os arquivos do projeto").
@@ -142,16 +142,16 @@ func (a *Agent) Study(ctx context.Context, query string) (*Resultado, error) {
 
 	// Construct context from files
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("User Query: Please document the logic related to '%s'.\n\nRelevant Code Files:\n", query))
+	sb.WriteString(fmt.Sprintf("Pedido: documente a lógica relacionada a '%s'.\n\nArquivos de código relevantes:\n", query))
 
 	// Limit tokens crudely
 	totalChars := 0
 	limit := 100000 // approx 25k tokens
 
 	for _, r := range results {
-		content := fmt.Sprintf("--- FILE: %s ---\n%s\n\n", r.Path, r.Content)
+		content := fmt.Sprintf("--- ARQUIVO: %s ---\n%s\n\n", r.Path, r.Content)
 		if totalChars+len(content) > limit {
-			sb.WriteString(fmt.Sprintf("--- FILE: %s ---\n(Truncated due to context limit)\n\n", r.Path))
+			sb.WriteString(fmt.Sprintf("--- ARQUIVO: %s ---\n(Truncado pelo limite de contexto)\n\n", r.Path))
 			continue
 		}
 		sb.WriteString(content)
@@ -165,7 +165,7 @@ func (a *Agent) Study(ctx context.Context, query string) (*Resultado, error) {
 		return nil, err
 	}
 	// o study documenta o código: sem tipo na resposta, o UKI é uma referência
-	return a.saveResponse(ctx, respJSON, uki.TipoReferencia)
+	return a.saveResponse(ctx, respJSON, uki.TipoReferencia, "synapstor.study")
 }
 
 // perguntar pede à IA o UKI, na etapa "estruturar com a IA".
@@ -331,8 +331,9 @@ func respostaInvalida(err error, resposta string) error {
 }
 
 // saveResponse confere a resposta da IA (pedindo uma correção, se faltar algo) e grava o
-// UKI; tipoPadrao vale quando a resposta não traz o tipo.
-func (a *Agent) saveResponse(ctx context.Context, respJSON, tipoPadrao string) (*Resultado, error) {
+// UKI; tipoPadrao vale quando a resposta não traz o tipo, e promptCorrecao é o prompt do
+// próprio comando (capture ou study), usado no pedido de correção.
+func (a *Agent) saveResponse(ctx context.Context, respJSON, tipoPadrao, promptCorrecao string) (*Resultado, error) {
 	et := a.etapas()
 	et.Iniciar("conferir a resposta")
 	cleanJSON := limparJSON(respJSON)
@@ -354,7 +355,7 @@ func (a *Agent) saveResponse(ctx context.Context, respJSON, tipoPadrao string) (
 				"filename (formato UKI-TIMESTAMP-SLUG.md), content, summary.\n"+
 				"Resposta original:\n%s", err, strings.Join(uki.Tipos, ", "), cleanJSON)
 
-		retryJSON, retryErr := a.Provider.Completion(ctx, prompts.Get("synapstor.capture"), correctionPrompt)
+		retryJSON, retryErr := a.Provider.Completion(ctx, prompts.Get(promptCorrecao), correctionPrompt)
 		if retryErr != nil {
 			et.Falhar("")
 			return nil, erroDaIA(retryErr, a.Provider)

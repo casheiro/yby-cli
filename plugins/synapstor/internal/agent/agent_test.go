@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
@@ -206,7 +207,7 @@ func TestSaveResponse_ComValidacaoERetry(t *testing.T) {
 
 	// Usar diretamente saveResponse com JSON inválido (título vazio)
 	invalidJson := `{"title": "", "filename": "UKI-123-teste.md", "content": "conteúdo", "summary": "resumo"}`
-	res, err := agent.saveResponse(context.Background(), invalidJson, "")
+	res, err := agent.saveResponse(context.Background(), invalidJson, "", "synapstor.capture")
 	if err != nil {
 		t.Fatalf("saveResponse deveria ter corrigido via retry, mas falhou: %v", err)
 	}
@@ -367,5 +368,41 @@ func TestCapture_TipoForaDaListaPedeCorrecao(t *testing.T) {
 	resp = SynapstorResponse{Title: "A", Filename: "UKI-1-a.md", Content: "# A\n**Tipo:** Regra\n"}
 	if err := validateResponse(&resp, ""); err != nil || resp.Tipo != "regra" {
 		t.Errorf("esperado o tipo do content, obtido %q (%v)", resp.Tipo, err)
+	}
+}
+
+// provedorQueGrava guarda os prompts de sistema de cada chamada e responde em sequência.
+type provedorQueGrava struct {
+	MockProvider
+	respostas []string
+	sistemas  []string
+}
+
+func (p *provedorQueGrava) Completion(ctx context.Context, sistema, usuario string) (string, error) {
+	p.sistemas = append(p.sistemas, sistema)
+	r := p.respostas[0]
+	p.respostas = p.respostas[1:]
+	return r, nil
+}
+
+// TestStudy_CorrecaoUsaOPromptDoStudy: a resposta inválida do study é corrigida com o prompt
+// do próprio comando, não com o do capture.
+func TestStudy_CorrecaoUsaOPromptDoStudy(t *testing.T) {
+	raiz := t.TempDir()
+	if err := os.WriteFile(filepath.Join(raiz, "bootstrap.go"), []byte("package bootstrap\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	prov := &provedorQueGrava{respostas: []string{
+		`{"title": "", "filename": "UKI-1-x.md", "content": "c", "summary": "s"}`,
+		`{"title": "Ok", "tipo": "referencia", "filename": "UKI-1-ok.md", "content": "# Ok", "summary": "s"}`,
+	}}
+	if _, err := NewAgent(prov, raiz).Study(context.Background(), "bootstrap"); err != nil {
+		t.Fatalf("Study falhou: %v", err)
+	}
+	if len(prov.sistemas) != 2 {
+		t.Fatalf("esperadas 2 chamadas, obtidas %d", len(prov.sistemas))
+	}
+	if !strings.HasPrefix(prov.sistemas[1], prompts.Get("synapstor.study")) {
+		t.Error("a correção não usou o prompt synapstor.study")
 	}
 }

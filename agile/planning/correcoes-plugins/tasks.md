@@ -272,7 +272,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prompts de capture e study gerando o formato da especificação;
     - quality aceitando as seções da especificação ("## Contexto" sem depender da caixa).
   - **Verificar:** testes com UKI nos dois formatos e em subpasta.
-- [ ] **Y08 · `study`: busca, prioridade, idioma e prompt de correção**
+- [x] **Y08 · `study`: busca, prioridade, idioma e prompt de correção**
   - **Problema:**
     - `scanner.go:~25,84,100` procura a frase inteira como substring;
     - o limite de 50 conta os achados por conteúdo antes dos melhores (simulado: `pkg/services/bootstrap` ficou fora para "bootstrap");
@@ -684,6 +684,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
 | 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |
 | 26/10/2026 | Y07 | O pacote `internal/uki` lista os UKIs com as subpastas de domínio e lê os metadados do frontmatter em PT-BR, do em inglês e das linhas em negrito; quality, decay, export e index usam os dois, o export sai com um frontmatter só, o capture e o study gravam o frontmatter da especificação (ID, tipo e tags da IA; status e datas do código) e o `UKI_SPEC.md` foi traduzido, com os tipos `regra`, `decisao`, `padrao`, `metrica` e `referencia`. | este commit |
+| 26/10/2026 | Y08 | O `study` quebra a pergunta em termos sem palavras vazias, pontua nome > caminho > conteúdo e só então corta em 50, usa `git ls-files` (respeita o `.gitignore`), pula testes e goldens, devolve caminhos com barras, pede e corrige a resposta com o prompt `synapstor.study` e a mensagem ao modelo saiu em PT-BR. | este commit |
 
 ### Fase 4 · Sentinel
 
