@@ -150,6 +150,8 @@ Raw Provider → CachedEmbeddingProvider → TokenAwareProvider → CostTracking
 - `RateLimitProvider` — token bucket (`golang.org/x/time/rate`) + circuit breaker (closed/open/half-open). Respeita header `Retry-After`. Config: `ai.rate_limit.requests_per_second`
 - `RetryProvider` — retry com backoff exponencial (cenkalti/backoff) para erros 429/502/503
 
+Os providers CLI (claude-cli, gemini-cli) passam por `wrapCLIProvider`: só `TokenAwareProvider` (com a janela do CLI: 200 mil tokens no Claude, 1 milhão no Gemini, também sem modelo escolhido) e `RetryProvider`. Cache de embeddings, custo e taxa não valem para um processo local que não gera embeddings, não informa o uso nem devolve `APIError`.
+
 **VectorStore** (`pkg/ai/vector_store.go`): wrapper ChromemDB com `AddDocuments`, `Search`, `DeleteDocuments`, `DeleteByMetadata`, `Count`. O indexer do Synapstor usa `DeleteByMetadata` para limpar embeddings de arquivos removidos durante reindexação.
 
 **Ollama batch embeddings**: usa `/api/embed` (batch nativo, Ollama v0.5+) com fallback automático para `/api/embeddings` (sequencial) em versões antigas.

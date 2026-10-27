@@ -209,7 +209,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** o cabeçalho não mostra o modelo vindo de `ai.model` do config.
   - **Fazer:** mostrar o modelo do config.
   - **Verificar:** golden da TUI.
-- [ ] **B14 · Providers CLI sem a cadeia de decorators** (pendência antiga)
+- [x] **B14 · Providers CLI sem a cadeia de decorators** (pendência antiga)
   - **Problema:** claude-cli e gemini-cli não passam pelo `wrapProvider` (`pkg/ai/factory.go`), então ficam sem retry, token-aware e custo.
   - **Fazer:** passar os dois pela cadeia, se ela fizer sentido para eles.
   - **Verificar:** teste da factory.
@@ -680,6 +680,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B01 | O Bard acha o Sentinel e o Atlas como o core (`~/.yby/plugins` e depois `./.yby/plugins`, `yby-plugin-<nome>` com `.exe` no Windows, sem os nomes legados) e só roda o binário que passa no `plugin.IsTrusted`, o mesmo registro do core; sem confiança, o `/ferramentas` diz "não confiável · rode yby plugin trust". Sem contrato novo: o `$YBY_BIN sentinel` perderia o `--context` da sessão (o Sentinel lê o kube_context só do pedido) e o `YBY_PLUGINS` faria o core calcular o SHA-256 de todo plugin a cada comando. | este commit |
 | 26/10/2026 | B09 | `invokePlugin` roda com `exec.CommandContext` (o esc mata o Sentinel/Atlas, com `WaitDelay`); o `EnrichContext` tem prazo total de 5 s e o kubectl leva `--request-timeout=5s`, então cluster fora do ar não segura a abertura da TUI. | este commit |
 | 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
+| 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
 
 ### Fase 3 · Synapstor
 

@@ -133,8 +133,8 @@ func TestGetProviderWithModel_CLIs(t *testing.T) {
 
 	p, _, err := GetProviderWithModel(context.Background(), "claude-cli", "Opus")
 	require.NoError(t, err)
-	c, ok := p.(*ClaudeCLIProvider)
-	require.True(t, ok, "os CLIs seguem sem decorators: %T", p)
+	c, ok := cadeiaCLI(t, p).inner.(*ClaudeCLIProvider)
+	require.True(t, ok, "ClaudeCLIProvider por dentro da cadeia dos CLIs")
 	assert.Equal(t, "opus", c.model)
 	assert.Equal(t, []string{"--model", "opus", "-p"}, c.args())
 	assert.Equal(t, []string{"-p"}, NewClaudeCLIProvider().args(), "sem modelo, o CLI escolhe")

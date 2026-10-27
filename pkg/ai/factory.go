@@ -98,7 +98,7 @@ func createProvider(ctx context.Context, name string) Provider {
 
 // createProviderWithModel cria o provider pelo nome com o modelo dado, se disponível. Com
 // modelo vazio, cada provider usa o do config ou o seu padrão. Os decorators são os
-// mesmos nos dois casos: os CLIs seguem sem eles.
+// mesmos nos dois casos; os CLIs passam pela cadeia deles (wrapCLIProvider).
 func createProviderWithModel(ctx context.Context, name, model string) Provider {
 	switch name {
 	case "ollama":
@@ -129,13 +129,13 @@ func createProviderWithModel(ctx context.Context, name, model string) Provider {
 		p := NewClaudeCLIProvider()
 		p.model = model
 		if p.IsAvailable(ctx) {
-			return p
+			return wrapCLIProvider(p, name, model)
 		}
 	case "gemini-cli":
 		p := NewGeminiCLIProvider()
 		p.model = model
 		if p.IsAvailable(ctx) {
-			return p
+			return wrapCLIProvider(p, name, model)
 		}
 	default:
 		// Verificar providers registrados via build tags (ex: bedrock com tag aws)
@@ -237,6 +237,17 @@ func wrapProvider(p Provider, model string) Provider {
 	rps := getRateLimitConfig(p.Name())
 	rateLimited := NewRateLimitProvider(costTracking, rps)
 	return NewRetryProvider(rateLimited, retry.DefaultOptions(), nil)
+}
+
+// wrapCLIProvider encadeia nos providers CLI só os decorators que valem para eles:
+// Raw -> TokenAware (com a janela do CLI) -> Retry.
+// Fica de fora o cache de embeddings (o CLI não gera embeddings), o custo (o CLI não
+// informa o uso de tokens) e a taxa com o circuit breaker, que são da API HTTP: o CLI é um
+// processo local e nunca devolve APIError. O Retry só repete o que o ErroRetentavel aceita,
+// então a falha do CLI (não autenticado, modelo inexistente) volta na primeira.
+func wrapCLIProvider(p Provider, provider, model string) Provider {
+	tokenAware := newTokenAwareProviderCLI(p, provider, model)
+	return NewRetryProvider(tokenAware, retry.DefaultOptions(), nil)
 }
 
 // getRateLimitConfig retorna a taxa de req/s para o provider,
