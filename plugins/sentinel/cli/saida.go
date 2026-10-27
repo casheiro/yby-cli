@@ -114,9 +114,9 @@ func contar(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// mensagensPolaris traduz, só na tela, as mensagens dos checks do Polaris, que a
-// biblioteca escreve em inglês. O JSON e o relatório markdown continuam com o texto
-// original; um check fora da lista também.
+// mensagensPolaris traduz as mensagens dos checks do Polaris, que a
+// biblioteca escreve em inglês, na tela, no JSON e no markdown (normalizarAchados); um
+// check fora da lista fica com o texto original.
 var mensagensPolaris = map[string]string{
 	"automountServiceAccountToken":             "O token da ServiceAccount é montado automaticamente",
 	"clusterrolebindingClusterAdmin":           "O ClusterRoleBinding aponta para o cluster-admin ou para um ClusterRole com curinga",
@@ -519,4 +519,21 @@ func escreverAnalise(w io.Writer, result AnalysisResult) {
 			fmt.Fprintln(w, "  "+s.Negrito.Render(strings.TrimRight(l, " \r")))
 		}
 	}
+}
+
+// normalizarAchados deixa os achados coerentes para o JSON e o markdown, num ponto só:
+// o type legado acompanha a severity (os checks internos escrevem os dois à mão e
+// divergem) e as mensagens do Polaris saem em PT-BR, como na tela.
+func normalizarAchados(findings []checks.SecurityFinding) []checks.SecurityFinding {
+	for i := range findings {
+		f := &findings[i]
+		f.Severity = checks.Severity(severidadeDe(*f))
+		f.Type = string(f.Severity)
+		if id, ok := strings.CutPrefix(f.CheckID, "polaris/"); ok {
+			if m, ok := mensagensPolaris[id]; ok {
+				f.Message, f.Description = m, m
+			}
+		}
+	}
+	return findings
 }

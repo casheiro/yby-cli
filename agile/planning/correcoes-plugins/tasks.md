@@ -374,7 +374,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - Reliability/Efficiency→baixo ou médio;
     - seções "confiabilidade" e "eficiência" na tela e no relatório.
   - **Verificar:** testes do mapeamento; golden.
-- [ ] **S06 · JSON coerente e em PT-BR**
+- [x] **S06 · JSON coerente e em PT-BR**
   - **Problema:**
     - campos legados se contradizem (`checks/image_signature.go:~80,88`: `Severity: high` com `Type: "critical"`; `checks/pod_root.go:~59-60`);
     - as verificações que não rodaram (`naoRodaram`) só aparecem na tela;
@@ -689,6 +689,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
 | 26/10/2026 | S03 | O achado agrupado do Polaris leva `Resources` (lista inteira, `Resource` é o primeiro, sem "(+N)"); a tela mostra "N recursos" e a lista embaixo (até 5, "e mais K"), o JSON e o relatório trazem todos | este commit |
 | 26/10/2026 | S05 | O Polaris usa a categoria do próprio check: Security danger é crítico e warning é alto ou médio por tabela (endurecimento é médio), os checks de RBAC, rede e secrets vão para as seções deles, e Reliability e Efficiency viram as seções "confiabilidade" e "eficiência" (danger médio, warning baixo), na tela e no relatório, que passa a ter uma seção por categoria | este commit |
+| 26/10/2026 | S06 | O JSON do scan tem `type` igual à `severity` (normalizado num ponto só), mensagens do Polaris em PT-BR também no JSON e no markdown e o campo `nao_rodaram` (backend, verificações, motivo), também no relatório markdown | este commit |
 
 ### Fase 5 · Atlas
 

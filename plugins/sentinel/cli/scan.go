@@ -37,6 +37,17 @@ type ScanReport struct {
 	// IgnoradosPelaAllowlist conta os recursos de RBAC que a allowlist deixou de fora
 	// (cada um uma vez, mesmo que mais de uma verificação o ignore).
 	IgnoradosPelaAllowlist int `json:"ignored_by_allowlist"`
+	// NaoRodaram diz o que o scan não conseguiu verificar, para o JSON não parecer limpo
+	// quando faltou verificação.
+	NaoRodaram []NaoRodou `json:"nao_rodaram,omitempty"`
+}
+
+// NaoRodou registra as verificações de uma fonte que ficaram de fora. Verificacoes vazio
+// quer dizer que a fonte inteira falhou; Motivo é o texto em PT-BR da tela.
+type NaoRodou struct {
+	Backend      string   `json:"backend"`
+	Verificacoes []string `json:"verificacoes,omitempty"`
+	Motivo       string   `json:"motivo"`
 }
 
 // Dependências do scan e do investigate, substituíveis nos testes.
@@ -187,6 +198,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	var sources []string
 	consultou := false
 	var primeiroErro error
+	var naoRodou []NaoRodou
 	// Os backends e os checks registram nesta contagem o que a allowlist deixou de fora.
 	ctx, ignorados := allowlist.ComContagem(ctx)
 
@@ -203,6 +215,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			slog.Debug("o backend falhou", "backend", b.Name(), "erro", errBackend)
 			prog.Detalhe(motivoNaTela(errBackend))
 			c.naoRodaram++
+			naoRodou = append(naoRodou, NaoRodou{Backend: b.Name(), Motivo: motivoNaTela(errBackend)})
 			if primeiroErro == nil {
 				primeiroErro = errBackend
 			}
@@ -215,6 +228,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			// aviso na etapa, e o motivo vai para o log de depuração.
 			slog.Debug("verificações do backend não rodaram", "backend", b.Name(), "erro", parcial.Causa)
 			c.naoRodaram += len(parcial.Falhas)
+			naoRodou = append(naoRodou, NaoRodou{Backend: b.Name(), Verificacoes: parcial.Falhas, Motivo: motivoNaTela(parcial.Causa)})
 			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(parcial.Falhas), "verificação não rodou", "verificações não rodaram"), strings.Join(parcial.Falhas, ", ")))
 		}
 		if len(bf) > 0 {
@@ -266,13 +280,14 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		prog.Concluir(contar(len(findings)-antes, "achado", "achados"))
 		c.naoRodaram += len(falhas)
 		if len(falhas) > 0 {
+			naoRodou = append(naoRodou, NaoRodou{Backend: "checks-internos", Verificacoes: falhas, Motivo: motivoNaTela(primeiroErro)})
 			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(falhas), "check falhou", "checks falharam"), strings.Join(falhas, ", ")))
 		}
 	}
 
 	// 3. Deduplicar findings (mesmo recurso + mesma mensagem)
-	findings = deduplicateFindings(findings)
-	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total()}
+	findings = deduplicateFindings(normalizarAchados(findings))
+	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou}
 	if len(findings) == 0 {
 		return c, nil
 	}
@@ -385,6 +400,13 @@ func exportScanMarkdown(report ScanReport) string {
 	}
 	if t := textoDaAllowlist(report.IgnoradosPelaAllowlist); t != "" {
 		sb.WriteString("**Allowlist:** " + t + "\n")
+	}
+	for _, n := range report.NaoRodaram {
+		sb.WriteString("**Não rodou:** " + n.Backend)
+		if len(n.Verificacoes) > 0 {
+			sb.WriteString(" (" + strings.Join(n.Verificacoes, ", ") + ")")
+		}
+		sb.WriteString(" · " + n.Motivo + "\n")
 	}
 	sb.WriteString("\n")
 	sb.WriteString("## Vulnerabilidades\n")
