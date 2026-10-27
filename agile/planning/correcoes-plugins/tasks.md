@@ -623,11 +623,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 A conferência da wiki contra o código da v5.8.2 achou três erros. Branch `feat/correcoes-pos-release`.
 
-- [ ] **P04 · Descoberta roda plugin não confiável**
+- [x] **P04 · Descoberta roda plugin não confiável**
   - **Problema:** o `Discover` roda o hook `manifest` de todo `yby-plugin-*` de `~/.yby/plugins` e `./.yby/plugins` sem verificar a confiança, e o core descobre os plugins em todo comando: um repositório clonado com `.yby/plugins/yby-plugin-x` executa código em qualquer `yby …` rodado dentro dele.
   - **Fazer:** com a verificação de confiança ligada, o plugin não confiável entra na lista com um manifesto sintético (nome do arquivo, descrição dizendo como confiar, hook `command`), sem executar o binário; `yby <nome>` cai na verificação do executor e `yby plugin trust <nome>` o encontra.
   - **Verificar:** teste com executor falso: o binário não confiável não é executado na descoberta.
-- [ ] **P05 · Dica de confiança com o nome do arquivo**
+- [x] **P05 · Dica de confiança com o nome do arquivo**
   - **Problema:** a dica do erro de confiança manda rodar `yby plugin trust yby-plugin-<nome>`, mas o `trust` procura pelo nome do plugin, então seguir a dica dá "plugin não encontrado".
   - **Fazer:** a mensagem e a dica usam o nome que o `trust` aceita.
   - **Verificar:** teste da dica.
@@ -804,3 +804,4 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 27/10/2026 | S16 | Sem contexto do core, o `kubectl top` do `investigate` roda no kubeconfig padrão com `--context` no current-context (o mesmo cluster do cliente); com ambiente, como antes. A chave do cache de análises ganha o contexto atual também sem ambiente. O `top` roda com prazo de 5 s e o ctx do investigate (`exec.CommandContext`), e prazo estourado vira "indisponíveis". Testes com kubectl falso por processo auxiliar; as goldens não dependem mais do kubectl da máquina. Fica para o usuário: sem ambiente, o namespace padrão continua `default`, não o do contexto do kubeconfig | este commit |
+| 27/10/2026 | P04 e P05 | Com a verificação de confiança ligada (agora também no `yby plugin` e no `yby init`, que não a ligavam), a descoberta não roda o `manifest` de binário não confiável: ele entra com manifesto sintético ("não confiável · rode yby plugin trust <nome>", hook `command`), fica fora do gen-docs e o `yby <nome>` cai no erro do executor, que agora usa o nome que o `trust` aceita (e chega à tela com a dica, pelo `falhaComHint`). O registro guarda caminho, tamanho e mtime: a descoberta só recalcula o hash quando mudam (o executor sempre recalcula), relê o registro antes de gravar o carimbo e grava por temporário e `Rename`. Plugin nenhum toma `help`, `completion` ou `__complete`; `untrust` no Windows sem diferenciar maiúsculas e com `.exe`. Limites que ficam: janela de milissegundos entre a releitura e o `Rename` (só lock de arquivo fecha), leitura rara com "Acesso negado" no Windows durante o `Rename` (o plugin é recusado naquele comando) e o `manifest` confiando no carimbo quando alguém forja o mtime | este commit |

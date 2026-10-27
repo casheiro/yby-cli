@@ -10,6 +10,9 @@ type PluginManifest struct {
 	// plugins e o overview e o backlog do projeto. Declarar o hook context é fornecer
 	// contexto, não consumir. O contexto barato (ambiente pedido) vai a todo plugin.
 	ConsomeContexto bool `json:"consome_contexto,omitempty"`
+	// NaoConfiavel marca o manifesto sintético de um binário que a descoberta não executou
+	// por não ser confiável (ver Manager.EnableTrustCheck). Não vem do plugin.
+	NaoConfiavel bool `json:"-"`
 }
 
 // PluginRequest defines the structure sent to the plugin via STDIN or Env Var.
