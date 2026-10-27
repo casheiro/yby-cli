@@ -518,7 +518,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - aceitar CRLF;
     - usar ou apagar o cache (A13).
   - **Verificar:** testes.
-- [ ] **A10 · Mermaid da IA validado e com prazo**
+- [x] **A10 · Mermaid da IA validado e com prazo**
   - **Problema:**
     - basta `strings.Contains(refined, "flowchart")` (`main.go:~441`), e `extractMermaidFromResponse` devolve a resposta inteira como fallback (`~477-478`);
     - nada confere os nós contra o inventário;
@@ -697,6 +697,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A08 | Terraform: IDs prefixados com o diretório, a chamada `module.x` com source local liga ao nó do diretório resolvido (que liga aos blocos dele, sem o laço de antes) e referências `tipo.nome`/`data.`/`module.` viram relações `references`, sem contar comentários e texto de strings, com fixture envs/dev+prod e golden | este commit |
 | 26/10/2026 | A03 | Overview mantém workloads, charts, apps, módulos e serviços do compose isolados (e tudo, se nada mais sobrar), agrupa por kind acima de 25 nós (`MaxNosOverview`, arestas reapontadas e sem repetir) e o `GetInfraStats` conta os nós e arestas desenhados, com testes e golden do teto | este commit |
 | 26/10/2026 | A02 | O `--detail full` não passa mais pela IA (etapa pulada com o motivo) e as estatísticas de recursos e relações vêm do diagrama gravado, contando nós e arestas do Mermaid da IA (`ContarMermaid`), com testes e goldens | este commit |
+| 26/10/2026 | A10 | O Mermaid da IA só substitui o programático se passar no `analysis.ValidarMermaid` (flowchart/graph, subgraph e end fechados, arestas entre nós declarados, nós só com IDs do rascunho, que o prompt `atlas.refine` agora manda manter), com prazo de 60 s pelo contexto, o programático sempre em `.yby/atlas-diagram.raw.mmd` e o inventário do prompt resumido (10 nomes por kind, sem as relações) | este commit |
 
 ### Fase 6 · Viz
 

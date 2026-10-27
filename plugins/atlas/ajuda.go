@@ -35,8 +35,9 @@ func ajudaDiagram() ui.Ajuda {
 		Comando: "yby atlas diagram",
 		Descricao: "Gera o diagrama Mermaid da topologia da infraestrutura e o grava em " +
 			".yby/atlas-diagram.mmd. Com uma IA disponível, o diagrama é reorganizado e ganha nomes " +
-			"legíveis; sem ela, ou com --detail full (que mostra todos os recursos), fica o diagrama " +
-			"montado a partir dos arquivos.",
+			"legíveis, com os nós encontrados nos arquivos; sem ela, com --detail full (que mostra todos " +
+			"os recursos) ou quando a resposta da IA não confere com os arquivos, fica o diagrama " +
+			"montado a partir deles. Esse fica sempre também em .yby/atlas-diagram.raw.mmd.",
 		Uso: []string{"yby atlas diagram [flags]"},
 		Exemplos: `
 			yby atlas diagram
