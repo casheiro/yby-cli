@@ -119,11 +119,12 @@ func TestGetProviderWithModel_ProviderIndisponivel(t *testing.T) {
 func cliFalso(t *testing.T, nome string) {
 	t.Helper()
 	dir := t.TempDir()
-	arquivo := filepath.Join(dir, nome)
+	// Sem o #!, o Linux nem inicia o script (exec format error): o CLI tem de rodar e sair com 1.
+	arquivo, script := filepath.Join(dir, nome), "#!/bin/sh\nexit 1\n"
 	if runtime.GOOS == "windows" {
-		arquivo += ".bat"
+		arquivo, script = arquivo+".bat", "exit 1\n"
 	}
-	require.NoError(t, os.WriteFile(arquivo, []byte("exit 1\n"), 0o755))
+	require.NoError(t, os.WriteFile(arquivo, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 }
 

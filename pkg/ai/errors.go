@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"time"
 
@@ -70,6 +72,13 @@ func erroRetentavel(err error, statuses map[int]bool) bool {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
 		return statuses[apiErr.StatusCode]
+	}
+	// O CLI que nem inicia (fora do PATH, sem permissão, formato inválido) devolve um
+	// syscall.Errno, que também é um net.Error: tentar de novo não muda nada.
+	var pathErr *fs.PathError
+	var execErr *exec.Error
+	if errors.As(err, &pathErr) || errors.As(err, &execErr) {
+		return false
 	}
 	// O context.DeadlineExceeded também é um net.Error: o prazo de uma
 	// chamada vale nova tentativa, e o fim do contexto de quem chamou já
