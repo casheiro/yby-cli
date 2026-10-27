@@ -490,7 +490,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - deduplicar repositórios;
     - limpar o check inalcançável.
   - **Verificar:** fixture de chart real e golden.
-- [ ] **A08 · Terraform**
+- [x] **A08 · Terraform**
   - **Problema:**
     - `module "net" { source = "../../modules/net" }` gera um self-loop (`analysis/terraform.go:~135-141`);
     - o módulo não liga aos recursos do filho;
@@ -694,6 +694,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A07 | Helm: nome templado vira <chart>-<kind>, templates/ é varrido com subpastas, HelmRepository deduplicado por (repositório, nome) e charts processados em ordem estável | este commit |
 | 26/10/2026 | A01 | Relações do blueprint sem falsos positivos: COPY casa por segmento e nunca a raiz, imports Go pelo módulo mais longo com fronteira `/` (linha única e subpastas via go/parser), relações deduplicadas por (from, to, type) | este commit |
 | 26/10/2026 | A04 | Kustomize: Kustomization identificada pelo diretório relativo (referências resolvidas pelo caminho), ligada aos recursos dos manifests que lista, patches fora do analyzer K8s e namespace herdado aplicado antes das relações (uma cópia por overlay), com fixture base+overlays e golden | este commit |
+| 26/10/2026 | A08 | Terraform: IDs prefixados com o diretório, a chamada `module.x` com source local liga ao nó do diretório resolvido (que liga aos blocos dele, sem o laço de antes) e referências `tipo.nome`/`data.`/`module.` viram relações `references`, sem contar comentários e texto de strings, com fixture envs/dev+prod e golden | este commit |
 
 ### Fase 6 · Viz
 

@@ -113,11 +113,11 @@ func TestGenerateInfraMermaid_Golden(t *testing.T) {
 	conferirGolden(t, "infra_full.mmd", GenerateInfraMermaid(bp, DetailFull))
 }
 
-// copiarFixtureKustomize copia a fixture base+overlays do discovery para um
+// copiarFixture copia a fixture testdata/<nome> do discovery para um
 // diretório temporário, fora do git do repositório.
-func copiarFixtureKustomize(t *testing.T) string {
+func copiarFixture(t *testing.T, nome string) string {
 	t.Helper()
-	origem := filepath.Join("..", "discovery", "testdata", "kustomize")
+	origem := filepath.Join("..", "discovery", "testdata", nome)
 	raiz := t.TempDir()
 	err := filepath.WalkDir(origem, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -144,10 +144,19 @@ func copiarFixtureKustomize(t *testing.T) string {
 }
 
 func TestGenerateInfraMermaid_GoldenKustomize(t *testing.T) {
-	bp, err := discovery.ScanInfra(copiarFixtureKustomize(t), nil)
+	bp, err := discovery.ScanInfra(copiarFixture(t, "kustomize"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	conferirGolden(t, "infra_kustomize_overview.mmd", GenerateInfraMermaid(bp, DetailOverview))
 	conferirGolden(t, "infra_kustomize_full.mmd", GenerateInfraMermaid(bp, DetailFull))
+}
+
+func TestGenerateInfraMermaid_GoldenTerraform(t *testing.T) {
+	bp, err := discovery.ScanInfra(copiarFixture(t, "terraform"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conferirGolden(t, "infra_terraform_overview.mmd", GenerateInfraMermaid(bp, DetailOverview))
+	conferirGolden(t, "infra_terraform_full.mmd", GenerateInfraMermaid(bp, DetailFull))
 }

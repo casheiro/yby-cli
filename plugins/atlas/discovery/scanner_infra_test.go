@@ -85,3 +85,56 @@ func TestScanInfra_KustomizeBaseEOverlays(t *testing.T) {
 		t.Errorf("relações:\n%s\nesperadas:\n%s", strings.Join(relacoes, "\n"), strings.Join(esperadas, "\n"))
 	}
 }
+
+// Dois ambientes com recursos de mesmo nome e o mesmo módulo local: cada
+// recurso leva o diretório no ID, a chamada liga ao diretório resolvido do
+// módulo, que liga aos recursos dele, e as referências entre recursos viram
+// relações, sem contar comentários, texto de strings e heredocs.
+func TestScanInfra_TerraformAmbientesEModulo(t *testing.T) {
+	bp, err := ScanInfra(copiarFixture(t, "terraform"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var recursos []string
+	for _, r := range bp.Resources {
+		recursos = append(recursos, r.ID())
+	}
+	sort.Strings(recursos)
+	esperados := []string{
+		"TerraformData/modules/net/aws_availability_zones.disponiveis",
+		"TerraformModule/envs/dev/module.net",
+		"TerraformModule/envs/prod/module.net",
+		"TerraformModule/modules/net",
+		"TerraformResource/envs/dev/aws_instance.app",
+		"TerraformResource/envs/dev/aws_s3_bucket.logs",
+		"TerraformResource/envs/dev/aws_s3_bucket_policy.logs",
+		"TerraformResource/envs/prod/aws_s3_bucket.logs",
+		"TerraformResource/modules/net/aws_subnet.a",
+		"TerraformResource/modules/net/aws_vpc.this",
+	}
+	if strings.Join(recursos, "\n") != strings.Join(esperados, "\n") {
+		t.Errorf("recursos:\n%s\nesperados:\n%s", strings.Join(recursos, "\n"), strings.Join(esperados, "\n"))
+	}
+
+	var relacoes []string
+	for _, r := range bp.Relations {
+		relacoes = append(relacoes, r.From+" -"+r.Type+"-> "+r.To)
+	}
+	sort.Strings(relacoes)
+	esperadas := []string{
+		"TerraformModule/envs/dev/module.net -includes-> TerraformModule/modules/net",
+		"TerraformModule/envs/prod/module.net -includes-> TerraformModule/modules/net",
+		"TerraformModule/modules/net -includes-> TerraformData/modules/net/aws_availability_zones.disponiveis",
+		"TerraformModule/modules/net -includes-> TerraformResource/modules/net/aws_subnet.a",
+		"TerraformModule/modules/net -includes-> TerraformResource/modules/net/aws_vpc.this",
+		"TerraformResource/envs/dev/aws_instance.app -references-> TerraformModule/envs/dev/module.net",
+		"TerraformResource/envs/dev/aws_instance.app -references-> TerraformResource/envs/dev/aws_s3_bucket.logs",
+		"TerraformResource/envs/dev/aws_s3_bucket_policy.logs -references-> TerraformResource/envs/dev/aws_s3_bucket.logs",
+		"TerraformResource/modules/net/aws_subnet.a -references-> TerraformData/modules/net/aws_availability_zones.disponiveis",
+		"TerraformResource/modules/net/aws_subnet.a -references-> TerraformResource/modules/net/aws_vpc.this",
+	}
+	if strings.Join(relacoes, "\n") != strings.Join(esperadas, "\n") {
+		t.Errorf("relações:\n%s\nesperadas:\n%s", strings.Join(relacoes, "\n"), strings.Join(esperadas, "\n"))
+	}
+}
