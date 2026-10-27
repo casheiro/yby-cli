@@ -300,14 +300,20 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 
 	// Tentar refinar com IA (se disponível e habilitado)
 	prog.Iniciar("refinar com a IA")
-	if !op.useAI {
+	refinado := false
+	switch {
+	case !op.useAI:
 		prog.Pular("desligado com --no-ai")
-	} else {
+	case op.detail == analysis.DetailFull:
+		// O full promete todos os recursos; a IA reorganiza e resume, então não entra.
+		prog.Pular("o full mostra todos os recursos")
+	default:
 		summary := buildResourceSummary(infraBP)
 		refinedDiagram, source, refineErr := refineDiagramWithAI(context.Background(), diagram, summary)
 		switch {
 		case refineErr == nil && refinedDiagram != "":
 			diagram = refinedDiagram
+			refinado = true
 			prog.Concluir(source)
 		case errors.Is(refineErr, errSemIA):
 			prog.Pular("sem IA disponível")
@@ -339,9 +345,15 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	prog.Concluir("")
 	parar()
 
+	// As estatísticas são do que foi gravado: o diagrama da IA tem os nós e as arestas dele.
 	recursos := fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)
 	if stats.Agrupados > 0 {
 		recursos += fmt.Sprintf(" · %d agrupados por tipo", stats.Agrupados)
+	}
+	if refinado {
+		nos, arestas := analysis.ContarMermaid(diagram)
+		recursos = fmt.Sprintf("%s de %s", plural(nos, "nó", "nós"), plural(stats.TotalResources, "recurso", "recursos"))
+		stats.Relations = arestas
 	}
 	nivel := "full"
 	if op.detail == analysis.DetailOverview {

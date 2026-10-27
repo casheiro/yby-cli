@@ -454,7 +454,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o módulo mais longo com fronteira `/`;
     - aceitar `import "x"` de linha única.
   - **Verificar:** testes com fixture.
-- [ ] **A02 · `--detail full` não é desfeito pela IA**
+- [x] **A02 · `--detail full` não é desfeito pela IA**
   - **Problema:** o refinamento roda em qualquer nível (`plugins/atlas/main.go:~305-310`) com o prompt "no maximo 15-25 nos" (`pkg/ai/prompts/defaults.go:~181,190`). As estatísticas impressas são do diagrama programático, não do gravado.
   - **Fazer:** pular a IA no `full` (ou usar um prompt que preserve todos os nós); estatísticas do que foi gravado.
   - **Verificar:** teste.
@@ -696,6 +696,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A04 | Kustomize: Kustomization identificada pelo diretório relativo (referências resolvidas pelo caminho), ligada aos recursos dos manifests que lista, patches fora do analyzer K8s e namespace herdado aplicado antes das relações (uma cópia por overlay), com fixture base+overlays e golden | este commit |
 | 26/10/2026 | A08 | Terraform: IDs prefixados com o diretório, a chamada `module.x` com source local liga ao nó do diretório resolvido (que liga aos blocos dele, sem o laço de antes) e referências `tipo.nome`/`data.`/`module.` viram relações `references`, sem contar comentários e texto de strings, com fixture envs/dev+prod e golden | este commit |
 | 26/10/2026 | A03 | Overview mantém workloads, charts, apps, módulos e serviços do compose isolados (e tudo, se nada mais sobrar), agrupa por kind acima de 25 nós (`MaxNosOverview`, arestas reapontadas e sem repetir) e o `GetInfraStats` conta os nós e arestas desenhados, com testes e golden do teto | este commit |
+| 26/10/2026 | A02 | O `--detail full` não passa mais pela IA (etapa pulada com o motivo) e as estatísticas de recursos e relações vêm do diagrama gravado, contando nós e arestas do Mermaid da IA (`ContarMermaid`), com testes e goldens | este commit |
 
 ### Fase 6 · Viz
 

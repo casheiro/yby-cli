@@ -3,6 +3,7 @@ package analysis
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -509,4 +510,40 @@ func GetInfraStats(bp *discovery.InfraBlueprint, detail DetailLevel) InfraStats 
 		Analyzers:        bp.Analyzers,
 		Detail:           detail,
 	}
+}
+
+var (
+	// setaMermaid casa as setas de um flowchart, com ou sem texto (-->|x|, -- x -->).
+	setaMermaid = regexp.MustCompile(`\s*(?:--[^->|]*-->|--[ox>-]|==>|===|-\.->|-\.-)\s*(?:\|[^|]*\|)?\s*`)
+	// idMermaid é o identificador no começo de um trecho do flowchart.
+	idMermaid = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*`)
+)
+
+// ContarMermaid conta os nós e as arestas de um flowchart Mermaid, para as estatísticas
+// descreverem o que foi gravado quando o texto veio da IA. É uma leitura de linha a linha
+// do que o Atlas e os prompts produzem, não um parser completo do Mermaid.
+func ContarMermaid(texto string) (nos, arestas int) {
+	vistos := map[string]bool{}
+	for _, linha := range strings.Split(texto, "\n") {
+		linha = strings.TrimSpace(linha)
+		if linha == "" || strings.HasPrefix(linha, "```") || strings.HasPrefix(linha, "%%") {
+			continue
+		}
+		primeira := strings.Fields(linha)[0]
+		switch primeira {
+		case "flowchart", "graph", "subgraph", "end", "style", "classDef", "class",
+			"linkStyle", "direction", "click":
+			continue
+		}
+		trechos := setaMermaid.Split(linha, -1)
+		for _, t := range trechos {
+			for _, parte := range strings.Split(t, "&") {
+				if id := idMermaid.FindString(strings.TrimSpace(parte)); id != "" {
+					vistos[id] = true
+				}
+			}
+		}
+		arestas += len(trechos) - 1
+	}
+	return len(vistos), arestas
 }

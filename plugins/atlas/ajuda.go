@@ -35,14 +35,15 @@ func ajudaDiagram() ui.Ajuda {
 		Comando: "yby atlas diagram",
 		Descricao: "Gera o diagrama Mermaid da topologia da infraestrutura e o grava em " +
 			".yby/atlas-diagram.mmd. Com uma IA disponível, o diagrama é reorganizado e ganha nomes " +
-			"legíveis; sem ela, fica o diagrama montado a partir dos arquivos.",
+			"legíveis; sem ela, ou com --detail full (que mostra todos os recursos), fica o diagrama " +
+			"montado a partir dos arquivos.",
 		Uso: []string{"yby atlas diagram [flags]"},
 		Exemplos: `
 			yby atlas diagram
 			yby atlas diagram --detail full --no-ai`,
 		Flags: []ui.Termo{
 			{Nome: "-d, --detail nível", Descricao: "overview (os principais, até 25 nós) ou full (todos os recursos, com RBAC, CRDs e ConfigMaps); padrão overview"},
-			{Nome: "    --no-ai", Descricao: "não refina o diagrama com IA"},
+			{Nome: "    --no-ai", Descricao: "não refina o diagrama com IA (o full nunca passa por ela)"},
 			flagAjuda,
 		},
 		Rodape: "Para ver o diagrama, abra o arquivo em https://mermaid.live ou na extensão Mermaid do VS Code.",

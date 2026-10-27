@@ -279,7 +279,7 @@ func TestDiagram_IAIndisponivelPula(t *testing.T) {
 		usarDependencias(t, c.provs...)
 		projetoComChart(t)
 		log := capturarLog(t)
-		saida, erros, err := rodar(t, "diagram", "-d", "full")
+		saida, erros, err := rodar(t, "diagram", "-d", "overview")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -414,5 +414,42 @@ func TestSairComErro_FormatoDoUI(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "ERR_VALIDATION") || !strings.Contains(b.String(), "faça") {
 		t.Errorf("erro fora do formato do ui.WriteError:\n%s", b.String())
+	}
+}
+
+func TestDiagram_FullNaoPassaPelaIA(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	prov := &provedorFalso{nome: "falso", resposta: "flowchart TD\n  a --> b"}
+	usarDependencias(t, prov)
+	raiz := projetoComChart(t)
+	saida, _, err := rodar(t, "diagram", "-d", "full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prov.chamadas != 0 {
+		t.Errorf("o full mostra todos os recursos e não passa pela IA, houve %d chamadas", prov.chamadas)
+	}
+	if !strings.Contains(saida, "○ refinar com a IA") {
+		t.Errorf("a etapa da IA é pulada com o motivo:\n%s", saida)
+	}
+	mmd, err := os.ReadFile(filepath.Join(raiz, ".yby", "atlas-diagram.mmd"))
+	if err != nil || strings.Contains(string(mmd), "a --> b") {
+		t.Errorf("o .mmd é o programático, obtido %q (%v)", mmd, err)
+	}
+}
+
+func TestDiagram_EstatisticasSaoDoQueFoiGravado(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	usarDependencias(t, &provedorFalso{nome: "falso", resposta: "flowchart TD\n  a[A] --> b[B]"})
+	projetoComChart(t)
+	saida, _, err := rodar(t, "diagram")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saida, "2 nós de 3 recursos") || strings.Contains(saida, "3 de 3") {
+		t.Errorf("recursos reflete os 2 nós gravados:\n%s", saida)
+	}
+	if !strings.Contains(saida, "relações      1") {
+		t.Errorf("relações reflete a 1 aresta gravada:\n%s", saida)
 	}
 }
