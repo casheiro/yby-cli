@@ -557,7 +557,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `plugins/viz/internal/monitor/actions.go:~29-41` usa `metav1.DeleteOptions{}` em tudo. Job em `batch/v1` deixa os pods órfãos, e a tela promete "O Job e os pods dele somem" (`ui/actions.go:~571`). O alvo é guardado só pelo nome (`ui/actions.go:~108`), então um pod de StatefulSet recriado durante a confirmação é apagado.
   - **Fazer:** `PropagationPolicy: Background` e `Preconditions{UID}`, guardando o UID no alvo (os tipos do monitor ainda não guardam).
   - **Verificar:** teste com reactor do fake conferindo as opções.
-- [ ] **V02 · Viz respeita o ambiente do core** ✓
+- [x] **V02 · Viz respeita o ambiente do core** ✓
   - **Problema:** `plugins/viz/main.go:~95` usa só `req.Args` e descarta `req.Context`, onde vem `infra.kube_context`/`infra.namespace` do ambiente (`-c`/`YBY_ENV`). `yby -c staging viz` abre no current-context.
   - **Fazer:** sem `--context`/`-n` explícitos, usar os do pedido. Contexto inexistente → `ContextoInexistenteError`.
   - **Verificar:** teste em `args_test.go`.
@@ -697,6 +697,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | V05 | Listas com prazo de 10 s por contexto (sem `rest.Config.Timeout`), `RetryClient` sem repetir Forbidden/Unauthorized/NotFound/Invalid/credencial exec/prazo, aba negada com "sem permissão para listar X …" sem reconectar e sem LIST no relógio, e dica `yby cloud refresh` para a credencial exec | este commit |
 | 26/10/2026 | V07 | Benchmarks com 10 mil pods e 20 mil eventos confirmaram a hipótese: `itensDaAba` em cache (chave: a lista, os filtros, o segundo e o modo visual), a tabela montada uma vez por lista e só a janela desenhada (`yui.TabelaJanela`) levam a `View` de ~800 ms para ~7 ms nos pods e de ~1,3 s para ~10 ms nos eventos (tecla + quadro de ~1,4 s para ~7 ms, lote + quadro de ~1,1 s para ~55 ms), e `listaDoCache` ordena pela chave calculada uma vez e não copia os eventos (pods ~30→13 ms, eventos ~55→22 ms e 32→4,7 MB por lote); a conversão por chave no handler é hipótese não confirmada (a conversão é ~10% do lote) e ficou de fora | este commit |
 | 26/10/2026 | V04 | Transform por tipo no cache do watch (`paraOCache`): sem last-applied em todo tipo, ConfigMap sem os valores (chaves ficam, tamanho calculado antes numa anotação só do cache: 10 mil ConfigMaps de ~98 MB para ~10 MB) e Pod sem env, volumes, args e command; os Events não foram limitados (20 mil ocupam ~15 MB, e a contagem da aba segue exata) | este commit |
+| 26/10/2026 | V02 | Sem `--context`, `--kubeconfig` e `-n`, o Viz abre no kube_config, no kube_context e no namespace do ambiente que o core manda no pedido (`yby -c staging viz` ou `YBY_ENV`); `--context`/`--kubeconfig` trocam o cluster inteiro, `-n` só o namespace, e o kube_context que o kubeconfig não tem sai como ERR_CONFIG antes da TUI | este commit |
 
 ### Fase 7 · Pendências
 

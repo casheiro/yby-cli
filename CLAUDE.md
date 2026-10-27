@@ -278,7 +278,7 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 ### Plugin Viz — Observabilidade TUI (v1.0.0)
 
-- **Moldura da carta** (`ui.Moldura`): masthead com contexto ▸ namespace do kubeconfig (começa no namespace do contexto; sem namespace no contexto, todos), client-go direto (`monitor.K8sClient` dentro do `RetryClient`), sem kubectl.
+- **Moldura da carta** (`ui.Moldura`): masthead com contexto ▸ namespace do kubeconfig (começa no namespace do contexto; sem namespace no contexto, todos). Com o ambiente pedido ao core (`yby -c staging viz` ou `YBY_ENV`), abre no kube_config, no kube_context e no namespace dele (`conexaoDoAmbiente`, `plugins/viz/main.go`); `--context` ou `--kubeconfig` trocam o cluster inteiro e `-n` só o namespace. Client-go direto (`monitor.K8sClient` dentro do `RetryClient`), sem kubectl.
 - **9 abas** (Pods, Deployments, StatefulSets, Services, Nodes, Jobs, Ingresses, ConfigMaps, Eventos) com contagem ao vivo: um informer por tipo no namespace (`monitor.Observador`, `plugins/viz/internal/monitor/vigia.go`) manda lotes de no máximo 4 por segundo, e o número de cada aba é o da lista que ela mostraria aberta, com os filtros da tela. Tipo que o RBAC não deixa listar fica sem número. O relógio de 2 s só lê a aba ativa: confirma a conexão e vira lista quando o watch não cobre a aba.
 - **Lista**: problemas primeiro (pods, deployments, statefulsets, nós, jobs), por nome (services, ingresses, configmaps), eventos dos mais recentes; a linha de estado traz o problema mais grave.
 - **Detalhe**: painel ao lado a partir de 120 colunas e por cima abaixo disso (↵ abre); quadros de logs (`l`, pods), YAML (`y`) e eventos (`e`).
