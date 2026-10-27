@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
+	"os/exec"
 	"syscall"
 	"testing"
 
@@ -52,6 +54,11 @@ func TestErroRetentavel(t *testing.T) {
 		{"timeout de rede do yby", ybyerrors.New(ybyerrors.ErrCodeNetworkTimeout, "demorou"), true},
 		{"yby embrulhando 503", ybyerrors.Wrap(&APIError{Provider: "p", StatusCode: 503}, ybyerrors.ErrCodeExec, "x"), true},
 		{"CLI que falhou", errors.New("claude cli falhou: exit status 1"), false},
+		// O syscall.Errno é um net.Error: o CLI que nem inicia não pode passar por falha de rede.
+		{"CLI que não inicia", fmt.Errorf("claude cli falhou: %w",
+			&fs.PathError{Op: "fork/exec", Path: "/bin/claude", Err: syscall.ENOEXEC}), false},
+		{"CLI fora do PATH", fmt.Errorf("claude cli falhou: %w",
+			&exec.Error{Name: "claude", Err: syscall.ENOENT}), false},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {

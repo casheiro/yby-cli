@@ -390,9 +390,9 @@ func marcaDeSecao(res ai.UnknownDocument) string {
 }
 
 // NotaIndiceDeOutroModelo é a nota da etapa de contexto quando o índice do Synapstor foi
-// feito com outros embeddings. Começa pelo comando: a linha da etapa corta o fim da nota
-// já num terminal de 80 colunas, e o resto vai no aviso.
-const NotaIndiceDeOutroModelo = "rode yby synapstor index --full (índice de outro modelo)"
+// feito com outros embeddings. É curta para caber na linha da etapa ao lado do tempo,
+// num terminal de 80 colunas; o comando que o refaz vai inteiro no aviso.
+const NotaIndiceDeOutroModelo = "índice de outro modelo"
 
 // linhaReindexar é a última linha do aviso do índice de outro modelo: numa linha só, o
 // comando não se parte na quebra do texto e se copia inteiro.

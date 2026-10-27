@@ -1051,8 +1051,8 @@ func TestClassifyIntent_PromptTemSessaoEEsquema(t *testing.T) {
 	}
 }
 
-// Num terminal de 80 colunas, a etapa de contexto mostra inteiro o comando que refaz o
-// índice; o aviso com o modelo do índice fica na conversa depois da rodada, quebrado na
+// Num terminal de 80 colunas, a etapa de contexto mostra a nota inteira; o aviso com o
+// modelo do índice e o comando que o refaz fica na conversa depois da rodada, quebrado na
 // largura da tela.
 func TestModel_IndiceDeOutroModeloNaTela(t *testing.T) {
 	semCores(t)
@@ -1071,8 +1071,8 @@ func TestModel_IndiceDeOutroModeloNaTela(t *testing.T) {
 		}
 		return m
 	})
-	if !strings.Contains(etapas, "rode yby synapstor index --full") {
-		t.Errorf("a 76 colunas a etapa deveria mostrar o comando inteiro:\n%s", etapas)
+	if !strings.Contains(etapas, NotaIndiceDeOutroModelo) {
+		t.Errorf("a 76 colunas a etapa deveria mostrar a nota inteira:\n%s", etapas)
 	}
 
 	linhas := strings.Split(strings.TrimRight(m.historico, "\n"), "\n")
