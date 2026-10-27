@@ -142,6 +142,8 @@ func comando(ctx context.Context, args []string, saida, erros io.Writer) error {
 type opcoes struct {
 	pod, namespace, formato, arquivo, perfil string
 	semCache, fix, fixDryRun, semIA          bool
+	// sim é o --yes: o --fix aplica sem perguntar.
+	sim bool
 	// escopo é o do --scope do scan: namespace (o padrão) ou cluster.
 	escopo escopo.Escopo
 }
@@ -176,6 +178,8 @@ func lerOpcoes(sub string, args []string) (opcoes, error) {
 			liga = &op.fix
 		case sub == "scan" && a == "--fix-dry-run":
 			liga = &op.fixDryRun
+		case sub == "scan" && a == "--yes":
+			liga = &op.sim
 		case a == "--no-ai":
 			liga = &op.semIA
 		case sub == "investigate" && a == "--no-cache":

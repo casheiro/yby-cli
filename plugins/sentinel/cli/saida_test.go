@@ -136,14 +136,18 @@ func (p *provedorFalso) Completion(_ context.Context, _, contexto string) (strin
 }
 
 // usarDependencias troca o cluster, os backends, os checks e a IA por falsos, fixa o
-// relógio, a largura (64) e a detecção de terminal (fora dele), e restaura tudo no fim.
+// relógio, a largura (64) e a detecção de terminal (fora dele, na saída e na entrada, e o
+// --fix sem --yes nunca abre a confirmação), e restaura tudo no fim.
 func usarDependencias(t *testing.T, client kubernetes.Interface, bs []backends.SecurityBackend, cs []checks.SecurityCheck, prov *provedorFalso) {
 	t.Helper()
 	k, b, c, p, r, te, l := novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida
+	et, cf := entradaTerminal, confirmar
 	t.Cleanup(func() {
 		novoClienteKube, backendsDoScan, checksDoScan, provedorDeIA, relogio, terminalEm, larguraSaida = k, b, c, p, r, te, l
+		entradaTerminal, confirmar = et, cf
 		os.RemoveAll(filepath.Join(homeDeTeste, ".yby"))
 	})
+	entradaTerminal = func() bool { return false }
 	// Os namespaces dos testes existem no cluster falso: o scan confere o namespace antes
 	// das etapas.
 	if fc, ok := client.(*fake.Clientset); ok {
@@ -332,7 +336,9 @@ func TestScan_JSONEmArquivo(t *testing.T) {
 	}
 }
 
-func TestScan_ChecksInternosComDryRun(t *testing.T) {
+// TestScan_DryRunSemCorrecaoSegura: o runAsNonRoot derrubaria a imagem que roda como root;
+// o achado fica sem patch, contado na remediação, e nada vai ao servidor.
+func TestScan_DryRunSemCorrecaoSegura(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
 	achado := checks.SecurityFinding{
 		CheckID: "POD_ROOT_CONTAINER", Severity: checks.SeverityCritical, Type: "critical",
@@ -345,7 +351,14 @@ func TestScan_ChecksInternosComDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conferirGolden(t, "scan-dry-run.golden", saida)
+	for _, trecho := range []string{"✓ plano de correção   nenhum patch", "REMEDIAÇÃO · DRY-RUN", "○ 1 achado sem correção automática"} {
+		if !strings.Contains(saida, trecho) {
+			t.Errorf("faltou %q:\n%s", trecho, saida)
+		}
+	}
+	if strings.Contains(saida, "nada foi aplicado") {
+		t.Errorf("sem patch, não há o que aplicar:\n%s", saida)
+	}
 }
 
 func TestScan_SemAchados(t *testing.T) {
@@ -678,61 +691,6 @@ func TestScan_MarkdownNoStdout(t *testing.T) {
 	}
 	if !strings.Contains(erros, "✓ polaris") {
 		t.Errorf("as etapas vão para o stderr:\n%s", erros)
-	}
-}
-
-// achadoRoot é o achado dos checks internos que o --fix sabe corrigir.
-var achadoRoot = checks.SecurityFinding{
-	CheckID: "POD_ROOT_CONTAINER", Severity: checks.SeverityCritical, Type: "critical",
-	Category: checks.CategoryPodSecurity, Pod: "api-7c9f", Container: "app", Namespace: "payments",
-	Resource: "api-7c9f/app", Message: "Container 'app' no pod 'api-7c9f' roda como root (UID 0)",
-}
-
-func TestScan_FixQueFalhaSaiComErro(t *testing.T) {
-	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
-	cs := []checks.SecurityCheck{checkFalso{achados: []checks.SecurityFinding{achadoRoot}}}
-	usarDependencias(t, fake.NewSimpleClientset(), nil, cs, nil)
-
-	saida, _, err := rodar(t, "scan", "-n", "payments", "--fix")
-	var ye *yerrors.YbyError
-	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodePlugin || !strings.Contains(ye.Message, "1 de 1") || !strings.Contains(ye.Hint, "kubectl auth can-i") {
-		t.Fatalf("patches que falharam saem como erro com hint, obtido %v", err)
-	}
-	for _, trecho := range []string{"✕ aplicar patches", "1 de 1 falharam", "not found", "RESUMO"} {
-		if !strings.Contains(saida, trecho) {
-			t.Errorf("faltou %q:\n%s", trecho, saida)
-		}
-	}
-	if strings.Contains(saida, "REMEDIAÇÃO") {
-		t.Errorf("com --fix, os patches aparecem só na etapa:\n%s", saida)
-	}
-
-	// com -o json, o JSON sai inteiro no stdout e o erro continua
-	saida, _, err = rodar(t, "scan", "-n", "payments", "--fix", "-o", "json")
-	var rel ScanReport
-	if jerr := json.Unmarshal([]byte(saida), &rel); jerr != nil || len(rel.Findings) != 1 {
-		t.Errorf("stdout tem de ser o JSON (%v):\n%s", jerr, saida)
-	}
-	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodePlugin {
-		t.Errorf("com -o json, a falha dos patches também sai como erro, obtido %v", err)
-	}
-}
-
-func TestScan_FixAplicado(t *testing.T) {
-	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "api-7c9f", Namespace: "payments"},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
-	}
-	cs := []checks.SecurityCheck{checkFalso{achados: []checks.SecurityFinding{achadoRoot}}}
-	usarDependencias(t, fake.NewSimpleClientset(pod), nil, cs, nil)
-
-	saida, _, err := rodar(t, "scan", "-n", "payments", "--fix")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(saida, "✓ aplicar patches   1 aplicado") {
-		t.Errorf("a etapa mostra os patches aplicados:\n%s", saida)
 	}
 }
 

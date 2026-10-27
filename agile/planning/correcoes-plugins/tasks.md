@@ -321,7 +321,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 4 · Sentinel
 
-- [ ] **S01 · `--fix` corrige o dono do pod** ✓
+- [x] **S01 · `--fix` corrige o dono do pod** ✓
   - **Problema:**
     - todos os patches são `ResourceKind: "Pod"` (`remediation/generator.go:~62-69`) aplicados no Pod (`remediation/applier.go:~33-35`), e o spec do Pod é imutável nesses campos (422). Nunca corrigiu nada num cluster real; daí os "erros crus";
     - `generatePatch` só conhece os IDs dos checks internos (`generator.go:~27-47`), não os `polaris/*`;
@@ -693,6 +693,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S08 | Checks internos viram plano B (só rodam quando nenhum backend varre; backend limpo vira fonte com 0 achados), pods listados uma vez por scan (cache no contexto), cosign só com chave ou identidade+emissor configurados (senão ErrNaoVerificado, que entra em `nao_rodaram` sem virar achado) e com prazo, env sensível: KEY por palavra (KEYCLOAK_URL não) e PASSWORD/SECRET/TOKEN por trecho (PGPASSWORD sim), `pod_root` e `pod_seccomp` herdam/olham o contêiner | este commit |
 | 26/10/2026 | S07 | O `--profile` filtra os achados de todos os motores por uma tabela check→perfis (cada `polaris/*` e `opa/*` pelo check interno equivalente; hostPath/HostProcess nos CIS e TLS do Ingress no PCI-DSS e no SOC2 pelo próprio ID; confiabilidade e checks customizados fora) e a tela, o JSON (`perfil`, `fora_do_perfil`) e o relatório dizem o perfil aplicado e quantos achados ficaram de fora | este commit |
 | 26/10/2026 | S04 | Pacote `escopo`: no scan de namespace o OPA, os checks internos e os checks de RBAC do Polaris só olham o RBAC que vale nele (Roles e RoleBindings do namespace, ClusterRoles a que eles apontam, ClusterRoleBindings com SA do namespace, reduzidos aos subjects dele, e a allowlist julga cada ClusterRole por quem o recebe ali); `--scope cluster` traz o RBAC do cluster todo; campo `scope` no achado e no relatório JSON; o wildcard do OPA passou a ver os Roles do namespace | este commit |
+| 26/10/2026 | S01 | O `--fix` sobe do pod ao dono pelos `ownerReferences` (Deployment, StatefulSet, DaemonSet, CronJob) e faz um strategic merge patch por recurso no template, só com as correções seguras (`allowPrivilegeEscalation: false` e `capabilities.drop: [ALL]`, dos checks internos e dos `polaris/*`, com o diff por contêiner); runAsNonRoot, readOnlyRootFilesystem, privileged, limites e automount ficam sem correção automática (contados na tela); pod sem dono, ReplicaSet sem Deployment, Job solto, dono desconhecido e recurso do Argo CD (anotação `tracking-id` ou rótulo `argocd.argoproj.io/instance`) são recusados com o motivo; `--fix-dry-run` e o `--fix` passam pelo dry-run no servidor (`DryRun: [All]`), e o `--fix` mostra o plano e pede confirmação pelo `ui.Confirmar` (sem terminal na entrada, exige `--yes`); a dica de permissão usa o tipo do recurso | este commit |
 
 ### Fase 5 · Atlas
 

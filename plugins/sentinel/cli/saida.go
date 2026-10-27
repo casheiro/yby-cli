@@ -15,7 +15,6 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -267,9 +266,10 @@ func achadosPorSecao(findings []checks.SecurityFinding) []checks.SecurityFinding
 }
 
 // escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
-// achado (glifo e palavra da severidade, recurso e mensagem), a remediação do dry-run, o
-// resumo por severidade, as fontes e o caminho do relatório.
-func escreverScan(w io.Writer, report ScanReport, patches []remediation.RemediationPatch, op opcoes, caminho string, errRelatorio error) {
+// achado (glifo e palavra da severidade, recurso e mensagem), o plano de correção do
+// --fix e do --fix-dry-run, o resumo por severidade, as fontes e o caminho do relatório.
+func escreverScan(w io.Writer, c coleta, op opcoes, caminho string, errRelatorio error) {
+	report := c.report
 	achados := achadosPorSecao(report.Findings)
 
 	col := ui.Colunas{Nome: 12, Versao: 0}
@@ -292,7 +292,7 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 	}
 
 	if op.fixDryRun || op.fix {
-		escreverRemediacao(w, patches, op)
+		escreverRemediacao(w, c, op)
 	}
 	escreverRecomendacoes(w, report.Recommendations, caminho != "")
 
@@ -433,28 +433,51 @@ func linhaSemMarkdown(l string) string {
 	return strings.NewReplacer("**", "", "__", "", "`", "").Replace(l)
 }
 
-// escreverRemediacao lista os patches do --fix-dry-run (o --fix já os mostrou como etapa)
-// ou avisa que os achados não têm patch.
-func escreverRemediacao(w io.Writer, patches []remediation.RemediationPatch, op opcoes) {
-	if len(patches) > 0 && !op.fixDryRun {
-		return
-	}
+// escreverRemediacao mostra o plano de correção do --fix e do --fix-dry-run: cada patch
+// com o que muda no template (✓ quando o servidor o aceitou no dry-run, ✕ com o motivo
+// quando recusou), os recursos que o --fix não corrige e por quê, e quantos achados não
+// têm correção automática. No --fix, a confirmação vem depois do resultado.
+func escreverRemediacao(w io.Writer, c coleta, op opcoes) {
 	titulo := "remediação"
 	if op.fixDryRun {
 		titulo += " · dry-run"
 	}
 	ui.Section(w, titulo)
-	if len(patches) == 0 {
-		ui.Check(w, ui.CheckNeutro, "nenhum patch de remediação para estes achados", "", "")
-		return
+	// Os recursos dos patches e das recusas ficam numa coluna só.
+	col := ui.Colunas{Nome: 12}
+	for _, p := range c.plano.Patches {
+		col.Nome = max(col.Nome, min(lipgloss.Width(p.Recurso())+2, maxColunaRecurso))
 	}
-	itens := make([]string, len(patches))
-	for i, p := range patches {
-		itens[i] = fmt.Sprintf("%s %s/%s · %s · patch %s", p.ResourceKind, p.Namespace, p.ResourceName, p.Description, p.Patch)
+	for _, r := range c.plano.Recusas {
+		col.Nome = max(col.Nome, min(lipgloss.Width(r.Recurso)+2, maxColunaRecurso))
 	}
-	ui.Passos(w, itens...)
-	fmt.Fprintln(w)
-	ui.Check(w, ui.CheckNeutro, "nada foi aplicado; rode com --fix para aplicar", "", "")
+	recusado := map[string]error{}
+	for _, f := range c.recusados {
+		recusado[f.Patch.Recurso()] = f.Err
+	}
+	for _, p := range c.plano.Patches {
+		tipo, nota := ui.CheckOk, p.Description
+		if err, ok := recusado[p.Recurso()]; ok {
+			tipo, nota = ui.CheckErro, "o servidor recusou: "+motivoNaTela(err)
+		}
+		checkNaColuna(w, col, tipo, encurtarRecurso(p.Recurso(), col.Nome-2), "", nota)
+		continuarCheck(w, tipo, recuoDoCheck(tipo), p.Mudancas)
+	}
+	for _, r := range c.plano.Recusas {
+		checkNaColuna(w, col, ui.CheckAviso, encurtarRecurso(r.Recurso, col.Nome-2), "", r.Motivo)
+	}
+	if n := c.plano.SemCorrecao; n > 0 {
+		// runAsNonRoot, readOnlyRootFilesystem, limites e afins mudam o comportamento do
+		// workload: ficam com a recomendação do achado.
+		ui.Check(w, ui.CheckNeutro, contar(n, "achado", "achados")+" sem correção automática (mudaria o workload)", "", "")
+	}
+	if len(c.plano.Patches) == 0 && len(c.plano.Recusas) == 0 && c.plano.SemCorrecao == 0 {
+		ui.Check(w, ui.CheckNeutro, "nada a corrigir: os recursos já têm as correções", "", "")
+	}
+	if op.fixDryRun && len(c.validos) > 0 {
+		fmt.Fprintln(w)
+		ui.Check(w, ui.CheckNeutro, "nada foi aplicado; rode com --fix para aplicar", "", "")
+	}
 }
 
 // nomesDasFontes devolve as fontes do scan como aparecem na tela; no JSON e no relatório

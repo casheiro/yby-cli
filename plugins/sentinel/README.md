@@ -6,7 +6,7 @@ Sentinel e o plugin de auditoria de seguranca e conformidade K8s do Yby CLI. Usa
 
 - **Security Scan**: auditoria via Polaris (pod security) + OPA (RBAC, network) com deduplicacao e agrupamento
 - **Investigacao IA**: diagnostico inteligente de pods — so aciona IA quando detecta problemas reais
-- **Remediacao**: geracao e aplicacao de patches (dry-run ou aplicacao direta)
+- **Remediacao**: correções seguras (`allowPrivilegeEscalation: false` e `capabilities.drop: [ALL]`) no dono de cada pod (Deployment, StatefulSet, DaemonSet ou CronJob), com dry-run no servidor e confirmação; recursos do Argo CD, pods sem dono e Jobs soltos ficam de fora, com o motivo
 - **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/`
 - **Cache**: resultados de investigacao em `~/.yby/sentinel/cache/` (TTL 1h)
 
@@ -35,8 +35,9 @@ plugins/sentinel/
     │   ├── pci.go           # PCI-DSS
     │   └── soc2.go          # SOC2
     └── remediation/         # Remediacao automatizada
-        ├── generator.go     # Gera patches a partir de findings
-        └── applier.go       # Aplica patches no cluster
+        ├── dono.go          # Sobe do pod ao dono (ownerReferences) e reconhece o Argo CD
+        ├── generator.go     # Monta o plano: as correções seguras, um patch por recurso
+        └── applier.go       # Aplica os patches (ou o dry-run no servidor)
 ```
 
 ## Backends de Seguranca
@@ -73,8 +74,9 @@ yby sentinel scan -n default -o json -f scan.json
 yby sentinel scan -n default -o markdown -f relatorio.md
 
 # Remediacao
-yby sentinel scan -n default --fix-dry-run    # ver patches sem aplicar
-yby sentinel scan -n default --fix            # aplicar patches
+yby sentinel scan -n default --fix-dry-run    # ver o plano, conferido pelo servidor
+yby sentinel scan -n default --fix            # aplicar, depois de confirmar
+yby sentinel scan -n default --fix --yes      # aplicar sem perguntar (CI)
 
 # Investigacao de pod com IA (so aciona IA se detectar problemas)
 yby sentinel investigate meu-pod -n default

@@ -41,8 +41,9 @@ FLAGS
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
   -p, --profile perfil   deixa só os achados do perfil, de todos os motores: cis-l1, cis-l2, pci-dss ou soc2
       --scope escopo     namespace (padrão: só o RBAC que vale no namespace) ou cluster (o RBAC do cluster todo)
-      --fix-dry-run      mostra os patches de remediação sem aplicar
-      --fix              aplica os patches de remediação no cluster
+      --fix-dry-run      mostra o plano de correção, conferido pelo servidor sem gravar nada
+      --fix              aplica as correções seguras (escalação de privilégios e capabilities) no dono de cada pod, depois de confirmar; recursos do Argo CD ficam de fora
+      --yes              com --fix, aplica sem perguntar (fora de um terminal, é obrigatório)
       --no-ai            não pede as recomendações da IA
   -h, --help             mostra esta ajuda
 

@@ -93,6 +93,13 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 	} else {
 		selecionados = checksDoScan()
 	}
+	// O --fix pergunta antes de mudar o cluster; sem terminal na entrada, não há a quem
+	// perguntar, e ele para aqui, antes do scan, em vez de aplicar calado.
+	aplica := op.fix && !op.fixDryRun
+	if aplica && !op.sim && !entradaTerminal() {
+		return yerrors.New(yerrors.ErrCodeValidation, "o --fix pede confirmação, e a entrada não é um terminal").
+			WithHint("rode num terminal, ou passe --yes para aplicar sem perguntar (veja antes o plano com --fix-dry-run)")
+	}
 
 	k8sClient, err := novoClienteKube()
 	if err != nil {
@@ -129,9 +136,18 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 	if err := escreverResultadoScan(saida, c, namespace, op); err != nil {
 		return err
 	}
-	// Patches que o --fix não aplicou saem como erro depois do resultado, para o código de
-	// saída dizer a scripts e à CI que nada (ou nem tudo) foi corrigido.
-	return c.falhaPatches
+	if len(c.report.Findings) == 0 || (!op.fix && !op.fixDryRun) {
+		return nil
+	}
+	// No json e no markdown, o plano de correção vai para a tela das etapas, fora do
+	// resultado; no terminal, ele já saiu no resultado.
+	if op.formato != "" {
+		escreverRemediacao(telaDasEtapas, c, op)
+	}
+	if !aplica {
+		return nil
+	}
+	return aplicarCorrecoes(ctx, telaDasEtapas, erros, k8sClient, c, namespace, op)
 }
 
 // verificarNamespace lê o namespace antes do scan, como o investigate lê o pod: um
@@ -193,19 +209,20 @@ func escreverResultadoScan(saida io.Writer, c coleta, namespace string, op opcoe
 		return nil
 	}
 	caminho, errRelatorio := saveReportToGlobal(report, namespace)
-	escreverScan(saida, report, c.patches, op, caminho, errRelatorio)
+	escreverScan(saida, c, op, caminho, errRelatorio)
 	return nil
 }
 
-// coleta é o que coletarScan junta: o relatório, os patches gerados com --fix ou
-// --fix-dry-run, o erro dos patches que o --fix não aplicou e quantas verificações não
-// rodaram (um backend que falhou por inteiro conta 1; as de uma falha parcial e os checks
-// internos que falharam contam cada uma).
+// coleta é o que coletarScan junta: o relatório, o plano de correção do --fix ou do
+// --fix-dry-run com os patches que o servidor aceitou e recusou no dry-run e quantas
+// verificações não rodaram (um backend que falhou por inteiro conta 1; as de uma falha
+// parcial e os checks internos que falharam contam cada uma).
 type coleta struct {
-	report       ScanReport
-	patches      []remediation.RemediationPatch
-	falhaPatches error
-	naoRodaram   int
+	report     ScanReport
+	plano      remediation.Plano
+	validos    []remediation.RemediationPatch
+	recusados  []remediation.Falha
+	naoRodaram int
 }
 
 // coletarScan roda os backends (ou os checks internos), as recomendações da IA e, com
@@ -345,28 +362,80 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 	}
 
-	// 5. Remediação
+	// 5. Remediação: o plano (o dono de cada pod, só as correções seguras) e o dry-run no
+	// servidor, que confere cada patch sem gravar nada. O --fix aplica depois do resultado,
+	// com confirmação (aplicarCorrecoes).
 	if !op.fix && !op.fixDryRun {
 		return c, nil
 	}
-	patches := remediation.GeneratePatches(findings)
-	c.patches = patches
-	if op.fix && !op.fixDryRun && len(patches) > 0 {
-		prog.Iniciar("aplicar patches")
-		if errs := remediation.ApplyPatches(ctx, client, patches); len(errs) > 0 {
-			prog.Falhar(fmt.Sprintf("%d de %d falharam", len(errs), len(patches)))
-			for _, e := range errs {
-				prog.Detalhe(e.Error())
-			}
-			c.falhaPatches = yerrors.Wrap(errs[0], yerrors.ErrCodePlugin,
-				fmt.Sprintf("o --fix não aplicou %d de %d patches", len(errs), len(patches))).
-				WithContext("namespace", namespace).
-				WithHint("o motivo de cada um está na etapa aplicar patches; confira as permissões com kubectl auth can-i patch deployments -n " + namespace)
-		} else {
-			prog.Concluir(contar(len(patches), "aplicado", "aplicados"))
+	prog.Iniciar("plano de correção")
+	c.plano = remediation.Planejar(ctx, client, findings)
+	c.validos, c.recusados = remediation.Aplicar(ctx, client, c.plano.Patches, true)
+	if len(c.plano.Patches) == 0 {
+		prog.Concluir("nenhum patch")
+		return c, nil
+	}
+	prog.Concluir(contar(len(c.validos), "patch validado no servidor", "patches validados no servidor"))
+	if len(c.recusados) > 0 {
+		for _, f := range c.recusados {
+			slog.Debug("o servidor recusou o patch no dry-run", "recurso", f.Patch.Recurso(), "erro", f.Err)
 		}
+		prog.Avisar(contar(len(c.recusados), "patch recusado pelo servidor", "patches recusados pelo servidor"))
 	}
 	return c, nil
+}
+
+// aplicarCorrecoes aplica os patches que o servidor aceitou no dry-run, depois de mostrar
+// o plano: pergunta antes, a não ser com --yes, e diz em tela o que aplicou. Os patches
+// que o servidor recusou (no dry-run ou agora) voltam como erro, para o código de saída
+// dizer a scripts e à CI que nada (ou nem tudo) foi corrigido; o cancelamento não é erro.
+func aplicarCorrecoes(ctx context.Context, tela, erros io.Writer, client kubernetes.Interface, c coleta, namespace string, op opcoes) error {
+	falhas := c.recusados
+	if len(c.validos) > 0 {
+		if !op.sim {
+			sim, err := confirmar(tela, "aplicar correções", perguntaDoFix(c.validos, namespace))
+			if err != nil {
+				return yerrors.Wrap(err, yerrors.ErrCodePlugin, "a confirmação do --fix falhou").
+					WithHint("rode de novo, ou passe --yes para aplicar sem perguntar")
+			}
+			if !sim {
+				fmt.Fprintln(tela)
+				ui.Check(tela, ui.CheckNeutro, "nada foi aplicado: a correção foi cancelada", "", "")
+				return nil
+			}
+		}
+		fmt.Fprintln(tela)
+		prog := novoProgresso(tela)
+		parar := animar(prog, erros)
+		prog.Iniciar("aplicar patches")
+		_, agora := remediation.Aplicar(ctx, client, c.validos, false)
+		if len(agora) > 0 {
+			prog.Falhar(fmt.Sprintf("%d de %d falharam", len(agora), len(c.validos)))
+			for _, f := range agora {
+				slog.Debug("o servidor recusou o patch", "recurso", f.Patch.Recurso(), "erro", f.Err)
+				prog.Detalhe(f.Patch.Recurso() + ": " + motivoNaTela(f.Err))
+			}
+		} else {
+			prog.Concluir(contar(len(c.validos), "aplicado", "aplicados"))
+		}
+		parar()
+		falhas = append(falhas, agora...)
+	}
+	if len(falhas) == 0 {
+		return nil
+	}
+	return yerrors.Wrap(falhas[0], yerrors.ErrCodePlugin,
+		fmt.Sprintf("o --fix não aplicou %d de %d patches", len(falhas), len(c.plano.Patches))).
+		WithContext("namespace", namespace).
+		WithHint(fmt.Sprintf("o motivo de cada um está na remediação ou na etapa aplicar patches; confira as permissões com kubectl auth can-i patch %ss -n %s",
+			strings.ToLower(falhas[0].Patch.ResourceKind), namespace))
+}
+
+// perguntaDoFix é a pergunta da confirmação do --fix: quantos patches, onde, e que os pods
+// são recriados (o rollout do template).
+func perguntaDoFix(patches []remediation.RemediationPatch, namespace string) string {
+	return fmt.Sprintf("aplicar %s no namespace %s?\nos pods dos recursos são recriados com a correção",
+		contar(len(patches), "patch", "patches"), namespace)
 }
 
 // filtrarPeloPerfil deixa só os achados dos checks do perfil (profiles.Inclui) e conta os
