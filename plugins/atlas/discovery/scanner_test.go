@@ -103,7 +103,7 @@ func TestComponent_Fields(t *testing.T) {
 
 func TestScan_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestScan_WithGoModule(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myservice\n\ngo 1.26\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestScan_WithPackageJson(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "package.json"), []byte(`{"name":"frontend"}`), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestScan_WithDockerfile(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "Dockerfile"), []byte("FROM alpine\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestScan_IgnoredDirectories(t *testing.T) {
 	os.MkdirAll(ignoredDir, 0755)
 	os.WriteFile(filepath.Join(ignoredDir, "go.mod"), []byte("module ignored"), 0644)
 
-	bp, err := Scan(tmpDir, []string{"node_modules"})
+	bp, err := ScanWithRules(tmpDir, []string{"node_modules"}, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestScan_NoDuplicates(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myapi"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestScan_NoDuplicates(t *testing.T) {
 
 func TestScan_RootsField(t *testing.T) {
 	tmpDir := t.TempDir()
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestScan_CaminhosRelativosComBarra(t *testing.T) {
 	os.MkdirAll(api, 0755)
 	os.WriteFile(filepath.Join(api, "go.mod"), []byte("module api"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestScanInfra_RootPathRelativo(t *testing.T) {
 }
 
 func TestScan_InvalidPath(t *testing.T) {
-	_, err := Scan("/nonexistent/path/xyz123", nil)
+	_, err := ScanWithRules("/nonexistent/path/xyz123", nil, DefaultRules)
 	if err == nil {
 		t.Error("esperado erro para caminho inexistente, obtido nil")
 	}
@@ -241,7 +241,7 @@ func TestScan_WithChartYaml(t *testing.T) {
 	os.MkdirAll(chartDir, 0755)
 	os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: meu-chart\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestScan_WithKustomization(t *testing.T) {
 	os.MkdirAll(kustomizeDir, 0755)
 	os.WriteFile(filepath.Join(kustomizeDir, "kustomization.yaml"), []byte("resources:\n- ../base\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestScan_WithDockerfileVariant(t *testing.T) {
 	os.MkdirAll(serviceDir, 0755)
 	os.WriteFile(filepath.Join(serviceDir, "Dockerfile.prod"), []byte("FROM golang:1.26\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestScan_GoModMetadata(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module github.com/exemplo/meu-app\n\ngo 1.26\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestScan_DetectsRelations(t *testing.T) {
 		"module github.com/exemplo/app\n\ngo 1.26\n\nrequire github.com/exemplo/lib v0.0.0\n\nreplace github.com/exemplo/lib => ../lib\n",
 	), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestScan_DetectsDockerfileRelations(t *testing.T) {
 	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.26\n"), 0644)
 	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM golang:1.26\nCOPY app/ /src/\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestScan_DetectsLanguageAndFramework(t *testing.T) {
 	os.MkdirAll(infraDir, 0755)
 	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM alpine\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -475,7 +475,7 @@ func main() {
 }
 `), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -510,7 +510,7 @@ COPY --from=builder /bin/app /usr/local/bin/
 COPY --from=app ./dist /app/
 `), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -540,7 +540,7 @@ dependencies:
     version: "17.0.0"
 `), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -576,7 +576,7 @@ func TestScan_DetectsPackageJsonRelations(t *testing.T) {
 		}
 	}`), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -607,7 +607,7 @@ func TestScan_DetectsHelmRelations(t *testing.T) {
 		"apiVersion: v2\nname: main\ndependencies:\n  - name: dep\n    repository: \"file://../dep\"\n",
 	), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestScan_DockerfileNaoCasaPontoNemPrefixo(t *testing.T) {
 		"tools/Dockerfile":         "FROM golang:1.26\nCOPY services/api2/x .\n",
 	})
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -699,7 +699,7 @@ func TestScan_ImportsGoNaoEntraEmPastasIgnoradas(t *testing.T) {
 	})
 
 	ignores := append(append([]string(nil), IgnoradosPadrao...), "meu_ignorado")
-	bp, err := Scan(tmpDir, ignores)
+	bp, err := ScanWithRules(tmpDir, ignores, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestScan_ImportsGoNaoEntraEmPastasIgnoradas(t *testing.T) {
 
 	// Controle positivo: o mesmo import em pasta não ignorada gera a relação.
 	escreverArquivos(t, tmpDir, map[string]string{"src/s.go": imp})
-	bp, err = Scan(tmpDir, ignores)
+	bp, err = ScanWithRules(tmpDir, ignores, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -731,7 +731,7 @@ func TestScan_ImportsGoDeduplicadosEComFronteira(t *testing.T) {
 		"app/internal/dep/dep.go": "package dep\n\nimport l \"github.com/x/mono/lib/c\"\n",
 	})
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}

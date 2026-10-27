@@ -3,7 +3,7 @@
 > **Fonte da verdade do progresso.** Toda sessão de trabalho começa e termina neste arquivo.
 > **Origem:** revisão de 26/10/2026, com um agente por plugin. Os relatórios citavam arquivo e linha; as linhas abaixo são aproximadas e devem ser conferidas antes de editar. ✓ = conferido no código pela sessão principal; ▶ = reproduzido pelo agente rodando.
 > **Escopo (decisão do usuário, 26/10/2026):** corrigir **tudo o que é erro ou está errado em relação à proposta do plugin**. Ficam de fora **features novas e perfumaria**, que estão na seção "Fora do escopo" no fim deste arquivo. Na dúvida entre "conserto" e "feature", vale a pergunta: o plugin promete isso (ajuda, README, CLAUDE.md, nome da flag) e não entrega? Se sim, é conserto.
-> **Verificação geral:** `go test ./pkg/... ./plugins/bard/... ./plugins/atlas/... ./cmd/...` + `go test -tags k8s ./plugins/sentinel/...` + `(cd plugins/viz && go test ./...)` + `(cd plugins/synapstor && go test ./...)` + lint. Compare com a develop usando `falhas.sh`: só podem falhar os 12 testes que já falham no Windows (lista em `agile/sessoes/estado.md`).
+> **Verificação geral:** `go test ./pkg/... ./plugins/bard/... ./plugins/atlas/... ./cmd/...` + `go test -tags k8s ./plugins/sentinel/...` + `(cd plugins/viz && go test ./...)` + `(cd plugins/synapstor && go test ./...)` + lint. Compare com a develop usando `falhas.sh`: só podem falhar os 11 testes que já falham no Windows (lista em `agile/sessoes/estado.md`).
 
 ## Decisões do usuário (26/10/2026, 2ª sessão)
 
@@ -542,7 +542,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** a ordem de mapas (`helm.go:~94`, `terraform.go:~54`, `range cf.Services`) muda o `.mmd` a cada execução. `helperBuildAtlas` faz `go build` em cada teste (`main_test.go:~19-31`), e o pacote leva ~68 s.
   - **Fazer:** ordenar recursos e relações no fim do `ScanInfra`; goldens de `GenerateInfraMermaid` com as fixtures dos itens A04 a A08; compilar uma vez (`TestMain`) ou chamar `executar()` no processo.
   - **Verificar:** dois `diagram` seguidos dão o mesmo arquivo; o pacote abaixo de ~15 s.
-- [ ] **A13 · Código morto**
+- [x] **A13 · Código morto**
   - **Problema:** sem uso fora dos testes:
     - `analysis.GenerateMermaid`, `ValidateDiagram` e `GenerateC4` (`diagram.go:~13-166`);
     - `cycles.go`, `metrics.go` e `diff.go`;
@@ -698,6 +698,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A03 | Overview mantém workloads, charts, apps, módulos e serviços do compose isolados (e tudo, se nada mais sobrar), agrupa por kind acima de 25 nós (`MaxNosOverview`, arestas reapontadas e sem repetir) e o `GetInfraStats` conta os nós e arestas desenhados, com testes e golden do teto | este commit |
 | 26/10/2026 | A02 | O `--detail full` não passa mais pela IA (etapa pulada com o motivo) e as estatísticas de recursos e relações vêm do diagrama gravado, contando nós e arestas do Mermaid da IA (`ContarMermaid`), com testes e goldens | este commit |
 | 26/10/2026 | A10 | O Mermaid da IA só substitui o programático se passar no `analysis.ValidarMermaid` (flowchart/graph, subgraph e end fechados, arestas entre nós declarados, nós só com IDs do rascunho, que o prompt `atlas.refine` agora manda manter), com prazo de 60 s pelo contexto, o programático sempre em `.yby/atlas-diagram.raw.mmd` e o inventário do prompt resumido (10 nomes por kind, sem as relações) | este commit |
+| 26/10/2026 | A13 | Código morto apagado: analysis (GenerateMermaid, ValidateDiagram, GenerateC4, cycles, metrics, diff) e discovery (cache, Scan, Match), com os testes deles; o TestGenerateMermaid_PathsAbsolutos sai junto e a lista de falhas do Windows cai para 11 | este commit |
 
 ### Fase 6 · Viz
 

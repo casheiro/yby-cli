@@ -32,11 +32,6 @@ func ShouldIgnore(path string, ignores []string) bool {
 	return false
 }
 
-// Scan percorre o diretório e aplica as regras padrão para identificar componentes.
-func Scan(root string, ignores []string) (*Blueprint, error) {
-	return ScanWithRules(root, ignores, DefaultRules)
-}
-
 // ScanWithRules percorre o diretório e aplica as regras fornecidas para identificar componentes.
 func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, error) {
 	bp := &Blueprint{
