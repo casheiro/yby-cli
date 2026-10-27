@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -581,14 +582,12 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 	return result, nil
 }
 
-// configMapDeK8s converte o configmap da API: chaves e tamanho dos dados.
+// configMapDeK8s converte o configmap da API: chaves e tamanho dos dados. O
+// que vem do cache do watch, sem os valores, traz o tamanho na anotação.
 func configMapDeK8s(cm *corev1.ConfigMap) ConfigMap {
-	totalSize := 0
-	for _, v := range cm.Data {
-		totalSize += len(v)
-	}
-	for _, v := range cm.BinaryData {
-		totalSize += len(v)
+	totalSize, err := strconv.Atoi(cm.Annotations[anotacaoTamanho])
+	if err != nil {
+		totalSize = tamanhoDosDados(cm)
 	}
 	dataSize := fmt.Sprintf("%dB", totalSize)
 	if totalSize >= 1024 {
@@ -604,6 +603,18 @@ func configMapDeK8s(cm *corev1.ConfigMap) ConfigMap {
 		Labels:    cm.Labels,
 		Chaves:    chavesDe(cm),
 	}
+}
+
+// tamanhoDosDados soma os bytes dos valores do ConfigMap (texto e binários).
+func tamanhoDosDados(cm *corev1.ConfigMap) int {
+	total := 0
+	for _, v := range cm.Data {
+		total += len(v)
+	}
+	for _, v := range cm.BinaryData {
+		total += len(v)
+	}
+	return total
 }
 
 // formatAge formata uma duração em formato legível (ex: "5m", "2h", "3d")

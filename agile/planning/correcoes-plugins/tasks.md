@@ -566,7 +566,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** todo tick lê a aba ativa (`ui/model.go:~496-497`) e descarta o resultado quando o watch cobre (`~527-532`). Na aba Pods, `GetPods` chama `fetchPodMetrics` (`monitor/client.go:~165-213`), que busca as métricas do cluster todo, nunca mostradas, e calculadas só com o primeiro contêiner.
   - **Fazer:** com a aba vigiada, o sinal de conexão vira `Discovery().ServerVersion()` ou o estado do watch; tirar `fetchPodMetrics` do `GetPods` (apagar, já que não aparece na tela).
   - **Verificar:** teste de que o tick não chama List em aba vigiada.
-- [ ] **V04 · Memória dos informers**
+- [x] **V04 · Memória dos informers**
   - **Problema:** o transform só tira o `managedFields` (`monitor/vigia.go:~165-170`). ConfigMap inteiro (a aba só mostra quantas chaves e o tamanho), annotation `last-applied-configuration`, spec cheio dos pods e todos os Events ficam em memória.
   - **Fazer:**
     - transform por tipo: ConfigMap sem valores (guardando contagem e tamanho), sem last-applied, Pod sem env/volumes/args/command;
@@ -696,6 +696,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | V03 | Com a aba vigiada o tique só sonda `/version` (`monitor.Sondador`) em vez de listar; `fetchPodMetrics` e `Pod.CPU`/`Memory` removidos | este commit |
 | 26/10/2026 | V05 | Listas com prazo de 10 s por contexto (sem `rest.Config.Timeout`), `RetryClient` sem repetir Forbidden/Unauthorized/NotFound/Invalid/credencial exec/prazo, aba negada com "sem permissão para listar X …" sem reconectar e sem LIST no relógio, e dica `yby cloud refresh` para a credencial exec | este commit |
 | 26/10/2026 | V07 | Benchmarks com 10 mil pods e 20 mil eventos confirmaram a hipótese: `itensDaAba` em cache (chave: a lista, os filtros, o segundo e o modo visual), a tabela montada uma vez por lista e só a janela desenhada (`yui.TabelaJanela`) levam a `View` de ~800 ms para ~7 ms nos pods e de ~1,3 s para ~10 ms nos eventos (tecla + quadro de ~1,4 s para ~7 ms, lote + quadro de ~1,1 s para ~55 ms), e `listaDoCache` ordena pela chave calculada uma vez e não copia os eventos (pods ~30→13 ms, eventos ~55→22 ms e 32→4,7 MB por lote); a conversão por chave no handler é hipótese não confirmada (a conversão é ~10% do lote) e ficou de fora | este commit |
+| 26/10/2026 | V04 | Transform por tipo no cache do watch (`paraOCache`): sem last-applied em todo tipo, ConfigMap sem os valores (chaves ficam, tamanho calculado antes numa anotação só do cache: 10 mil ConfigMaps de ~98 MB para ~10 MB) e Pod sem env, volumes, args e command; os Events não foram limitados (20 mil ocupam ~15 MB, e a contagem da aba segue exata) | este commit |
 
 ### Fase 7 · Pendências
 
