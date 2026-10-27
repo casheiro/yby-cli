@@ -11,7 +11,7 @@ import (
 func init() {
 	Register(&Tool{
 		Name:        "sentinel_investigate",
-		Description: "Investiga a segurança de um pod específico via plugin Sentinel",
+		Description: "Coleta o estado, os eventos e o fim dos logs de um pod via plugin Sentinel",
 		Intents:     []string{"investigate_pod", "diagnose_pod", "pod_health"},
 		Parameters: []ToolParam{
 			{Name: "pod", Description: "Nome do pod a investigar", Required: true},
@@ -40,16 +40,37 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 		return "", err
 	}
 
-	if resp.Data == nil {
-		return "Nenhuma informação de segurança encontrada para o pod.", nil
-	}
+	return formatInvestigateResults(resp.Data), nil
+}
 
-	formatted, err := json.MarshalIndent(resp.Data, "", "  ")
+// formatInvestigateResults converte os dados do investigate em texto para a IA: JSON
+// compacto e, depois dele, os logs do pod em linhas. Dentro do JSON os logs seriam uma
+// linha só, e o teto do Fluxo, que guarda o fim de uma saída longa, perderia o fim deles.
+func formatInvestigateResults(data interface{}) string {
+	if data == nil {
+		return "O Sentinel não devolveu dados do pod (estado, eventos e logs)."
+	}
+	logs := ""
+	if campos, ok := data.(map[string]interface{}); ok {
+		if l, ok := campos["logs"].(string); ok {
+			logs = l
+			semLogs := make(map[string]interface{}, len(campos))
+			for k, v := range campos {
+				if k != "logs" {
+					semLogs[k] = v
+				}
+			}
+			data = semLogs
+		}
+	}
+	formatted, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Sprintf("%v", resp.Data), nil
+		return fmt.Sprintf("%v", data)
 	}
-
-	return string(formatted), nil
+	if logs == "" {
+		return string(formatted)
+	}
+	return string(formatted) + "\n\nLogs do pod (fim):\n" + logs
 }
 
 // pedidoSentinelInvestigate é o pedido ao Sentinel para investigar o pod, no cluster e no
@@ -59,5 +80,6 @@ func pedidoSentinelInvestigate(pod string, params map[string]string) plugin.Plug
 	if ns := namespaceDe(params); ns != "" {
 		args = append(args, "-n", ns)
 	}
-	return pedidoAoPlugin(append(args, "-o", "json"))
+	// --no-ai: o Sentinel só coleta e o Bard analisa com o provider da sessão (/modelo).
+	return pedidoAoPlugin(append(args, "-o", "json", "--no-ai"))
 }

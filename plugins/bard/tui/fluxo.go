@@ -50,6 +50,10 @@ type EtapaMsg struct {
 	Nota    string        // resultado curto (ex.: "3 notas do Synapstor")
 	Duracao time.Duration // preenchida no estado final
 	Saida   string        // saída completa da ferramenta, para "↵ ver"
+	// Aviso é o texto inteiro do que pede ação do usuário (ex.: o índice do Synapstor feito
+	// com outros embeddings). A nota é curta e a linha da etapa a corta; o aviso fica
+	// depois da rodada, na conversa da TUI e abaixo das etapas no -p.
+	Aviso string
 	// Tentativa, na etapa de resposta, conta as chamadas ao provider. Acima
 	// de 1 indica que a resposta recomeçou: os trechos anteriores valem nada.
 	// A falha de uma tentativa já anuncia a seguinte (NotaNovaTentativa)
@@ -125,10 +129,10 @@ func NovoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config)
 	if f.TopK <= 0 {
 		f.TopK = 5
 	}
-	// O padrão 0,6 já vem do loadBardConfig; aqui só se corrige um valor
-	// inválido, porque 0 explícito no bard.yaml aceita todas as notas.
+	// O padrão (o corte do pkg/ai, o mesmo do Synapstor) já vem do loadBardConfig; aqui
+	// só se corrige um valor inválido, porque 0 explícito no bard.yaml aceita todas as notas.
 	if f.Limiar < 0 {
-		f.Limiar = 0.6
+		f.Limiar = ai.RelevanciaMinima
 	}
 	return f
 }
@@ -136,14 +140,16 @@ func NovoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config)
 // Iniciar roda o fluxo em segundo plano e devolve o canal de eventos. O canal
 // termina sempre com um FimMsg e é fechado em seguida; quem consome deve ler
 // até o FimMsg. Cancelar ctx interrompe a rodada e antecipa o FimMsg, mesmo
-// que o provider ou a ferramenta não respeitem o contexto.
-func (f *Fluxo) Iniciar(ctx context.Context, rodada int, entrada string) <-chan tea.Msg {
+// que o provider ou a ferramenta não respeitem o contexto. A conversa são as trocas
+// anteriores da sessão, que vão com a pergunta à resposta e ao classificador.
+func (f *Fluxo) Iniciar(ctx context.Context, rodada int, entrada string, conversa ...Troca) <-chan tea.Msg {
 	e := &emissor{ctx: ctx, ch: make(chan tea.Msg, 16), rodada: rodada}
-	go f.rodar(ctx, e, entrada)
+	// A memória sai aqui, antes da goroutine: quem chamou pode acrescentar trocas à fatia.
+	go f.rodar(ctx, e, entrada, memoriaDaConversa(conversa))
 	return e.ch
 }
 
-func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
+func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada, conversa string) {
 	inicio := time.Now()
 	var usadas []string
 	fim := func(err error) {
@@ -181,17 +187,24 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		fim(nil)
 		return
 	}
-	e.etapa(EtapaMsg{Etapa: EtapaContexto, Rotulo: rotuloContexto, Estado: ui.EtapaFeita, Nota: notas.nota, Duracao: time.Since(t0)})
+	// O índice que precisa ser refeito fica marcado como falha; a pergunta segue sem notas.
+	estado := ui.EtapaFeita
+	if notas.falhou {
+		estado = ui.EtapaFalha
+	}
+	e.etapa(EtapaMsg{Etapa: EtapaContexto, Rotulo: rotuloContexto, Estado: estado, Nota: notas.nota, Aviso: notas.aviso, Duracao: time.Since(t0)})
 
 	entradaFinal := entrada
-	if notas.texto != "" {
-		entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", notas.texto, entrada)
+	if notas.texto != "" || conversa != "" {
+		entradaFinal = "Pergunta do Usuário: " + entrada
 	}
 
 	// 2. Intenção
 	t0 = time.Now()
 	e.etapa(EtapaMsg{Etapa: EtapaIntencao, Rotulo: rotuloIntencao, Estado: ui.EtapaAtual})
-	intent, ok := esperar(ctx, func() *tools.IntentResult { return classifyIntent(ctx, f.Provider, entrada, f.Cluster, f.Namespace) })
+	intent, ok := esperar(ctx, func() *tools.IntentResult {
+		return classifyIntent(ctx, f.Provider, entrada, conversa, f.Cluster, f.Namespace)
+	})
 	if !ok || ctx.Err() != nil {
 		e.etapaForcada(interrompida(EtapaIntencao, rotuloIntencao, time.Since(t0)))
 		fim(nil)
@@ -228,21 +241,24 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		usadas = append(usadas, ferramenta.Name)
 		// A saída de toda ferramenta (logs, describe, achados do Sentinel, tools
 		// externas) e o erro dela, que costuma trazer a saída junto, passam pela
-		// redação antes do prompt. O "↵ ver" mostra o mesmo texto que a IA recebeu.
-		saida := redacao.Redigir(res.saida)
+		// redação e depois pelo teto (a redação vê o texto inteiro) antes do prompt.
+		// O "↵ ver" mostra o mesmo texto que a IA recebeu.
+		saida := Cortar(redacao.Redigir(res.saida), TetoFerramenta)
 		msg := EtapaMsg{Etapa: EtapaFerramenta, Rotulo: rotulo, Estado: ui.EtapaFeita, Nota: alvo, Duracao: time.Since(t0), Saida: saida}
 		if res.err != nil {
-			saida = redacao.Redigir(fmt.Sprintf("Erro: %v", res.err))
+			saida = Cortar(redacao.Redigir(fmt.Sprintf("Erro: %v", res.err)), TetoFerramenta)
 			msg.Estado = ui.EtapaFalha
 			msg.Nota = primeiraLinha(redacao.Redigir(res.err.Error()))
 			msg.Saida = saida
 		}
 		e.etapa(msg)
 		entradaFinal = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", entrada, ferramenta.Name, saida)
-		if notas.texto != "" {
-			// As notas do Synapstor continuam valendo quando uma ferramenta roda.
-			entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\n%s", notas.texto, entradaFinal)
-		}
+	}
+	// A conversa atual vem antes da pergunta, e as notas do Synapstor, que continuam
+	// valendo quando uma ferramenta roda, antes de tudo.
+	entradaFinal = comConversa(conversa, entradaFinal)
+	if notas.texto != "" {
+		entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\n%s", notas.texto, entradaFinal)
 	}
 
 	// 4. Resposta, em pedaços, com novas tentativas
@@ -295,8 +311,105 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 
 // contextoBuscado é o resultado da etapa de contexto.
 type contextoBuscado struct {
-	texto string // trecho injetado na pergunta; vazio sem notas
-	nota  string // resultado curto exibido na etapa
+	texto  string // trecho injetado na pergunta; vazio sem notas
+	nota   string // resultado curto exibido na etapa
+	aviso  string // o que o usuário precisa fazer, inteiro (ver EtapaMsg.Aviso)
+	falhou bool   // a busca falhou de um jeito que o usuário resolve (ex.: índice de outro modelo)
+}
+
+// notaBuscada são os trechos de um arquivo do índice que passaram do corte, na ordem da
+// busca.
+type notaBuscada struct {
+	titulo, caminho string
+	trechos         []ai.UnknownDocument
+}
+
+// notasPorArquivo junta os trechos acima do limiar por arquivo, na ordem do trecho de
+// maior pontuação de cada um: o índice guarda trechos de seção, e o mesmo arquivo não
+// deve aparecer várias vezes. Trecho sem source nem ID fica sozinho. O corte compara em
+// float32, a precisão da pontuação, como o Synapstor: em float64, o trecho com pontuação
+// float32(ai.RelevanciaMinima) ficaria de fora no Bard e dentro no Synapstor.
+func notasPorArquivo(resultados []ai.UnknownDocument, limiar float64) []*notaBuscada {
+	var notas []*notaBuscada
+	porCaminho := map[string]*notaBuscada{}
+	corte := float32(limiar)
+	for _, res := range resultados {
+		if res.Score < corte {
+			continue
+		}
+		caminho := res.Metadata["source"]
+		if caminho == "" {
+			caminho, _, _ = strings.Cut(res.ID, "#")
+		}
+		n := porCaminho[caminho]
+		if n == nil || caminho == "" {
+			n = &notaBuscada{titulo: res.Metadata["title"], caminho: caminho}
+			notas = append(notas, n)
+			if caminho != "" {
+				porCaminho[caminho] = n
+			}
+		}
+		n.trechos = append(n.trechos, res)
+	}
+	return notas
+}
+
+// cabecalho apresenta a nota pelo caminho no índice, que identifica o arquivo. Os trechos
+// do Synapstor já começam com "# Título" (e "## Seção"): o título só entra no cabeçalho
+// quando o primeiro trecho não o traz, ou quando não há caminho.
+func (n *notaBuscada) cabecalho() string {
+	nome := n.caminho
+	trazTitulo := len(n.trechos) > 0 && strings.HasPrefix(n.trechos[0].Content, "# ")
+	switch {
+	case n.titulo == "" || (trazTitulo && nome != ""):
+	case nome == "":
+		nome = n.titulo
+	default:
+		nome = n.titulo + " (" + nome + ")"
+	}
+	return fmt.Sprintf("\n--- Contexto: %s ---\n", nome)
+}
+
+// marcaDeSecao é o "[seção: X]" do trecho que não começa com o "## X" da seção (os do
+// Synapstor começam, logo depois do "# Título"); vazio sem seção ou quando o trecho já a traz.
+func marcaDeSecao(res ai.UnknownDocument) string {
+	secao := res.Metadata["section"]
+	if secao == "" {
+		return ""
+	}
+	linhas := strings.SplitN(res.Content, "\n", 3)
+	for i, linha := range linhas[:min(len(linhas), 2)] {
+		if linha == "## "+secao {
+			return ""
+		}
+		if i == 0 && !strings.HasPrefix(linha, "# ") {
+			break
+		}
+	}
+	return "[seção: " + secao + "]\n"
+}
+
+// NotaIndiceDeOutroModelo é a nota da etapa de contexto quando o índice do Synapstor foi
+// feito com outros embeddings. É curta para caber na linha da etapa ao lado do tempo,
+// num terminal de 80 colunas; o comando que o refaz vai inteiro no aviso.
+const NotaIndiceDeOutroModelo = "índice de outro modelo"
+
+// linhaReindexar é a última linha do aviso do índice de outro modelo: numa linha só, o
+// comando não se parte na quebra do texto e se copia inteiro.
+const linhaReindexar = "rode yby synapstor index --full para refazer o índice"
+
+// avisoDoIndice é o aviso da etapa de contexto quando o índice foi feito com outros
+// embeddings: com o que ele foi feito, de onde vêm os embeddings agora e, na linha de
+// baixo, o comando que o refaz. O Bard não reindexa.
+func avisoDoIndice(err error) (string, bool) {
+	var outro *ai.IndiceDeOutroModeloError
+	switch {
+	case errors.As(err, &outro):
+		return outro.Diferenca() + ".\n" + linhaReindexar, true
+	case errors.Is(err, ai.ErrIndiceDeOutroModelo):
+		return ai.ErrIndiceDeOutroModelo.Error() + ".\n" + linhaReindexar, true
+	}
+	return "", false
 }
 
 func (f *Fluxo) buscarContexto(ctx context.Context, entrada string) contextoBuscado {
@@ -304,15 +417,35 @@ func (f *Fluxo) buscarContexto(ctx context.Context, entrada string) contextoBusc
 		return contextoBuscado{nota: "sem Synapstor"}
 	}
 	resultados, err := f.Buscador.Search(ctx, entrada, f.TopK)
+	if aviso, ok := avisoDoIndice(err); ok {
+		return contextoBuscado{nota: NotaIndiceDeOutroModelo, aviso: aviso, falhou: true}
+	}
 	if err != nil {
 		return contextoBuscado{nota: "Synapstor indisponível"}
 	}
+	// As notas vão na ordem da busca até o teto, cada uma com o caminho e os trechos com
+	// o título e a seção que trazem: o trecho que não cabe inteiro entra cortado, se ainda
+	// houver espaço para um pedaço útil, e os seguintes ficam de fora.
 	var sb strings.Builder
 	n := 0
-	for _, res := range resultados {
-		if float64(res.Score) >= f.Limiar {
-			n++
-			fmt.Fprintf(&sb, "\n--- Contexto: %s ---\n%s\n", res.Metadata["title"], res.Content)
+notas:
+	for _, nota := range notasPorArquivo(resultados, f.Limiar) {
+		cabecalho := nota.cabecalho()
+		for _, res := range nota.trechos {
+			secao := marcaDeSecao(res)
+			resta := TetoNotas - sb.Len() - len(cabecalho) - len(secao) - 1
+			conteudo := res.Content
+			if len(conteudo) > resta {
+				if resta < minimoNota {
+					break notas
+				}
+				conteudo = Cortar(conteudo, resta)
+			}
+			if cabecalho != "" {
+				n++
+			}
+			sb.WriteString(cabecalho + secao + conteudo + "\n")
+			cabecalho = ""
 		}
 	}
 	switch n {

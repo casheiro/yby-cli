@@ -172,3 +172,15 @@ func TestResultadosDaBusca_TrechosDeUmArquivoNaoComemAsVagas(t *testing.T) {
 		t.Fatalf("esperava a, b e c, veio %+v", results)
 	}
 }
+
+// TestResultadosDaBusca_CorteDoPkgAI: o corte é o ai.RelevanciaMinima, o mesmo do Bard.
+func TestResultadosDaBusca_CorteDoPkgAI(t *testing.T) {
+	docs := []ai.UnknownDocument{
+		{ID: "a.md#0", Score: ai.RelevanciaMinima, Metadata: map[string]string{"source": "a.md"}},
+		{ID: "b.md#0", Score: ai.RelevanciaMinima - 0.01, Metadata: map[string]string{"source": "b.md"}},
+	}
+	results, fora := resultadosDaBusca(docs, 5)
+	if len(results) != 1 || results[0].Path != "a.md" || fora != 1 {
+		t.Fatalf("esperava só a.md no corte e b.md fora, veio %+v (fora %d)", results, fora)
+	}
+}

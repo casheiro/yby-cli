@@ -56,7 +56,7 @@ func retomador(ctxData map[string]interface{}, bardCfg BardConfig, clusterCtx *C
 		if len(todas) == 0 {
 			return tui.Retomada{}, nil
 		}
-		recentes := loadSessionHistory(entries, id, maxHistoryEntries)
+		recentes := historicoNoOrcamento(loadSessionHistory(entries, id, maxHistoryEntries))
 		r := tui.Retomada{
 			SystemPrompt: buildSystemPrompt(ctxData, bardCfg, recentes, clusterCtx),
 			Historico:    contarHistorico(recentes),

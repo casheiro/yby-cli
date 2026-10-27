@@ -54,8 +54,8 @@ type Config struct {
 	// Vazio, o esc só interrompe a resposta.
 	Voltar      string
 	SaveMessage func(role, content, sessionID string)
-	// TopK e LimiarRelevancia controlam a busca no Synapstor, como vêm do
-	// bard.yaml (padrões 5 e 0,6 no loadBardConfig). TopK 0 vira 5; limiar 0
+	// TopK e LimiarRelevancia controlam a busca no Synapstor, como vêm do bard.yaml
+	// (padrões 5 e ai.RelevanciaMinima no loadBardConfig). TopK 0 vira 5; limiar 0
 	// aceita todas as notas.
 	TopK             int
 	LimiarRelevancia float64
@@ -137,6 +137,11 @@ type Model struct {
 
 	// ultimoFim é o desfecho da última rodada, para a linha de estado.
 	ultimoFim *FimMsg
+	// conversa são as perguntas desta sessão com as respostas, que vão com a pergunta
+	// seguinte (as de uma sessão retomada já vão pelo system prompt); pergunta é a da
+	// rodada em andamento.
+	conversa []Troca
+	pergunta string
 	// spinner gira na linha de estado durante a resposta (◈ fixo sem TTY ou sem cor);
 	// novoSpinner o cria a cada rodada (trocado nos testes).
 	spinner     ui.Spinner
@@ -666,7 +671,8 @@ func (m *Model) iniciarRodada(input string) tea.Cmd {
 	m.parcial, m.parcialVisto = "", 0
 	m.inicioRodada = m.agora()
 	m.instante = m.inicioRodada
-	m.eventos = m.fluxo.Iniciar(ctx, m.rodada, input)
+	m.pergunta = input
+	m.eventos = m.fluxo.Iniciar(ctx, m.rodada, input, m.conversa...)
 	m.spinner = m.novoSpinner("")
 	return tea.Batch(m.proximoEvento(), m.spinner.Init())
 }
@@ -693,6 +699,11 @@ func (m *Model) encerrarRodada(msg FimMsg) {
 	m.parcial = ""
 	m.parcialCache = cacheParcial{}
 	m.ultimoFim = &msg
+	// Só as últimas MaxTrocas vão à IA; as outras nem ficam guardadas.
+	m.conversa = append(m.conversa, TrocaDe(m.pergunta, msg))
+	if n := len(m.conversa); n > MaxTrocas {
+		m.conversa = append([]Troca(nil), m.conversa[n-MaxTrocas:]...)
+	}
 
 	resposta := chatMessage{
 		role:        "assistant",
@@ -719,6 +730,12 @@ func (m *Model) encerrarRodada(msg FimMsg) {
 		m.messages = append(m.messages, resposta)
 		if m.config.SaveMessage != nil {
 			m.config.SaveMessage("assistant", msg.Resposta, m.config.SessionID)
+		}
+	}
+	// As etapas somem com a rodada: o que pede ação do usuário fica na conversa.
+	for _, e := range m.etapas {
+		if e.Aviso != "" {
+			m.messages = append(m.messages, chatMessage{role: "nota", content: e.Aviso})
 		}
 	}
 }
@@ -965,7 +982,7 @@ func desfecho(final tea.Model, err error) error {
 
 // classifyIntent classifica a intenção do usuário via IA. Falha do provider ou
 // resposta ilegível viram resposta direta, com o motivo no log de debug.
-func classifyIntent(ctx context.Context, provider ai.Provider, input, cluster, namespace string) *tools.IntentResult {
+func classifyIntent(ctx context.Context, provider ai.Provider, input, conversa, cluster, namespace string) *tools.IntentResult {
 	classifyPrompt := prompts.Get("bard.classify")
 	if classifyPrompt == "" {
 		classifyPrompt = `Classifique a intencao. Responda APENAS JSON:
@@ -973,8 +990,9 @@ func classifyIntent(ctx context.Context, provider ai.Provider, input, cluster, n
 Se nao precisa de ferramenta: {"intent":"direct","params":{},"direct":true}`
 	}
 
-	userPrompt := fmt.Sprintf("Intencoes:\n%sSessao: %s\nUsuario: %s",
-		tools.DescreverIntents(), descreverSessao(cluster, namespace), input)
+	// A conversa atual resolve as referências ("e os logs dele?") e completa os parâmetros.
+	userPrompt := fmt.Sprintf("Intencoes:\n%sSessao: %s\n%s",
+		tools.DescreverIntents(), descreverSessao(cluster, namespace), comConversa(conversa, "Usuario: "+input))
 
 	result, err := provider.Completion(ctx, classifyPrompt, userPrompt)
 	if err != nil {

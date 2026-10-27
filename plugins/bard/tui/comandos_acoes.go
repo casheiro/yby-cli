@@ -183,9 +183,12 @@ func (m *Model) avisoFalha(texto string) tea.Cmd {
 	return m.mostrarAviso(&avisoEstado{texto: texto})
 }
 
-// trocarMensagens troca a conversa inteira (/limpar e /sessões) e refaz a tela do zero.
+// trocarMensagens troca a conversa inteira (/limpar e /sessões) e refaz a tela do zero. A
+// memória da conversa recomeça: a sessão retomada vai à IA pelo system prompt, e repeti-la
+// nas trocas a mandaria duas vezes.
 func (m *Model) trocarMensagens(msgs []chatMessage) {
 	m.messages = msgs
+	m.conversa = nil
 	m.cortarHistorico(0)
 	m.dicaEm, m.copiaEm = -1, -1
 	m.lidas, m.parcialVisto = 0, 0

@@ -25,7 +25,7 @@ A conferência de 26/10/2026 (um agente por fase, só leitura) mapeou os arquivo
 | 1 | atlas (`feat/correcoes-atlas`) | A12, A11, A05, A09, A01, A06, A07, A04, A08, A03, A02, A10, A13 | onda 0; A10 depois do B10 |
 | 1 | synapstor (`feat/correcoes-synapstor`) | Y01, Y02, Y03, Y09, Y04, Y05, Y06, Y07, Y08, Y10, Y11, Y12, Y13 | onda 0 |
 | 1 | bard (`feat/correcoes-bard`) | B05, B08, B10, B03, B06, B04, B01, B09, B11, B14, B13 | onda 0 |
-| 2 | contratos (`feat/correcoes-contratos`) | K02, K04, B07, B02, B12, K03, e o lado do Bard no Y01, Y04 e Y05 (inclusive o corte de relevância num lugar só) | merge das trilhas da onda 1 |
+| 2 | contratos (`feat/correcoes-contratos`) | K02, K04, K03, B07, B02, B12, B15 (o lado do Bard no Y01, Y04 e Y05) | integração local das trilhas da onda 1 |
 | 3 | fecho | P01, P03, P02 | onda 2 e a release |
 
 **Arquivos quentes entre trilhas** (merge com cuidado): `pkg/ai/prompts/defaults.go` (B03, B11, K03, Y07, Y08, Y13, A02, A10, cada um no seu prompt), `pkg/ai/factory.go` (B13 e B14 no `GetProvider`; Y01 e Y06 no `GetEmbeddingProvider`), `CLAUDE.md`.
@@ -89,7 +89,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - manter o `UKIIndex` do core (`pkg/context/core.go:~92-110`) só se alguém ler; hoje ninguém lê;
     - o Synapstor embrulha o payload duas vezes (`main.go:~130,177-179`): desembrulhar.
   - **Verificar:** teste do manager mostrando que um plugin com hook `context` e sem `consome_contexto` abre sem rodar os hooks; `yby synapstor --help` instantâneo num repo grande.
-- [ ] **K02 · `atlas_blueprint` do Bard lê o que o Atlas manda** ✓
+- [x] **K02 · `atlas_blueprint` do Bard lê o que o Atlas manda** ✓
   - **Problema:** o Atlas responde `{"data":{"blueprint":{…}}}` (`plugins/atlas/main.go:~68-76`). `formatBlueprintResults` procura `components`/`relations`/`languages` no topo (`plugins/bard/tools/atlas_blueprint.go:~55-95`), e `languages` nem existe. A IA recebe só "## Blueprint do Projeto". O teste `plugins/bard/tools/atlas_test.go:~64-76` passa porque usa um formato inventado.
   - **Fazer:**
     - desembrulhar `data.blueprint`;
@@ -97,12 +97,12 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - se o `InfraBlueprint` estiver disponível no hook, usá-lo;
     - limite de tamanho (~8 KB).
   - **Verificar:** teste de contrato que gera a saída com o código real do Atlas (chamar `executar()`/`respond` num buffer, ou um golden gerado pelo Atlas) e a passa pelo `formatBlueprintResults` do Bard.
-- [ ] **K03 · Bard sem a seção de blueprint que nunca chega** ✓
+- [x] **K03 · Bard sem a seção de blueprint que nunca chega** ✓
   - **Problema:** o Bard declara só `command`, então `ctxData` chega nil (`plugins/bard/main.go:~120-128`) e a seção "Technical Blueprint (Atlas)" do system prompt (`main.go:~290-296`) sai sempre "Nenhum blueprint disponível."
   - **Fazer:** tirar a seção morta; o blueprint chega pela ferramenta (K02). Se o resumo for pequeno e barato, dá para pedir ao Atlas um resumo compacto e em cache na abertura. Decida pelo custo medido.
   - **Verificar:** o system prompt não promete o que não tem; teste do prompt.
   - **Conferência (26/10):** as seções "Project Overview" e "Backlog & Debt" do `buildSystemPrompt` também estão mortas (leem chaves no topo; os dados viriam em `ctxData["data"]`). Manter o placeholder `{{blueprint_json_summary}}` vazio, por compatibilidade com overrides. Não pedir resumo ao Atlas na abertura.
-- [ ] **K04 · Testes de contrato entre os plugins**
+- [x] **K04 · Testes de contrato entre os plugins**
   - **Problema:** os bugs do Sentinel (PR #218), do K02 e do B05 passaram com a suíte verde porque os fixtures inventam formatos.
   - **Fazer:** goldens em `testdata` gerados por quem escreve (o Sentinel grava o JSON do scan e do investigate; o Atlas grava o blueprint) e lidos pelos testes de quem consome (as tools do Bard). Um teste de cada lado: o escritor confere que o golden está atual (com `-update`) e o leitor o consome.
   - **Verificar:** mudar um campo no escritor sem atualizar o golden quebra o teste.
@@ -113,7 +113,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `plugins/bard/tools/plugin_helper.go:~16-34` procura `yby-plugin-<nome>` e `<nome>` sem `.exe`, então no Windows o Sentinel e o Atlas nunca rodam pelo Bard. Também roda `./.yby/plugins/<nome>` do diretório atual sem a verificação de confiança do core: um repo clonado pode trazer um binário.
   - **Fazer:** de preferência, o core passa ao Bard os caminhos já resolvidos e confiáveis dos plugins (no pedido ou numa env, ex.: `YBY_PLUGINS` com JSON nome→caminho), e o Bard usa só esses. Sem o core (binário direto), procurar com `.exe` no Windows e só em `~/.yby/plugins`.
   - **Verificar:** teste por GOOS; teste de que `./.yby/plugins` sem confiança não roda.
-- [ ] **B02 · Memória da conversa atual** ✓
+- [x] **B02 · Memória da conversa atual** ✓
   - **Problema:** `tui/model.go:~670` chama `m.fluxo.Iniciar(ctx, m.rodada, input)` só com a pergunta, e o `Fluxo` (`tui/fluxo.go`) monta o prompt só com `entrada` e um `SystemPrompt` fixo. O histórico de sessões anteriores entra (`main.go:~231-234`), mas a sessão atual não.
   - **Fazer:** o `Fluxo` recebe as últimas N trocas da sessão, com orçamento de tokens (B07), e as usa na resposta e no classificador. Vale também para o batch.
   - **Verificar:** teste do `Fluxo` com duas rodadas: a segunda pergunta ("e os logs dele?") chega ao provider falso com a primeira troca.
@@ -158,7 +158,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - aplicar `sanitizeContent` à saída de toda tool antes do prompt.
   - **Verificar:** testes.
   - **Conferência (26/10):** usa o `pkg/redacao` do R01. Entra também a injeção de flag: valores da IA que começam com `-` viram flags do kubectl em todas as `kubectl_*` (`--as=system:admin`, `--raw=…`); validar nomes e recursos. O bloqueio cobre `secret`, `secrets` e `sec`.
-- [ ] **B07 · Orçamento de tamanho do que vai à IA**
+- [x] **B07 · Orçamento de tamanho do que vai à IA**
   - **Problema:** nada limita o tamanho:
     - blueprint com `MarshalIndent`;
     - 20 mensagens inteiras de histórico;
@@ -195,7 +195,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - apagar o parser morto, ou aplicar os guardrails no ponto único de execução das tools, o que for coerente com o código atual;
     - os guardrails que fizerem sentido passam a valer na execução.
   - **Verificar:** testes do prompt e, se ficarem, testes dos guardrails no caminho de execução.
-- [ ] **B12 · Ferramentas que entregam errado**
+- [x] **B12 · Ferramentas que entregam errado**
   - **Problema:**
     - `kubectl_events` não filtra pelo objeto apesar do intent `pod_events`, e devolve o namespace inteiro;
     - `kubectl_logs` sem `container` falha em pod com vários contêineres e não tem `previous` (no CrashLoop, o log atual vem vazio);
@@ -213,6 +213,13 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** claude-cli e gemini-cli não passam pelo `wrapProvider` (`pkg/ai/factory.go`), então ficam sem retry, token-aware e custo.
   - **Fazer:** passar os dois pela cadeia, se ela fizer sentido para eles.
   - **Verificar:** teste da factory.
+- [x] **B15 · O Bard usa o índice do Synapstor como ele é** (lado do Bard do Y01, Y04 e Y05)
+  - **Problema:** `tui/fluxo.go:~306-310` mostra "Synapstor indisponível" para qualquer erro, inclusive o índice feito com outros embeddings (`ai.ErrIndiceDeOutroModelo`, do Y01). O corte de relevância é 0,6 no Bard (`config.go:~21`) e 0,35 no Synapstor (`search.go:~21`). Desde o Y05 o índice guarda trechos de seção, mas o Bard injeta o trecho só com o título e pode repetir o mesmo arquivo.
+  - **Fazer:**
+    - erro claro na etapa de contexto: "o índice foi feito com X; rode yby synapstor index --full";
+    - o corte de relevância num lugar só (`pkg/ai`), usado pelo Synapstor e pelo Bard; o `relevance_threshold` do config do Bard continua valendo quando definido;
+    - injetar o trecho com o caminho e a seção, dentro do teto de notas do B07.
+  - **Verificar:** teste do `Fluxo` com buscador falso para o erro, o corte e a injeção.
 
 ### Fase 3 · Synapstor
 
@@ -668,6 +675,9 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | K01 | Contexto barato (ambiente, infra com kube_config, values) a todo plugin quando o ambiente é pedido (`-c` em qualquer forma do pflag antes do nome, ou `YBY_ENV`); o caro só com `consome_contexto`; `--help` sem contexto; `ExecuteContextHook` com o contexto do chamador; Synapstor sem embrulho duplo; `UKIIndex` removido. | este commit |
+| 26/10/2026 | K02 | O hook `context` do Atlas aceita o argumento `infra` (só a ferramenta do Bard pede) e manda o `InfraBlueprint` ao lado do blueprint; `formatBlueprintResults` desembrulha a resposta real e resume com nomes (componentes, charts, workloads, outros recursos por kind e relações), cortado em 8 KB; contrato no `testdata` do Atlas (pedido e golden gravado pelo `executar`) lido pelo teste do Bard. | este commit |
+| 26/10/2026 | K04 | O Sentinel grava no `testdata` os pedidos do Bard e os goldens do JSON do scan `--no-ai` (recursos, escopo, `type` normalizado, `nao_rodaram`) e do investigate `--no-ai`, rodando o hook command com cluster falso e o relógio injetável no `timestamp`; o Bard confere o pedido do scan e passa os dois goldens pelos formatadores (`formatInvestigateResults` extraído), no lugar dos fixtures inventados. | este commit |
+| 26/10/2026 | K03 | O system prompt do Bard perdeu as seções mortas (Project Overview, Backlog & Debt, Technical Blueprint): o Bard não recebe contexto do core e o blueprint chega pela ferramenta; `{{blueprint_json_summary}}` segue aceito e vira vazio, por compatibilidade com overrides, e o Atlas não é consultado na abertura | este commit |
 
 ### Fase 2 · Bard
 
@@ -684,7 +694,13 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
 | 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
 | 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
+| 26/10/2026 | B07 | Orçamento do que vai à IA (`plugins/bard/tui/orcamento.go`: `Cortar` por linhas com "… N linhas omitidas", `Recentes` e os tetos por bloco): saída de ferramenta ≤ 8 KB, notas do Synapstor ≤ 8 KB somadas, histórico ≤ 4 KB (1 KB por mensagem), cluster ≤ 3 KB com 20 pods (os com problema primeiro); scan do Sentinel resumido (contagem por severidade, os 10 mais graves com até 10 recursos, o que não rodou), investigate em JSON compacto com os logs no fim, `kubectl_events` com os 50 últimos e `--tail` até 200; `GetModelMetadata` casa pelo nome base sem a tag do Ollama (`llama3.1:8b`, `qwen2.5:7b`). | este commit |
+| 26/10/2026 | B02 | O `Fluxo` recebe as trocas anteriores da sessão (`tui.Troca`, até 10, redigidas pelo `pkg/redacao` e no novo `TetoConversa` de 3 KB, com o `TetoHistorico` das sessões anteriores baixado a 2 KB) e as põe antes da pergunta na resposta e no classificador; a TUI guarda as trocas da conversa (o `/limpar` e o `/sessões` recomeçam, porque a retomada já vai pelo system prompt; o `/modelo` mantém) e as perguntas do mesmo batch formam uma sessão. | este commit |
+| 26/10/2026 | B12 | `kubectl_events` filtra por `involvedObject.name` quando há pod, `kubectl_logs` ganha `container` e `previous` (e lista os contêineres no erro de contêiner), `sentinel_investigate` pede `--no-ai` e o Bard analisa com o próprio provider; os valores novos passam pela validação do B06. | este commit |
+| 26/10/2026 | B15 | O índice feito com outros embeddings vira falha da etapa de contexto, com a nota começando pelo comando ("rode yby synapstor index --full (índice de outro modelo)", que cabe em 80 colunas), e o aviso inteiro ("o índice foi feito com X, e os embeddings agora vêm de Y", com o comando na linha de baixo) fica na conversa da TUI depois da rodada e abaixo das etapas no `-p`, em vez de "Synapstor indisponível"; o corte de relevância é o `ai.RelevanciaMinima` (0,35), usado pela busca do Synapstor e como padrão do Bard (o `relevance_threshold` do bard.yaml, mesmo 0, continua valendo); os trechos entram juntos por arquivo, com título e caminho no cabeçalho e a seção em cada trecho, no teto das notas, e a etapa conta arquivos. | este commit |
+| 27/10/2026 | K02, K04, K03, B12, B15 Ajuste | Ajustes da revisão adversarial da onda 2: o chart do blueprint não se repete como `HelmChart` na infra, o golden do Atlas ganha um Compose com imagem, o escopo do scan é conferido no contrato, os contêineres de init e efêmeros entram no erro do `kubectl_logs`, os testes de valor com cara de flag conferem a validação e que o kubectl não rodou, as notas do Synapstor não repetem título e seção que o trecho já traz e o corte compara em float32, como o Synapstor, além dos comentários e do CLAUDE.md. | este commit |
 | 27/10/2026 | B08 Ajuste (CI do #225) | O CLI que nem inicia (fora do PATH, sem permissão, exec format error) embrulha um `syscall.Errno`, que também é um `net.Error`, e o `ErroRetentavel` o repetia por ~100 s; `*fs.PathError` e `*exec.Error` agora são permanentes. O CLI falso dos testes ganhou o `#!/bin/sh`, sem o qual o Linux nem o inicia | este commit |
+| 27/10/2026 | B15 Ajuste (CI do #226) | A nota da etapa vira "índice de outro modelo": com a busca demorando, a coluna do tempo cortava o comando da nota antiga (no CI, sempre). O comando vai inteiro no aviso; o teste do `-p` ganhou uma busca que demora e falha sem a correção | este commit |
 
 ### Fase 3 · Synapstor
 

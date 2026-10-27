@@ -294,6 +294,12 @@ func (vs *VectorStore) Count() int {
 	return vs.collection.Count()
 }
 
+// RelevanciaMinima é a pontuação mínima de um trecho do Search para valer como resultado:
+// o Synapstor corta a busca nela e o Bard a usa como padrão das notas que vão à IA (o
+// relevance_threshold do bard.yaml troca). O valor é o que o Synapstor já usava; o Bard
+// usava 0,6, que deixava de fora trechos que a busca mostra.
+const RelevanciaMinima = 0.35
+
 // UnknownDocument is a generic structure for retrieved data.
 // We avoid importing plugin-specific types here to keep pkg/ai independent.
 type UnknownDocument struct {

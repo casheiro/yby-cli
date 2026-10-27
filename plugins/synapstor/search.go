@@ -17,9 +17,6 @@ import (
 
 const defaultTopK = 5
 
-// minScore é a pontuação mínima de um resultado da busca; os abaixo dela ficam de fora.
-const minScore = 0.35
-
 // searchResult representa um resultado de busca formatável.
 type searchResult struct {
 	Score   float32
@@ -144,10 +141,10 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	return nil
 }
 
-// resultadosDaBusca tira os trechos abaixo de minScore e junta os trechos do mesmo arquivo
+// resultadosDaBusca tira os trechos abaixo de ai.RelevanciaMinima (o mesmo corte do Bard) e junta os trechos do mesmo arquivo
 // num resultado só, o de maior pontuação: o índice guarda trechos, mas quem busca quer saber
 // de qual UKI. Devolve no máximo topK UKIs e quantos UKIs distintos ficaram de fora só por
-// estarem abaixo de minScore (UKI com algum trecho acima do corte não entra na conta).
+// estarem abaixo do corte (UKI com algum trecho acima do corte não entra na conta).
 func resultadosDaBusca(docs []ai.UnknownDocument, topK int) ([]searchResult, int) {
 	var results []searchResult
 	vistos := map[string]bool{}
@@ -158,7 +155,7 @@ func resultadosDaBusca(docs []ai.UnknownDocument, topK int) ([]searchResult, int
 		if caminho == "" {
 			caminho = doc.ID
 		}
-		if doc.Score < minScore {
+		if doc.Score < ai.RelevanciaMinima {
 			abaixo[caminho] = true
 			continue
 		}
@@ -200,9 +197,9 @@ func resultadosDaBusca(docs []ai.UnknownDocument, topK int) ([]searchResult, int
 
 // escreverResultados escreve a seção RESULTADOS e o resumo da busca: cada resultado em
 // três linhas (pontuação e título, caminho e o começo do texto), fora quantos ficaram
-// abaixo de minScore e de onde vêm os embeddings.
+// abaixo de ai.RelevanciaMinima e de onde vêm os embeddings.
 func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int, embeddings string) {
-	corte := pontuacao(minScore)
+	corte := pontuacao(ai.RelevanciaMinima)
 	if len(results) == 0 {
 		fmt.Fprintln(w)
 		ui.Check(w, ui.CheckNeutro, "nenhum UKI parecido com a consulta", "", "")

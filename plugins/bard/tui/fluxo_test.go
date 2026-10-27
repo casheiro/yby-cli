@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // provedorFalso responde a classificação com intencao e escreve trechos no
@@ -31,11 +33,12 @@ type provedorFalso struct {
 	travar          bool
 	ignorarCtx      bool
 
-	mu        sync.Mutex
-	chamadas  int
-	entradas  []string
-	liberar   chan struct{}
-	cancelado chan struct{}
+	mu             sync.Mutex
+	chamadas       int
+	entradas       []string
+	classificacoes []string // os prompts que o classificador mandou
+	liberar        chan struct{}
+	cancelado      chan struct{}
 }
 
 func (p *provedorFalso) Name() string                       { return "falso" }
@@ -47,7 +50,10 @@ func (p *provedorFalso) EmbedDocuments(_ context.Context, _ []string) ([][]float
 	return nil, errors.New("não usado")
 }
 
-func (p *provedorFalso) Completion(_ context.Context, _, _ string) (string, error) {
+func (p *provedorFalso) Completion(_ context.Context, _, userPrompt string) (string, error) {
+	p.mu.Lock()
+	p.classificacoes = append(p.classificacoes, userPrompt)
+	p.mu.Unlock()
 	if p.intencao == "" {
 		return `{"intent":"direct","params":{},"direct":true}`, nil
 	}
@@ -131,7 +137,7 @@ func isolarHome(t *testing.T) {
 
 func fluxoDeTeste(p *provedorFalso) *Fluxo {
 	// O limiar é o padrão do loadBardConfig, como chega pelo main.go.
-	f := NovoFluxo(p, nil, Config{SystemPrompt: "sistema", LimiarRelevancia: 0.6})
+	f := NovoFluxo(p, nil, Config{SystemPrompt: "sistema", LimiarRelevancia: ai.RelevanciaMinima})
 	f.Retry = retryRapido
 	f.BuscarFerramenta = func(string) *tools.Tool { return nil }
 	return f
@@ -591,13 +597,169 @@ func TestFluxo_ContextoDoSynapstor(t *testing.T) {
 	}
 }
 
+// O índice feito com outros embeddings não é "Synapstor indisponível": a etapa diz com
+// o que ele foi feito e o comando que o refaz, e a pergunta segue sem notas.
+func TestFluxo_IndiceDeOutroModelo(t *testing.T) {
+	isolarHome(t)
+	casos := []struct {
+		nome  string
+		err   error
+		aviso string
+	}{
+		{"com a identidade do índice", fmt.Errorf("buscar: %w", &ai.IndiceDeOutroModeloError{
+			Indice: ai.IdentidadeDoIndice{Provider: "ollama", Modelo: "nomic-embed-text", Dimensao: 768},
+			Atual:  ai.IdentidadeDoIndice{Provider: "local", Modelo: "multilingual-e5-small", Dimensao: 384},
+		}), "o índice foi feito com ollama/nomic-embed-text (768 dimensões), e os embeddings agora vêm de " +
+			"local/multilingual-e5-small (384 dimensões).|rode yby synapstor index --full para refazer o índice"},
+		{"índice antigo, sem identidade", &ai.IndiceDeOutroModeloError{
+			Atual: ai.IdentidadeDoIndice{Provider: "local", Dimensao: 384},
+		}, "o índice foi feito com um modelo de embeddings que não ficou registrado, e os embeddings agora vêm de " +
+			"local (384 dimensões).|rode yby synapstor index --full para refazer o índice"},
+		{"só o erro sentinela", fmt.Errorf("busca: %w", ai.ErrIndiceDeOutroModelo),
+			"o índice foi feito com outros embeddings.|rode yby synapstor index --full para refazer o índice"},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			p := &provedorFalso{trechos: []string{"ok"}}
+			f := fluxoDeTeste(p)
+			f.Buscador = buscadorFalso{err: c.err}
+			eventos := coletar(t, f.Iniciar(context.Background(), 1, "o que houve?"), nil)
+
+			etapa := ultimaEtapa(t, eventos, EtapaContexto)
+			// A nota é curta e começa pelo que fazer: a linha da etapa corta o fim.
+			if etapa.Nota != NotaIndiceDeOutroModelo {
+				t.Errorf("nota esperada %q, veio %q", NotaIndiceDeOutroModelo, etapa.Nota)
+			}
+			// O comando vai numa linha só, para não se partir na quebra do texto.
+			if aviso := strings.ReplaceAll(etapa.Aviso, "\n", "|"); aviso != c.aviso {
+				t.Errorf("aviso esperado %q, veio %q", c.aviso, aviso)
+			}
+			if etapa.Estado != ui.EtapaFalha {
+				t.Errorf("o índice de outro modelo é falha da etapa, veio %v", etapa.Estado)
+			}
+			if strings.Contains(p.ultimaEntrada(), "Memória Semântica") {
+				t.Error("sem busca, nada de notas no prompt")
+			}
+			if fim := fimDe(t, eventos); fim.Err != nil {
+				t.Errorf("a pergunta segue sem as notas: %v", fim.Err)
+			}
+		})
+	}
+}
+
+// Os trechos do índice entram sob o caminho do arquivo e com o título e a seção que já
+// trazem no começo (o Synapstor os põe em cada trecho), sem repeti-los; os do mesmo
+// arquivo ficam juntos, sob um cabeçalho só, e a etapa conta arquivos, não trechos.
+func TestFluxo_TrechosComCaminhoESecao(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{trechos: []string{"ok"}}
+	f := fluxoDeTeste(p)
+	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{
+		{ID: "decisoes/postgres.md#1", Content: "# Postgres\n## Rede\nrede do postgres", Score: 0.9,
+			Metadata: map[string]string{"source": "decisoes/postgres.md", "title": "Postgres", "section": "Rede"}},
+		{ID: "runbooks/worker.md#0", Content: "# Worker\ndeploy do worker", Score: 0.8,
+			Metadata: map[string]string{"source": "runbooks/worker.md", "title": "Worker"}},
+		{ID: "decisoes/postgres.md#2", Content: "# Postgres\n## Backup\nbackup do postgres", Score: 0.7,
+			Metadata: map[string]string{"source": "decisoes/postgres.md", "title": "Postgres", "section": "Backup"}},
+		{ID: "outra.md#0", Content: "# Outra\nirrelevante", Score: 0.1,
+			Metadata: map[string]string{"source": "outra.md", "title": "Outra"}},
+	}}
+	eventos := coletar(t, f.Iniciar(context.Background(), 1, "como é o postgres?"), nil)
+
+	entrada := p.ultimaEntrada()
+	if n := strings.Count(entrada, "decisoes/postgres.md"); n != 1 {
+		t.Errorf("o arquivo deveria aparecer uma vez, apareceu %d: %q", n, entrada)
+	}
+	for _, trecho := range []string{
+		"--- Contexto: decisoes/postgres.md ---\n# Postgres\n## Rede\nrede do postgres",
+		"# Postgres\n## Backup\nbackup do postgres",
+		"--- Contexto: runbooks/worker.md ---\n# Worker\ndeploy do worker",
+	} {
+		if !strings.Contains(entrada, trecho) {
+			t.Errorf("o prompt deveria ter %q: %q", trecho, entrada)
+		}
+	}
+	// O título e a seção saem uma vez por trecho, do próprio trecho.
+	if n := strings.Count(entrada, "Postgres"); n != 2 {
+		t.Errorf("o título deveria sair só nos dois trechos, saiu %d vezes: %q", n, entrada)
+	}
+	for _, repetido := range []string{"[seção:", "Postgres (", "Worker ("} {
+		if strings.Contains(entrada, repetido) {
+			t.Errorf("o prompt não deveria repetir %q, que o trecho já traz: %q", repetido, entrada)
+		}
+	}
+	// O trecho de menor pontuação do Postgres fica com o arquivo, antes do Worker.
+	if strings.Index(entrada, "backup do postgres") > strings.Index(entrada, "deploy do worker") {
+		t.Errorf("os trechos do mesmo arquivo deveriam ficar juntos: %q", entrada)
+	}
+	if strings.Contains(entrada, "irrelevante") {
+		t.Error("o trecho abaixo do corte não deveria entrar")
+	}
+	if n := ultimaEtapa(t, eventos, EtapaContexto).Nota; n != "2 notas do Synapstor" {
+		t.Errorf("a etapa deveria contar os arquivos: %q", n)
+	}
+}
+
+// Trecho que não traz o título nem a seção no começo (sem o prefixo do Synapstor) entra
+// com eles no cabeçalho e na marca de seção.
+func TestFluxo_TrechoSemTituloNemSecaoNoTexto(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{trechos: []string{"ok"}}
+	f := fluxoDeTeste(p)
+	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{
+		{ID: "decisoes/postgres.md#1", Content: "rede do postgres", Score: 0.9,
+			Metadata: map[string]string{"source": "decisoes/postgres.md", "title": "Postgres", "section": "Rede"}},
+	}}
+	coletar(t, f.Iniciar(context.Background(), 1, "como é o postgres?"), nil)
+
+	if entrada := p.ultimaEntrada(); !strings.Contains(entrada, "--- Contexto: Postgres (decisoes/postgres.md) ---\n[seção: Rede]\nrede do postgres") {
+		t.Errorf("o título e a seção deveriam vir de fora do trecho: %q", entrada)
+	}
+}
+
+// O corte compara em float32, como o Synapstor: o trecho com a pontuação exata do corte
+// (float32(ai.RelevanciaMinima)) entra, e o logo abaixo fica de fora.
+func TestNotasPorArquivo_FronteiraDoCorte(t *testing.T) {
+	corte := float32(ai.RelevanciaMinima)
+	notas := notasPorArquivo([]ai.UnknownDocument{
+		{ID: "a.md#0", Score: corte, Metadata: map[string]string{"source": "a.md"}},
+		{ID: "b.md#0", Score: math.Nextafter32(corte, 0), Metadata: map[string]string{"source": "b.md"}},
+	}, ai.RelevanciaMinima)
+	if len(notas) != 1 || notas[0].caminho != "a.md" {
+		t.Errorf("só o trecho no corte deveria passar: %+v", notas)
+	}
+}
+
+// Muitos trechos do mesmo arquivo ficam no teto das notas.
+func TestFluxo_TrechosDoMesmoArquivoNoTeto(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{trechos: []string{"ok"}}
+	f := fluxoDeTeste(p)
+	var docs []ai.UnknownDocument
+	for i := 0; i < 8; i++ {
+		docs = append(docs, ai.UnknownDocument{
+			ID: fmt.Sprintf("guia.md#%d", i), Content: linhasNumeradas(30, 100), Score: 0.9,
+			Metadata: map[string]string{"source": "guia.md", "title": "Guia", "section": fmt.Sprintf("Parte %d", i)},
+		})
+	}
+	f.Buscador = buscadorFalso{docs: docs}
+	eventos := coletar(t, f.Iniciar(context.Background(), 1, "como faço?"), nil)
+
+	if entrada := p.ultimaEntrada(); len(entrada) > TetoNotas+folgaMarca+folgaPrompt {
+		t.Errorf("os trechos deveriam ficar no teto: %d bytes", len(entrada))
+	}
+	if n := ultimaEtapa(t, eventos, EtapaContexto).Nota; n != "1 nota do Synapstor" {
+		t.Errorf("os trechos são de uma nota só: %q", n)
+	}
+}
+
 func TestNovoFluxo_Padroes(t *testing.T) {
 	f := NovoFluxo(nil, nil, Config{SystemPrompt: "s"})
 	if f.Buscador != nil {
 		t.Error("sem vector store o buscador deveria ser nil")
 	}
 	// O limiar 0 vale como veio (aceita todas as notas); o
-	// padrão 0,6 é do loadBardConfig.
+	// padrão, ai.RelevanciaMinima, vem do loadBardConfig.
 	if f.TopK != 5 || f.Limiar != 0 {
 		t.Errorf("padrões inesperados: topK=%d limiar=%v", f.TopK, f.Limiar)
 	}
@@ -608,8 +770,8 @@ func TestNovoFluxo_Padroes(t *testing.T) {
 	if f.TopK != 3 || f.Limiar != 0.8 || f.Namespace != "payments" {
 		t.Errorf("config ignorada: topK=%d limiar=%v ns=%q", f.TopK, f.Limiar, f.Namespace)
 	}
-	if f = NovoFluxo(nil, nil, Config{LimiarRelevancia: -1}); f.Limiar != 0.6 {
-		t.Errorf("limiar negativo deveria virar 0,6: %v", f.Limiar)
+	if f = NovoFluxo(nil, nil, Config{LimiarRelevancia: -1}); f.Limiar != ai.RelevanciaMinima {
+		t.Errorf("limiar negativo deveria virar o corte do pkg/ai: %v", f.Limiar)
 	}
 }
 
@@ -877,7 +1039,7 @@ func TestClassifyIntent_PromptTemSessaoEEsquema(t *testing.T) {
 		Parameters: []tools.ToolParam{{Name: "pod", Required: true}, {Name: "tail"}}})
 	c := &capturaClassificador{provedorFalso: &provedorFalso{}}
 
-	classifyIntent(context.Background(), c, "logs do api", "prod", "payments")
+	classifyIntent(context.Background(), c, "logs do api", "", "prod", "payments")
 
 	for _, esperado := range []string{"pod_logs", "view_logs", "pod*", "tail", "prod", "payments"} {
 		if !strings.Contains(c.usuario, esperado) {
@@ -886,5 +1048,48 @@ func TestClassifyIntent_PromptTemSessaoEEsquema(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(c.usuario+c.sistema), "default") {
 		t.Errorf("o prompt não deve mandar usar default:\n%s\n%s", c.sistema, c.usuario)
+	}
+}
+
+// Num terminal de 80 colunas, a etapa de contexto mostra a nota inteira; o aviso com o
+// modelo do índice e o comando que o refaz fica na conversa depois da rodada, quebrado na
+// largura da tela.
+func TestModel_IndiceDeOutroModeloNaTela(t *testing.T) {
+	semCores(t)
+	m := modeloComFluxo(t, &provedorFalso{trechos: []string{"ok"}}, nil)
+	atualizado, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	m = atualizado.(Model)
+	m.fluxo.Buscador = buscadorFalso{err: &ai.IndiceDeOutroModeloError{
+		Indice: ai.IdentidadeDoIndice{Provider: "ollama", Modelo: "nomic-embed-text", Dimensao: 768},
+		Atual:  ai.IdentidadeDoIndice{Provider: "local", Modelo: "multilingual-e5-small", Dimensao: 384},
+	}}
+	m, cmd := enviar(t, m, "o que houve?")
+	var etapas string
+	m = rodar(t, m, cmd, func(m Model, msg tea.Msg) Model {
+		if e, ok := msg.(EtapaMsg); ok && e.Etapa == EtapaContexto && e.Estado == ui.EtapaFalha {
+			etapas = m.etapasVista(76)
+		}
+		return m
+	})
+	if !strings.Contains(etapas, NotaIndiceDeOutroModelo) {
+		t.Errorf("a 76 colunas a etapa deveria mostrar a nota inteira:\n%s", etapas)
+	}
+
+	linhas := strings.Split(strings.TrimRight(m.historico, "\n"), "\n")
+	for _, l := range linhas {
+		if w := lipgloss.Width(l); w > m.viewport.Width {
+			t.Errorf("linha com %d colunas numa conversa de %d: %q", w, m.viewport.Width, l)
+		}
+	}
+	tela := strings.Join(strings.Fields(strings.Join(linhas, " ")), " ")
+	if !strings.Contains(tela, "o índice foi feito com ollama/nomic-embed-text (768 dimensões)") {
+		t.Errorf("depois da rodada a conversa deveria dizer com que modelo o índice foi feito:\n%s", m.historico)
+	}
+	comando := false
+	for _, l := range linhas {
+		comando = comando || strings.Contains(l, "rode yby synapstor index --full")
+	}
+	if !comando {
+		t.Errorf("depois da rodada a conversa deveria guardar o comando numa linha só:\n%s", m.historico)
 	}
 }
