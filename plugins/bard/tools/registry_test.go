@@ -96,8 +96,9 @@ func TestFormatToolsPrompt_ComFerramentas(t *testing.T) {
 
 	prompt := FormatToolsPrompt()
 
-	if !strings.Contains(prompt, "Ferramentas Disponíveis") {
-		t.Error("prompt deveria conter cabeçalho")
+	// O Bard escolhe a ferramenta pelo classificador: nada executa um JSON na resposta.
+	if strings.Contains(prompt, "JSON") || strings.Contains(prompt, `"tool"`) {
+		t.Errorf("prompt não deveria pedir chamada de ferramenta em JSON:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "kubectl_get") {
 		t.Error("prompt deveria conter nome da ferramenta")

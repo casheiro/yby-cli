@@ -63,16 +63,49 @@ func GetModelMetadata(model string) ModelMetadata {
 	return ModelMetadata{Name: model, ContextWindow: defaultContextWindow}
 }
 
+// Janelas de contexto dos modelos que os providers CLI aceitam (models.go): os do Claude
+// (sonnet, opus, haiku e claude-*) e os atuais do Gemini.
+const (
+	janelaClaude = 200_000
+	janelaGemini = 1_000_000
+)
+
+// metadadosCLI devolve a janela de contexto de um provider CLI. Sem modelo o próprio CLI
+// escolhe, e qualquer modelo que ele escolha tem pelo menos essa janela; o padrão de 8192
+// do GetModelMetadata cortaria os prompts que o CLI aguenta.
+func metadadosCLI(provider, model string) ModelMetadata {
+	if meta, ok := knownModels[model]; ok {
+		return meta
+	}
+	nome := model
+	if nome == "" {
+		nome = "padrão do " + provider
+	}
+	switch provider {
+	case "claude-cli":
+		return ModelMetadata{Name: nome, ContextWindow: janelaClaude}
+	case "gemini-cli":
+		return ModelMetadata{Name: nome, ContextWindow: janelaGemini}
+	}
+	return GetModelMetadata(model)
+}
+
 // TokenAwareProvider é um decorator que valida o tamanho do input antes de chamar o provider.
 // Se o texto exceder 90% da context window, retorna erro. Se exceder 80%, emite warning.
 type TokenAwareProvider struct {
 	inner Provider
 	model string
+	meta  ModelMetadata // a janela usada na conta
 }
 
 // NewTokenAwareProvider cria um TokenAwareProvider que envolve o provider informado.
 func NewTokenAwareProvider(inner Provider, model string) *TokenAwareProvider {
-	return &TokenAwareProvider{inner: inner, model: model}
+	return &TokenAwareProvider{inner: inner, model: model, meta: GetModelMetadata(model)}
+}
+
+// newTokenAwareProviderCLI cria o TokenAwareProvider de um provider CLI, com a janela do CLI.
+func newTokenAwareProviderCLI(inner Provider, provider, model string) *TokenAwareProvider {
+	return &TokenAwareProvider{inner: inner, model: model, meta: metadadosCLI(provider, model)}
 }
 
 // Unwrap devolve o provider embrulhado.
@@ -108,7 +141,7 @@ func (t *TokenAwareProvider) EmbedDocuments(ctx context.Context, texts []string)
 
 // checkTokens valida o tamanho estimado do input contra a context window do modelo.
 func (t *TokenAwareProvider) checkTokens(text string) error {
-	meta := GetModelMetadata(t.model)
+	meta := t.meta
 	tokens := EstimateTokens(text)
 	ratio := float64(tokens) / float64(meta.ContextWindow)
 

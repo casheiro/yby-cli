@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
@@ -100,6 +101,7 @@ type Fluxo struct {
 	TopK         int
 	Limiar       float64 // score mínimo de uma nota para entrar no contexto
 	Namespace    string  // namespace da sessão; fica fora da nota da ferramenta
+	Cluster      string  // contexto do cluster da sessão; vai ao classificador
 	// BuscarFerramenta resolve a ferramenta de uma intenção; nil usa o registry.
 	BuscarFerramenta func(intent string) *tools.Tool
 	Retry            retry.Options
@@ -113,6 +115,7 @@ func NovoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config)
 		TopK:         config.TopK,
 		Limiar:       config.LimiarRelevancia,
 		Namespace:    config.Namespace,
+		Cluster:      config.Cluster,
 		Retry:        retryPadrao,
 	}
 	// Um *VectorStore nil dentro da interface não seria nil; só atribui se existir.
@@ -188,7 +191,7 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 	// 2. Intenção
 	t0 = time.Now()
 	e.etapa(EtapaMsg{Etapa: EtapaIntencao, Rotulo: rotuloIntencao, Estado: ui.EtapaAtual})
-	intent, ok := esperar(ctx, func() *tools.IntentResult { return classifyIntent(ctx, f.Provider, entrada) })
+	intent, ok := esperar(ctx, func() *tools.IntentResult { return classifyIntent(ctx, f.Provider, entrada, f.Cluster, f.Namespace) })
 	if !ok || ctx.Err() != nil {
 		e.etapaForcada(interrompida(EtapaIntencao, rotuloIntencao, time.Since(t0)))
 		fim(nil)
@@ -211,6 +214,9 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		t0 = time.Now()
 		e.etapa(EtapaMsg{Etapa: EtapaFerramenta, Rotulo: rotulo, Estado: ui.EtapaAtual, Nota: alvo})
 		res, ok := esperar(ctx, func() resultadoFerramenta {
+			if faltam := ferramenta.Faltando(intent.Params); len(faltam) > 0 {
+				return resultadoFerramenta{err: fmt.Errorf("faltou o parâmetro obrigatório %s para %s: peça ao usuário que informe", strings.Join(faltam, ", "), ferramenta.Name)}
+			}
 			saida, err := ferramenta.Execute(ctx, intent.Params)
 			return resultadoFerramenta{saida: saida, err: err}
 		})
@@ -220,16 +226,23 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 			return
 		}
 		usadas = append(usadas, ferramenta.Name)
-		saida := res.saida
+		// A saída de toda ferramenta (logs, describe, achados do Sentinel, tools
+		// externas) e o erro dela, que costuma trazer a saída junto, passam pela
+		// redação antes do prompt. O "↵ ver" mostra o mesmo texto que a IA recebeu.
+		saida := redacao.Redigir(res.saida)
 		msg := EtapaMsg{Etapa: EtapaFerramenta, Rotulo: rotulo, Estado: ui.EtapaFeita, Nota: alvo, Duracao: time.Since(t0), Saida: saida}
 		if res.err != nil {
-			saida = fmt.Sprintf("Erro: %v", res.err)
+			saida = redacao.Redigir(fmt.Sprintf("Erro: %v", res.err))
 			msg.Estado = ui.EtapaFalha
-			msg.Nota = primeiraLinha(res.err.Error())
+			msg.Nota = primeiraLinha(redacao.Redigir(res.err.Error()))
 			msg.Saida = saida
 		}
 		e.etapa(msg)
 		entradaFinal = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", entrada, ferramenta.Name, saida)
+		if notas.texto != "" {
+			// As notas do Synapstor continuam valendo quando uma ferramenta roda.
+			entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\n%s", notas.texto, entradaFinal)
+		}
 	}
 
 	// 4. Resposta, em pedaços, com novas tentativas
@@ -255,6 +268,12 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 				// O texto da tentativa falha some já, e não só quando a
 				// próxima começa: um esc durante a espera não o leva ao fim.
 				e.recomecar()
+				// Chave inválida, modelo inexistente ou prompt grande demais
+				// falham igual na próxima vez: só tenta de novo o que o pkg/ai
+				// classifica como passageiro.
+				if !ai.ErroRetentavel(errStream) {
+					return backoff.Permanent(errStream)
+				}
 				e.etapa(EtapaMsg{Etapa: EtapaResposta, Rotulo: rotuloResposta, Estado: ui.EtapaAtual, Tentativa: tentativa + 1, Nota: NotaNovaTentativa})
 			}
 			return errStream

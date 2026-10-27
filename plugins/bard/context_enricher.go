@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // PodInfo contém informações resumidas de um pod.
@@ -29,6 +30,10 @@ type ClusterContext struct {
 // contexto e namespace, quando dados (yby bard --context, --namespace), trocam o contexto
 // atual do kubeconfig e o namespace dele.
 func EnrichContext(ctx context.Context, contexto, namespace string) *ClusterContext {
+	// Cluster fora do ar não pode segurar a abertura: as chamadas são em sequência, então
+	// o prazo vale para o conjunto, além do --request-timeout de cada uma.
+	ctx, cancelar := context.WithTimeout(ctx, prazoEnriquecimento)
+	defer cancelar()
 	return enriquecer(func(args ...string) (string, error) { return runKubectl(ctx, args...) }, contexto, namespace)
 }
 
@@ -154,9 +159,23 @@ func fetchRecentEvents(kubectl rodarKubectl, namespace string) []string {
 	return events
 }
 
+// prazoEnriquecimento é o prazo total (e de cada requisição) da leitura do cluster.
+const prazoEnriquecimento = 5 * time.Second
+
+// binarioKubectl é o executável chamado; os testes trocam por um falso.
+var binarioKubectl = "kubectl"
+
+// comandoKubectl monta o kubectl com o prazo de requisição ao servidor.
+func comandoKubectl(ctx context.Context, args ...string) *exec.Cmd {
+	args = append([]string{"--request-timeout=" + prazoEnriquecimento.String()}, args...)
+	cmd := exec.CommandContext(ctx, binarioKubectl, args...)
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
 // runKubectl executa um comando kubectl e retorna o output.
 func runKubectl(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	cmd := comandoKubectl(ctx, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

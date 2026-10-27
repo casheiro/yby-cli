@@ -1,121 +1,51 @@
 package tools
 
 import (
+	"strings"
 	"testing"
 )
 
-// TestValidateToolCall_OperacoesSeguras verifica que operações read-only passam.
-func TestValidateToolCall_OperacoesSeguras(t *testing.T) {
-	safeCalls := []ToolCall{
-		{Name: "kubectl_get", Params: map[string]string{"resource": "pods"}},
-		{Name: "kubectl_get", Params: map[string]string{"resource": "services", "namespace": "default"}},
-		{Name: "kubectl_logs", Params: map[string]string{"pod": "nginx-abc", "tail": "100"}},
-		{Name: "kubectl_events", Params: map[string]string{"namespace": "kube-system"}},
-		{Name: "kubectl_describe", Params: map[string]string{"resource": "pod", "name": "nginx"}},
+// O que vem da IA não pode transformar a ferramenta numa operação destrutiva.
+func TestConferirGuardas_Bloqueia(t *testing.T) {
+	casos := []struct{ modelo, linha string }{
+		{"kubectl {{verbo}} {{recurso}} {{nome}}", "kubectl delete namespace production"},
+		{"kubectl {{verbo}} {{recurso}} {{nome}}", "kubectl delete ns staging"},
+		{"kubectl {{verbo}} {{alvo}}", "kubectl delete namespaces/production"},
+		{"kubectl {{verbo}} {{recurso}} {{nome}}", "kubectl DELETE Namespace prod"},
+		{"kubectl {{verbo}} {{recurso}} {{nome}}", "kubectl delete clusterrole admin"},
+		{"kubectl {{verbo}} {{recurso}} {{nome}}", "kubectl delete clusterrolebinding cluster-admin"},
+		{"kubectl {{verbo}} {{no}}", "kubectl drain node-1"},
+		{"kubectl {{verbo}} {{no}}", "kubectl drain node-1 --ignore-daemonsets"},
+		{"kubectl {{verbo}} {{no}}", "kubectl cordon node-1"},
+		{"kubectl apply -f {{arquivo}} {{extra}}", "kubectl apply -f x.yaml --force"},
+		{"kubectl scale deploy {{nome}} --replicas={{n}}", "kubectl scale deploy api --replicas=0"},
+		// o valor que chega só pela env (sh -c com $YBY_PARAM_ACAO) também conta
+		{`sh -c 'kubectl $YBY_PARAM_ACAO'`, "sh -c kubectl $YBY_PARAM_ACAO\ndelete namespace prod"},
 	}
-
-	for _, call := range safeCalls {
-		if err := ValidateToolCall(call); err != nil {
-			t.Errorf("operação segura '%s' bloqueada: %v", call.Name, err)
+	for _, c := range casos {
+		err := conferirGuardas(c.modelo, c.linha)
+		if err == nil || !strings.Contains(err.Error(), "operação bloqueada") {
+			t.Errorf("%q (modelo %q): esperava bloqueio, obteve %v", c.linha, c.modelo, err)
 		}
 	}
 }
 
-// TestValidateToolCall_DeleteNamespace verifica bloqueio de exclusão de namespace.
-func TestValidateToolCall_DeleteNamespace(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "delete namespace production"},
+// Leitura passa; e a operação que o próprio YAML escolheu (o usuário confiou nele) também.
+func TestConferirGuardas_Permite(t *testing.T) {
+	casos := []struct{ modelo, linha string }{
+		{"kubectl get {{recurso}}", "kubectl get pods"},
+		{"kubectl logs {{pod}} --tail={{n}}", "kubectl logs nginx-abc --tail=100"},
+		{"kubectl logs {{pod}}", "kubectl logs drain-worker-1"},
+		{"kubectl logs {{pod}}", "kubectl logs cordon-api"},
+		{"kubectl get {{recurso}}", "kubectl get namespaces"},
+		{"kubectl scale deploy {{nome}} --replicas={{n}}", "kubectl scale deploy api --replicas=3"},
+		{"kubectl scale deploy {{nome}} --replicas={{n}}", "kubectl scale deploy api --replicas=10"},
+		{"kubectl cordon {{no}}", "kubectl cordon node-1"},
+		{"kubectl delete namespace {{ns}}", "kubectl delete namespace preview-42"},
 	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para delete namespace")
-	}
-}
-
-// TestValidateToolCall_DeleteNS verifica bloqueio com abreviação 'ns'.
-func TestValidateToolCall_DeleteNS(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "delete ns staging"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para delete ns")
-	}
-}
-
-// TestValidateToolCall_DeleteClusterRole verifica bloqueio de exclusão de ClusterRole.
-func TestValidateToolCall_DeleteClusterRole(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "delete clusterrole admin"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para delete clusterrole")
-	}
-}
-
-// TestValidateToolCall_DeleteClusterRoleBinding verifica bloqueio.
-func TestValidateToolCall_DeleteClusterRoleBinding(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "delete clusterrolebinding admin-binding"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para delete clusterrolebinding")
-	}
-}
-
-// TestValidateToolCall_DrainSemIgnore verifica bloqueio de drain sem --ignore-daemonsets.
-func TestValidateToolCall_DrainSemIgnore(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "drain node worker-1"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para drain sem --ignore-daemonsets")
-	}
-}
-
-// TestValidateToolCall_Cordon verifica bloqueio de cordon.
-func TestValidateToolCall_Cordon(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "cordon worker-1"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para cordon")
-	}
-}
-
-// TestValidateToolCall_ApplyForce verifica bloqueio de apply --force.
-func TestValidateToolCall_ApplyForce(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "apply -f deploy.yaml --force"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para apply --force")
-	}
-}
-
-// TestValidateToolCall_ScaleZero verifica bloqueio de scale para 0 replicas.
-func TestValidateToolCall_ScaleZero(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "scale deployment nginx replicas=0"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio para scale replicas=0")
-	}
-}
-
-// TestValidateToolCall_CaseInsensitive verifica que a validação é case-insensitive.
-func TestValidateToolCall_CaseInsensitive(t *testing.T) {
-	call := ToolCall{
-		Name:   "kubectl_exec",
-		Params: map[string]string{"command": "DELETE NAMESPACE production"},
-	}
-	if err := ValidateToolCall(call); err == nil {
-		t.Error("esperava bloqueio independente de case")
+	for _, c := range casos {
+		if err := conferirGuardas(c.modelo, c.linha); err != nil {
+			t.Errorf("%q (modelo %q): não deveria bloquear: %v", c.linha, c.modelo, err)
+		}
 	}
 }

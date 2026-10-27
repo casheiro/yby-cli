@@ -119,11 +119,12 @@ func TestGetProviderWithModel_ProviderIndisponivel(t *testing.T) {
 func cliFalso(t *testing.T, nome string) {
 	t.Helper()
 	dir := t.TempDir()
-	arquivo := filepath.Join(dir, nome)
+	// Sem o #!, o Linux nem inicia o script (exec format error): o CLI tem de rodar e sair com 1.
+	arquivo, script := filepath.Join(dir, nome), "#!/bin/sh\nexit 1\n"
 	if runtime.GOOS == "windows" {
-		arquivo += ".bat"
+		arquivo, script = arquivo+".bat", "exit 1\n"
 	}
-	require.NoError(t, os.WriteFile(arquivo, []byte("exit 1\n"), 0o755))
+	require.NoError(t, os.WriteFile(arquivo, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 }
 
@@ -133,17 +134,17 @@ func TestGetProviderWithModel_CLIs(t *testing.T) {
 
 	p, _, err := GetProviderWithModel(context.Background(), "claude-cli", "Opus")
 	require.NoError(t, err)
-	c, ok := p.(*ClaudeCLIProvider)
-	require.True(t, ok, "os CLIs seguem sem decorators: %T", p)
+	c, ok := cadeiaCLI(t, p).inner.(*ClaudeCLIProvider)
+	require.True(t, ok, "ClaudeCLIProvider por dentro da cadeia dos CLIs")
 	assert.Equal(t, "opus", c.model)
-	assert.Equal(t, []string{"--model", "opus", "-p", "oi"}, c.args("oi"))
-	assert.Equal(t, []string{"-p", "oi"}, NewClaudeCLIProvider().args("oi"), "sem modelo, o CLI escolhe")
+	assert.Equal(t, []string{"--model", "opus", "-p"}, c.args())
+	assert.Equal(t, []string{"-p"}, NewClaudeCLIProvider().args(), "sem modelo, o CLI escolhe")
 
 	_, _, err = GetProviderWithModel(context.Background(), "claude-cli", "gpt-4o")
 	assert.Equal(t, "o claude-cli não tem o modelo gpt-4o", codigoErro(t, err).Message)
 
 	g := &GeminiCLIProvider{command: "gemini", model: "gemini-2.5-pro"}
-	assert.Equal(t, []string{"--model", "gemini-2.5-pro", "-p", "oi"}, g.args("oi"))
+	assert.Equal(t, []string{"--model", "gemini-2.5-pro", "-p", instrucaoStdinGemini}, g.args())
 }
 
 func TestListModels_ListasConhecidas(t *testing.T) {
@@ -321,4 +322,16 @@ func TestListModels_OllamaSoComEmbeddings(t *testing.T) {
 	err := p.resolveModel(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "só tem modelos de embeddings")
+}
+
+// Com o modelo no config, o CLI roda com ele: o catálogo tem de dizer o mesmo, senão o
+// Bard mostraria "modelo padrão do CLI" com outro modelo em uso.
+func TestListModels_CLIsComModeloDoConfig(t *testing.T) {
+	isolarConfig(t)
+	t.Setenv("YBY_AI_MODEL", "opus")
+
+	claude := ListModels(context.Background(), "claude-cli")
+	assert.Equal(t, "opus", claude.Default)
+	assert.Equal(t, []string{"opus", "sonnet", "haiku"}, claude.Models)
+	assert.Equal(t, "opus", ListModels(context.Background(), "gemini-cli").Default)
 }

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,4 +87,22 @@ func TestEnriquecer_SemContexto(t *testing.T) {
 	assert.Equal(t, "payments", cc.Namespace)
 
 	assert.Nil(t, enriquecer((&kubectlFalso{}).rodar, "", ""), "sem current-context nem --context, nada")
+}
+
+// Com o cluster lento, o kubectl leva --request-timeout e o conjunto respeita o prazo total.
+func TestEnrichContext_PrazoELimiteDeRequisicao(t *testing.T) {
+	arq := filepath.Join(t.TempDir(), "args.txt")
+	t.Setenv(envKubectlLento, arq)
+	anterior := binarioKubectl
+	binarioKubectl = os.Args[0]
+	t.Cleanup(func() { binarioKubectl = anterior })
+
+	inicio := time.Now()
+	cc := EnrichContext(context.Background(), "", "")
+	assert.Nil(t, cc)
+	assert.Less(t, time.Since(inicio), 10*time.Second, "o prazo total tem de cortar o kubectl lento")
+
+	args, err := os.ReadFile(arq)
+	require.NoError(t, err)
+	assert.Contains(t, string(args), "--request-timeout=5s")
 }

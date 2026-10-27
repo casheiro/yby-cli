@@ -123,7 +123,7 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		tools.DefinirKube(opcoes.contexto, opcoes.namespace)
 
 		if opcoes.temPrompt {
-			return runOneShot(req.Context, opcoes.prompt)
+			return runOneShot(req.Context, opcoes.prompt, opcoes)
 		}
 
 		return startChat(req.Context, opcoes)
@@ -144,11 +144,11 @@ func contextoInterrompivel() (context.Context, context.CancelFunc) {
 }
 
 // runOneShot responde a pergunta do -p e sai.
-func runOneShot(ctxData map[string]interface{}, prompt string) error {
+func runOneShot(ctxData map[string]interface{}, prompt string, opcoes opcoesBard) error {
 	prepararStderr()
 	ctx, parar := contextoInterrompivel()
 	defer parar()
-	d, err := novoDireto(ctx, ctxData)
+	d, err := novoDireto(ctx, ctxData, opcoes)
 	if err != nil {
 		return err
 	}
@@ -156,11 +156,11 @@ func runOneShot(ctxData map[string]interface{}, prompt string) error {
 }
 
 // runBatchMode responde, sem TUI, uma pergunta por linha do stdin.
-func runBatchMode(ctxData map[string]interface{}) error {
+func runBatchMode(ctxData map[string]interface{}, opcoes opcoesBard) error {
 	prepararStderr()
 	ctx, parar := contextoInterrompivel()
 	defer parar()
-	d, err := novoDireto(ctx, ctxData)
+	d, err := novoDireto(ctx, ctxData, opcoes)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 			prepararStderr()
 			return rascunhoSemTerminal()
 		}
-		return runBatchMode(ctxData)
+		return runBatchMode(ctxData, opcoes)
 	}
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		prepararStderr()
@@ -239,6 +239,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 		SystemPrompt: systemPrompt,
 		SessionID:    sessionID,
 		AIModel:      rotuloProvider(provider),
+		ModeloIA:     modeloEmUso(provider),
 		SaveMessage:  saveMessage,
 
 		TopK:             bardCfg.TopK,

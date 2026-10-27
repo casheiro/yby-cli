@@ -109,7 +109,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 2 · Bard
 
-- [ ] **B01 · Descoberta dos plugins com `.exe` e com confiança** ▶
+- [x] **B01 · Descoberta dos plugins com `.exe` e com confiança** ▶
   - **Problema:** `plugins/bard/tools/plugin_helper.go:~16-34` procura `yby-plugin-<nome>` e `<nome>` sem `.exe`, então no Windows o Sentinel e o Atlas nunca rodam pelo Bard. Também roda `./.yby/plugins/<nome>` do diretório atual sem a verificação de confiança do core: um repo clonado pode trazer um binário.
   - **Fazer:** de preferência, o core passa ao Bard os caminhos já resolvidos e confiáveis dos plugins (no pedido ou numa env, ex.: `YBY_PLUGINS` com JSON nome→caminho), e o Bard usa só esses. Sem o core (binário direto), procurar com `.exe` no Windows e só em `~/.yby/plugins`.
   - **Verificar:** teste por GOOS; teste de que `./.yby/plugins` sem confiança não roda.
@@ -117,7 +117,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `tui/model.go:~670` chama `m.fluxo.Iniciar(ctx, m.rodada, input)` só com a pergunta, e o `Fluxo` (`tui/fluxo.go`) monta o prompt só com `entrada` e um `SystemPrompt` fixo. O histórico de sessões anteriores entra (`main.go:~231-234`), mas a sessão atual não.
   - **Fazer:** o `Fluxo` recebe as últimas N trocas da sessão, com orçamento de tokens (B07), e as usa na resposta e no classificador. Vale também para o batch.
   - **Verificar:** teste do `Fluxo` com duas rodadas: a segunda pergunta ("e os logs dele?") chega ao provider falso com a primeira troca.
-- [ ] **B03 · Classificador: namespace da sessão, esquema de parâmetros e validação**
+- [x] **B03 · Classificador: namespace da sessão, esquema de parâmetros e validação**
   - **Problema:**
     - o prompt manda usar "default" quando não há namespace (`pkg/ai/prompts/defaults.go:~169`), e `namespaceDe` prefere o parâmetro da IA ao da sessão (`tools/kube.go:~21-26`);
     - o classificador recebe só `intent: descrição` (`tui/model.go:~968-1003`), sem os nomes dos parâmetros nem o cluster/namespace da sessão;
@@ -136,7 +136,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - ordem estável;
     - validar os obrigatórios antes de executar e devolver erro claro.
   - **Verificar:** testes de tabela do parse e do prompt montado.
-- [ ] **B04 · Ferramentas externas (YAML) com intents, precedência certa e confiança** ▶
+- [x] **B04 · Ferramentas externas (YAML) com intents, precedência certa e confiança** ▶
   - **Problema:** `registerExternalTool` não copia `def.Intents` (`tools/loader.go:~109-117`), então nenhuma tool YAML é escolhida. A global carrega antes e o `continue` (`loader.go:~72`) descarta a do projeto, ao contrário do comentário. Ao consertar, uma tool de `.yby/tools` de um repo clonado roda `sh -c` com valores da IA, sem confiança, sem ctx e sem aspas (`loader.go:~147`).
   - **Fazer:**
     - copiar os intents;
@@ -146,11 +146,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - parâmetros passados por env ou escapados, nunca interpolados crus no `sh -c`.
   - **Verificar:** `loader_test.go` confere `Intents` e a precedência; teste de que o parâmetro `"; rm -rf ~"` não executa nada.
   - **Conferência (26/10):** entra também o override de prompt do projeto: `prompts.Get` lê `.yby/prompts/bard.*.txt` do diretório atual (`pkg/ai/prompts/prompts.go:~28`), e um repo clonado reescreve o system prompt sem confiança. No Windows não há `sh` sem o Git Bash: rodar sem shell (argv com os parâmetros inteiros) ou recusar com mensagem clara, nunca interpolar.
-- [ ] **B05 · Notas do Synapstor somem quando uma tool roda** ✓
+- [x] **B05 · Notas do Synapstor somem quando uma tool roda** ✓
   - **Problema:** `tui/fluxo.go:~232` refaz `entradaFinal` a partir de `entrada` e descarta o bloco de notas montado em `~183-186`.
   - **Fazer:** compor as notas e o resultado da ferramenta.
   - **Verificar:** teste do `Fluxo` com tool + Synapstor falsos: o prompt tem os dois.
-- [ ] **B06 · Secrets e dados sensíveis não vão à IA**
+- [x] **B06 · Secrets e dados sensíveis não vão à IA**
   - **Problema:** `kubectl_get` aceita `resource` e `output_format` livres (`tools/kubectl_get.go`), então `get secrets -o yaml` vai inteiro à IA. O `sanitizeContent` só roda no histórico e no `/exportar` (`history.go:~182`, `comandos_acoes.go:~367`). Logs também vão crus.
   - **Fazer:**
     - bloquear `secret(s)` com `-o json|yaml|jsonpath|go-template` (ou redigir `data`/`stringData`);
@@ -172,20 +172,20 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o scan do Sentinel resumido (contagem por severidade + os N mais graves com recursos);
     - JSON compacto em vez de indentado.
   - **Verificar:** testes de corte.
-- [ ] **B08 · Retry só do que é retentável**
+- [x] **B08 · Retry só do que é retentável**
   - **Problema:** `tui/fluxo.go:~239-261` tenta de novo qualquer erro por 30 s. Por dentro, o `RetryProvider` (`pkg/ai/retry_provider.go`) já tenta 429/502/503 por até 2 min. Chave inválida, modelo inexistente e ERR_TOKEN_LIMIT mostram "tentando de novo" quatro vezes.
   - **Fazer:** o `Fluxo` reusa a classificação de erro do `pkg/ai` e marca como permanente o resto, incluindo YbyError de config e de token.
   - **Verificar:** teste com erro permanente: uma tentativa só.
   - **Conferência (26/10):** o `RetryProvider` (`pkg/ai/retry_provider.go:~105-130`) repete qualquer erro que não seja `APIError`, inclusive o ERR_TOKEN_LIMIT do `TokenAwareProvider`: 2 min de espera antes do erro. Corrigir a classificação no `pkg/ai` primeiro. Os testes que usam `errors.New` esperando nova tentativa (`direto_test.go`, `fluxo_test.go`) passam a usar `APIError`.
-- [ ] **B09 · Subprocessos com contexto e prazo**
+- [x] **B09 · Subprocessos com contexto e prazo**
   - **Problema:** `invokePlugin` usa `exec.Command` sem ctx (`tools/plugin_helper.go`), e o esc durante um scan deixa o Sentinel rodando. O `EnrichContext` usa `context.Background()` (`main.go:~207,225`) e chama o kubectl em sequência sem `--request-timeout` (`context_enricher.go:~159`), então com o cluster fora do ar a TUI demora a abrir.
   - **Fazer:** `exec.CommandContext` nas tools; `--request-timeout=5s` e prazo total de ~5 s no enriquecimento.
   - **Verificar:** testes com comando falso lento.
-- [ ] **B10 · Providers CLI: prompt pelo stdin e cancelamento**
+- [x] **B10 · Providers CLI: prompt pelo stdin e cancelamento**
   - **Problema:** `pkg/ai/claude_cli.go` e `pkg/ai/gemini_cli.go` passam system prompt, histórico, blueprint e saída da tool num único argumento de `-p`, com `exec.Command` sem ctx. Isso estoura no Windows (~32 K) e no Linux (128 KiB por argumento), que é a mesma classe do #217, e o esc não mata o `claude`.
   - **Fazer:** prompt pelo stdin (confirmar a forma suportada pelo `claude -p` e pelo `gemini -p` atuais) e `exec.CommandContext`.
   - **Verificar:** teste com comando falso conferindo stdin e cancelamento; teste real local com o `claude` instalado, se houver.
-- [ ] **B11 · System prompt coerente; parser e guardrails mortos**
+- [x] **B11 · System prompt coerente; parser e guardrails mortos**
   - **Problema:**
     - o `BardSystem` diz "Voce NAO precisa chamar nenhuma ferramenta manualmente" (`pkg/ai/prompts/defaults.go:~47-48`) e injeta `FormatToolsPrompt`, que manda responder com bloco JSON (`tools/registry.go:~50-52`);
     - `ParseToolCalls`/`ValidateToolCall` só aparecem nos testes;
@@ -205,11 +205,11 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - parâmetros `container` e `previous` (e mostrar os contêineres no erro);
     - no investigate, usar o modo de dados brutos do Sentinel (S12) em vez da análise por IA dele.
   - **Verificar:** testes dos args montados.
-- [ ] **B13 · Cabeçalho do Bard com o modelo do config** (pendência antiga)
+- [x] **B13 · Cabeçalho do Bard com o modelo do config** (pendência antiga)
   - **Problema:** o cabeçalho não mostra o modelo vindo de `ai.model` do config.
   - **Fazer:** mostrar o modelo do config.
   - **Verificar:** golden da TUI.
-- [ ] **B14 · Providers CLI sem a cadeia de decorators** (pendência antiga)
+- [x] **B14 · Providers CLI sem a cadeia de decorators** (pendência antiga)
   - **Problema:** claude-cli e gemini-cli não passam pelo `wrapProvider` (`pkg/ai/factory.go`), então ficam sem retry, token-aware e custo.
   - **Fazer:** passar os dois pela cadeia, se ela fizer sentido para eles.
   - **Verificar:** teste da factory.
@@ -673,6 +673,18 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | B05 | Com ferramenta, o prompt final mantém o bloco de notas do Synapstor antes do resultado da ferramenta; teste do `Fluxo` com busca e tool falsas. | este commit |
+| 26/10/2026 | B08 | `ai.ErroRetentavel` classifica o erro (429/502/503, rede, stream cortado, YbyError de timeout); o `RetryProvider` e o `Fluxo` deixam de repetir o resto (chave inválida, modelo inexistente, ERR_TOKEN_LIMIT, config, falha de CLI). | este commit |
+| 26/10/2026 | B10 | Providers claude-cli e gemini-cli levam o prompt pelo stdin (`claude -p` sem texto; `gemini -p` com instrução curta), rodam com `CommandContext` e `WaitDelay`, limitam o stderr no erro e o stream do gemini perde as linhas "Loaded cached credentials". | este commit |
+| 26/10/2026 | B03 | O classificador recebe todos os intents com o esquema de parâmetros e o cluster/namespace da sessão (sem a regra do "default"), lê JSON no meio do texto e número como texto, registra falhas em debug, e o Fluxo não executa ferramenta sem os parâmetros obrigatórios; registry em ordem estável. | este commit |
+| 26/10/2026 | B06 | A saída e o erro de toda ferramenta passam pelo `pkg/redacao` no `Fluxo` (prompt e "↵ ver"); o `kubectl_get` lista só em wide ou name (sem yaml, json, jsonpath, go-template em nenhum recurso, Secrets inclusive); resource, name, pod, namespace e tail da IA são conferidos antes do kubectl e do Sentinel, e valor com "-" no começo não vira flag. | este commit |
+| 26/10/2026 | B04 | Tools YAML com os intents, a do projeto vencendo a global e só com confiança (`yby plugin trust <arquivo>` grava o SHA-256 do arquivo em `pkg/confianca`; sem ela, ou mudado, aparece no `/ferramentas` com o motivo), o mesmo para os prompts de `.yby/prompts`; o `command` roda sem shell, com cada `{{param}}` como argumento inteiro, valor com "-" recusado, `YBY_PARAM_<NOME>` no env, contexto do Bard e prazo de 2 min; no Windows o programa que de fato roda pelo cmd.exe, resolvido pelo PATHEXT mesmo em caminho relativo sem extensão (`cmd`, `.bat`, `.cmd` como o `az.cmd`) recusa valor com metacaractere do cmd (aspas, `%`, `&`, barra vertical, `<`, `>`, `^`, `!`, parênteses ou quebra de linha), e comando que só funciona num shell (ou shell com `{{}}`) não carrega. | este commit |
+| 26/10/2026 | B01 | O Bard acha o Sentinel e o Atlas como o core (`~/.yby/plugins` e depois `./.yby/plugins`, `yby-plugin-<nome>` com `.exe` no Windows, sem os nomes legados) e só roda o binário que passa no `plugin.IsTrusted`, o mesmo registro do core; sem confiança, o `/ferramentas` diz "não confiável · rode yby plugin trust". Sem contrato novo: o `$YBY_BIN sentinel` perderia o `--context` da sessão (o Sentinel lê o kube_context só do pedido) e o `YBY_PLUGINS` faria o core calcular o SHA-256 de todo plugin a cada comando. | este commit |
+| 26/10/2026 | B09 | `invokePlugin` roda com `exec.CommandContext` (o esc mata o Sentinel/Atlas, com `WaitDelay`); o `EnrichContext` tem prazo total de 5 s e o kubectl leva `--request-timeout=5s`, então cluster fora do ar não segura a abertura da TUI. | este commit |
+| 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
+| 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
+| 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
+| 27/10/2026 | B08 Ajuste (CI do #225) | O CLI que nem inicia (fora do PATH, sem permissão, exec format error) embrulha um `syscall.Errno`, que também é um `net.Error`, e o `ErroRetentavel` o repetia por ~100 s; `*fs.PathError` e `*exec.Error` agora são permanentes. O CLI falso dos testes ganhou o `#!/bin/sh`, sem o qual o Linux nem o inicia | este commit |
 
 ### Fase 3 · Synapstor
 

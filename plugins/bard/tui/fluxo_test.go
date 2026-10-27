@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
@@ -298,6 +299,40 @@ func TestFluxo_Erro429TentaDeNovo(t *testing.T) {
 	}
 	if final := ultimaEtapa(t, eventos, EtapaResposta); final.Estado != ui.EtapaFeita {
 		t.Errorf("etapa de resposta deveria terminar feita: %#v", final)
+	}
+}
+
+func TestFluxo_ErroPermanenteUmaTentativa(t *testing.T) {
+	casos := []struct {
+		nome string
+		err  error
+	}{
+		{"limite de tokens", ybyerrors.New(ybyerrors.ErrCodeTokenLimit, "prompt grande demais")},
+		{"chave inválida", &ai.APIError{Provider: "falso", StatusCode: 401, Body: "unauthorized"}},
+		{"modelo inexistente", &ai.APIError{Provider: "falso", StatusCode: 404, Body: "model not found"}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			isolarHome(t)
+			p := &provedorFalso{falhas: []error{c.err, c.err, c.err}, parcialPorFalha: "lixo"}
+			eventos := coletar(t, fluxoDeTeste(p).Iniciar(context.Background(), 1, "oi"), nil)
+
+			if p.totalChamadas() != 1 {
+				t.Errorf("erro permanente não se repete: %d chamadas", p.totalChamadas())
+			}
+			for _, e := range etapasDe(eventos) {
+				if e.Nota == NotaNovaTentativa {
+					t.Errorf("não deveria anunciar nova tentativa: %#v", e)
+				}
+			}
+			fim := fimDe(t, eventos)
+			if !errors.Is(fim.Err, c.err) || fim.Interrompida || fim.Resposta != "" {
+				t.Errorf("o fim deveria trazer o erro do provider, sem o parcial: %#v", fim)
+			}
+			if final := ultimaEtapa(t, eventos, EtapaResposta); final.Estado != ui.EtapaFalha {
+				t.Errorf("etapa de resposta deveria falhar: %#v", final)
+			}
+		})
 	}
 }
 
@@ -642,7 +677,7 @@ func TestFluxo_CancelamentoNaEsperaDescartaTentativaFalha(t *testing.T) {
 	isolarHome(t)
 	falhas := make([]error, 10)
 	for i := range falhas {
-		falhas[i] = errors.New("HTTP 429")
+		falhas[i] = &ai.APIError{Provider: "falso", StatusCode: 429, Body: "rate limited"}
 	}
 	p := &provedorFalso{falhas: falhas, parcialPorFalha: "lixo"}
 	f := fluxoDeTeste(p)
@@ -730,5 +765,126 @@ func TestPrimeiraLinhaEAlvo(t *testing.T) {
 		if got := alvoFerramenta(&tools.Tool{Parameters: c.params}, c.valor, "payments"); got != c.quer {
 			t.Errorf("%s: esperava %q, veio %q", c.nome, c.quer, got)
 		}
+	}
+}
+
+// As notas do Synapstor e a saída da ferramenta vão juntas ao provider.
+func TestFluxo_FerramentaMantemNotasDoSynapstor(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{
+		intencao: `{"intent":"investigate_pod","params":{"pod":"worker-1"},"direct":false}`,
+		trechos:  []string{"ok"},
+	}
+	chamadas := 0
+	f := fluxoDeTeste(p)
+	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{
+		{Content: "NOTA-X", Metadata: map[string]string{"title": "runbook"}, Score: 0.9},
+	}}
+	f.TopK = 5
+	f.Limiar = 0.6
+	ferramenta := ferramentaDeTeste("SAIDA-Y", nil, &chamadas)
+	f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
+
+	coletar(t, f.Iniciar(context.Background(), 1, "por que o worker reinicia?"), nil)
+
+	entrada := p.ultimaEntrada()
+	if !strings.Contains(entrada, "SAIDA-Y") || !strings.Contains(entrada, "NOTA-X") {
+		t.Errorf("o prompt deveria ter a saída da ferramenta e as notas: %q", entrada)
+	}
+}
+
+// A saída de toda ferramenta, e o erro dela, passa pela redação antes de ir ao
+// provider e à tela ("↵ ver" mostra o que a IA recebeu).
+func TestFluxo_SaidaDaFerramentaRedigida(t *testing.T) {
+	isolarHome(t)
+	casos := []struct {
+		nome  string
+		saida string
+		err   error
+	}{
+		{"saída", "token=abcdefghijklmnopqrstuvwxyz123\nDB_PASSWORD: hunter2\nStatus: Running", nil},
+		{"erro", "", errors.New("kubectl falhou\ntoken=abcdefghijklmnopqrstuvwxyz123\nDB_PASSWORD: hunter2")},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			p := &provedorFalso{
+				intencao: `{"intent":"investigate_pod","params":{"pod":"worker-1"},"direct":false}`,
+				trechos:  []string{"ok"},
+			}
+			chamadas := 0
+			f := fluxoDeTeste(p)
+			ferramenta := ferramentaDeTeste(c.saida, c.err, &chamadas)
+			f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
+
+			eventos := coletar(t, f.Iniciar(context.Background(), 1, "investiga"), nil)
+
+			final := ultimaEtapa(t, eventos, EtapaFerramenta)
+			for _, texto := range []string{p.ultimaEntrada(), final.Saida, final.Nota} {
+				if strings.Contains(texto, "abcdefghijklmnopqrstuvwxyz123") || strings.Contains(texto, "hunter2") {
+					t.Errorf("segredo da ferramenta vazou: %q", texto)
+				}
+			}
+			if !strings.Contains(p.ultimaEntrada(), "[REDIGIDO]") {
+				t.Errorf("o prompt deveria levar a marca da redação: %q", p.ultimaEntrada())
+			}
+		})
+	}
+}
+
+func TestFluxo_ObrigatorioFaltandoNaoExecuta(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{
+		intencao: `{"intent":"investigate_pod","params":{"namespace":"payments"},"direct":false}`,
+		trechos:  []string{"Qual pod?"},
+	}
+	chamadas := 0
+	f := fluxoDeTeste(p)
+	ferramenta := ferramentaDeTeste("saída", nil, &chamadas)
+	f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
+
+	eventos := coletar(t, f.Iniciar(context.Background(), 1, "investiga"), nil)
+
+	if chamadas != 0 {
+		t.Fatalf("a ferramenta não deveria rodar sem o pod, rodou %d", chamadas)
+	}
+	e := ultimaEtapa(t, eventos, EtapaFerramenta)
+	if e.Estado != ui.EtapaFalha || !strings.Contains(e.Saida, "pod") {
+		t.Errorf("esperava falha clara citando o pod: %+v", e)
+	}
+}
+
+// capturaClassificador guarda o que o classificador recebeu.
+type capturaClassificador struct {
+	*provedorFalso
+	sistema, usuario string
+}
+
+func (c *capturaClassificador) Completion(_ context.Context, sistema, usuario string) (string, error) {
+	c.sistema, c.usuario = sistema, usuario
+	return `{"intent":"direct","params":{},"direct":true}`, nil
+}
+
+func TestClassifyIntent_PromptTemSessaoEEsquema(t *testing.T) {
+	salvas := tools.All()
+	tools.Reset()
+	t.Cleanup(func() {
+		tools.Reset()
+		for _, s := range salvas {
+			tools.Register(s)
+		}
+	})
+	tools.Register(&tools.Tool{Name: "kubectl_logs", Description: "Logs", Intents: []string{"pod_logs", "view_logs"},
+		Parameters: []tools.ToolParam{{Name: "pod", Required: true}, {Name: "tail"}}})
+	c := &capturaClassificador{provedorFalso: &provedorFalso{}}
+
+	classifyIntent(context.Background(), c, "logs do api", "prod", "payments")
+
+	for _, esperado := range []string{"pod_logs", "view_logs", "pod*", "tail", "prod", "payments"} {
+		if !strings.Contains(c.usuario, esperado) {
+			t.Errorf("falta %q no prompt:\n%s", esperado, c.usuario)
+		}
+	}
+	if strings.Contains(strings.ToLower(c.usuario+c.sistema), "default") {
+		t.Errorf("o prompt não deve mandar usar default:\n%s\n%s", c.sistema, c.usuario)
 	}
 }

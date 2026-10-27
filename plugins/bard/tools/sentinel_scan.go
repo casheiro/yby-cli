@@ -21,12 +21,15 @@ func init() {
 }
 
 func executeSentinelScan(ctx context.Context, params map[string]string) (string, error) {
+	if err := conferirParams(params, "namespace"); err != nil {
+		return "", err
+	}
 	binaryPath, err := discoverPluginBinary("sentinel")
 	if err != nil {
-		return "", fmt.Errorf("sentinel nao disponivel (paths tentados: %w)", err)
+		return "", fmt.Errorf("sentinel não disponível: %w", err)
 	}
 
-	resp, err := invokePlugin(binaryPath, pedidoSentinelScan(params))
+	resp, err := invokePlugin(ctx, binaryPath, pedidoSentinelScan(params))
 	if err != nil {
 		return "", err
 	}
