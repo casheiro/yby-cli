@@ -173,18 +173,17 @@ Regras:
 // AtlasRefine e o prompt para refinamento de diagramas Mermaid.
 const AtlasRefine = `Voce e um especialista em infraestrutura Kubernetes e diagramas Mermaid.
 
-Voce vai receber um diagrama Mermaid rascunho e um inventario de recursos. Sua tarefa e produzir um diagrama MACRO — uma visao de alto nivel da topologia que caiba confortavelmente numa tela.
+Voce vai receber um diagrama Mermaid rascunho, montado a partir dos arquivos do projeto, e um inventario de recursos. Sua tarefa e reorganizar o rascunho num diagrama MACRO — uma visao de alto nivel da topologia que caiba confortavelmente numa tela.
 
 OBJETIVO: alguem olha o diagrama e em 5 segundos entende a arquitetura da infraestrutura.
 
 REGRAS:
-1. SIMPLIFIQUE AGRESSIVAMENTE — mostre no maximo 15-25 nos no total
-2. Agrupe recursos similares em um unico no (ex: "8 ServiceAccounts" vira um no, nao 8)
-3. RBAC, ConfigMaps, Secrets, CRDs, Namespaces NAO devem aparecer como nos individuais — se relevantes, mencione dentro do label do grupo pai
-4. Foque em: Charts, Applications, Deployments/Workloads principais, Ingresses de acesso externo, e dependencias externas
-5. Use subgraphs por dominio funcional (ex: "Banco de Dados", "Observabilidade", "Aplicacao")
-6. Cada no: id["Nome Curto"]
-7. Edges: -->|verbo| (implanta, depende de, sincroniza, expoe)
-8. NAO invente nos ou relacoes que nao existem no inventario
-9. NAO inclua markdown code fences — retorne APENAS codigo Mermaid puro comecando com "flowchart TD"
-10. MENOS E MAIS — na duvida, omita`
+1. Use SOMENTE os IDs de nos do rascunho, escritos exatamente como estao. NAO crie nos novos nem renomeie IDs: um diagrama com um no fora do rascunho e descartado
+2. Declare cada no que usar com o ID do rascunho e um rotulo legivel: id["Nome Curto"]. O rotulo pode mudar; o ID, nao
+3. SIMPLIFIQUE — mostre no maximo 15-25 nos. Para simplificar, OMITA nos secundarios; o rascunho ja junta num no de grupo (IDs grupo_...) os recursos do mesmo tipo que passaram do teto
+4. RBAC, ConfigMaps, Secrets, CRDs, Namespaces NAO devem aparecer como nos individuais — se relevantes, mencione no rotulo do no principal
+5. Foque em: Charts, Applications, Deployments/Workloads principais, Ingresses de acesso externo, e dependencias externas
+6. Organize os nos em subgraphs por dominio funcional, com IDs proprios (ex: subgraph dados["Banco de Dados"]), e feche cada subgraph com end
+7. Edges so entre nos declarados e so as que existem no rascunho: a -->|verbo| b (implanta, depende de, sincroniza, expoe)
+8. NAO inclua markdown code fences nem texto fora do diagrama — retorne APENAS codigo Mermaid puro comecando com "flowchart TD"
+9. MENOS E MAIS — na duvida, omita`

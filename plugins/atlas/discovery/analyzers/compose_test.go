@@ -301,3 +301,83 @@ func filterRelationsByType(relations []InfraRelation, relType string) []InfraRel
 	})
 	return filtered
 }
+
+func TestComposeAnalyzer_SintaxeLonga(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "docker-compose.yml")
+	conteudo := `
+services:
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: 8080
+      - "443:443"
+    volumes:
+      - type: bind
+        source: .
+        target: /app
+`
+	if err := os.WriteFile(f, []byte(conteudo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := (&ComposeAnalyzer{}).Analyze(dir, []string{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Resources) != 1 {
+		t.Fatalf("esperado 1 recurso, obteve %d", len(res.Resources))
+	}
+	if got := res.Resources[0].Metadata["ports"]; got != "8080:80,443:443" {
+		t.Errorf("ports = %q", got)
+	}
+}
+
+func TestComposeAnalyzer_OverrideMesclaServico(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "docker-compose.yml")
+	over := filepath.Join(dir, "docker-compose.override.yml")
+	os.WriteFile(base, []byte("services:\n  web:\n    image: nginx:1\n    depends_on: [db]\n  db:\n    image: postgres\n"), 0o644)
+	os.WriteFile(over, []byte("services:\n  web:\n    image: nginx:dev\n    ports: [\"80:80\"]\n"), 0o644)
+	// ordem invertida de propósito: a base tem de valer primeiro.
+	res, err := (&ComposeAnalyzer{}).Analyze(dir, []string{over, base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var web, total int
+	for _, r := range res.Resources {
+		if r.Kind == "ComposeService" {
+			total++
+		}
+		if r.ID() == "ComposeService/web" {
+			web++
+			if r.Metadata["image"] != "nginx:dev" || r.Metadata["ports"] != "80:80" {
+				t.Errorf("metadados sem mesclar: %v", r.Metadata)
+			}
+			if r.Path != "docker-compose.yml" {
+				t.Errorf("path = %q, esperado o da base", r.Path)
+			}
+		}
+	}
+	if total != 2 || web != 1 {
+		t.Errorf("serviços duplicados: total=%d web=%d", total, web)
+	}
+	if n := len(filterRelationsByType(res.Relations, "depends_on")); n != 1 {
+		t.Errorf("depends_on = %d", n)
+	}
+}
+
+func TestEhArquivoCompose(t *testing.T) {
+	sim := []string{"docker-compose.yml", "compose.yaml", "docker-compose.prod.yml", "docker-compose.override.yaml", "compose.dev.yml", "Docker-Compose.yml"}
+	nao := []string{"compose-notes.yml", "mycompose.yml", "values.yaml", "docker-compose.md", "composer.yml"}
+	for _, n := range sim {
+		if !EhArquivoCompose(n) {
+			t.Errorf("%q deveria ser compose", n)
+		}
+	}
+	for _, n := range nao {
+		if EhArquivoCompose(n) {
+			t.Errorf("%q não deveria ser compose", n)
+		}
+	}
+}
