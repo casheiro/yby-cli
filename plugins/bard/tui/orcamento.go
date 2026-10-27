@@ -9,17 +9,22 @@ import (
 // Orçamento do que vai à IA, em bytes de cada bloco do prompt (o TokenAwareProvider estima
 // ~4 bytes por token). Com a menor janela que o Bard aceita (8192 tokens, a do llama3 e
 // dos modelos que o pkg/ai não conhece), o system prompt (~2,5 KB) com o cluster e o
-// histórico, as notas, a saída da ferramenta e a pergunta cabem juntos abaixo dos 80% em
-// que o TokenAwareProvider começa a avisar; os 90%, em que ele recusa, ficam de folga.
+// histórico, as notas, a conversa atual, a saída da ferramenta e a pergunta cabem juntos
+// com todos os blocos cheios em ~85% da janela: passam dos 80%, em que o TokenAwareProvider
+// avisa no log, e ficam abaixo dos 90%, em que ele recusa.
 const (
 	// TetoFerramenta é o máximo da saída de uma ferramenta, ou do erro dela.
 	TetoFerramenta = 8 * 1024
 	// TetoNotas é o máximo das notas do Synapstor somadas.
 	TetoNotas = 8 * 1024
-	// TetoHistorico é o máximo do histórico de conversas no prompt.
-	TetoHistorico = 4 * 1024
-	// TetoMensagem é o máximo de cada mensagem do histórico, para uma resposta longa não
-	// ocupar o histórico inteiro.
+	// TetoHistorico é o máximo do histórico das conversas anteriores no system prompt. A
+	// conversa atual, que vale mais para a pergunta, tem o TetoConversa.
+	TetoHistorico = 2 * 1024
+	// TetoConversa é o máximo das trocas da conversa atual que vão com a pergunta; cabe
+	// sempre a última troca inteira (pergunta e resposta no TetoMensagem).
+	TetoConversa = 3 * 1024
+	// TetoMensagem é o máximo de cada mensagem do histórico e da conversa, para uma
+	// resposta longa não ocupar o bloco inteiro.
 	TetoMensagem = 1024
 	// TetoCluster é o máximo do estado do cluster no system prompt.
 	TetoCluster = 3 * 1024

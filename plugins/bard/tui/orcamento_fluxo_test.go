@@ -84,8 +84,9 @@ func TestFluxo_NotasDoSynapstorNoTeto(t *testing.T) {
 }
 
 // Ponta a ponta com a menor janela que o Bard aceita (llama3, 8192 tokens): o system
-// prompt de verdade com o cluster e o histórico no teto, notas cheias e 40 KB de
-// ferramenta cabem no TokenAwareProvider. Sem o orçamento, era ERR_TOKEN_LIMIT.
+// prompt de verdade com o cluster e o histórico no teto, notas cheias, a conversa atual
+// cheia e 40 KB de ferramenta cabem no TokenAwareProvider. Sem o orçamento, era
+// ERR_TOKEN_LIMIT.
 func TestFluxo_CabeNaJanelaDoLlama3(t *testing.T) {
 	isolarHome(t)
 	p := &provedorFalso{intencao: intencaoInvestigar(), trechos: []string{"ok"}}
@@ -100,7 +101,12 @@ func TestFluxo_CabeNaJanelaDoLlama3(t *testing.T) {
 	ferramenta := ferramentaDeTeste(linhasNumeradas(400, 100), nil, &chamadas) // 40 KB
 	f.BuscarFerramenta = func(string) *tools.Tool { return ferramenta }
 
-	eventos := coletar(t, f.Iniciar(context.Background(), 1, "por que o worker reinicia?"), nil)
+	var conversa []Troca
+	for i := 0; i < MaxTrocas; i++ {
+		conversa = append(conversa, Troca{Pergunta: linhasNumeradas(30, 100), Resposta: linhasNumeradas(100, 100)})
+	}
+
+	eventos := coletar(t, f.Iniciar(context.Background(), 1, "por que o worker reinicia?", conversa...), nil)
 
 	if fim := fimDe(t, eventos); fim.Err != nil {
 		t.Fatalf("o prompt deveria caber na janela do llama3: %v", fim.Err)

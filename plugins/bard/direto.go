@@ -48,6 +48,9 @@ type direto struct {
 	// medida que chega (o stdout é um terminal), em vez de inteira no fim.
 	etapas, continua bool
 	rodadas          int
+	// conversa são as perguntas já respondidas: as do mesmo batch formam uma sessão, e
+	// cada pergunta vai à IA com as anteriores.
+	conversa []tui.Troca
 }
 
 // enriquecerCluster lê o cluster da sessão; os testes trocam por um falso.
@@ -206,8 +209,8 @@ func (d *direto) erroDaRodada(fim tui.FimMsg) error {
 	return nil
 }
 
-// responder roda uma rodada do fluxo: as etapas vão para o stderr (num terminal) e a
-// resposta para o stdout, à medida que chega ou inteira no fim.
+// responder roda uma rodada do fluxo, com a conversa até aqui: as etapas vão para o stderr
+// (num terminal) e a resposta para o stdout, à medida que chega ou inteira no fim.
 func (d *direto) responder(ctx context.Context, rodada int, pergunta string) tui.FimMsg {
 	resposta := &porLinha{destino: d.saida}
 	var prog *ui.Progresso
@@ -226,7 +229,7 @@ func (d *direto) responder(ctx context.Context, rodada int, pergunta string) tui
 		atual     string // rótulo da etapa em andamento no Progresso
 		tentativa int    // última tentativa da resposta anunciada
 	)
-	for ev := range d.fluxo.Iniciar(ctx, rodada, pergunta) {
+	for ev := range d.fluxo.Iniciar(ctx, rodada, pergunta, d.conversa...) {
 		switch m := ev.(type) {
 		case tui.EtapaMsg:
 			if m.Etapa == tui.EtapaResposta {
@@ -266,6 +269,10 @@ func (d *direto) responder(ctx context.Context, rodada int, pergunta string) tui
 			texto += "\n"
 		}
 		_, _ = io.WriteString(d.saida, texto)
+	}
+	d.conversa = append(d.conversa, tui.TrocaDe(pergunta, fim))
+	if n := len(d.conversa); n > tui.MaxTrocas {
+		d.conversa = d.conversa[n-tui.MaxTrocas:]
 	}
 	return fim
 }

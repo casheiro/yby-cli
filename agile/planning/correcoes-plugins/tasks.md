@@ -113,7 +113,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `plugins/bard/tools/plugin_helper.go:~16-34` procura `yby-plugin-<nome>` e `<nome>` sem `.exe`, então no Windows o Sentinel e o Atlas nunca rodam pelo Bard. Também roda `./.yby/plugins/<nome>` do diretório atual sem a verificação de confiança do core: um repo clonado pode trazer um binário.
   - **Fazer:** de preferência, o core passa ao Bard os caminhos já resolvidos e confiáveis dos plugins (no pedido ou numa env, ex.: `YBY_PLUGINS` com JSON nome→caminho), e o Bard usa só esses. Sem o core (binário direto), procurar com `.exe` no Windows e só em `~/.yby/plugins`.
   - **Verificar:** teste por GOOS; teste de que `./.yby/plugins` sem confiança não roda.
-- [ ] **B02 · Memória da conversa atual** ✓
+- [x] **B02 · Memória da conversa atual** ✓
   - **Problema:** `tui/model.go:~670` chama `m.fluxo.Iniciar(ctx, m.rodada, input)` só com a pergunta, e o `Fluxo` (`tui/fluxo.go`) monta o prompt só com `entrada` e um `SystemPrompt` fixo. O histórico de sessões anteriores entra (`main.go:~231-234`), mas a sessão atual não.
   - **Fazer:** o `Fluxo` recebe as últimas N trocas da sessão, com orçamento de tokens (B07), e as usa na resposta e no classificador. Vale também para o batch.
   - **Verificar:** teste do `Fluxo` com duas rodadas: a segunda pergunta ("e os logs dele?") chega ao provider falso com a primeira troca.
@@ -695,6 +695,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
 | 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
 | 26/10/2026 | B07 | Orçamento do que vai à IA (`plugins/bard/tui/orcamento.go`: `Cortar` por linhas com "… N linhas omitidas", `Recentes` e os tetos por bloco): saída de ferramenta ≤ 8 KB, notas do Synapstor ≤ 8 KB somadas, histórico ≤ 4 KB (1 KB por mensagem), cluster ≤ 3 KB com 20 pods (os com problema primeiro); scan do Sentinel resumido (contagem por severidade, os 10 mais graves com até 10 recursos, o que não rodou), investigate em JSON compacto com os logs no fim, `kubectl_events` com os 50 últimos e `--tail` até 200; `GetModelMetadata` casa pelo nome base sem a tag do Ollama (`llama3.1:8b`, `qwen2.5:7b`). | este commit |
+| 26/10/2026 | B02 | O `Fluxo` recebe as trocas anteriores da sessão (`tui.Troca`, até 10, redigidas pelo `pkg/redacao` e no novo `TetoConversa` de 3 KB, com o `TetoHistorico` das sessões anteriores baixado a 2 KB) e as põe antes da pergunta na resposta e no classificador; a TUI guarda as trocas da conversa (o `/limpar` e o `/sessões` recomeçam, porque a retomada já vai pelo system prompt; o `/modelo` mantém) e as perguntas do mesmo batch formam uma sessão. | este commit |
 
 ### Fase 3 · Synapstor
 

@@ -146,6 +146,7 @@ Regras:
 - Extraia namespace, pod name, resource type dos parametros quando mencionados
 - Preencha os parametros listados em cada intencao; os marcados com * sao obrigatorios
 - Se o usuario nao disser o namespace, omita o parametro namespace: vale o da sessao
+- Classifique a ultima mensagem do usuario; a conversa ate aqui, quando vier, serve para entender referencias ("e os logs dele?") e preencher os parametros
 - intent deve ser EXATAMENTE um dos nomes listados
 - Responda APENAS o JSON, sem explicacoes`
 

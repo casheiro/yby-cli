@@ -31,11 +31,12 @@ type provedorFalso struct {
 	travar          bool
 	ignorarCtx      bool
 
-	mu        sync.Mutex
-	chamadas  int
-	entradas  []string
-	liberar   chan struct{}
-	cancelado chan struct{}
+	mu             sync.Mutex
+	chamadas       int
+	entradas       []string
+	classificacoes []string // os prompts que o classificador mandou
+	liberar        chan struct{}
+	cancelado      chan struct{}
 }
 
 func (p *provedorFalso) Name() string                       { return "falso" }
@@ -47,7 +48,10 @@ func (p *provedorFalso) EmbedDocuments(_ context.Context, _ []string) ([][]float
 	return nil, errors.New("não usado")
 }
 
-func (p *provedorFalso) Completion(_ context.Context, _, _ string) (string, error) {
+func (p *provedorFalso) Completion(_ context.Context, _, userPrompt string) (string, error) {
+	p.mu.Lock()
+	p.classificacoes = append(p.classificacoes, userPrompt)
+	p.mu.Unlock()
 	if p.intencao == "" {
 		return `{"intent":"direct","params":{},"direct":true}`, nil
 	}
@@ -877,7 +881,7 @@ func TestClassifyIntent_PromptTemSessaoEEsquema(t *testing.T) {
 		Parameters: []tools.ToolParam{{Name: "pod", Required: true}, {Name: "tail"}}})
 	c := &capturaClassificador{provedorFalso: &provedorFalso{}}
 
-	classifyIntent(context.Background(), c, "logs do api", "prod", "payments")
+	classifyIntent(context.Background(), c, "logs do api", "", "prod", "payments")
 
 	for _, esperado := range []string{"pod_logs", "view_logs", "pod*", "tail", "prod", "payments"} {
 		if !strings.Contains(c.usuario, esperado) {

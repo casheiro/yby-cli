@@ -136,14 +136,16 @@ func NovoFluxo(provider ai.Provider, vectorStore *ai.VectorStore, config Config)
 // Iniciar roda o fluxo em segundo plano e devolve o canal de eventos. O canal
 // termina sempre com um FimMsg e é fechado em seguida; quem consome deve ler
 // até o FimMsg. Cancelar ctx interrompe a rodada e antecipa o FimMsg, mesmo
-// que o provider ou a ferramenta não respeitem o contexto.
-func (f *Fluxo) Iniciar(ctx context.Context, rodada int, entrada string) <-chan tea.Msg {
+// que o provider ou a ferramenta não respeitem o contexto. A conversa são as trocas
+// anteriores da sessão, que vão com a pergunta à resposta e ao classificador.
+func (f *Fluxo) Iniciar(ctx context.Context, rodada int, entrada string, conversa ...Troca) <-chan tea.Msg {
 	e := &emissor{ctx: ctx, ch: make(chan tea.Msg, 16), rodada: rodada}
-	go f.rodar(ctx, e, entrada)
+	// A memória sai aqui, antes da goroutine: quem chamou pode acrescentar trocas à fatia.
+	go f.rodar(ctx, e, entrada, memoriaDaConversa(conversa))
 	return e.ch
 }
 
-func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
+func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada, conversa string) {
 	inicio := time.Now()
 	var usadas []string
 	fim := func(err error) {
@@ -184,14 +186,16 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 	e.etapa(EtapaMsg{Etapa: EtapaContexto, Rotulo: rotuloContexto, Estado: ui.EtapaFeita, Nota: notas.nota, Duracao: time.Since(t0)})
 
 	entradaFinal := entrada
-	if notas.texto != "" {
-		entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\nPergunta do Usuário: %s", notas.texto, entrada)
+	if notas.texto != "" || conversa != "" {
+		entradaFinal = "Pergunta do Usuário: " + entrada
 	}
 
 	// 2. Intenção
 	t0 = time.Now()
 	e.etapa(EtapaMsg{Etapa: EtapaIntencao, Rotulo: rotuloIntencao, Estado: ui.EtapaAtual})
-	intent, ok := esperar(ctx, func() *tools.IntentResult { return classifyIntent(ctx, f.Provider, entrada, f.Cluster, f.Namespace) })
+	intent, ok := esperar(ctx, func() *tools.IntentResult {
+		return classifyIntent(ctx, f.Provider, entrada, conversa, f.Cluster, f.Namespace)
+	})
 	if !ok || ctx.Err() != nil {
 		e.etapaForcada(interrompida(EtapaIntencao, rotuloIntencao, time.Since(t0)))
 		fim(nil)
@@ -240,10 +244,12 @@ func (f *Fluxo) rodar(ctx context.Context, e *emissor, entrada string) {
 		}
 		e.etapa(msg)
 		entradaFinal = fmt.Sprintf("Pergunta do usuario: %s\n\nResultado da ferramenta %s:\n%s\n\nAnalise o resultado e responda ao usuario de forma clara e acionavel.", entrada, ferramenta.Name, saida)
-		if notas.texto != "" {
-			// As notas do Synapstor continuam valendo quando uma ferramenta roda.
-			entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\n%s", notas.texto, entradaFinal)
-		}
+	}
+	// A conversa atual vem antes da pergunta, e as notas do Synapstor, que continuam
+	// valendo quando uma ferramenta roda, antes de tudo.
+	entradaFinal = comConversa(conversa, entradaFinal)
+	if notas.texto != "" {
+		entradaFinal = fmt.Sprintf("Contexto Adicional Recuperado (Memória Semântica):\n%s\n\n%s", notas.texto, entradaFinal)
 	}
 
 	// 4. Resposta, em pedaços, com novas tentativas

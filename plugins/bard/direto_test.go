@@ -55,6 +55,7 @@ type iaFalsa struct {
 	falhas   []error
 	parcial  string
 	chamadas int
+	prompts  []string // o que cada chamada ao StreamCompletion recebeu
 }
 
 func (p *iaFalsa) Name() string                       { return "IA falsa" }
@@ -72,7 +73,9 @@ func (p *iaFalsa) StreamCompletion(_ context.Context, _, pergunta string, out io
 	p.mu.Lock()
 	n := p.chamadas
 	p.chamadas++
+	p.prompts = append(p.prompts, pergunta)
 	p.mu.Unlock()
+	pergunta = perguntaDoPrompt(pergunta)
 	if n < len(p.falhas) {
 		if p.parcial != "" {
 			_, _ = io.WriteString(out, p.parcial)
@@ -89,6 +92,15 @@ func (p *iaFalsa) StreamCompletion(_ context.Context, _, pergunta string, out io
 		}
 	}
 	return nil
+}
+
+// perguntaDoPrompt tira do prompt a conversa anterior, que vem antes do rótulo da pergunta.
+func perguntaDoPrompt(prompt string) string {
+	const rotulo = "Pergunta do Usuário: "
+	if i := strings.LastIndex(prompt, rotulo); i >= 0 {
+		return prompt[i+len(rotulo):]
+	}
+	return prompt
 }
 
 // retryDeTeste mantém a forma da política padrão com intervalos curtos.
@@ -316,6 +328,35 @@ func TestLote_UmaPerguntaPorLinha(t *testing.T) {
 	}
 }
 
+// As perguntas do mesmo batch formam uma sessão: cada uma vai à IA com as anteriores e as
+// respostas delas; a pergunta que falhou vai sem resposta. O -p é uma rodada só.
+func TestLote_PerguntasDoMesmoBatchFormamASessao(t *testing.T) {
+	// Só a primeira chamada falha e, sem nova tentativa, a primeira pergunta fica sem resposta.
+	ia := &iaFalsa{falhas: []error{errors.New("401 chave inválida")}}
+	d, _, _ := novoDiretoDeTeste(t, ia, false, false)
+	d.fluxo.Retry = semNovaTentativa
+	_ = d.lote(context.Background(), strings.NewReader("qual pod reinicia?\no worker-1 reinicia?\ne os logs dele?\n"))
+
+	if len(ia.prompts) != 3 {
+		t.Fatalf("esperava 3 chamadas, vieram %d", len(ia.prompts))
+	}
+	if strings.Contains(ia.prompts[0], "Conversa") {
+		t.Errorf("a primeira pergunta vai sozinha: %q", ia.prompts[0])
+	}
+	ultimo := ia.prompts[2]
+	for _, trecho := range []string{"qual pod reinicia?", "(sem resposta)", "o worker-1 reinicia?", "resposta para o worker-1 reinicia?", "e os logs dele?"} {
+		if !strings.Contains(ultimo, trecho) {
+			t.Errorf("a terceira pergunta deveria levar %q:\n%s", trecho, ultimo)
+		}
+	}
+
+	um := &iaFalsa{}
+	d, _, _ = novoDiretoDeTeste(t, um, false, false)
+	if err := d.perguntar(context.Background(), "oi"); err != nil || um.prompts[0] != "oi" {
+		t.Errorf("o -p vai sem conversa: %q %v", um.prompts, err)
+	}
+}
+
 func TestLote_SemPerguntas(t *testing.T) {
 	d, _, _ := novoDiretoDeTeste(t, &iaFalsa{}, false, false)
 	err := d.lote(context.Background(), strings.NewReader("\n  \n"))
@@ -425,7 +466,7 @@ func (o *ollamaFalso) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		o.respondeu = append(o.respondeu, req.Prompt)
-		for _, t := range []string{"resposta ", "para ", req.Prompt} {
+		for _, t := range []string{"resposta ", "para ", perguntaDoPrompt(req.Prompt)} {
 			_ = enc.Encode(map[string]interface{}{"response": t, "done": false})
 		}
 	default:
@@ -513,7 +554,11 @@ func TestProcesso_BatchSemTerminal(t *testing.T) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.classificou != 2 || len(o.respondeu) != 2 || len(o.inesperados) != 0 {
-		t.Errorf("chamadas ao Ollama falso: classificou=%d respondeu=%v inesperados=%v", o.classificou, o.respondeu, o.inesperados)
+		t.Fatalf("chamadas ao Ollama falso: classificou=%d respondeu=%v inesperados=%v", o.classificou, o.respondeu, o.inesperados)
+	}
+	// A segunda pergunta do batch vai com a primeira troca.
+	if !strings.Contains(o.respondeu[1], "quantos pods?") || !strings.Contains(o.respondeu[1], "resposta para quantos pods?") {
+		t.Errorf("a segunda pergunta deveria levar a primeira troca: %q", o.respondeu[1])
 	}
 }
 
