@@ -25,7 +25,7 @@ func (c *NetpolCoverageCheck) Description() string {
 }
 
 func (c *NetpolCoverageCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := listarPods(ctx, client, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}

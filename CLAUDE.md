@@ -261,8 +261,8 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 - **Agrupamento inteligente**: findings deduplicados por check, mostra "Deployment/api (+5)" em vez de repetir por workload
 - **Allowlists**: RBAC ignora automaticamente `system:*`, controllers conhecidos (argocd, cert-manager, traefik, etc.)
 - **Investigacao IA inteligente**: verifica saude do pod antes de chamar IA — so aciona quando detecta problemas reais
-- **Remediacao**: `--fix-dry-run` e `--fix` com strategic-merge patches
-- **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/sentinel-scan-{namespace}-{data}.md`
+- **Remediacao**: `--fix-dry-run` (dry-run no servidor) e `--fix` (confirma; sem terminal, exige `--yes`) com strategic-merge patches no template do dono do pod (`ownerReferences`), só as correções seguras (escalação de privilégios, capabilities); recusa recurso do Argo CD, pod sem dono e Job solto
+- **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/sentinel-scan-{namespace}-{contexto}-{data}-{hora}.md`
 - **Cache**: investigacoes em `~/.yby/sentinel/cache/` (TTL 1h), nao polui diretorio do projeto
 - **Fallback**: checks artesanais internos quando backends nao estao disponiveis
 

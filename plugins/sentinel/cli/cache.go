@@ -29,20 +29,27 @@ type CacheEntry struct {
 	LogsHash  string         `json:"logs_hash"`
 }
 
-// cacheKey gera a chave de cache baseada no namespace/pod e logs.
-func cacheKey(namespace, podName, logs string) string {
+// idPod identifica a instância do pod a que uma análise guardada se refere: o mesmo nome
+// em outro cluster, ou depois de recriado ou reiniciado, é outro caso.
+type idPod struct {
+	Contexto, Namespace, Pod, UID string
+	Reinicios                     int32
+}
+
+// cacheKey gera a chave de cache baseada na identidade do pod e nos logs.
+func cacheKey(id idPod, logs string) string {
 	// Usar os primeiros 500 caracteres dos logs para o hash
 	logsSample := logs
 	if len(logsSample) > 500 {
 		logsSample = logsSample[:500]
 	}
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s/%s:%s", namespace, podName, logsSample)))
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%s/%s|%s|%d:%s", id.Contexto, id.Namespace, id.Pod, id.UID, id.Reinicios, logsSample)))
 	return fmt.Sprintf("%x", h)
 }
 
 // loadCache tenta carregar resultado do cache.
-func loadCache(namespace, podName, logs string) (*AnalysisResult, bool) {
-	key := cacheKey(namespace, podName, logs)
+func loadCache(id idPod, logs string) (*AnalysisResult, bool) {
+	key := cacheKey(id, logs)
 	path := filepath.Join(getCacheDir(), key+".json")
 
 	data, err := os.ReadFile(path)
@@ -65,8 +72,8 @@ func loadCache(namespace, podName, logs string) (*AnalysisResult, bool) {
 }
 
 // saveCache salva resultado no cache.
-func saveCache(namespace, podName, logs string, result AnalysisResult) {
-	key := cacheKey(namespace, podName, logs)
+func saveCache(id idPod, logs string, result AnalysisResult) {
+	key := cacheKey(id, logs)
 	if err := os.MkdirAll(getCacheDir(), 0755); err != nil {
 		return
 	}
