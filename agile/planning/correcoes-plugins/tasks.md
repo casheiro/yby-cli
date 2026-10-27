@@ -89,7 +89,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - manter o `UKIIndex` do core (`pkg/context/core.go:~92-110`) só se alguém ler; hoje ninguém lê;
     - o Synapstor embrulha o payload duas vezes (`main.go:~130,177-179`): desembrulhar.
   - **Verificar:** teste do manager mostrando que um plugin com hook `context` e sem `consome_contexto` abre sem rodar os hooks; `yby synapstor --help` instantâneo num repo grande.
-- [ ] **K02 · `atlas_blueprint` do Bard lê o que o Atlas manda** ✓
+- [x] **K02 · `atlas_blueprint` do Bard lê o que o Atlas manda** ✓
   - **Problema:** o Atlas responde `{"data":{"blueprint":{…}}}` (`plugins/atlas/main.go:~68-76`). `formatBlueprintResults` procura `components`/`relations`/`languages` no topo (`plugins/bard/tools/atlas_blueprint.go:~55-95`), e `languages` nem existe. A IA recebe só "## Blueprint do Projeto". O teste `plugins/bard/tools/atlas_test.go:~64-76` passa porque usa um formato inventado.
   - **Fazer:**
     - desembrulhar `data.blueprint`;
@@ -675,6 +675,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
 | 26/10/2026 | K01 | Contexto barato (ambiente, infra com kube_config, values) a todo plugin quando o ambiente é pedido (`-c` em qualquer forma do pflag antes do nome, ou `YBY_ENV`); o caro só com `consome_contexto`; `--help` sem contexto; `ExecuteContextHook` com o contexto do chamador; Synapstor sem embrulho duplo; `UKIIndex` removido. | este commit |
+| 26/10/2026 | K02 | O hook `context` do Atlas aceita o argumento `infra` (só a ferramenta do Bard pede) e manda o `InfraBlueprint` ao lado do blueprint; `formatBlueprintResults` desembrulha a resposta real e resume com nomes (componentes, charts, workloads, outros recursos por kind e relações), cortado em 8 KB; contrato no `testdata` do Atlas (pedido e golden gravado pelo `executar`) lido pelo teste do Bard. | este commit |
 
 ### Fase 2 · Bard
 

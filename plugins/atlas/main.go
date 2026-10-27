@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,13 +67,11 @@ func executar(saida, erros io.Writer) int {
 		}
 		return 0
 	case "context":
-		blueprint, err := scanProject()
+		dados, err := contextoDoProjeto(req.Args)
 		if err != nil {
 			return falhaJSON(saida, erros, err)
 		}
-		if err := respond(saida, map[string]interface{}{
-			"blueprint": blueprint,
-		}); err != nil {
+		if err := respond(saida, dados); err != nil {
 			return falhaJSON(saida, erros, err)
 		}
 		return 0
@@ -152,15 +151,41 @@ func falhaJSON(saida, erros io.Writer, err error) int {
 	return 1
 }
 
-// scanProject executa a descoberta de componentes no diretório atual,
-// aplicando configuração externa quando disponível.
-func scanProject() (*discovery.Blueprint, error) {
+// argInfra é o argumento do hook context que pede também a topologia da infraestrutura
+// (charts, workloads, services…). Quem pede é a ferramenta atlas_blueprint do Bard; o
+// yby init não pede e não paga a segunda varredura.
+const argInfra = "infra"
+
+// contextoDoProjeto monta o Data do hook context: {"blueprint": …} e, com o argumento
+// infra, {"infra": …} ao lado. Os caminhos saem relativos à pasta atual e com '/'.
+func contextoDoProjeto(args []string) (map[string]interface{}, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-
 	cfg := loadConfig()
+	blueprint, err := scanProject(cwd, cfg)
+	if err != nil {
+		return nil, err
+	}
+	dados := map[string]interface{}{"blueprint": blueprint}
+	if slices.Contains(args, argInfra) {
+		ignores := append([]string(nil), discovery.IgnoradosPadrao...)
+		if cfg != nil {
+			ignores = append(ignores, cfg.Ignores...)
+		}
+		infra, err := discovery.ScanInfra(cwd, ignores)
+		if err != nil {
+			return nil, err
+		}
+		dados["infra"] = infra
+	}
+	return dados, nil
+}
+
+// scanProject executa a descoberta de componentes em cwd, aplicando a configuração
+// externa quando disponível (cfg nil: valem os padrões).
+func scanProject(cwd string, cfg *discovery.AtlasConfig) (*discovery.Blueprint, error) {
 	ignores := append([]string(nil), discovery.IgnoradosPadrao...)
 	var rules []discovery.Rule
 	if cfg != nil {
