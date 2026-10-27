@@ -328,6 +328,13 @@ func TestRedigir_NaoRedige(t *testing.T) {
 		"git@github.com:org/repo.git",
 		"nome: web\nreplicas: 3",
 		"sem segredo nenhum aqui",
+		// Nome e referência de Secret não são o segredo: o Bard e o Sentinel precisam
+		// deles para dizer qual Secret falta.
+		"secretName: db-creds",
+		"    SecretName:  a-tls\n    Optional:    false",
+		"tls:\n- secretName: web-tls\n  hosts: [a]",
+		"secretKeyRef: {name: db, key: password}",
+		"secret_ref: db",
 		// "key" sozinho não é sensível.
 		"- key: app\n  operator: In\n  values:\n  - web",
 		"tolerations:\n- key: node-role.kubernetes.io/master\n  operator: Exists\n  effect: NoSchedule",
@@ -361,14 +368,12 @@ func TestRedigir_NaoRedige(t *testing.T) {
 // prefere redigir demais a vazar.
 func TestRedigir_ExageroAceito(t *testing.T) {
 	for _, s := range []string{
-		"**Secret:** use o Vault",                 // rótulo de markdown em prosa: some o "use"
-		"secretName: db-creds",                    // nome de objeto Secret, não o segredo
-		"max_tokens: 100",                         // contagem de tokens
-		"Configure o token:\nfoo",                 // primeira palavra da linha de baixo
-		"--password-file /etc/pwd",                // caminho depois de flag sensível
-		"secretKeyRef: {name: db, key: password}", // referência em mapa de fluxo
-		"Authorization: Custom realm=x, fim",      // esquema desconhecido: o resto da linha
-		"bearer well-known",                       // hífen depois de bearer conta como token
+		"**Secret:** use o Vault",            // rótulo de markdown em prosa: some o "use"
+		"max_tokens: 100",                    // contagem de tokens
+		"Configure o token:\nfoo",            // primeira palavra da linha de baixo
+		"--password-file /etc/pwd",           // caminho depois de flag sensível
+		"Authorization: Custom realm=x, fim", // esquema desconhecido: o resto da linha
+		"bearer well-known",                  // hífen depois de bearer conta como token
 	} {
 		if got := Redigir(s); !strings.Contains(got, Marca) {
 			t.Errorf("Redigir(%q) = %q, esperava redação (exagero aceito)", s, got)
