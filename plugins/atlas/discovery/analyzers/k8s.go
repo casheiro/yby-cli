@@ -32,7 +32,11 @@ type parsedResource struct {
 }
 
 // K8sAnalyzer analisa manifestos Kubernetes e extrai recursos e relações.
-type K8sAnalyzer struct{}
+type K8sAnalyzer struct {
+	// Kustomize, quando presente, tira os patches, aplica o namespace herdado
+	// dos overlays e liga cada kustomization aos recursos que lista.
+	Kustomize *PlanoKustomize
+}
 
 // NewK8sAnalyzer cria uma nova instância do analyzer de manifestos Kubernetes.
 func NewK8sAnalyzer() *K8sAnalyzer {
@@ -69,7 +73,55 @@ func (a *K8sAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult,
 	// Segundo passo: extrair relações semânticas entre os recursos
 	result.Relations = a.extractRelations(parsed)
 
+	// Kustomizations que listam o arquivo incluem os recursos dele
+	if a.Kustomize != nil {
+		for _, p := range parsed {
+			for _, dono := range a.Kustomize.Donos[p.Resource.Path] {
+				result.Relations = append(result.Relations, InfraRelation{
+					From: dono,
+					To:   p.Resource.ID(),
+					Type: "includes",
+				})
+			}
+		}
+	}
+
 	return result, nil
+}
+
+// clusterScoped são os kinds sem namespace, que o namespace do Kustomize não muda.
+var clusterScoped = map[string]bool{
+	"Namespace": true, "Node": true, "PersistentVolume": true, "StorageClass": true,
+	"ClusterRole": true, "ClusterRoleBinding": true, "CustomResourceDefinition": true,
+	"ClusterIssuer": true, "PriorityClass": true, "IngressClass": true, "RuntimeClass": true,
+	"MutatingWebhookConfiguration": true, "ValidatingWebhookConfiguration": true,
+	"APIService": true, "CSIDriver": true, "VolumeSnapshotClass": true,
+}
+
+// copiasPorNamespace devolve as cópias do recurso, uma por namespace em que
+// os overlays aplicam o arquivo; sem Kustomize, só o próprio recurso.
+func (a *K8sAnalyzer) copiasPorNamespace(res InfraResource) []InfraResource {
+	if a.Kustomize == nil || clusterScoped[res.Kind] {
+		return []InfraResource{res}
+	}
+	namespaces := a.Kustomize.Namespaces[res.Path]
+	if len(namespaces) == 0 {
+		return []InfraResource{res}
+	}
+	var copias []InfraResource
+	vistos := make(map[string]bool)
+	for _, ns := range namespaces {
+		copia := res
+		if ns != "" {
+			copia.Namespace = ns
+		}
+		if vistos[copia.Namespace] {
+			continue
+		}
+		vistos[copia.Namespace] = true
+		copias = append(copias, copia)
+	}
+	return copias
 }
 
 // parseFile lê e parseia um arquivo YAML, suportando multi-documentos separados por ---.
@@ -87,6 +139,12 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 	relPath, err := relSlash(rootPath, filePath)
 	if err != nil {
 		relPath = filePath
+	}
+
+	// Patch de kustomization altera um recurso de outro arquivo, não cria outro.
+	if a.Kustomize != nil && a.Kustomize.Patches[relPath] {
+		slog.Debug("pulando patch do Kustomize", "file", filePath)
+		return nil, nil
 	}
 
 	// Arquivo encriptado por SOPS: não há topologia legível nele.
@@ -150,10 +208,12 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 			Labels:    manifest.Metadata.Labels,
 		}
 
-		resources = append(resources, parsedResource{
-			Resource: resource,
-			Raw:      raw,
-		})
+		for _, copia := range a.copiasPorNamespace(resource) {
+			resources = append(resources, parsedResource{
+				Resource: copia,
+				Raw:      raw,
+			})
+		}
 	}
 
 	return resources, nil

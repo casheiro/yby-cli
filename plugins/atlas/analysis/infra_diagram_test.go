@@ -3,6 +3,7 @@ package analysis
 import (
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -110,4 +111,43 @@ func TestGenerateInfraMermaid_Golden(t *testing.T) {
 	}
 	conferirGolden(t, "infra_overview.mmd", GenerateInfraMermaid(bp, DetailOverview))
 	conferirGolden(t, "infra_full.mmd", GenerateInfraMermaid(bp, DetailFull))
+}
+
+// copiarFixtureKustomize copia a fixture base+overlays do discovery para um
+// diretório temporário, fora do git do repositório.
+func copiarFixtureKustomize(t *testing.T) string {
+	t.Helper()
+	origem := filepath.Join("..", "discovery", "testdata", "kustomize")
+	raiz := t.TempDir()
+	err := filepath.WalkDir(origem, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(origem, p)
+		if err != nil {
+			return err
+		}
+		dados, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		destino := filepath.Join(raiz, rel)
+		if err := os.MkdirAll(filepath.Dir(destino), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(destino, dados, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raiz
+}
+
+func TestGenerateInfraMermaid_GoldenKustomize(t *testing.T) {
+	bp, err := discovery.ScanInfra(copiarFixtureKustomize(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conferirGolden(t, "infra_kustomize_overview.mmd", GenerateInfraMermaid(bp, DetailOverview))
+	conferirGolden(t, "infra_kustomize_full.mmd", GenerateInfraMermaid(bp, DetailFull))
 }

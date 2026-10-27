@@ -1,0 +1,25 @@
+flowchart TD
+  subgraph Kustomize["Kustomize"]
+    Kustomization_apps_api_base["apps/api/base\n(Kustomization)"]
+    Kustomization_apps_api_overlays_prod["apps/api/overlays/prod\n(Kustomization)"]
+    Kustomization_apps_api_overlays_staging["apps/api/overlays/staging\n(Kustomization)"]
+  end
+  subgraph Networking["Networking"]
+    Ingress_prod_web["prod/web\n(Ingress)"]
+    Service_prod_api["prod/api\n(Service)"]
+    Service_staging_api["staging/api\n(Service)"]
+  end
+  subgraph Workloads["Workloads"]
+    Deployment_prod_api["prod/api\n(Deployment)"]
+    Deployment_staging_api["staging/api\n(Deployment)"]
+  end
+  Ingress_prod_web -->|routes| Service_prod_api
+  Kustomization_apps_api_base -->|includes| Deployment_prod_api
+  Kustomization_apps_api_base -->|includes| Deployment_staging_api
+  Kustomization_apps_api_base -->|includes| Service_prod_api
+  Kustomization_apps_api_base -->|includes| Service_staging_api
+  Kustomization_apps_api_overlays_prod -->|includes| Ingress_prod_web
+  Kustomization_apps_api_overlays_prod -->|includes| Kustomization_apps_api_base
+  Kustomization_apps_api_overlays_staging -->|includes| Kustomization_apps_api_base
+  Service_prod_api -->|selects| Deployment_prod_api
+  Service_staging_api -->|selects| Deployment_staging_api

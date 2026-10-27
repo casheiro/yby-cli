@@ -363,7 +363,13 @@ func GenerateInfraMermaid(bp *discovery.InfraBlueprint, detail DetailLevel) stri
 		b.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", subgraphID, cat))
 		for _, r := range resources {
 			id := infraNodeID(r.ID())
-			label := sanitizeMermaidLabel(fmt.Sprintf("%s\\n(%s)", r.Name, r.Kind))
+			// Com namespace no rótulo, a mesma base aplicada em dois overlays não
+			// vira dois nós iguais
+			nome := r.Name
+			if r.Namespace != "" {
+				nome = r.Namespace + "/" + r.Name
+			}
+			label := sanitizeMermaidLabel(fmt.Sprintf("%s\\n(%s)", nome, r.Kind))
 			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", id, label))
 		}
 		b.WriteString("  end\n")

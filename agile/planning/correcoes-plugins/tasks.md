@@ -462,7 +462,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `diagram.go:~326-333` tira todo recurso sem aresta, e Terraform e Compose sem `depends_on` somem. `GetInfraStats` (`~394-403`) não aplica o mesmo filtro. O "max 25 nós" do CLAUDE.md só existe no prompt da IA, e com `--no-ai` não há teto.
   - **Fazer:** manter workloads, charts, módulos e serviços isolados; teto programático (agrupar por kind acima de N); estatísticas dos nós desenhados.
   - **Verificar:** goldens (A12).
-- [ ] **A04 · Kustomize**
+- [x] **A04 · Kustomize**
   - **Problema:**
     - o recurso se chama pelo diretório relativo inteiro (`analysis/kustomize.go:~81-92`), mas a referência usa só o último segmento (`~135-160`): os IDs nunca batem;
     - `resources: [deploy.yaml]` vira `Kustomization/deploy.yaml`;
@@ -693,6 +693,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | A09 | Varredura testa o caminho relativo à raiz, ignora também dist/build/target/.venv/.next/.terraform/coverage/__pycache__, respeita o .gitignore via `git ls-files` (com fallback sem git), lê cada YAML uma vez e reconhece SOPS com CRLF | este commit |
 | 26/10/2026 | A07 | Helm: nome templado vira <chart>-<kind>, templates/ é varrido com subpastas, HelmRepository deduplicado por (repositório, nome) e charts processados em ordem estável | este commit |
 | 26/10/2026 | A01 | Relações do blueprint sem falsos positivos: COPY casa por segmento e nunca a raiz, imports Go pelo módulo mais longo com fronteira `/` (linha única e subpastas via go/parser), relações deduplicadas por (from, to, type) | este commit |
+| 26/10/2026 | A04 | Kustomize: Kustomization identificada pelo diretório relativo (referências resolvidas pelo caminho), ligada aos recursos dos manifests que lista, patches fora do analyzer K8s e namespace herdado aplicado antes das relações (uma cópia por overlay), com fixture base+overlays e golden | este commit |
 
 ### Fase 6 · Viz
 

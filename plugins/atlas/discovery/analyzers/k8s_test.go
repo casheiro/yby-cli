@@ -3,6 +3,7 @@ package analyzers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -695,5 +696,52 @@ func TestLabelsMatch(t *testing.T) {
 	labelsParciais := map[string]string{"app": "web"}
 	if labelsMatch(selector, labelsParciais) {
 		t.Error("esperado não-match quando labels não contêm todas as chaves do selector")
+	}
+}
+
+func TestK8sAnalyzer_PlanoKustomize(t *testing.T) {
+	dir := t.TempDir()
+	recursos := writeTestFile(t, dir, "base/recursos.yaml", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cfg
+  namespace: original
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: leitor
+`)
+	patch := writeTestFile(t, dir, "prod/patch.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cfg\n")
+	a := NewK8sAnalyzer()
+	a.Kustomize = &PlanoKustomize{
+		Patches:    map[string]bool{"prod/patch.yaml": true},
+		Namespaces: map[string][]string{"base/recursos.yaml": {"", "prod", "staging"}},
+		Donos:      map[string][]string{"base/recursos.yaml": {"Kustomization/base"}},
+	}
+	result, err := a.Analyze(dir, []string{recursos, patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ids []string
+	for _, r := range result.Resources {
+		ids = append(ids, r.ID())
+	}
+	// "" mantém o namespace do manifest; o ClusterRole não ganha namespace e
+	// aparece uma vez só; o patch não vira recurso.
+	esperados := "ConfigMap/original/cfg,ConfigMap/prod/cfg,ConfigMap/staging/cfg,ClusterRole/leitor"
+	if strings.Join(ids, ",") != esperados {
+		t.Errorf("recursos: esperado %s, obteve %s", esperados, strings.Join(ids, ","))
+	}
+
+	var includes []string
+	for _, rel := range result.Relations {
+		if rel.Type == "includes" && rel.From == "Kustomization/base" {
+			includes = append(includes, rel.To)
+		}
+	}
+	if strings.Join(includes, ",") != esperados {
+		t.Errorf("includes: esperado %s, obteve %s", esperados, strings.Join(includes, ","))
 	}
 }

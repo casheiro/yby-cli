@@ -654,12 +654,17 @@ func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 	// 2. Classificar arquivos por analyzer
 	classified := classifyFiles(allFiles)
 
-	// 3. Rodar analyzers disponíveis
+	// 3. Rodar analyzers disponíveis. O Kustomize lê antes: o K8s precisa saber
+	// quais arquivos são patches e em que namespace cada manifest entra antes de
+	// extrair as relações.
+	kustomize := analyzers.NewKustomizeAnalyzer()
+	k8s := analyzers.NewK8sAnalyzer()
+	k8s.Kustomize = kustomize.Plano(rootPath, classified["kustomize"])
 	allAnalyzers := []analyzers.Analyzer{
 		analyzers.NewHelmAnalyzer(),
-		analyzers.NewK8sAnalyzer(),
+		k8s,
 		analyzers.NewComposeAnalyzer(),
-		analyzers.NewKustomizeAnalyzer(),
+		kustomize,
 		analyzers.NewTerraformAnalyzer(),
 	}
 
