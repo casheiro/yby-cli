@@ -136,7 +136,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - ordem estável;
     - validar os obrigatórios antes de executar e devolver erro claro.
   - **Verificar:** testes de tabela do parse e do prompt montado.
-- [ ] **B04 · Ferramentas externas (YAML) com intents, precedência certa e confiança** ▶
+- [x] **B04 · Ferramentas externas (YAML) com intents, precedência certa e confiança** ▶
   - **Problema:** `registerExternalTool` não copia `def.Intents` (`tools/loader.go:~109-117`), então nenhuma tool YAML é escolhida. A global carrega antes e o `continue` (`loader.go:~72`) descarta a do projeto, ao contrário do comentário. Ao consertar, uma tool de `.yby/tools` de um repo clonado roda `sh -c` com valores da IA, sem confiança, sem ctx e sem aspas (`loader.go:~147`).
   - **Fazer:**
     - copiar os intents;
@@ -676,6 +676,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B10 | Providers claude-cli e gemini-cli levam o prompt pelo stdin (`claude -p` sem texto; `gemini -p` com instrução curta), rodam com `CommandContext` e `WaitDelay`, limitam o stderr no erro e o stream do gemini perde as linhas "Loaded cached credentials". | este commit |
 | 26/10/2026 | B03 | O classificador recebe todos os intents com o esquema de parâmetros e o cluster/namespace da sessão (sem a regra do "default"), lê JSON no meio do texto e número como texto, registra falhas em debug, e o Fluxo não executa ferramenta sem os parâmetros obrigatórios; registry em ordem estável. | este commit |
 | 26/10/2026 | B06 | A saída e o erro de toda ferramenta passam pelo `pkg/redacao` no `Fluxo` (prompt e "↵ ver"); o `kubectl_get` lista só em wide ou name (sem yaml, json, jsonpath, go-template em nenhum recurso, Secrets inclusive); resource, name, pod, namespace e tail da IA são conferidos antes do kubectl e do Sentinel, e valor com "-" no começo não vira flag. | este commit |
+| 26/10/2026 | B04 | Tools YAML com os intents, a do projeto vencendo a global e só com confiança (`yby plugin trust <arquivo>` grava o SHA-256 do arquivo em `pkg/confianca`; sem ela, ou mudado, aparece no `/ferramentas` com o motivo), o mesmo para os prompts de `.yby/prompts`; o `command` roda sem shell, com cada `{{param}}` como argumento inteiro, valor com "-" recusado, `YBY_PARAM_<NOME>` no env, contexto do Bard e prazo de 2 min; no Windows o programa que de fato roda pelo cmd.exe, resolvido pelo PATHEXT mesmo em caminho relativo sem extensão (`cmd`, `.bat`, `.cmd` como o `az.cmd`) recusa valor com metacaractere do cmd (aspas, `%`, `&`, barra vertical, `<`, `>`, `^`, `!`, parênteses ou quebra de linha), e comando que só funciona num shell (ou shell com `{{}}`) não carrega. | este commit |
 
 ### Fase 3 · Synapstor
 

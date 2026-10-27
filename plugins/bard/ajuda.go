@@ -35,6 +35,6 @@ func ajudaBard() ui.Ajuda {
 			{Nome: "-h, --help", Descricao: "mostra esta ajuda"},
 		},
 		Rodape: "Ferramentas integradas: sentinel scan/investigate, kubectl get/logs/events/describe e atlas " +
-			"blueprint. Ferramentas externas em YAML: ~/.yby/tools/*.yaml (do usuário) e .yby/tools/*.yaml (do projeto).",
+			"blueprint. Ferramentas externas em YAML: ~/.yby/tools/*.yaml (do usuário) e .yby/tools/*.yaml (do projeto, depois de yby plugin trust <arquivo>).",
 	}
 }
