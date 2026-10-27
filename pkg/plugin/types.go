@@ -6,12 +6,19 @@ type PluginManifest struct {
 	Version     string   `json:"version"`
 	Description string   `json:"description,omitempty"`
 	Hooks       []string `json:"hooks"`
+	// ConsomeContexto pede, no command, o contexto caro: os hooks context dos outros
+	// plugins e o overview e o backlog do projeto. Declarar o hook context é fornecer
+	// contexto, não consumir. O contexto barato (ambiente pedido) vai a todo plugin.
+	ConsomeContexto bool `json:"consome_contexto,omitempty"`
 }
 
 // PluginRequest defines the structure sent to the plugin via STDIN or Env Var.
 type PluginRequest struct {
-	Hook    string                 `json:"hook"`
-	Args    []string               `json:"args,omitempty"` // For "command" hook
+	Hook string `json:"hook"`
+	// Args são os argumentos do hook command e, no hook context, os pedidos do chamador ao
+	// plugin (o Atlas aceita "infra", que acrescenta a topologia da infraestrutura; só a
+	// ferramenta atlas_blueprint do Bard o pede).
+	Args    []string               `json:"args,omitempty"`
 	Context map[string]interface{} `json:"context,omitempty"`
 }
 

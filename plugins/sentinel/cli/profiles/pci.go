@@ -16,6 +16,8 @@ func init() {
 			// Network
 			"NETPOL_COVERAGE",
 			"NETPOL_DEFAULT_DENY",
+			// Ingress sem TLS (requisito 4: dados em trânsito cifrados); só o Polaris verifica
+			"polaris/tlsSettingsMissing",
 			// Pod Security
 			"POD_PRIVILEGED",
 			"POD_ROOT_CONTAINER",

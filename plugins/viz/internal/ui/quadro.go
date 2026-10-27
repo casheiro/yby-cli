@@ -48,6 +48,7 @@ type quadroAberto struct {
 	carregando bool
 	recarga    bool            // o r pediu de novo: a rolagem fica onde estava
 	texto      string          // logs ou YAML
+	anterior   bool            // logs da execução anterior
 	eventos    []monitor.Event // eventos
 	err        error
 	scroll     int
@@ -55,10 +56,11 @@ type quadroAberto struct {
 
 // conteudoMsg traz o conteúdo pedido pelo quadro id.
 type conteudoMsg struct {
-	id      int
-	texto   string
-	eventos []monitor.Event
-	err     error
+	id       int
+	texto    string
+	anterior bool // o log é o da execução anterior
+	eventos  []monitor.Event
+	err      error
 }
 
 // alvoDoItem é o alvo do quadro para a linha da lista.
@@ -110,7 +112,7 @@ func lerQuadro(l monitor.LeitorDeDetalhe, tipo string, a alvoQuadro, id int) tea
 		case l == nil:
 			msg.err = errSemLeitor
 		case tipo == quadroLogs:
-			msg.texto, msg.err = l.LogsDoPod(a.nome, a.namespace, a.conteiner, linhasDeLog)
+			msg.texto, msg.anterior, msg.err = l.LogsDoPod(a.nome, a.namespace, a.conteiner, linhasDeLog)
 		case tipo == quadroYAML:
 			msg.texto, msg.err = l.YAMLDoRecurso(a.kind, a.nomeYAML, a.namespace)
 		default:
@@ -127,7 +129,7 @@ func (m *Model) receberConteudo(msg conteudoMsg) {
 		return
 	}
 	m.quadro.carregando = false
-	m.quadro.texto, m.quadro.eventos, m.quadro.err = msg.texto, msg.eventos, msg.err
+	m.quadro.texto, m.quadro.anterior, m.quadro.eventos, m.quadro.err = msg.texto, msg.anterior, msg.eventos, msg.err
 	if !m.quadro.recarga {
 		m.quadro.scroll = 0
 	}
@@ -231,6 +233,9 @@ func (m Model) descricaoDoQuadro() string {
 		de := ""
 		if q.alvo.variosConteineres && q.alvo.conteiner != "" {
 			de = " de " + q.alvo.conteiner
+		}
+		if q.anterior && !q.carregando && q.err == nil {
+			return "execução anterior: últimas " + strconv.Itoa(linhasDeLog) + " linhas do log" + de + emNamespace(q.alvo.namespace)
 		}
 		return "últimas " + strconv.Itoa(linhasDeLog) + " linhas do log" + de + emNamespace(q.alvo.namespace)
 	case quadroYAML:

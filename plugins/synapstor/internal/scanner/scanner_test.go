@@ -1,8 +1,10 @@
 package scanner
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -11,7 +13,7 @@ import (
 func TestScan_DiretorioVazio(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -33,7 +35,7 @@ func TestScan_EncontraArquivosPorNome(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "bootstrap")
+	results, err := Scan(context.Background(), tmpDir, "bootstrap")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -65,7 +67,7 @@ func TestScan_EncontraArquivosPorConteudo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "kubernetes")
+	results, err := Scan(context.Background(), tmpDir, "kubernetes")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -98,7 +100,7 @@ func TestScan_QueryVazia_RetornaTodos(t *testing.T) {
 		}
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -129,7 +131,7 @@ func TestScan_IgnoraDiretoriosConhecidos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -154,7 +156,7 @@ func TestScan_IgnoraArquivosOcultos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -179,7 +181,7 @@ func TestScan_IgnoraArquivosBinarios(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -205,7 +207,7 @@ func TestScan_Subdiretorios(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -214,7 +216,7 @@ func TestScan_Subdiretorios(t *testing.T) {
 		t.Errorf("esperado 1 resultado, obtido %d", len(results))
 	}
 	if len(results) > 0 {
-		esperado := filepath.Join("pkg", "services", "service.go")
+		esperado := "pkg/services/service.go" // sempre com barras, em qualquer sistema
 		if results[0].Path != esperado {
 			t.Errorf("path esperado %q, obtido %q", esperado, results[0].Path)
 		}
@@ -229,7 +231,7 @@ func TestScan_QueryCaseInsensitive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "CONFIG")
+	results, err := Scan(context.Background(), tmpDir, "CONFIG")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -249,7 +251,7 @@ func TestScan_SkipArquivosGrandes(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(tmpDir, "big.txt"), bigContent, 0644)
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -268,7 +270,7 @@ func TestScan_LimiteMaxResultados(t *testing.T) {
 		os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("file%d.txt", i)), []byte("conteúdo"), 0644)
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -286,7 +288,7 @@ func TestScan_PriorizaMatchNoNome(t *testing.T) {
 	// Arquivo com match apenas no conteúdo
 	os.WriteFile(filepath.Join(tmpDir, "outro.txt"), []byte("conteúdo sobre kubernetes"), 0644)
 
-	results, err := Scan(tmpDir, "kubernetes")
+	results, err := Scan(context.Background(), tmpDir, "kubernetes")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -302,7 +304,7 @@ func TestScan_PriorizaMatchNoNome(t *testing.T) {
 // TestScan_CaminhoInexistente verifica o comportamento com um caminho inválido.
 // Nota: O scanner retorna erro via WalkDir quando o caminho raiz não existe.
 func TestScan_CaminhoInexistente(t *testing.T) {
-	results, err := Scan("/caminho/inexistente/xyz123", "")
+	results, err := Scan(context.Background(), "/caminho/inexistente/xyz123", "")
 	// WalkDir pode retornar erro ou resultados vazios dependendo da implementação
 	// O scanner atual ignora erros individuais do callback, mas WalkDir ainda pode
 	// retornar erro para o caminho raiz inexistente.
@@ -326,7 +328,7 @@ func TestScan_ConteudoPreservado(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := Scan(tmpDir, "")
+	results, err := Scan(context.Background(), tmpDir, "")
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -339,7 +341,6 @@ func TestScan_ConteudoPreservado(t *testing.T) {
 		t.Errorf("conteúdo não preservado.\nEsperado:\n%s\nObtido:\n%s", conteudo, results[0].Content)
 	}
 }
-
 
 // TestIsText_TableDriven verifica o heurístico isText com diversos cenários.
 func TestIsText_TableDriven(t *testing.T) {
@@ -382,5 +383,91 @@ func TestIsText_TableDriven(t *testing.T) {
 				t.Errorf("isText(%v) = %v, esperado %v", tt.data, got, tt.want)
 			}
 		})
+	}
+}
+
+func escrever(t *testing.T, raiz, rel, conteudo string) {
+	t.Helper()
+	caminho := filepath.Join(raiz, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(caminho), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(caminho, []byte(conteudo), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestScan_NomeAntesDoConteudoMesmoPassandoDoLimite: mais de 50 arquivos citam o termo no
+// conteúdo, mas o que tem o termo no caminho vem primeiro, mesmo depois deles na ordem léxica.
+func TestScan_NomeAntesDoConteudoMesmoPassandoDoLimite(t *testing.T) {
+	raiz := t.TempDir()
+	for i := 0; i < 60; i++ {
+		escrever(t, raiz, fmt.Sprintf("a/f%02d.go", i), "// usa o bootstrap\n")
+	}
+	escrever(t, raiz, "pkg/services/bootstrap/x.go", "package bootstrap\n")
+
+	res, err := Scan(context.Background(), raiz, "bootstrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != maxResults {
+		t.Fatalf("esperado %d resultados, obtido %d", maxResults, len(res))
+	}
+	if res[0].Path != "pkg/services/bootstrap/x.go" {
+		t.Errorf("o arquivo do caminho deveria vir primeiro, veio %q", res[0].Path)
+	}
+}
+
+// TestScan_PerguntaEmFrase: a frase vira termos, sem as palavras vazias.
+func TestScan_PerguntaEmFrase(t *testing.T) {
+	raiz := t.TempDir()
+	escrever(t, raiz, "bootstrap.go", "package bootstrap\n")
+	escrever(t, raiz, "outro.go", "package outro\n")
+
+	res, err := Scan(context.Background(), raiz, "como funciona o bootstrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Path != "bootstrap.go" {
+		t.Errorf("esperado só bootstrap.go, obtido %+v", res)
+	}
+}
+
+// TestScan_PulaTestesEGoldens: teste e golden não explicam o código.
+func TestScan_PulaTestesEGoldens(t *testing.T) {
+	raiz := t.TempDir()
+	escrever(t, raiz, "foo.go", "package foo // bootstrap\n")
+	escrever(t, raiz, "foo_test.go", "package foo // bootstrap\n")
+	escrever(t, raiz, "testdata/x.golden", "bootstrap\n")
+	escrever(t, raiz, "pkg/testdata/y.txt", "bootstrap\n")
+
+	res, err := Scan(context.Background(), raiz, "bootstrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Path != "foo.go" {
+		t.Errorf("esperado só foo.go, obtido %+v", res)
+	}
+}
+
+// TestScan_RespeitaGitignore: com git, o que o .gitignore exclui não entra.
+func TestScan_RespeitaGitignore(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git não instalado")
+	}
+	raiz := t.TempDir()
+	if out, err := exec.Command("git", "-C", raiz, "init", "-q").CombinedOutput(); err != nil {
+		t.Skipf("git init falhou: %v %s", err, out)
+	}
+	escrever(t, raiz, ".gitignore", "gerado/\n")
+	escrever(t, raiz, "gerado/a.go", "bootstrap\n")
+	escrever(t, raiz, "src/b.go", "bootstrap\n")
+
+	res, err := Scan(context.Background(), raiz, "bootstrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Path != "src/b.go" {
+		t.Errorf("esperado só src/b.go, obtido %+v", res)
 	}
 }

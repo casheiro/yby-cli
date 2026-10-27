@@ -32,18 +32,22 @@ USO
 EXEMPLOS
   yby sentinel scan -n payments
   yby sentinel scan -n payments -o json -f scan.json
+  yby sentinel scan -n payments --scope cluster
   yby sentinel scan -n payments --fix-dry-run
 
 FLAGS
   -n, --namespace texto  namespace a examinar (padrão default)
   -o, --output formato   terminal, json ou markdown (padrão terminal)
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
-  -p, --profile perfil   perfil de conformidade dos checks internos: cis-l1, cis-l2, pci-dss ou soc2
-      --fix-dry-run      mostra os patches de remediação sem aplicar
-      --fix              aplica os patches de remediação no cluster
+  -p, --profile perfil   deixa só os achados do perfil, de todos os motores: cis-l1, cis-l2, pci-dss ou soc2
+      --scope escopo     namespace (padrão: só o RBAC que vale no namespace) ou cluster (o RBAC do cluster todo)
+      --fix-dry-run      mostra o plano de correção, conferido pelo servidor sem gravar nada
+      --fix              aplica as correções seguras (escalação de privilégios e capabilities) no dono de cada pod, depois de confirmar; recursos do Argo CD ficam de fora
+      --yes              com --fix, aplica sem perguntar (fora de um terminal, é obrigatório)
+      --no-ai            não pede as recomendações da IA
   -h, --help             mostra esta ajuda
 
-  No formato terminal, o resumo sai na tela e o relatório completo vai para ~/.yby/reports/sentinel-scan-<namespace>-<data>.md.
+  No formato terminal, o resumo sai na tela e o relatório completo vai para ~/.yby/reports/sentinel-scan-<namespace>-<contexto>-<data>-<hora>.md.
 
 $ yby sentinel investigate -h
 ◆ YBY  SENTINEL INVESTIGATE                                ajuda
@@ -62,6 +66,7 @@ FLAGS
   -o, --output formato   terminal, json ou markdown (padrão terminal)
   -f, --file arquivo     grava o json ou o markdown no arquivo em vez de na tela
       --no-cache         ignora a análise guardada e pergunta à IA de novo
+      --no-ai            só coleta: mostra status, eventos e fim dos logs, sem chamar a IA nem o cache
   -h, --help             mostra esta ajuda
 
   A análise fica guardada por 1 h em ~/.yby/sentinel/cache e volta enquanto os logs do pod não mudam.

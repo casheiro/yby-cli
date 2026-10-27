@@ -22,11 +22,6 @@ var DefaultRules = []Rule{
 	{MatchFile: "Makefile", Type: "config"},
 }
 
-// Match verifica um nome de arquivo contra as regras padrão e retorna o tipo correspondente.
-func Match(filename string) string {
-	return MatchWithRules(filename, DefaultRules)
-}
-
 // MatchWithRules verifica um nome de arquivo contra um conjunto de regras e retorna o tipo correspondente.
 // Suporta correspondência exata (MatchFile) e padrões glob (MatchGlob).
 func MatchWithRules(filename string, rules []Rule) string {

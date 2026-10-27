@@ -15,6 +15,8 @@ func init() {
 			// Segurança de rede
 			"NETPOL_COVERAGE",
 			"NETPOL_DEFAULT_DENY",
+			// Ingress sem TLS (CC6.7, transmissão); só o Polaris verifica
+			"polaris/tlsSettingsMissing",
 			// Hardening
 			"POD_ROOT_CONTAINER",
 			"POD_PRIVILEGED",

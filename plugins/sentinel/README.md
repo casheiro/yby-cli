@@ -6,7 +6,7 @@ Sentinel e o plugin de auditoria de seguranca e conformidade K8s do Yby CLI. Usa
 
 - **Security Scan**: auditoria via Polaris (pod security) + OPA (RBAC, network) com deduplicacao e agrupamento
 - **Investigacao IA**: diagnostico inteligente de pods — so aciona IA quando detecta problemas reais
-- **Remediacao**: geracao e aplicacao de patches (dry-run ou aplicacao direta)
+- **Remediacao**: correções seguras (`allowPrivilegeEscalation: false` e `capabilities.drop: [ALL]`) no dono de cada pod (Deployment, StatefulSet, DaemonSet ou CronJob), com dry-run no servidor e confirmação; recursos do Argo CD, pods sem dono e Jobs soltos ficam de fora, com o motivo
 - **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/`
 - **Cache**: resultados de investigacao em `~/.yby/sentinel/cache/` (TTL 1h)
 
@@ -21,6 +21,7 @@ plugins/sentinel/
     ├── cache.go             # Cache de investigacoes (~/.yby/sentinel/cache/)
     ├── report.go            # Geracao de relatorios (JSON/Markdown)
     ├── prompts.go           # Prompts de IA para scan e investigacao
+    ├── allowlist/           # Allowlist unica de RBAC (checks internos e OPA), por subject
     ├── backends/            # Backends de seguranca reais
     │   ├── types.go         # Interface SecurityBackend + Finding
     │   ├── polaris.go       # Polaris SDK — pod security, best practices
@@ -28,15 +29,15 @@ plugins/sentinel/
     ├── checks/              # Checks artesanais (fallback se backends falham)
     │   ├── types.go         # Interface SecurityCheck + SecurityFinding
     │   ├── registry.go      # Registro global de checks
-    │   ├── rbac_allowlist.go # Allowlists de recursos do sistema K8s
     │   └── *.go             # 20 checks individuais
     ├── profiles/            # Perfis de compliance
     │   ├── cis.go           # CIS Benchmark Level 1 e 2
     │   ├── pci.go           # PCI-DSS
     │   └── soc2.go          # SOC2
     └── remediation/         # Remediacao automatizada
-        ├── generator.go     # Gera patches a partir de findings
-        └── applier.go       # Aplica patches no cluster
+        ├── dono.go          # Sobe do pod ao dono (ownerReferences) e reconhece o Argo CD
+        ├── generator.go     # Monta o plano: as correções seguras, um patch por recurso
+        └── applier.go       # Aplica os patches (ou o dry-run no servidor)
 ```
 
 ## Backends de Seguranca
@@ -46,9 +47,15 @@ O Sentinel usa ferramentas de seguranca reais como backends em vez de checks art
 | Backend | SDK | O que escaneia | Allowlists |
 |---------|-----|----------------|------------|
 | **Polaris** | `fairwindsops/polaris` | Pod security, best practices, resource limits, probes, topology | Built-in do Polaris |
-| **OPA** | `open-policy-agent/opa` | RBAC (cluster-admin, wildcard, secrets), NetworkPolicy | Rego embarcado com exclusoes de system:* e controllers conhecidos |
+| **OPA** | `open-policy-agent/opa` | RBAC (cluster-admin, wildcard, secrets), NetworkPolicy | Rego embarcado; a allowlist do pacote `allowlist` entra como `data.allowlist` |
 
-**Fallback**: se nenhum backend funcionar, cai nos checks artesanais internos.
+**Fallback**: os checks artesanais internos so rodam quando nenhum backend consegue varrer (nenhum disponivel ou todos falharam); backend que roda e nao acha nada e resultado limpo. Os pods sao listados uma vez so por scan. O check de assinatura (`IMAGE_SIGNATURE`) so verifica com `YBY_SENTINEL_COSIGN_KEY` (chave publica) ou `YBY_SENTINEL_COSIGN_IDENTITY` + `YBY_SENTINEL_COSIGN_ISSUER` (keyless); sem eles avisa "nao verificada" em vez de acusar toda imagem.
+
+**Allowlist de RBAC**: uma lista so (`cli/allowlist`), lida pelos checks internos em Go e pelo OPA como `data.allowlist`. Ela casa pelo subject, nunca pelo nome do binding ou do role: um binding de cluster-admin so fica de fora quando todos os subjects sao `system:masters` ou ServiceAccounts de controllers conhecidos no namespace deles (Argo CD em `argocd`, cert-manager em `cert-manager`, Helm do k3s em `kube-system`...); um role com acesso a secrets ou curinga, quando todos os subjects ligados a ele (ClusterRoleBindings e RoleBindings) estao na lista. `admin`, `edit`, `view` e `cluster-admin` ligados por RoleBinding (valem num namespace so) ficam de fora; ligados por ClusterRoleBinding (valem no cluster todo), so quando quem recebe e do plano de controle ou esta na lista: um ClusterRoleBinding que da `edit` a `default/app` deixa a SA ler os secrets do cluster todo e aparece. Os ClusterRoles `system:*` ficam de fora enquanto ligados so ao plano de controle. Labels como `app.kubernetes.io/managed-by` nao contam: quem cria o binding poe o label que quiser. O scan diz quantos recursos ficaram de fora ("allowlist 3 ignorados" na tela, `ignored_by_allowlist` no JSON). Os checks de RBAC do Polaris nao passam pela allowlist.
+
+**Escopo do RBAC** (`--scope namespace|cluster`, pacote `cli/escopo`): no scan de um namespace (o padrao) so entra o RBAC que vale nele: os Roles e RoleBindings do namespace, os ClusterRoles a que os RoleBindings dele apontam e os ClusterRoleBindings que dao o papel a uma ServiceAccount do namespace (pelo kind, pelo usuario `system:serviceaccount:<ns>:<nome>` ou pelo grupo `system:serviceaccounts:<ns>`), com os subjects reduzidos aos do namespace, e os ClusterRoles a que eles apontam. A allowlist julga cada ClusterRole por quem o recebe no namespace. Vale para o OPA, para os checks internos e para os checks de RBAC do Polaris sobre ClusterRoles e ClusterRoleBindings. O resto do cluster (um cluster-admin dado a um usuario, um ClusterRole curinga sem binding no namespace) sai com `--scope cluster`, que olha o RBAC do cluster todo. Todo achado diz o escopo do recurso no campo `scope` do JSON (`cluster` para ClusterRole e ClusterRoleBinding, `namespace` para o resto), e o relatorio diz o escopo do scan (`scope`).
+
+**Perfis de conformidade** (`--profile cis-l1|cis-l2|pci-dss|soc2`): o scan deixa so os achados dos controles do perfil, venham do Polaris, do OPA ou dos checks internos. Cada check do Polaris e do OPA entra pelo check interno equivalente (`polaris/runAsRootAllowed` conta como `POD_ROOT_CONTAINER`, `opa/rbac_cluster_admin` como `RBAC_CLUSTER_ADMIN`; tabela em `profiles/types.go`), e o que so o Polaris verifica entra pelo proprio ID (`polaris/hostPathSet` nos CIS, `polaris/tlsSettingsMissing` no PCI-DSS e no SOC2). Probes, replicas, priority class e os checks customizados ficam fora de todo perfil. A tela, o JSON (`perfil`, `fora_do_perfil`) e o relatorio dizem o perfil aplicado e quantos achados ficaram de fora. Os perfis sao um recorte de controles, nao uma auditoria completa da norma.
 
 **Deduplicacao**: findings do mesmo check sao agrupados — mostra "Deployment/api (+5)" em vez de repetir pra cada workload.
 
@@ -58,14 +65,18 @@ O Sentinel usa ferramentas de seguranca reais como backends em vez de checks art
 # Scan de seguranca (usa Polaris + OPA automaticamente)
 yby sentinel scan -n default
 yby sentinel scan -n nexus-core
+yby sentinel scan -n default --no-ai          # sem as recomendações da IA
+yby sentinel scan -n default --profile pci-dss # só os achados do perfil
+yby sentinel scan -n default --scope cluster   # com o RBAC do cluster todo
 
 # Exportar relatorio
 yby sentinel scan -n default -o json -f scan.json
 yby sentinel scan -n default -o markdown -f relatorio.md
 
 # Remediacao
-yby sentinel scan -n default --fix-dry-run    # ver patches sem aplicar
-yby sentinel scan -n default --fix            # aplicar patches
+yby sentinel scan -n default --fix-dry-run    # ver o plano, conferido pelo servidor
+yby sentinel scan -n default --fix            # aplicar, depois de confirmar
+yby sentinel scan -n default --fix --yes      # aplicar sem perguntar (CI)
 
 # Investigacao de pod com IA (so aciona IA se detectar problemas)
 yby sentinel investigate meu-pod -n default
@@ -88,7 +99,7 @@ Isso evita desperdicar chamadas de IA e gerar "recomendacoes" para pods que nao 
 
 O scan gera automaticamente:
 - **Terminal**: resumo por severidade e categoria + path do relatorio
-- **Arquivo**: `~/.yby/reports/sentinel-scan-{namespace}-{data}.md` com findings detalhados + recomendacoes IA
+- **Arquivo**: `~/.yby/reports/sentinel-scan-{namespace}-{contexto}-{data}-{hora}.md` com findings detalhados + recomendacoes IA
 
 ## Providers de IA
 

@@ -44,16 +44,18 @@ fi
 
 # Progresso do plano
 if [ -n "$PLANO" ] && [ -f "$PLANO" ]; then
-	FEITAS="$(grep -cE '^- \[x\] T[0-9]+' "$PLANO")"
-	ANDAMENTO="$(grep -cE '^- \[~\] T[0-9]+' "$PLANO")"
-	BLOQUEADAS="$(grep -cE '^- \[!\] T[0-9]+' "$PLANO")"
-	TOTAL="$(grep -cE '^- \[[ x~!]\] T[0-9]+' "$PLANO")"
+	# IDs de tarefa: uma ou duas letras e o número (T001, C01, B02), com ou sem negrito.
+	ID='\**[A-Z]{1,2}[0-9]+'
+	FEITAS="$(grep -cE "^- \[x\] $ID" "$PLANO")"
+	ANDAMENTO="$(grep -cE "^- \[~\] $ID" "$PLANO")"
+	BLOQUEADAS="$(grep -cE "^- \[!\] $ID" "$PLANO")"
+	TOTAL="$(grep -cE "^- \[[ x~!]\] $ID" "$PLANO")"
 	echo "Plano: $PLANO"
 	echo "Progresso: $FEITAS/$TOTAL concluídas · $ANDAMENTO em andamento · $BLOQUEADAS bloqueadas"
-	PROXIMA="$(grep -m1 -E '^- \[~\] T[0-9]+' "$PLANO")"
-	[ -z "$PROXIMA" ] && PROXIMA="$(grep -m1 -E '^- \[ \] T[0-9]+' "$PLANO")"
+	PROXIMA="$(grep -m1 -E "^- \[~\] $ID" "$PLANO")"
+	[ -z "$PROXIMA" ] && PROXIMA="$(grep -m1 -E "^- \[ \] $ID" "$PLANO")"
 	if [ -n "$PROXIMA" ]; then
-		echo "Próxima: $(echo "$PROXIMA" | sed 's/^- //' | cut -c1-150)"
+		echo "Próxima: $(echo "$PROXIMA" | sed 's/^- //; s/\*\*//g' | cut -c1-150)"
 	else
 		echo "Próxima: nenhuma tarefa pendente no plano"
 	fi

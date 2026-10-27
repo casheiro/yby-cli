@@ -33,6 +33,8 @@ type Manager struct {
 	executor         *Executor
 	manifestExecutor *Executor // Executor sem trust check para discovery de manifestos
 	plugins          []LoadedPlugin
+	// ambiente é o ambiente pedido pelo usuário (DefinirAmbiente); vazio: nenhum.
+	ambiente string
 }
 
 type LoadedPlugin struct {
@@ -73,14 +75,28 @@ func (m *Manager) Discover() error {
 		locations = append(locations, filepath.Join(cwd, ".yby", "plugins"))
 	}
 
+	// Rodando na home, ./.yby/plugins é a própria ~/.yby/plugins: cada pasta é lida uma vez.
+	var lidas []os.FileInfo
 	for _, loc := range locations {
+		info, err := os.Stat(loc)
+		if err != nil || pastaJaLida(lidas, info) {
+			continue
+		}
+		lidas = append(lidas, info)
 		if err := m.scanDirectory(loc); err != nil {
-			// Log error but continue scanning other locations?
-			// For now, silent ignore of non-existent dirs
 			continue
 		}
 	}
 	return nil
+}
+
+func pastaJaLida(lidas []os.FileInfo, info os.FileInfo) bool {
+	for _, l := range lidas {
+		if os.SameFile(l, info) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) scanDirectory(dir string) error {
@@ -125,6 +141,12 @@ func (m *Manager) scanDirectory(dir string) error {
 		manifest, err := m.loadManifest(path)
 		if err != nil {
 			slog.Debug("Pulando candidato a plugin inválido", "name", entry.Name(), "error", err)
+			continue
+		}
+
+		// Mesmo nome em duas pastas: fica o primeiro, que é o que o GetPlugin executaria.
+		if anterior, ok := m.GetPlugin(manifest.Name); ok {
+			slog.Debug("Plugin com nome repetido ignorado", "name", manifest.Name, "path", path, "carregado", anterior.Path)
 			continue
 		}
 
@@ -205,55 +227,67 @@ func (m *Manager) GetAssets() []string {
 	return paths
 }
 
-// ExecuteContextHook runs the 'context' hook on all applicable plugins and merges results.
-func (m *Manager) ExecuteContextHook(ctx *scaffold.BlueprintContext) error {
-	// Convert Context to map for sending
-	// This is expensive but necessary as Context is struct.
-	// We can use JSON marshalling.
-	ctxBytes, _ := json.Marshal(ctx)
-	var ctxMap map[string]interface{}
-	if err := json.Unmarshal(ctxBytes, &ctxMap); err != nil {
+// DefinirAmbiente diz ao Manager qual ambiente do .yby/environments.yaml o usuário pediu
+// (-c/--context ou YBY_ENV) para o command dos plugins. Vazio: nenhum, e os plugins ficam
+// no current-context do kubeconfig (o current do environments.yaml não conta). Quem
+// decide é o core, que conhece as flags.
+func (m *Manager) DefinirAmbiente(nome string) {
+	m.ambiente = nome
+}
+
+// ExecuteContextHook roda o hook context de todos os plugins que o declaram e mescla as
+// respostas em bp.Data. É o fornecimento de contexto: o yby init o usa, e o command só
+// para quem declara consome_contexto.
+func (m *Manager) ExecuteContextHook(ctx context.Context, bp *scaffold.BlueprintContext) error {
+	return m.executarHooksDeContexto(ctx, bp, "")
+}
+
+// executarHooksDeContexto é o ExecuteContextHook sem o plugin exceto (o consumidor não
+// fornece contexto a si mesmo).
+func (m *Manager) executarHooksDeContexto(ctx context.Context, bp *scaffold.BlueprintContext, exceto string) error {
+	bpBytes, _ := json.Marshal(bp)
+	var bpMap map[string]interface{}
+	if err := json.Unmarshal(bpBytes, &bpMap); err != nil {
 		return err
 	}
 
 	for _, p := range m.plugins {
-		supports := false
-		for _, h := range p.Manifest.Hooks {
-			if h == "context" {
-				supports = true
-				break
-			}
-		}
-		if !supports {
+		if p.Manifest.Name == exceto || !temHook(p.Manifest, "context") {
 			continue
 		}
 
 		req := PluginRequest{
 			Hook:    "context",
-			Context: ctxMap,
+			Context: bpMap,
 		}
 
-		resp, err := m.executor.Run(context.Background(), p.Path, req)
+		resp, err := m.executor.Run(ctx, p.Path, req)
 		if err != nil {
 			slog.Warn("Hook de contexto do Plugin falhou", "plugin", p.Manifest.Name, "error", err)
 			continue
 		}
 
-		// Merge patch
+		// O patch vai para bp.Data; resposta que não é mapa fica de fora.
 		patchMap, ok := resp.Data.(map[string]interface{})
 		if ok {
-			// Apply to Data field of BlueprintContext
-			// We assume plugins return data to be put in specific fields or just Data bucket.
-			// Spec: "Receber Patches. Atualizar BlueprintContext.Data."
-			if ctx.Data == nil {
-				ctx.Data = make(map[string]interface{})
+			if bp.Data == nil {
+				bp.Data = make(map[string]interface{})
 			}
 			for k, v := range patchMap {
-				ctx.Data[k] = v
+				bp.Data[k] = v
 			}
 		}
 	}
 	return nil
+}
+
+func temHook(mf PluginManifest, hook string) bool {
+	for _, h := range mf.Hooks {
+		if h == hook {
+			return true
+		}
+	}
+	return false
 }
 
 // ExecuteCommandHook runs the 'command' hook on a specific plugin.
@@ -271,48 +305,18 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 		return ybyerrors.New(ybyerrors.ErrCodePluginNotFound, fmt.Sprintf("plugin %s não encontrado", pluginName))
 	}
 
-	// Verifica se o plugin precisa de contexto enriquecido.
-	// Plugins que declaram hook "context" recebem dados de outros plugins (atlas, synapstor).
-	// Plugins que só têm "command" (ex: viz) iniciam direto, sem esperar hooks.
-	needsContext := false
-	for _, h := range targetPlugin.Manifest.Hooks {
-		if h == "context" {
-			needsContext = true
-			break
-		}
-	}
-
+	// A ajuda abre na hora: sem contexto nenhum.
 	var fullCtxMap map[string]interface{}
-
-	if needsContext {
+	if !pedeAjuda(args) {
 		cwd, _ := os.Getwd()
-		coreCtx, err := projectContext.GetCoreContext(cwd)
+		fullCtx, err := m.contextoDoComando(context.Background(), targetPlugin, cwd)
 		if err != nil {
-			slog.Warn("Falha ao carregar contexto core", "error", err)
-			coreCtx = &projectContext.CoreContext{
-				ProjectName: "unknown",
-				Environment: "unknown",
-			}
+			return err
 		}
-
-		initialData := make(map[string]interface{})
-		coreBytes, _ := json.Marshal(coreCtx)
-		_ = json.Unmarshal(coreBytes, &initialData)
-
-		blueprintCtx := &scaffold.BlueprintContext{
-			ProjectName: coreCtx.ProjectName,
-			Environment: coreCtx.Environment,
-			Data:        initialData,
+		if fullCtx != nil {
+			fullCtxBytes, _ := json.Marshal(fullCtx)
+			_ = json.Unmarshal(fullCtxBytes, &fullCtxMap)
 		}
-
-		fullCtx, _, err := m.BuildPluginContext(coreCtx, blueprintCtx, cwd)
-		if err != nil {
-			slog.Warn("Erro ao construir contexto do plugin", "error", err)
-		}
-
-		fullCtxMap = make(map[string]interface{})
-		fullCtxBytes, _ := json.Marshal(fullCtx)
-		_ = json.Unmarshal(fullCtxBytes, &fullCtxMap)
 	}
 
 	req := PluginRequest{
@@ -325,55 +329,112 @@ func (m *Manager) ExecuteCommandHook(pluginName string, args []string) error {
 	return m.executor.RunInteractive(context.Background(), targetPlugin.Path, req)
 }
 
-// BuildPluginContext constructs the full context payload.
-// Exposed for testing.
-func (m *Manager) BuildPluginContext(coreCtx *projectContext.CoreContext, blueprintCtx *scaffold.BlueprintContext, cwd string) (*PluginFullContext, map[string]interface{}, error) {
-	// 3. Resolve Environment & Infrastructure
-	envManager := projectContext.NewManager(cwd)
-	var envDef projectContext.Environment
-	var infraCtx PluginInfrastructure
-	valuesMap := make(map[string]interface{})
-
-	if coreCtx.Environment != "unknown" {
-		manifest, err := envManager.LoadManifest()
-		if err == nil {
-			if val, ok := manifest.Environments[coreCtx.Environment]; ok {
-				envDef = val
-
-				// Resolve Values
-				if envDef.Values != "" {
-					if v, err := loadValues(filepath.Join(cwd, envDef.Values)); err == nil {
-						valuesMap = v
-					} else {
-						// Log only?
-						slog.Warn("Falha ao carregar values do ambiente", "file", envDef.Values, "error", err)
-					}
-				}
-
-				// Resolve Infra (sem expor KubeConfig path por segurança)
-				infraCtx = PluginInfrastructure{
-					KubeContext: envDef.KubeContext,
-					Namespace:   envDef.Namespace,
-				}
-			}
+// pedeAjuda informa se os args pedem a ajuda do plugin (-h ou --help antes de um --).
+func pedeAjuda(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--":
+			return false
+		case "-h", "--help":
+			return true
 		}
 	}
+	return false
+}
 
-	// 4. Run Context Hook (Collect data from Atlas, etc.)
-	if err := m.ExecuteContextHook(blueprintCtx); err != nil {
-		return nil, nil, err
+// contextoDoComando monta o contexto do command de alvo. O barato (projeto, ambiente,
+// infra e values) sai do .yby/environments.yaml sem rodar nada, e só quando um ambiente
+// foi pedido; o caro (hooks context dos outros plugins, overview e backlog) vai só para
+// quem declara consome_contexto. Sem nenhum dos dois, nil: o plugin abre direto.
+func (m *Manager) contextoDoComando(ctx context.Context, alvo *LoadedPlugin, cwd string) (*PluginFullContext, error) {
+	consome := alvo.Manifest.ConsomeContexto
+	if m.ambiente == "" && !consome {
+		return nil, nil
 	}
 
-	// 5. Final Context for the command
 	fullCtx := &PluginFullContext{
+		ProjectName: filepath.Base(cwd),
+		Environment: m.ambiente,
+	}
+	if m.ambiente != "" {
+		infra, values, err := lerAmbiente(cwd, m.ambiente)
+		if err != nil {
+			return nil, err
+		}
+		fullCtx.Infra, fullCtx.Values = infra, values
+	}
+	if consome {
+		fullCtx.Data = m.contextoCaro(ctx, cwd, fullCtx.Environment, alvo.Manifest.Name)
+	}
+	return fullCtx, nil
+}
+
+// contextoCaro junta o overview e o backlog do projeto com o que os outros plugins
+// fornecem pelo hook context. ambiente é o pedido (vazio: nenhum), não o current.
+func (m *Manager) contextoCaro(ctx context.Context, cwd, ambiente, consumidor string) map[string]interface{} {
+	coreCtx, err := projectContext.GetCoreContext(cwd)
+	if err != nil {
+		slog.Warn("Falha ao carregar contexto core", "error", err)
+		coreCtx = &projectContext.CoreContext{ProjectName: filepath.Base(cwd)}
+	}
+	coreCtx.Environment = ambiente
+
+	dados := make(map[string]interface{})
+	coreBytes, _ := json.Marshal(coreCtx)
+	_ = json.Unmarshal(coreBytes, &dados)
+
+	bp := &scaffold.BlueprintContext{
 		ProjectName: coreCtx.ProjectName,
 		Environment: coreCtx.Environment,
-		Infra:       infraCtx,
-		Values:      valuesMap,
-		Data:        blueprintCtx.Data, // Dados agregados (Core + Plugins)
+		Data:        dados,
+	}
+	if err := m.executarHooksDeContexto(ctx, bp, consumidor); err != nil {
+		slog.Warn("Erro ao construir contexto do plugin", "error", err)
+	}
+	return bp.Data
+}
+
+// lerAmbiente lê o ambiente nome do .yby/environments.yaml de cwd: a infra, com o caminho
+// do kube_config resolvido, e os values. Ambiente pedido que não existe é erro: o plugin
+// rodaria no cluster errado.
+func lerAmbiente(cwd, nome string) (PluginInfrastructure, map[string]interface{}, error) {
+	manifest, err := projectContext.NewManager(cwd).LoadManifest()
+	if err != nil {
+		return PluginInfrastructure{}, nil, ybyerrors.Wrap(err, ybyerrors.ErrCodeConfig,
+			fmt.Sprintf("o ambiente %s foi pedido, mas não deu para ler os ambientes do projeto", nome)).
+			WithHint("rode na pasta do projeto ou tire o -c/--context (e o YBY_ENV)")
+	}
+	env, ok := manifest.Environments[nome]
+	if !ok {
+		return PluginInfrastructure{}, nil, ybyerrors.New(ybyerrors.ErrCodeConfig,
+			fmt.Sprintf("o ambiente %s não existe em .yby/environments.yaml", nome)).
+			WithHint("rode yby env list para ver os ambientes")
 	}
 
-	return fullCtx, valuesMap, nil
+	infra := PluginInfrastructure{
+		KubeConfig:  caminhoDoProjeto(cwd, env.KubeConfig),
+		KubeContext: env.KubeContext,
+		Namespace:   env.Namespace,
+	}
+	var values map[string]interface{}
+	if env.Values != "" {
+		if v, err := loadValues(filepath.Join(cwd, env.Values)); err == nil {
+			values = v
+		} else {
+			slog.Warn("Falha ao carregar values do ambiente", "file", env.Values, "error", err)
+		}
+	}
+	return infra, values, nil
+}
+
+// caminhoDoProjeto resolve um caminho do environments.yaml: ~/ vai para a home e o
+// relativo, para a pasta do projeto.
+func caminhoDoProjeto(cwd, caminho string) string {
+	caminho = expandPath(caminho)
+	if caminho == "" || filepath.IsAbs(caminho) {
+		return caminho
+	}
+	return filepath.Join(cwd, caminho)
 }
 
 func loadValues(path string) (map[string]interface{}, error) {

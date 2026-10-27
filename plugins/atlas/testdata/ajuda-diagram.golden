@@ -1,6 +1,6 @@
 [38;2;167;188;113m◆[0m [1;38;2;221;208;181mYBY  ATLAS DIAGRAM[0m                                       [38;2;161;147;121majuda[0m
 
-  [38;2;221;208;181mGera o diagrama Mermaid da topologia da infraestrutura e o grava em .yby/atlas-diagram.mmd. Com uma IA disponível, o diagrama é reorganizado e ganha nomes legíveis; sem ela, fica o diagrama montado a partir dos arquivos.[0m
+  [38;2;221;208;181mGera o diagrama Mermaid da topologia da infraestrutura e o grava em .yby/atlas-diagram.mmd. Com uma IA disponível, o diagrama é reorganizado e ganha nomes legíveis, com os nós encontrados nos arquivos; sem ela, com --detail full (que mostra todos os recursos) ou quando a resposta da IA não confere com os arquivos, fica o diagrama montado a partir deles. Esse fica sempre também em .yby/atlas-diagram.raw.mmd.[0m
 
 [38;2;161;147;121mUSO[0m
   [38;2;221;208;181myby atlas diagram [flags][0m
@@ -11,7 +11,7 @@
 
 [38;2;161;147;121mFLAGS[0m
   [38;2;221;208;181m-d, --detail nível  [0m[38;2;161;147;121moverview (os principais, até 25 nós) ou full (todos os recursos, com RBAC, CRDs e ConfigMaps); padrão overview[0m
-  [38;2;221;208;181m    --no-ai         [0m[38;2;161;147;121mnão refina o diagrama com IA[0m
+  [38;2;221;208;181m    --no-ai         [0m[38;2;161;147;121mnão refina o diagrama com IA (o full nunca passa por ela)[0m
   [38;2;221;208;181m-h, --help          [0m[38;2;161;147;121mmostra esta ajuda[0m
 
   [38;2;161;147;121mPara ver o diagrama, abra o arquivo em https://mermaid.live ou na extensão Mermaid do VS Code.[0m

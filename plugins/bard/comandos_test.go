@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/plugins/bard/tui"
 )
 
 // gravarHistorico escreve as entradas no histórico do diretório atual.
@@ -97,6 +99,41 @@ func TestRetomador(t *testing.T) {
 	}
 	if r, err := retomar("nenhuma"); err != nil || len(r.Mensagens) != 0 || r.SystemPrompt != "" {
 		t.Errorf("sessão que não existe: %+v %v", r, err)
+	}
+}
+
+// O histórico do prompt vai pelo orçamento, na abertura e no /sessões: cada mensagem
+// cortada no teto dela e só as mais recentes que cabem no do histórico. A conta do
+// /contexto é a das que entraram.
+func TestHistoricoNoOrcamento(t *testing.T) {
+	defer chdir(t, t.TempDir())()
+	var entries []HistoryEntry
+	for i := 0; i < 10; i++ {
+		longa := fmt.Sprintf("resposta %d\n", i) + strings.Repeat("linha de log comprida\n", 200)
+		entries = append(entries, entrada("s1", "assistant", longa, 10-i))
+	}
+	gravarHistorico(t, entries...)
+
+	historico := loadHistory()
+	if len(historico) == 0 || len(historico) == len(entries) {
+		t.Fatalf("o orçamento deveria levar parte do histórico: %d de %d", len(historico), len(entries))
+	}
+	if !strings.Contains(historico[len(historico)-1].Content, "resposta 9") {
+		t.Error("as mais recentes deveriam ficar")
+	}
+	if texto := formatHistoryContext(historico); len(texto) > tui.TetoHistorico+256 {
+		t.Errorf("o histórico do prompt deveria ficar no teto: %d bytes", len(texto))
+	}
+
+	r, err := retomador(map[string]interface{}{}, BardConfig{}, nil)("s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Historico.Mensagens != len(historico) {
+		t.Errorf("a sessão retomada vai pelo mesmo orçamento: %d mensagens, esperado %d", r.Historico.Mensagens, len(historico))
+	}
+	if len(r.Mensagens) != len(entries) {
+		t.Errorf("a tela recebe a sessão inteira: %d mensagens", len(r.Mensagens))
 	}
 }
 

@@ -9,15 +9,18 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // semProvider é o erro de quando nenhum provider de IA responde.
@@ -58,29 +61,14 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 	parar := animar(prog, erros)
 	defer parar()
 
-	// 1. Logs
+	// 1. Logs: um pedido por contêiner, e o da execução anterior nos que reiniciaram
 	prog.Iniciar("logs")
-	tailLines := int64(50)
-	podLogs, err := k8sClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-		TailLines: &tailLines,
-	}).DoRaw(ctx)
-	logsStr := ""
-	if err != nil {
+	logsStr, nLinhas, errLogs := lerLogsDoPod(ctx, k8sClient, pod)
+	if errLogs != nil {
 		prog.Falhar("indisponíveis")
-		prog.Detalhe(err.Error())
+		prog.Detalhe(errLogs.Error())
 	} else {
-		logsStr = string(podLogs)
-		prog.Concluir(contar(contarLinhas(logsStr), "linha", "linhas"))
-	}
-
-	// Análise guardada para os mesmos logs
-	if !op.semCache {
-		if cached, ok := loadCache(namespace, podName, logsStr); ok {
-			prog.Iniciar("cache")
-			prog.Concluir("análise guardada")
-			parar()
-			return mostrarAnalise(saida, *cached, podName, namespace, op, true)
-		}
+		prog.Concluir(contar(nLinhas, "linha", "linhas"))
 	}
 
 	// 2. Eventos
@@ -93,9 +81,37 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 		prog.Falhar("indisponíveis")
 		prog.Detalhe(err.Error())
 	} else {
-		eventsBytes, _ := json.Marshal(events.Items)
+		eventsBytes, _ := json.Marshal(resumirEventos(events.Items))
 		eventsStr = string(eventsBytes)
 		prog.Concluir(contar(len(events.Items), "evento", "eventos"))
+	}
+
+	// --no-ai: para na coleta e entrega os dados brutos (o Bard, que chama o investigate,
+	// já é a IA). Não lê nem grava o cache de análises.
+	if op.semIA {
+		parar()
+		return mostrarDadosBrutos(saida, tela, montarDadosBrutos(pod, eventosDe(events), logsStr, isPodHealthy(pod, events), podName, namespace), op)
+	}
+
+	// Pod saudável: nada para a IA analisar. Vem antes do cache, para uma análise guardada
+	// de quando o pod estava com problema não reaparecer depois que ele se recuperou. Nos
+	// formatos para scripts, o relatório de pod saudável vai para o stdout (ou para o
+	// arquivo), para quem lê o resultado não receber um stdout vazio.
+	if isPodHealthy(pod, events) {
+		parar()
+		escreverPodSaudavel(tela, pod)
+		return relatorioPodSaudavel(saida, pod, op)
+	}
+
+	// Análise guardada para o mesmo pod (contexto, UID e reinícios) e os mesmos logs
+	id := identidadeDoPod(pod)
+	if !op.semCache {
+		if cached, ok := loadCache(id, logsStr); ok {
+			prog.Iniciar("cache")
+			prog.Concluir("análise guardada")
+			parar()
+			return mostrarAnalise(saida, *cached, podName, namespace, op, true)
+		}
 	}
 
 	// 3. Métricas: o client-go não traz a API de métricas; o kubectl top serve quando o
@@ -121,16 +137,11 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 		prog.Pular("indisponíveis")
 	}
 
-	// Pod saudável: nada para a IA analisar. Nos formatos para scripts, o relatório de pod
-	// saudável vai para o stdout (ou para o arquivo), para quem lê o resultado não receber
-	// um stdout vazio.
-	if isPodHealthy(pod, events) {
-		parar()
-		escreverPodSaudavel(tela, pod)
-		return relatorioPodSaudavel(saida, pod, op)
-	}
-
-	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s", logsStr, eventsStr, metricsStr)
+	// O provider pode ser remoto: tokens, senhas e chaves dos logs, dos eventos e das
+	// métricas são redigidos antes de sair da máquina. Cada parte é redigida sozinha,
+	// para o fim de uma não ser lido como valor do título da seguinte.
+	realContext := fmt.Sprintf("LOGS:\n%s\n\nEVENTS (JSON):\n%s\n\nMETRICS:\n%s",
+		redacao.Redigir(logsStr), redacao.Redigir(eventsStr), redacao.Redigir(metricsStr))
 	if strings.TrimSpace(logsStr) == "" && (events == nil || len(events.Items) == 0) {
 		parar()
 		return yerrors.New(yerrors.ErrCodeValidation, "não há logs nem eventos do pod para analisar").
@@ -173,7 +184,7 @@ func investigate(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 	prog.Concluir(provider.Name())
 	parar()
 
-	saveCache(namespace, podName, logsStr, result)
+	saveCache(id, logsStr, result)
 	return mostrarAnalise(saida, result, podName, namespace, op, false)
 }
 
@@ -272,30 +283,38 @@ func mostrarAnalise(saida io.Writer, result AnalysisResult, podName, namespace s
 	return nil
 }
 
+// janelaDeReinicio é o quanto um reinício conta como recente na checagem de saúde.
+const janelaDeReinicio = 2 * time.Hour
+
 // isPodHealthy verifica se o pod está saudável baseado no status e eventos.
 // Retorna true se não há sinais de problema.
 func isPodHealthy(pod *corev1.Pod, events *corev1.EventList) bool {
-	// Pod não está Running
-	if pod.Status.Phase != corev1.PodRunning {
-		return false
-	}
+	return podSaudavelEm(pod, events, time.Now())
+}
 
-	// Algum container não está Ready ou tem restarts recentes
-	for _, cs := range pod.Status.ContainerStatuses {
-		if !cs.Ready {
-			return false
-		}
-		if cs.RestartCount > 0 {
-			// Verificar se o restart foi recente (últimas 2 horas)
-			if cs.LastTerminationState.Terminated != nil {
-				// Tem terminação recente → não saudável
+// podSaudavelEm é o isPodHealthy com o relógio explícito. Um pod Succeeded (job que
+// terminou) é saudável; um reinício só conta se a terminação foi nas últimas 2 horas.
+func podSaudavelEm(pod *corev1.Pod, events *corev1.EventList, agora time.Time) bool {
+	switch pod.Status.Phase {
+	case corev1.PodSucceeded:
+		// os contêineres terminaram, então não estão Ready: não há o que checar neles
+	case corev1.PodRunning:
+		for _, cs := range pod.Status.ContainerStatuses {
+			if !cs.Ready {
+				return false
+			}
+			if cs.RestartCount > 0 {
+				if t := cs.LastTerminationState.Terminated; t != nil && agora.Sub(t.FinishedAt.Time) < janelaDeReinicio {
+					return false
+				}
+			}
+			// Container em estado de waiting (CrashLoopBackOff, ImagePullBackOff, etc.)
+			if cs.State.Waiting != nil {
 				return false
 			}
 		}
-		// Container em estado de waiting (CrashLoopBackOff, ImagePullBackOff, etc.)
-		if cs.State.Waiting != nil {
-			return false
-		}
+	default:
+		return false
 	}
 
 	// Verificar eventos de Warning
@@ -308,4 +327,190 @@ func isPodHealthy(pod *corev1.Pod, events *corev1.EventList) bool {
 	}
 
 	return true
+}
+
+// opcoesDeLogs monta um pedido de logs por contêiner, com o da execução anterior
+// (Previous) logo depois do dos contêineres que reiniciaram. Sem a lista de contêineres
+// no spec, vale um pedido só, sem nome.
+func opcoesDeLogs(pod *corev1.Pod, tail int64) []corev1.PodLogOptions {
+	if len(pod.Spec.Containers) == 0 {
+		return []corev1.PodLogOptions{{TailLines: &tail}}
+	}
+	reinicios := map[string]int32{}
+	for _, cs := range pod.Status.ContainerStatuses {
+		reinicios[cs.Name] = cs.RestartCount
+	}
+	var opcoes []corev1.PodLogOptions
+	for _, c := range pod.Spec.Containers {
+		opcoes = append(opcoes, corev1.PodLogOptions{Container: c.Name, TailLines: &tail})
+		if reinicios[c.Name] > 0 {
+			opcoes = append(opcoes, corev1.PodLogOptions{Container: c.Name, TailLines: &tail, Previous: true})
+		}
+	}
+	return opcoes
+}
+
+// lerLogsDoPod lê o fim dos logs de cada contêiner e junta tudo, com um cabeçalho por
+// contêiner quando há mais de um pedido. Devolve o texto, a quantidade de linhas de log
+// (sem os cabeçalhos) e um erro só se nenhum pedido deu certo; o log da execução
+// anterior falha à toa quando o kubelet já o descartou, então a falha dele é ignorada.
+func lerLogsDoPod(ctx context.Context, c kubernetes.Interface, pod *corev1.Pod) (string, int, error) {
+	opcoes := opcoesDeLogs(pod, 50)
+	var sb strings.Builder
+	var ultimoErro error
+	linhas, lidos := 0, 0
+	for _, o := range opcoes {
+		raw, err := c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &o).DoRaw(ctx)
+		if err != nil {
+			if !o.Previous {
+				ultimoErro = err
+			}
+			continue
+		}
+		lidos++
+		texto := string(raw)
+		if len(opcoes) > 1 {
+			titulo := "contêiner " + o.Container
+			if o.Previous {
+				titulo += " (execução anterior)"
+			}
+			fmt.Fprintf(&sb, "== %s ==\n", titulo)
+		}
+		sb.WriteString(texto)
+		if texto != "" && !strings.HasSuffix(texto, "\n") {
+			sb.WriteString("\n")
+		}
+		linhas += contarLinhas(texto)
+	}
+	if lidos == 0 && ultimoErro != nil {
+		return "", 0, ultimoErro
+	}
+	return sb.String(), linhas, nil
+}
+
+// eventoResumido é o que de cada evento do Kubernetes vai para a IA: sem managedFields,
+// metadados e referências, que só gastam contexto.
+type eventoResumido struct {
+	Tipo             string `json:"type"`
+	Motivo           string `json:"reason"`
+	Mensagem         string `json:"message"`
+	Contagem         int32  `json:"count"`
+	UltimaOcorrencia string `json:"lastTimestamp,omitempty"`
+}
+
+// resumirEventos reduz os eventos a tipo, motivo, mensagem, contagem e último instante.
+func resumirEventos(items []corev1.Event) []eventoResumido {
+	out := make([]eventoResumido, 0, len(items))
+	for _, e := range items {
+		quando := e.LastTimestamp.Time
+		if quando.IsZero() {
+			quando = e.EventTime.Time
+		}
+		r := eventoResumido{Tipo: e.Type, Motivo: e.Reason, Mensagem: e.Message, Contagem: e.Count}
+		if !quando.IsZero() {
+			r.UltimaOcorrencia = quando.UTC().Format(time.RFC3339)
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// identidadeDoPod reúne o que distingue um pod de outro no cache de análises.
+func identidadeDoPod(pod *corev1.Pod) idPod {
+	id := idPod{Namespace: pod.Namespace, Pod: pod.Name, UID: string(pod.UID)}
+	if fc := sdk.GetFullContext(); fc != nil {
+		id.Contexto = fc.Infra.KubeConfig + "|" + fc.Infra.KubeContext
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		id.Reinicios += cs.RestartCount
+	}
+	return id
+}
+
+// eventosDe devolve os eventos da lista, ou nenhum se a lista não veio.
+func eventosDe(l *corev1.EventList) []corev1.Event {
+	if l == nil {
+		return nil
+	}
+	return l.Items
+}
+
+// montarDadosBrutos reúne o que o investigate coletou do pod, sem análise. Os logs e as
+// mensagens dos eventos passam pela redação: o Bard manda esses dados à IA dele.
+func montarDadosBrutos(pod *corev1.Pod, eventos []corev1.Event, logs string, saudavel bool, podName, namespace string) DadosBrutos {
+	d := DadosBrutos{
+		Metadata:   ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: relogio()},
+		Healthy:    saudavel,
+		Phase:      string(pod.Status.Phase),
+		Containers: []ConteinerBruto{},
+		Events:     resumirEventos(eventos),
+		Logs:       redacao.Redigir(logs),
+	}
+	for i := range d.Events {
+		d.Events[i].Mensagem = redacao.Redigir(d.Events[i].Mensagem)
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		c := ConteinerBruto{Name: cs.Name, Ready: cs.Ready, RestartCount: cs.RestartCount, State: "running"}
+		switch {
+		case cs.State.Waiting != nil:
+			c.State, c.Reason = "waiting", cs.State.Waiting.Reason
+		case cs.State.Terminated != nil:
+			c.State, c.Reason = "terminated", cs.State.Terminated.Reason
+		}
+		d.Containers = append(d.Containers, c)
+	}
+	return d
+}
+
+// mostrarDadosBrutos exporta os dados brutos (json ou markdown) ou os escreve na tela.
+func mostrarDadosBrutos(saida, tela io.Writer, d DadosBrutos, op opcoes) error {
+	switch op.formato {
+	case "json":
+		content, err := exportDadosBrutosJSON(d)
+		if err != nil {
+			return yerrors.Wrap(err, yerrors.ErrCodePlugin, "não deu para montar o relatório JSON")
+		}
+		return gravarRelatorio(saida, content, op.arquivo, "json")
+	case "markdown":
+		return gravarRelatorio(saida, exportDadosBrutosMarkdown(d), op.arquivo, "markdown")
+	}
+	escreverDadosBrutos(tela, d)
+	return nil
+}
+
+// escreverDadosBrutos mostra na tela o que foi coletado: fase, contêineres, eventos e o
+// fim dos logs.
+func escreverDadosBrutos(w io.Writer, d DadosBrutos) {
+	fmt.Fprintln(w)
+	tipo, nota := ui.CheckAviso, "com sinais de problema; dados brutos, a IA não foi chamada"
+	if d.Healthy {
+		tipo, nota = ui.CheckOk, "nenhum sinal de problema; dados brutos, a IA não foi chamada"
+	}
+	ui.Check(w, tipo, "pod", d.Phase, nota)
+	if len(d.Containers) > 0 {
+		ui.Section(w, "contêineres")
+		for _, c := range d.Containers {
+			t := ui.CheckOk
+			if !c.Ready {
+				t = ui.CheckAviso
+			}
+			ui.Check(w, t, c.Name, estadoDoConteiner(c), contar(int(c.RestartCount), "reinício", "reinícios"))
+		}
+	}
+	if len(d.Events) > 0 {
+		ui.Section(w, "eventos")
+		for _, e := range d.Events {
+			t := ui.CheckOk
+			if e.Tipo == "Warning" {
+				t = ui.CheckAviso
+			}
+			ui.Check(w, t, e.Motivo, "x"+fmt.Sprint(e.Contagem), e.Mensagem)
+		}
+	}
+	if strings.TrimSpace(d.Logs) != "" {
+		ui.Section(w, "logs")
+		for _, l := range strings.Split(strings.TrimRight(d.Logs, "\n"), "\n") {
+			fmt.Fprintln(w, "  "+l)
+		}
+	}
 }

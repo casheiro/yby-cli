@@ -33,3 +33,13 @@ func rotuloProvider(p ai.Provider) string {
 	}
 	return nome
 }
+
+// modeloEmUso é o modelo que o config fixa para o provider da sessão (ai.model, ai.models
+// ou YBY_AI_MODEL), para o cabeçalho mostrar "claude-cli · opus"; vazio é o padrão do
+// provider. Os providers sobem com esse mesmo modelo (ai.ConfiguredModel).
+func modeloEmUso(p ai.Provider) string {
+	if p == nil {
+		return ""
+	}
+	return ai.ConfiguredModel(rotuloProvider(p))
+}

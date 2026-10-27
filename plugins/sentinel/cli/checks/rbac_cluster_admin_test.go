@@ -6,6 +6,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -26,7 +29,7 @@ func TestClusterAdminCheck_ComBinding(t *testing.T) {
 	})
 
 	check := &ClusterAdminCheck{}
-	findings, err := check.Run(context.Background(), client, "default")
+	findings, err := check.Run(doCluster(context.Background()), client, "default")
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -61,3 +64,57 @@ func TestClusterAdminCheck_SemBinding(t *testing.T) {
 		t.Errorf("esperava zero findings, obteve %d", len(findings))
 	}
 }
+
+// TestClusterAdminCheck_AllowlistPorSubject: um binding com nome de ferramenta conhecida
+// ("helm-qualquer") que dá cluster-admin a default/app aparece; o binding da SA do Argo CD
+// e o cluster-admin padrão ficam de fora e entram na contagem.
+func TestClusterAdminCheck_AllowlistPorSubject(t *testing.T) {
+	binding := func(nome string, s rbacv1.Subject) *rbacv1.ClusterRoleBinding {
+		return &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: nome},
+			RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "cluster-admin"},
+			Subjects:   []rbacv1.Subject{s},
+		}
+	}
+	client := fake.NewSimpleClientset(
+		binding("helm-qualquer", rbacv1.Subject{Kind: "ServiceAccount", Name: "app", Namespace: "default"}),
+		binding("argocd-application-controller", rbacv1.Subject{Kind: "ServiceAccount", Name: "argocd-application-controller", Namespace: "argocd"}),
+		binding("cluster-admin", rbacv1.Subject{Kind: "Group", Name: "system:masters"}),
+	)
+	ctx, contagem := allowlist.ComContagem(doCluster(context.Background()))
+
+	findings, err := (&ClusterAdminCheck{}).Run(ctx, client, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Resource != "helm-qualquer" || findings[0].Severity != SeverityCritical {
+		t.Errorf("esperava só o helm-qualquer, crítico: %+v", findings)
+	}
+	if contagem.Total() != 2 {
+		t.Errorf("ignorados pela allowlist = %d, queria 2", contagem.Total())
+	}
+}
+
+// TestClusterAdminCheck_SoONamespace: no scan de payments, o cluster-admin dado a other/x
+// fica de fora; o dado a payments/x aparece, com escopo cluster.
+func TestClusterAdminCheck_SoONamespace(t *testing.T) {
+	binding := func(nome, ns string) *rbacv1.ClusterRoleBinding {
+		return &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: nome},
+			RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "cluster-admin"},
+			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "x", Namespace: ns}},
+		}
+	}
+	client := fake.NewSimpleClientset(binding("outro-admin", "other"), binding("pay-admin", "payments"))
+
+	findings, err := (&ClusterAdminCheck{}).Run(context.Background(), client, "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].Resource != "pay-admin" || findings[0].Scope != "cluster" {
+		t.Errorf("esperava só o binding de payments/x, com escopo cluster: %+v", findings)
+	}
+}
+
+// doCluster põe o escopo cluster no contexto: os testes que olham o RBAC do cluster todo.
+func doCluster(ctx context.Context) context.Context { return escopo.Com(ctx, escopo.Cluster) }

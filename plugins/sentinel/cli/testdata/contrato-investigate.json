@@ -1,0 +1,27 @@
+{
+  "metadata": {
+    "pod": "worker-5d8b6-q7tvn",
+    "namespace": "payments",
+    "timestamp": "2026-10-25T09:30:00Z"
+  },
+  "healthy": false,
+  "phase": "Running",
+  "containers": [
+    {
+      "name": "worker",
+      "ready": false,
+      "restartCount": 12,
+      "state": "waiting",
+      "reason": "CrashLoopBackOff"
+    }
+  ],
+  "events": [
+    {
+      "type": "Warning",
+      "reason": "BackOff",
+      "message": "Back-off restarting failed container",
+      "count": 0
+    }
+  ],
+  "logs": "fake logs\n"
+}

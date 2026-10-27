@@ -11,32 +11,41 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// ApplyPatches aplica os patches de remediação no cluster.
-func ApplyPatches(ctx context.Context, client kubernetes.Interface, patches []RemediationPatch) []error {
-	var errs []error
-	for _, p := range patches {
-		err := applyPatch(ctx, client, p)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("falha ao aplicar patch em %s/%s: %w", p.Namespace, p.ResourceName, err))
-		}
+// gerenciadorDeCampos é o field manager dos patches do --fix: o managedFields do recurso
+// diz quem mudou o securityContext.
+const gerenciadorDeCampos = "yby-sentinel"
+
+// Aplicar manda os patches ao servidor. Com dryRun, o servidor confere cada um (esquema,
+// validação e admissão) sem gravar nada. Devolve os que passaram e as falhas.
+func Aplicar(ctx context.Context, client kubernetes.Interface, patches []RemediationPatch, dryRun bool) (aceitos []RemediationPatch, falhas []Falha) {
+	opts := metav1.PatchOptions{FieldManager: gerenciadorDeCampos}
+	if dryRun {
+		opts.DryRun = []string{metav1.DryRunAll}
 	}
-	return errs
+	for _, p := range patches {
+		if err := aplicar(ctx, client, p, opts); err != nil {
+			falhas = append(falhas, Falha{Patch: p, Err: err})
+			continue
+		}
+		aceitos = append(aceitos, p)
+	}
+	return aceitos, falhas
 }
 
-func applyPatch(ctx context.Context, client kubernetes.Interface, p RemediationPatch) error {
-	patchType := k8stypes.StrategicMergePatchType
-	if p.PatchType == "json-patch" {
-		patchType = k8stypes.JSONPatchType
-	}
-
+func aplicar(ctx context.Context, client kubernetes.Interface, p RemediationPatch, opts metav1.PatchOptions) error {
+	tipo, dados := k8stypes.StrategicMergePatchType, []byte(p.Patch)
+	var err error
 	switch p.ResourceKind {
-	case "Pod":
-		_, err := client.CoreV1().Pods(p.Namespace).Patch(ctx, p.ResourceName, patchType, []byte(p.Patch), metav1.PatchOptions{})
-		return err
 	case "Deployment":
-		_, err := client.AppsV1().Deployments(p.Namespace).Patch(ctx, p.ResourceName, patchType, []byte(p.Patch), metav1.PatchOptions{})
-		return err
+		_, err = client.AppsV1().Deployments(p.Namespace).Patch(ctx, p.ResourceName, tipo, dados, opts)
+	case "StatefulSet":
+		_, err = client.AppsV1().StatefulSets(p.Namespace).Patch(ctx, p.ResourceName, tipo, dados, opts)
+	case "DaemonSet":
+		_, err = client.AppsV1().DaemonSets(p.Namespace).Patch(ctx, p.ResourceName, tipo, dados, opts)
+	case "CronJob":
+		_, err = client.BatchV1().CronJobs(p.Namespace).Patch(ctx, p.ResourceName, tipo, dados, opts)
 	default:
-		return fmt.Errorf("tipo de recurso '%s' não suportado para patching", p.ResourceKind)
+		err = fmt.Errorf("o --fix não corrige %s", p.ResourceKind)
 	}
+	return err
 }

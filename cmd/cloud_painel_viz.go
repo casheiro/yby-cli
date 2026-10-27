@@ -138,6 +138,8 @@ func abrirVizPeloManager(args []string) error {
 		}
 		pluginsDescobertos = pm
 	}
+	// O cluster vai nos args (--context); o ambiente do yby não entra.
+	pm.DefinirAmbiente("")
 	return pm.ExecuteCommandHook("viz", args)
 }
 

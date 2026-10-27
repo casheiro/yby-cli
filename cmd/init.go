@@ -38,7 +38,7 @@ var askConfirm = func(title string, defaultVal bool) (bool, error) {
 type gerenciadorPluginsInit interface {
 	Discover() error
 	ListPlugins() []plugin.PluginManifest
-	ExecuteContextHook(ctx *scaffold.BlueprintContext) error
+	ExecuteContextHook(ctx context.Context, bp *scaffold.BlueprintContext) error
 	GetAssets() []string
 }
 
@@ -210,6 +210,10 @@ func executarInit(w io.Writer, o *InitOptions) error {
 			WithHint("use --update para mesclar ou --force para sobrescrever")
 	}
 
+	// O init não recebe contexto de quem o chama: os hooks dos plugins, a IA e o helm
+	// rodam com este.
+	bgCtx := context.Background()
+
 	// 1. Plugins e contexto (flags + assistente)
 	pm := novoGerenciadorPluginsInit()
 	errPlugins := pm.Discover()
@@ -226,7 +230,7 @@ func executarInit(w io.Writer, o *InitOptions) error {
 	}
 
 	// Hook: context (enriquece o BlueprintContext)
-	errHook := pm.ExecuteContextHook(ctx)
+	errHook := pm.ExecuteContextHook(bgCtx, ctx)
 
 	// 1.5 Detecção de init duplo (pular se --update, que trata isso depois)
 	targetDir := resolveTargetDir(o.TargetDir)
@@ -330,7 +334,6 @@ func executarInit(w io.Writer, o *InitOptions) error {
 	avisarCamposVazios(rel, targetDir, o.Offline)
 
 	// 2.5 Camada de IA: só com descrição (--description ou no assistente)
-	bgCtx := context.Background()
 	if o.Description != "" {
 		gerarComIA(rel, bgCtx, o, targetDir)
 	}

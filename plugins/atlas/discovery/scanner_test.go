@@ -103,7 +103,7 @@ func TestComponent_Fields(t *testing.T) {
 
 func TestScan_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestScan_WithGoModule(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myservice\n\ngo 1.26\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestScan_WithPackageJson(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "package.json"), []byte(`{"name":"frontend"}`), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestScan_WithDockerfile(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "Dockerfile"), []byte("FROM alpine\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestScan_IgnoredDirectories(t *testing.T) {
 	os.MkdirAll(ignoredDir, 0755)
 	os.WriteFile(filepath.Join(ignoredDir, "go.mod"), []byte("module ignored"), 0644)
 
-	bp, err := Scan(tmpDir, []string{"node_modules"})
+	bp, err := ScanWithRules(tmpDir, []string{"node_modules"}, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestScan_NoDuplicates(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module myapi"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -192,17 +192,42 @@ func TestScan_NoDuplicates(t *testing.T) {
 
 func TestScan_RootsField(t *testing.T) {
 	tmpDir := t.TempDir()
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
-	if len(bp.Roots) != 1 || bp.Roots[0] != tmpDir {
-		t.Errorf("esperado Roots=[%s], obtido %v", tmpDir, bp.Roots)
+	if len(bp.Roots) != 1 || bp.Roots[0] != "." {
+		t.Errorf("esperado Roots=[.], obtido %v", bp.Roots)
+	}
+}
+
+func TestScan_CaminhosRelativosComBarra(t *testing.T) {
+	tmpDir := t.TempDir()
+	api := filepath.Join(tmpDir, "services", "api")
+	os.MkdirAll(api, 0755)
+	os.WriteFile(filepath.Join(api, "go.mod"), []byte("module api"), 0644)
+
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if len(bp.Components) != 1 || bp.Components[0].Path != "services/api" {
+		t.Errorf("esperado Path 'services/api', obtido %+v", bp.Components)
+	}
+}
+
+func TestScanInfra_RootPathRelativo(t *testing.T) {
+	bp, err := ScanInfra(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("ScanInfra falhou: %v", err)
+	}
+	if bp.RootPath != "." {
+		t.Errorf("esperado RootPath '.', obtido %q", bp.RootPath)
 	}
 }
 
 func TestScan_InvalidPath(t *testing.T) {
-	_, err := Scan("/nonexistent/path/xyz123", nil)
+	_, err := ScanWithRules("/nonexistent/path/xyz123", nil, DefaultRules)
 	if err == nil {
 		t.Error("esperado erro para caminho inexistente, obtido nil")
 	}
@@ -216,7 +241,7 @@ func TestScan_WithChartYaml(t *testing.T) {
 	os.MkdirAll(chartDir, 0755)
 	os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: meu-chart\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -239,7 +264,7 @@ func TestScan_WithKustomization(t *testing.T) {
 	os.MkdirAll(kustomizeDir, 0755)
 	os.WriteFile(filepath.Join(kustomizeDir, "kustomization.yaml"), []byte("resources:\n- ../base\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -262,7 +287,7 @@ func TestScan_WithDockerfileVariant(t *testing.T) {
 	os.MkdirAll(serviceDir, 0755)
 	os.WriteFile(filepath.Join(serviceDir, "Dockerfile.prod"), []byte("FROM golang:1.26\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -285,7 +310,7 @@ func TestScan_GoModMetadata(t *testing.T) {
 	os.MkdirAll(subDir, 0755)
 	os.WriteFile(filepath.Join(subDir, "go.mod"), []byte("module github.com/exemplo/meu-app\n\ngo 1.26\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -323,7 +348,7 @@ func TestScan_DetectsRelations(t *testing.T) {
 		"module github.com/exemplo/app\n\ngo 1.26\n\nrequire github.com/exemplo/lib v0.0.0\n\nreplace github.com/exemplo/lib => ../lib\n",
 	), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -352,7 +377,7 @@ func TestScan_DetectsDockerfileRelations(t *testing.T) {
 	os.WriteFile(filepath.Join(appDir, "go.mod"), []byte("module github.com/exemplo/app\n\ngo 1.26\n"), 0644)
 	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM golang:1.26\nCOPY app/ /src/\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -391,7 +416,7 @@ func TestScan_DetectsLanguageAndFramework(t *testing.T) {
 	os.MkdirAll(infraDir, 0755)
 	os.WriteFile(filepath.Join(infraDir, "Dockerfile"), []byte("FROM alpine\n"), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -450,7 +475,7 @@ func main() {
 }
 `), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -485,7 +510,7 @@ COPY --from=builder /bin/app /usr/local/bin/
 COPY --from=app ./dist /app/
 `), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -515,7 +540,7 @@ dependencies:
     version: "17.0.0"
 `), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -551,7 +576,7 @@ func TestScan_DetectsPackageJsonRelations(t *testing.T) {
 		}
 	}`), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -582,7 +607,7 @@ func TestScan_DetectsHelmRelations(t *testing.T) {
 		"apiVersion: v2\nname: main\ndependencies:\n  - name: dep\n    repository: \"file://../dep\"\n",
 	), 0644)
 
-	bp, err := Scan(tmpDir, nil)
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
 	if err != nil {
 		t.Fatalf("Scan falhou: %v", err)
 	}
@@ -596,5 +621,128 @@ func TestScan_DetectsHelmRelations(t *testing.T) {
 	}
 	if !encontrado {
 		t.Errorf("esperado relação 'deploys' entre charts Helm, relações encontradas: %+v", bp.Relations)
+	}
+}
+
+// escreverArquivos grava os arquivos (caminho relativo com '/') sob dir.
+func escreverArquivos(t *testing.T, dir string, arquivos map[string]string) {
+	t.Helper()
+	for nome, conteudo := range arquivos {
+		caminho := filepath.Join(dir, filepath.FromSlash(nome))
+		if err := os.MkdirAll(filepath.Dir(caminho), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(caminho, []byte(conteudo), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// contarRelacoes devolve quantas relações batem com (from, to, tipo).
+func contarRelacoes(rels []Relation, from, to, tipo string) int {
+	n := 0
+	for _, r := range rels {
+		if r.From == from && r.To == to && r.Type == tipo {
+			n++
+		}
+	}
+	return n
+}
+
+func TestScan_DockerfileNaoCasaPontoNemPrefixo(t *testing.T) {
+	tmpDir := t.TempDir()
+	escreverArquivos(t, tmpDir, map[string]string{
+		"go.mod":                   "module github.com/x/mono\n\ngo 1.26\n",
+		"services/api/go.mod":      "module github.com/x/mono/services/api\n\ngo 1.26\n",
+		"services/api/Dockerfile":  "FROM golang:1.26\nCOPY . .\n",
+		"apigateway/go.mod":        "module github.com/x/mono/apigateway\n\ngo 1.26\n",
+		"deploy/Dockerfile":        "FROM golang:1.26\nCOPY apigateway/ .\n",
+		"api/go.mod":               "module github.com/x/mono/api\n\ngo 1.26\n",
+		"services/go.mod":          "module github.com/x/mono/services\n\ngo 1.26\n",
+		"services/api2/go.mod":     "module github.com/x/mono/services/api2\n\ngo 1.26\n",
+		"services/api2/Dockerfile": "FROM golang:1.26\nCOPY . .\n",
+		"tools/Dockerfile":         "FROM golang:1.26\nCOPY services/api2/x .\n",
+	})
+
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	if contarRelacoes(bp.Relations, "services/api", ".", "builds") != 0 {
+		t.Errorf("COPY . . não pode ligar o componente à raiz: %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "deploy", "api", "builds") != 0 {
+		t.Errorf("'api' não pode casar com 'apigateway': %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "services/api2", "services", "builds") != 0 {
+		t.Errorf("COPY . . não pode ligar o componente ao pai: %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "tools", "services", "builds") != 0 ||
+		contarRelacoes(bp.Relations, "tools", "services/api2", "builds") != 1 {
+		t.Errorf("a origem liga só ao componente mais específico: %+v", bp.Relations)
+	}
+	if contarRelacoes(bp.Relations, "deploy", "apigateway", "builds") != 1 {
+		t.Errorf("esperada uma relação deploy -> apigateway: %+v", bp.Relations)
+	}
+}
+
+func TestScan_ImportsGoNaoEntraEmPastasIgnoradas(t *testing.T) {
+	tmpDir := t.TempDir()
+	imp := "package p\n\nimport \"github.com/x/mono/lib\"\n"
+	escreverArquivos(t, tmpDir, map[string]string{
+		"go.mod":                "module github.com/x/mono\n\ngo 1.26\n",
+		"lib/go.mod":            "module github.com/x/mono/lib\n\ngo 1.26\n",
+		"node_modules/pkg/p.go": imp,
+		"dist/d.go":             imp,
+		"meu_ignorado/i.go":     imp,
+	})
+
+	ignores := append(append([]string(nil), IgnoradosPadrao...), "meu_ignorado")
+	bp, err := ScanWithRules(tmpDir, ignores, DefaultRules)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if n := contarRelacoes(bp.Relations, ".", "lib", "imports"); n != 0 {
+		t.Errorf("imports de pastas ignoradas não geram relação: %+v", bp.Relations)
+	}
+
+	// Controle positivo: o mesmo import em pasta não ignorada gera a relação.
+	escreverArquivos(t, tmpDir, map[string]string{"src/s.go": imp})
+	bp, err = ScanWithRules(tmpDir, ignores, DefaultRules)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+	if n := contarRelacoes(bp.Relations, ".", "lib", "imports"); n != 1 {
+		t.Errorf("controle positivo: esperada 1 relação . -> lib, veio %d: %+v", n, bp.Relations)
+	}
+}
+
+func TestScan_ImportsGoDeduplicadosEComFronteira(t *testing.T) {
+	tmpDir := t.TempDir()
+	escreverArquivos(t, tmpDir, map[string]string{
+		"go.mod":      "module github.com/x/mono\n\ngo 1.26\n",
+		"lib/go.mod":  "module github.com/x/mono/lib\n\ngo 1.26\n",
+		"lib2/go.mod": "module github.com/x/mono/lib2\n\ngo 1.26\n",
+		"app/go.mod":  "module github.com/x/mono/app\n\ngo 1.26\n",
+		"app/main.go": "package main\n\nimport (\n\t\"github.com/x/mono/lib/a\"\n\t\"github.com/x/mono/lib/b\"\n)\n",
+		// subpastas e import de linha única
+		"app/cmd/serve/serve.go":  "package serve\n\nimport \"github.com/x/mono/lib2\"\n",
+		"app/internal/dep/dep.go": "package dep\n\nimport l \"github.com/x/mono/lib/c\"\n",
+	})
+
+	bp, err := ScanWithRules(tmpDir, nil, DefaultRules)
+	if err != nil {
+		t.Fatalf("Scan falhou: %v", err)
+	}
+
+	if n := contarRelacoes(bp.Relations, "app", "lib", "imports"); n != 1 {
+		t.Errorf("esperada 1 relação app -> lib (deduplicada), veio %d: %+v", n, bp.Relations)
+	}
+	if n := contarRelacoes(bp.Relations, "app", "lib2", "imports"); n != 1 {
+		t.Errorf("import de linha única em subpasta deveria gerar app -> lib2, veio %d: %+v", n, bp.Relations)
+	}
+	if n := contarRelacoes(bp.Relations, "app", ".", "imports"); n != 0 {
+		t.Errorf("o módulo mais longo vence: não pode haver app -> '.': %+v", bp.Relations)
 	}
 }

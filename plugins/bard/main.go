@@ -16,6 +16,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
 	"github.com/casheiro/yby-cli/plugins/bard/tui"
@@ -65,8 +66,12 @@ func run() error {
 	var req plugin.PluginRequest
 
 	// 1. Check for Environment Variable Protocol (Preferred for Interactive/TUI)
-	if envReq := os.Getenv("YBY_PLUGIN_REQUEST"); envReq != "" {
-		if err := json.Unmarshal([]byte(envReq), &req); err != nil {
+	envReq, err := plugin.PedidoDoAmbiente(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if envReq != nil {
+		if err := json.Unmarshal(envReq, &req); err != nil {
 			return yerrors.Wrap(err, yerrors.ErrCodePluginRPC, "YBY_PLUGIN_REQUEST inválido")
 		}
 		return handlePluginRequest(req)
@@ -118,7 +123,7 @@ func handlePluginRequest(req plugin.PluginRequest) error {
 		tools.DefinirKube(opcoes.contexto, opcoes.namespace)
 
 		if opcoes.temPrompt {
-			return runOneShot(req.Context, opcoes.prompt)
+			return runOneShot(req.Context, opcoes.prompt, opcoes)
 		}
 
 		return startChat(req.Context, opcoes)
@@ -139,11 +144,11 @@ func contextoInterrompivel() (context.Context, context.CancelFunc) {
 }
 
 // runOneShot responde a pergunta do -p e sai.
-func runOneShot(ctxData map[string]interface{}, prompt string) error {
+func runOneShot(ctxData map[string]interface{}, prompt string, opcoes opcoesBard) error {
 	prepararStderr()
 	ctx, parar := contextoInterrompivel()
 	defer parar()
-	d, err := novoDireto(ctx, ctxData)
+	d, err := novoDireto(ctx, ctxData, opcoes)
 	if err != nil {
 		return err
 	}
@@ -151,11 +156,11 @@ func runOneShot(ctxData map[string]interface{}, prompt string) error {
 }
 
 // runBatchMode responde, sem TUI, uma pergunta por linha do stdin.
-func runBatchMode(ctxData map[string]interface{}) error {
+func runBatchMode(ctxData map[string]interface{}, opcoes opcoesBard) error {
 	prepararStderr()
 	ctx, parar := contextoInterrompivel()
 	defer parar()
-	d, err := novoDireto(ctx, ctxData)
+	d, err := novoDireto(ctx, ctxData, opcoes)
 	if err != nil {
 		return err
 	}
@@ -189,7 +194,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 			prepararStderr()
 			return rascunhoSemTerminal()
 		}
-		return runBatchMode(ctxData)
+		return runBatchMode(ctxData, opcoes)
 	}
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		prepararStderr()
@@ -234,6 +239,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 		SystemPrompt: systemPrompt,
 		SessionID:    sessionID,
 		AIModel:      rotuloProvider(provider),
+		ModeloIA:     modeloEmUso(provider),
 		SaveMessage:  saveMessage,
 
 		TopK:             bardCfg.TopK,
@@ -243,7 +249,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 		RetomarSessao: retomador(ctxData, bardCfg, clusterCtx),
 		Modelos:       modelosDetectados,
 		Diretorio:     cwd,
-		Sanitizar:     sanitizeContent,
+		Sanitizar:     redacao.Redigir,
 		Historico:     contarHistorico(history),
 	}
 	aplicarCluster(&tuiConfig, clusterCtx, opcoes)
@@ -281,28 +287,13 @@ func aplicarCluster(c *tui.Config, cc *ClusterContext, opcoes opcoesBard) {
 	}
 }
 
-// buildSystemPrompt constrói o system prompt enriquecido com contexto e histórico.
-func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, history []HistoryEntry, clusterCtx ...*ClusterContext) string {
-	overview, _ := ctxData["overview"].(string)
-	backlog, _ := ctxData["backlog"].(string)
-
-	blueprintSummary := "Nenhum blueprint disponível."
-	if bp, ok := ctxData["blueprint"]; ok {
-		bpBytes, _ := json.MarshalIndent(bp, "", "  ")
-		blueprintSummary = string(bpBytes)
-	}
-
-	contextBlock := fmt.Sprintf(`
-## Project Overview
-%s
-
-## Backlog & Debt
-%s
-
-## Technical Blueprint (Atlas)
-%s
-`, overview, backlog, blueprintSummary)
-
+// buildSystemPrompt constrói o system prompt enriquecido com histórico e cluster.
+// O Bard não declara consome_contexto: do core só chega o contexto barato, e só quando o
+// ambiente é pedido (-c/--context antes do nome do plugin ou YBY_ENV); o caro (overview,
+// backlog e os hooks context dos outros plugins) fica de fora, e o blueprint chega pela
+// ferramenta atlas_blueprint, não pelo prompt. O primeiro argumento fica por
+// compatibilidade com os chamadores.
+func buildSystemPrompt(_ map[string]interface{}, bardCfg BardConfig, history []HistoryEntry, clusterCtx ...*ClusterContext) string {
 	// Injetar contexto do cluster se disponível
 	clusterSection := ""
 	if len(clusterCtx) > 0 && clusterCtx[0] != nil {
@@ -310,7 +301,8 @@ func buildSystemPrompt(ctxData map[string]interface{}, bardCfg BardConfig, histo
 	}
 
 	vars := map[string]string{
-		"blueprint_json_summary": contextBlock,
+		// Vazio de propósito: overrides antigos ainda usam {{blueprint_json_summary}}.
+		"blueprint_json_summary": "",
 		"tools_prompt":           tools.FormatToolsPrompt(),
 		"cluster_context":        clusterSection,
 	}

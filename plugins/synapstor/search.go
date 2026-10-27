@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,9 +16,6 @@ import (
 )
 
 const defaultTopK = 5
-
-// minScore é a pontuação mínima de um resultado da busca; os abaixo dela ficam de fora.
-const minScore = 0.35
 
 // searchResult representa um resultado de busca formatável.
 type searchResult struct {
@@ -73,6 +71,9 @@ func indiceVazio() error {
 		WithHint("rode yby synapstor index para indexar os UKIs")
 }
 
+// candidatosPorResultado é quantos trechos a busca pede ao índice por UKI pedido.
+const candidatosPorResultado = 4
+
 // runSearch busca a consulta no índice e escreve os resultados em saida.
 func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.Writer) error {
 	query, topK, err := parseSearchArgs(args)
@@ -85,9 +86,6 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	}
 
 	provider := provedorDeEmbeddings(ctx)
-	if provider == nil {
-		return semEmbeddings()
-	}
 
 	ui.Title(saida, "synapstor", "search · "+aspas(query))
 	fmt.Fprintln(saida)
@@ -95,12 +93,17 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 	parar := animar(prog, erros)
 	defer parar()
 
-	prog.Iniciar("buscar no índice")
 	storePath := filepath.Join(raiz, ".synapstor", ".index")
 	if _, err := os.Stat(storePath); err != nil {
-		prog.Falhar("")
 		return indiceVazio()
 	}
+	// O modelo local baixa no primeiro uso, numa etapa antes da busca; sem índice, nada
+	// é baixado.
+	if err := ai.PrepararEmbeddings(ctx, provider, prog); err != nil {
+		return erroDoDownload(err)
+	}
+
+	prog.Iniciar("buscar no índice")
 	vs, err := ai.NewVectorStore(ctx, storePath, provider)
 	if err != nil {
 		prog.Falhar("")
@@ -114,7 +117,15 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 		return indiceVazio()
 	}
 
-	docs, err := vs.Search(ctx, query, min(topK, total))
+	// O índice guarda trechos: pede mais candidatos que topK para que os trechos de um
+	// mesmo UKI não comam as vagas dos outros; resultadosDaBusca corta em topK UKIs.
+	docs, err := vs.Search(ctx, query, min(topK*candidatosPorResultado, total))
+	var outro *ai.IndiceDeOutroModeloError
+	if errors.As(err, &outro) {
+		prog.Falhar("")
+		return yerrors.New(yerrors.ErrCodeValidation, outro.Diferenca()).
+			WithHint("rode yby synapstor index --full para refazer o índice com " + outro.Atual.String())
+	}
 	if err != nil {
 		prog.Falhar("")
 		return yerrors.Wrap(err, yerrors.ErrCodeExec, "a busca no índice falhou").
@@ -122,12 +133,40 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 			WithContext("provider", provider.Name())
 	}
 
-	// Filtrar resultados com score mínimo de relevância
+	results, foraDoCorte := resultadosDaBusca(docs, topK)
+	prog.Concluir(plural(len(docs), "parecido", "parecidos"))
+	parar()
+
+	escreverResultados(saida, results, foraDoCorte, nomeDosEmbeddings(ctx, provider))
+	return nil
+}
+
+// resultadosDaBusca tira os trechos abaixo de ai.RelevanciaMinima (o mesmo corte do Bard) e junta os trechos do mesmo arquivo
+// num resultado só, o de maior pontuação: o índice guarda trechos, mas quem busca quer saber
+// de qual UKI. Devolve no máximo topK UKIs e quantos UKIs distintos ficaram de fora só por
+// estarem abaixo do corte (UKI com algum trecho acima do corte não entra na conta).
+func resultadosDaBusca(docs []ai.UnknownDocument, topK int) ([]searchResult, int) {
 	var results []searchResult
+	vistos := map[string]bool{}
+	abaixo := map[string]bool{}
+	acima := map[string]bool{}
 	for _, doc := range docs {
-		if doc.Score < minScore {
+		caminho := doc.Metadata["source"]
+		if caminho == "" {
+			caminho = doc.ID
+		}
+		if doc.Score < ai.RelevanciaMinima {
+			abaixo[caminho] = true
 			continue
 		}
+		acima[caminho] = true
+		if vistos[caminho] {
+			continue
+		}
+		if topK > 0 && len(results) >= topK {
+			continue
+		}
+		vistos[caminho] = true
 
 		title := doc.Metadata["title"]
 		if title == "" {
@@ -136,9 +175,8 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 		if title == "" {
 			title = doc.ID
 		}
-		caminho := doc.Metadata["source"]
-		if caminho == "" {
-			caminho = doc.ID
+		if secao := doc.Metadata["section"]; secao != "" {
+			title += " · " + secao
 		}
 
 		results = append(results, searchResult{
@@ -148,18 +186,20 @@ func runSearch(ctx context.Context, raiz string, args []string, saida, erros io.
 			Preview: truncatePreview(doc.Content, 200),
 		})
 	}
-	prog.Concluir(plural(len(docs), "parecido", "parecidos"))
-	parar()
-
-	escreverResultados(saida, results, len(docs)-len(results))
-	return nil
+	foraDoCorte := 0
+	for caminho := range abaixo {
+		if !acima[caminho] {
+			foraDoCorte++
+		}
+	}
+	return results, foraDoCorte
 }
 
 // escreverResultados escreve a seção RESULTADOS e o resumo da busca: cada resultado em
-// três linhas (pontuação e título, caminho e o começo do texto), e fora quantos ficaram
-// abaixo de minScore.
-func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int) {
-	corte := pontuacao(minScore)
+// três linhas (pontuação e título, caminho e o começo do texto), fora quantos ficaram
+// abaixo de ai.RelevanciaMinima e de onde vêm os embeddings.
+func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int, embeddings string) {
+	corte := pontuacao(ai.RelevanciaMinima)
 	if len(results) == 0 {
 		fmt.Fprintln(w)
 		ui.Check(w, ui.CheckNeutro, "nenhum UKI parecido com a consulta", "", "")
@@ -168,6 +208,7 @@ func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int) {
 			frase = plural(foraDoCorte, "abaixo de "+corte+" ficou de fora", "abaixo de "+corte+" ficaram de fora")
 		}
 		ui.SummaryCom(w, []ui.ParteResumo{{Texto: "0 resultados", Tipo: ui.CheckNeutro}}, frase)
+		ui.Campos(w, ui.Campo{Rotulo: "embeddings", Valor: embeddings})
 		return
 	}
 
@@ -202,6 +243,7 @@ func escreverResultados(w io.Writer, results []searchResult, foraDoCorte int) {
 		frase = plural(foraDoCorte, "abaixo de "+corte+" ficou de fora", "abaixo de "+corte+" ficaram de fora")
 	}
 	ui.SummaryCom(w, []ui.ParteResumo{{Texto: plural(len(results), "resultado", "resultados"), Tipo: ui.CheckOk}}, frase)
+	ui.Campos(w, ui.Campo{Rotulo: "embeddings", Valor: embeddings})
 }
 
 // pontuacao formata a pontuação com duas casas e vírgula, como "0,82".

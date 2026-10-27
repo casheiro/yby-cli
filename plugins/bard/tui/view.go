@@ -293,7 +293,7 @@ func (m Model) renderizarMensagem(msg chatMessage, dica, copia bool) string {
 			b.WriteString(m.corpoResposta(msg.content, largura, comando))
 		}
 	case "nota":
-		b.WriteString(recuo + s.TintaSuave.Render(msg.content) + "\n")
+		escreverRecuado(&b, quebrarTexto(msg.content, largura), s.TintaSuave.Render)
 	case "quadro":
 		if msg.quadro != nil {
 			escreverRecuado(&b, strings.Split(renderizarQuadro(*msg.quadro, largura), "\n"), nil)

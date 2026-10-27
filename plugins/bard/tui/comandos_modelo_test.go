@@ -200,3 +200,33 @@ func TestTelaModelo80(t *testing.T) {
 		})
 	}
 }
+
+// Com o config fixando o modelo do CLI (Padrao = opus), escolher a linha do provider é
+// ficar onde está: nada de "modelo trocado para o padrão".
+func TestComandos_ModeloCLIComModeloDoConfig(t *testing.T) {
+	semCores(t)
+	criados := map[string]*provedorFalso{}
+	claude, _, lista := modelosDeExemplo(criados)
+	lista[0].Padrao = "opus"
+	m := telaDeTeste(t, Config{SessionID: "20261024-100000", AIModel: "claude-cli", ModeloIA: "opus"}, "10:00")
+	m.config.Modelos = func(context.Context) []Modelo { return lista }
+	m.provider, m.fluxo.Provider = claude, claude
+
+	m = pedirComando(t, m, "/modelo claude-cli")
+	for _, msg := range m.messages {
+		if msg.role == "nota" && strings.Contains(msg.content, "padrão") {
+			t.Errorf("nada mudou, mas a conversa diz: %q", msg.content)
+		}
+	}
+	if m.config.ModeloIA != "opus" {
+		t.Errorf("o cabeçalho perdeu o modelo: %q", m.config.ModeloIA)
+	}
+
+	// Vindo de outro provider, o cabeçalho mostra o modelo que o CLI roda.
+	m = telaDeTeste(t, Config{SessionID: "20261024-100000", AIModel: "ollama"}, "10:00")
+	m.config.Modelos = func(context.Context) []Modelo { return lista }
+	m = pedirComando(t, m, "/modelo claude-cli")
+	if m.config.AIModel != "claude-cli" || m.config.ModeloIA != "opus" {
+		t.Errorf("cabeçalho: %q %q", m.config.AIModel, m.config.ModeloIA)
+	}
+}

@@ -3,6 +3,7 @@ package analyzers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -40,13 +41,13 @@ components:
 		t.Errorf("esperado tipo 'kustomize', obteve %q", result.Type)
 	}
 
-	// 1 Kustomization (o próprio)
+	// 1 Kustomization (o próprio), com o namespace fora do ID
 	kustCount := 0
 	for _, r := range result.Resources {
 		if r.Kind == "Kustomization" {
 			kustCount++
-			if r.Namespace != "production" {
-				t.Errorf("esperado namespace 'production', obteve %q", r.Namespace)
+			if r.Namespace != "" || r.Metadata["namespace"] != "production" {
+				t.Errorf("esperado namespace 'production' nos metadados e fora do ID, obteve %q / %v", r.Namespace, r.Metadata)
 			}
 		}
 	}
@@ -54,15 +55,120 @@ components:
 		t.Errorf("esperado 1 recurso Kustomization, obteve %d", kustCount)
 	}
 
-	// 4 relações includes (base, deployment.yaml, common, monitoring)
+	// 3 relações includes para diretórios (base, common, monitoring); o
+	// deployment.yaml é ligado pelo analyzer K8s, pelo plano
 	includesCount := 0
 	for _, rel := range result.Relations {
 		if rel.Type == "includes" {
 			includesCount++
 		}
 	}
-	if includesCount != 4 {
-		t.Errorf("esperado 4 relações includes, obteve %d", includesCount)
+	if includesCount != 3 {
+		t.Errorf("esperado 3 relações includes, obteve %d", includesCount)
+	}
+}
+
+// escreverKustomize grava os arquivos (caminho relativo → conteúdo) em dir e
+// devolve os caminhos das kustomizations.
+func escreverKustomize(t *testing.T, dir string, arquivos map[string]string) []string {
+	t.Helper()
+	var kusts []string
+	for rel, conteudo := range arquivos {
+		p := writeTestFile(t, dir, filepath.FromSlash(rel), conteudo)
+		if filepath.Base(p) == "kustomization.yaml" {
+			kusts = append(kusts, p)
+		}
+	}
+	return kusts
+}
+
+func TestKustomizeAnalyzer_ReferenciasPeloCaminho(t *testing.T) {
+	dir := t.TempDir()
+	kusts := escreverKustomize(t, dir, map[string]string{
+		"apps/api/base/kustomization.yaml":          "resources: [deploy.yaml]\n",
+		"apps/api/overlays/prod/kustomization.yaml": "namespace: prod\nresources: [../../base, ../../../../comum]\n",
+		"kustomization.yaml":                        "resources: [apps/api/overlays/prod]\n",
+		"comum/kustomization.yaml":                  "resources: []\n",
+	})
+
+	a := NewKustomizeAnalyzer()
+	result, err := a.Analyze(dir, kusts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make(map[string]bool)
+	for _, r := range result.Resources {
+		ids[r.ID()] = true
+	}
+	raiz := "Kustomization/" + filepath.Base(dir)
+	for _, rel := range result.Relations {
+		if !ids[rel.From] || !ids[rel.To] {
+			t.Errorf("relação com um nó que não existe: %s -> %s", rel.From, rel.To)
+		}
+	}
+	esperadas := map[string]bool{
+		raiz + " -> Kustomization/apps/api/overlays/prod":                     true,
+		"Kustomization/apps/api/overlays/prod -> Kustomization/apps/api/base": true,
+		"Kustomization/apps/api/overlays/prod -> Kustomization/comum":         true,
+	}
+	if len(result.Relations) != len(esperadas) {
+		t.Errorf("esperado %d relações, veio %v", len(esperadas), result.Relations)
+	}
+	for _, rel := range result.Relations {
+		if !esperadas[rel.From+" -> "+rel.To] {
+			t.Errorf("relação inesperada: %s -> %s", rel.From, rel.To)
+		}
+	}
+}
+
+func TestKustomizeAnalyzer_Plano(t *testing.T) {
+	dir := t.TempDir()
+	kusts := escreverKustomize(t, dir, map[string]string{
+		// base sem namespace, usada por dois overlays e por um componente aninhado
+		"base/kustomization.yaml": "namespace: base-ns\nresources: [deploy.yaml]\n",
+		"meio/kustomization.yaml": "resources: [../base]\n",
+		"dev/kustomization.yaml": "namespace: dev\nresources: [../meio, cm.yaml]\n" +
+			"patches:\n  - path: patch.yaml\n  - patch: |-\n      inline\n" +
+			"patchesStrategicMerge:\n  - smp.yaml\n  - |-\n    apiVersion: v1\n    kind: ConfigMap\n" +
+			"patchesJson6902:\n  - path: json.yaml\n",
+		"prod/kustomization.yaml": "namespace: prod\nresources: [../base]\n",
+		// sozinha, sem namespace: o manifest fica com o dele
+		"solta/kustomization.yaml": "resources: [svc.yaml]\n",
+		// ciclo sem raiz
+		"c1/kustomization.yaml": "namespace: c1\nresources: [../c2, a.yaml]\n",
+		"c2/kustomization.yaml": "resources: [../c1]\n",
+		// arquivo que é patch numa e recurso em outra continua recurso
+		"usa-patch/kustomization.yaml": "resources: [../dev/patch.yaml]\n",
+	})
+
+	plano := NewKustomizeAnalyzer().Plano(dir, kusts)
+
+	for _, p := range []string{"dev/smp.yaml", "dev/json.yaml"} {
+		if !plano.Patches[p] {
+			t.Errorf("esperado %s como patch; patches: %v", p, plano.Patches)
+		}
+	}
+	if plano.Patches["dev/patch.yaml"] {
+		t.Error("dev/patch.yaml é recurso em usa-patch e não pode ser tratado como patch")
+	}
+	if len(plano.Patches) != 2 {
+		t.Errorf("esperado 2 patches (os inline ficam de fora), veio %v", plano.Patches)
+	}
+
+	esperados := map[string]string{
+		"base/deploy.yaml": "dev,prod", // o namespace de fora prevalece sobre o base-ns
+		"dev/cm.yaml":      "dev",
+		"solta/svc.yaml":   "",
+		"c1/a.yaml":        "c1",
+		"dev/patch.yaml":   "",
+	}
+	for arquivo, ns := range esperados {
+		if obtido := strings.Join(plano.Namespaces[arquivo], ","); obtido != ns {
+			t.Errorf("namespaces de %s: esperado %q, obteve %q", arquivo, ns, obtido)
+		}
+	}
+	if donos := strings.Join(plano.Donos["base/deploy.yaml"], ","); donos != "Kustomization/base" {
+		t.Errorf("donos de base/deploy.yaml: %q", donos)
 	}
 }
 
@@ -209,7 +315,7 @@ resources:
 	// O nome do recurso deve ser o path relativo do diretório
 	found := false
 	for _, r := range result.Resources {
-		if r.Kind == "Kustomization" && r.Name == filepath.Join("overlays", "prod") {
+		if r.Kind == "Kustomization" && r.Name == "overlays/prod" {
 			found = true
 		}
 	}

@@ -12,27 +12,27 @@ import (
 )
 
 func TestCacheKey_Deterministico(t *testing.T) {
-	key1 := cacheKey("default", "pod-1", "log line 1")
-	key2 := cacheKey("default", "pod-1", "log line 1")
+	key1 := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, "log line 1")
+	key2 := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, "log line 1")
 	if key1 != key2 {
 		t.Error("cacheKey deveria ser determinístico para os mesmos inputs")
 	}
 }
 
 func TestCacheKey_InputsDiferentes(t *testing.T) {
-	base := cacheKey("default", "pod-1", "log A")
+	base := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, "log A")
 
-	keyPodDiferente := cacheKey("default", "pod-2", "log A")
+	keyPodDiferente := cacheKey(idPod{Namespace: "default", Pod: "pod-2"}, "log A")
 	if base == keyPodDiferente {
 		t.Error("cacheKey deveria ser diferente para pods diferentes")
 	}
 
-	keyNamespaceDiferente := cacheKey("prod", "pod-1", "log A")
+	keyNamespaceDiferente := cacheKey(idPod{Namespace: "prod", Pod: "pod-1"}, "log A")
 	if base == keyNamespaceDiferente {
 		t.Error("cacheKey deveria ser diferente para namespaces diferentes")
 	}
 
-	keyLogsDiferentes := cacheKey("default", "pod-1", "log B")
+	keyLogsDiferentes := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, "log B")
 	if base == keyLogsDiferentes {
 		t.Error("cacheKey deveria ser diferente para logs diferentes")
 	}
@@ -43,8 +43,8 @@ func TestCacheKey_TruncaLogsAcima500Chars(t *testing.T) {
 	base := strings.Repeat("x", 500)
 	logs1 := base + "AAA"
 	logs2 := base + "BBB"
-	key1 := cacheKey("default", "pod-1", logs1)
-	key2 := cacheKey("default", "pod-1", logs2)
+	key1 := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, logs1)
+	key2 := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, logs2)
 	if key1 != key2 {
 		t.Error("cacheKey deveria ser igual quando logs diferem apenas após os 500 primeiros caracteres")
 	}
@@ -52,8 +52,8 @@ func TestCacheKey_TruncaLogsAcima500Chars(t *testing.T) {
 	// Verifica que logs com primeiros 500 chars diferentes produzem chaves diferentes
 	logsA := "A" + strings.Repeat("x", 499) + "cauda"
 	logsB := "B" + strings.Repeat("x", 499) + "cauda"
-	keyA := cacheKey("default", "pod-1", logsA)
-	keyB := cacheKey("default", "pod-1", logsB)
+	keyA := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, logsA)
+	keyB := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, logsB)
 	if keyA == keyB {
 		t.Error("cacheKey deveria ser diferente quando os primeiros 500 chars diferem")
 	}
@@ -77,9 +77,9 @@ func TestSaveAndLoadCache_RoundTrip(t *testing.T) {
 		SuggestedFix:    "Aumentar limits.memory",
 	}
 
-	saveCache("default", "pod-roundtrip", "some logs", result)
+	saveCache(idPod{Namespace: "default", Pod: "pod-roundtrip"}, "some logs", result)
 
-	cached, ok := loadCache("default", "pod-roundtrip", "some logs")
+	cached, ok := loadCache(idPod{Namespace: "default", Pod: "pod-roundtrip"}, "some logs")
 	if !ok {
 		t.Fatal("esperava encontrar cache após saveCache")
 	}
@@ -109,7 +109,7 @@ func TestLoadCache_TTLExpirado(t *testing.T) {
 	podName := "pod-expired"
 	logs := "logs do pod expirado"
 
-	key := cacheKey(namespace, podName, logs)
+	key := cacheKey(idPod{Namespace: namespace, Pod: podName}, logs)
 	cacheFilePath := filepath.Join(getCacheDir(), key+".json")
 
 	if err := os.MkdirAll(getCacheDir(), 0755); err != nil {
@@ -134,7 +134,7 @@ func TestLoadCache_TTLExpirado(t *testing.T) {
 		t.Fatalf("falha ao escrever arquivo de cache: %v", err)
 	}
 
-	_, ok := loadCache(namespace, podName, logs)
+	_, ok := loadCache(idPod{Namespace: namespace, Pod: podName}, logs)
 	if ok {
 		t.Error("loadCache deveria retornar false para entrada com TTL expirado")
 	}
@@ -151,7 +151,7 @@ func TestLoadCache_ArquivoInexistente(t *testing.T) {
 	}
 	defer os.Chdir(originalDir) //nolint:errcheck
 
-	_, ok := loadCache("default", "pod-inexistente", "logs inexistentes")
+	_, ok := loadCache(idPod{Namespace: "default", Pod: "pod-inexistente"}, "logs inexistentes")
 	if ok {
 		t.Error("loadCache deveria retornar false quando o arquivo não existe")
 	}

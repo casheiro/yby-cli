@@ -67,18 +67,22 @@ func ajudaScan() ui.Ajuda {
 		Exemplos: `
 			yby sentinel scan -n payments
 			yby sentinel scan -n payments -o json -f scan.json
+			yby sentinel scan -n payments --scope cluster
 			yby sentinel scan -n payments --fix-dry-run`,
 		Flags: []ui.Termo{
 			{Nome: "-n, --namespace texto", Descricao: "namespace a examinar (padrão default)"},
 			{Nome: "-o, --output formato", Descricao: "terminal, json ou markdown (padrão terminal)"},
 			{Nome: "-f, --file arquivo", Descricao: "grava o json ou o markdown no arquivo em vez de na tela"},
-			{Nome: "-p, --profile perfil", Descricao: "perfil de conformidade dos checks internos: " + listaComOu(nomesDosPerfis())},
-			{Nome: "    --fix-dry-run", Descricao: "mostra os patches de remediação sem aplicar"},
-			{Nome: "    --fix", Descricao: "aplica os patches de remediação no cluster"},
+			{Nome: "-p, --profile perfil", Descricao: "deixa só os achados do perfil, de todos os motores: " + listaComOu(nomesDosPerfis())},
+			{Nome: "    --scope escopo", Descricao: "namespace (padrão: só o RBAC que vale no namespace) ou cluster (o RBAC do cluster todo)"},
+			{Nome: "    --fix-dry-run", Descricao: "mostra o plano de correção, conferido pelo servidor sem gravar nada"},
+			{Nome: "    --fix", Descricao: "aplica as correções seguras (escalação de privilégios e capabilities) no dono de cada pod, depois de confirmar; recursos do Argo CD ficam de fora"},
+			{Nome: "    --yes", Descricao: "com --fix, aplica sem perguntar (fora de um terminal, é obrigatório)"},
+			{Nome: "    --no-ai", Descricao: "não pede as recomendações da IA"},
 			flagAjuda,
 		},
 		Rodape: "No formato terminal, o resumo sai na tela e o relatório completo vai para " +
-			"~/.yby/reports/sentinel-scan-<namespace>-<data>.md.",
+			"~/.yby/reports/sentinel-scan-<namespace>-<contexto>-<data>-<hora>.md.",
 	}
 }
 
@@ -97,6 +101,7 @@ func ajudaInvestigate() ui.Ajuda {
 			{Nome: "-o, --output formato", Descricao: "terminal, json ou markdown (padrão terminal)"},
 			{Nome: "-f, --file arquivo", Descricao: "grava o json ou o markdown no arquivo em vez de na tela"},
 			{Nome: "    --no-cache", Descricao: "ignora a análise guardada e pergunta à IA de novo"},
+			{Nome: "    --no-ai", Descricao: "só coleta: mostra status, eventos e fim dos logs, sem chamar a IA nem o cache"},
 			flagAjuda,
 		},
 		Rodape: "A análise fica guardada por 1 h em ~/.yby/sentinel/cache e volta enquanto os logs do pod não mudam.",

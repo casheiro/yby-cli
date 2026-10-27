@@ -95,6 +95,11 @@ func discoverPlugins(cmd *cobra.Command, pm *plugin.Manager) {
 					Short:              desc,
 					DisableFlagParsing: true, // Passa flags diretamente ao plugin
 					RunE: func(c *cobra.Command, args []string) error {
+						ambiente, args, err := argsDoPlugin(linhaDoYby(), pluginName, args)
+						if err != nil {
+							return err
+						}
+						pm.DefinirAmbiente(ambiente)
 						if err := pm.ExecuteCommandHook(pluginName, args); err != nil {
 							var saida *plugin.SaidaDoPlugin
 							if stdErr.As(err, &saida) {

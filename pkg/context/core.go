@@ -4,22 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // CoreContext represents the base context derived from the CLI/Project itself.
 type CoreContext struct {
-	ProjectName string        `json:"project_name"`
-	Environment string        `json:"environment"`
-	Overview    string        `json:"overview,omitempty"`  // From .synapstor/00_PROJECT_OVERVIEW.md or README.md
-	Backlog     string        `json:"backlog,omitempty"`   // From .synapstor/02_BACKLOG_AND_DEBT.md
-	UKIIndex    []UKIMetadata `json:"uki_index,omitempty"` // Index of available Knowledge Units
-}
-
-type UKIMetadata struct {
-	ID       string `json:"id"`
-	Filename string `json:"filename"`
-	Title    string `json:"title"`
+	ProjectName string `json:"project_name"`
+	Environment string `json:"environment"`
+	Overview    string `json:"overview,omitempty"` // From .synapstor/00_PROJECT_OVERVIEW.md or README.md
+	Backlog     string `json:"backlog,omitempty"`  // From .synapstor/02_BACKLOG_AND_DEBT.md
 }
 
 // GetCoreContext gathers the foundational context for the current project.
@@ -54,10 +46,6 @@ func GetCoreContext(rootDir string) (*CoreContext, error) {
 		if content, err := readFileLimited(backlogPath, 5000); err == nil {
 			ctx.Backlog = content
 		}
-
-		// Index UKIs
-		ukiDir := filepath.Join(synapstorDir, ".uki")
-		ctx.UKIIndex = indexUKIs(ukiDir)
 	}
 
 	// 3. Fallback to README if Overview is empty
@@ -87,26 +75,4 @@ func readFileLimited(path string, limit int) (string, error) {
 		return s[:limit] + "\n... (truncated)", nil
 	}
 	return s, nil
-}
-
-func indexUKIs(ukiDir string) []UKIMetadata {
-	index := []UKIMetadata{}
-	entries, err := os.ReadDir(ukiDir)
-	if err != nil {
-		return index
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			// Extract ID/Title from filename or simple read?
-			// Simple approach: Filename is ID.
-			// Ideally we could read the first line for # Title, but keep it fast for now.
-			index = append(index, UKIMetadata{
-				ID:       strings.TrimSuffix(e.Name(), ".md"),
-				Filename: filepath.Join(".synapstor", ".uki", e.Name()),
-				Title:    e.Name(), // TODO: Improve title extraction in future
-			})
-		}
-	}
-	return index
 }

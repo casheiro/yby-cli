@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/casheiro/yby-cli/pkg/confianca"
 	"github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/pkg/ui"
@@ -209,12 +210,37 @@ var pluginUpdateCmd = &cobra.Command{
 	},
 }
 
+// ehArquivoDoProjeto diz se o argumento do trust e do untrust é um arquivo do projeto
+// (ferramenta do Bard em .yby/tools, prompt em .yby/prompts) e não o nome de um plugin.
+func ehArquivoDoProjeto(arg string) bool {
+	switch strings.ToLower(filepath.Ext(arg)) {
+	case ".yaml", ".yml", ".txt":
+		return true
+	}
+	return false
+}
+
 var pluginTrustCmd = &cobra.Command{
-	Use:   "trust [name]",
-	Short: "Registra um plugin como confiável na whitelist",
-	Long:  `Calcula o SHA256 do binário do plugin e o registra como confiável. Plugins não registrados não podem ser executados.`,
-	Args:  cobra.ExactArgs(1),
+	Use:   "trust [name|arquivo]",
+	Short: "Registra um plugin, ou uma ferramenta ou prompt do projeto, como confiável",
+	Long: `Calcula o SHA256 do binário do plugin e o registra como confiável. Plugins não registrados não podem ser executados.
+
+Com um arquivo do projeto (.yby/tools/*.yaml, as ferramentas do Bard, ou .yby/prompts/*.txt), registra o SHA256 do arquivo naquele caminho: sem isso, o yby não o usa, porque um repositório clonado pode trazê-lo. Se o arquivo mudar, a confiança cai e é preciso confirmar de novo.`,
+	Example: `  yby plugin trust sentinel
+  yby plugin trust .yby/tools/backup.yaml`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if ehArquivoDoProjeto(args[0]) {
+			if err := confianca.Confiar(args[0]); err != nil {
+				return errors.Wrap(err, errors.ErrCodeIO, "erro ao registrar confiança do arquivo").
+					WithHint("confira o caminho do arquivo e a permissão de escrita em ~/.yby")
+			}
+			w := cmd.OutOrStdout()
+			tituloComando(w, "plugin", "trust")
+			checksAlinhados(w, linhaCheck{ui.CheckOk, filepath.ToSlash(args[0]), "confiável", "SHA256 do arquivo registrado"})
+			return nil
+		}
+
 		pm := newPluginManager()
 		if err := pm.Discover(); err != nil {
 			return errors.Wrap(err, errors.ErrCodePlugin, "falha ao procurar os plugins").
@@ -240,10 +266,21 @@ var pluginTrustCmd = &cobra.Command{
 }
 
 var pluginUntrustCmd = &cobra.Command{
-	Use:   "untrust [name]",
-	Short: "Remove um plugin da whitelist de confiança",
+	Use:   "untrust [name|arquivo]",
+	Short: "Remove um plugin, ou uma ferramenta ou prompt do projeto, da whitelist de confiança",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if ehArquivoDoProjeto(args[0]) {
+			if err := confianca.Remover(args[0]); err != nil {
+				return errors.Wrap(err, errors.ErrCodePlugin, "erro ao remover confiança do arquivo").
+					WithHint("confira o caminho: é o mesmo usado no yby plugin trust")
+			}
+			w := cmd.OutOrStdout()
+			tituloComando(w, "plugin", "untrust")
+			checksAlinhados(w, linhaCheck{ui.CheckOk, filepath.ToSlash(args[0]), "removido", "fora da lista de confiança"})
+			return nil
+		}
+
 		pluginName := args[0]
 		if !strings.HasPrefix(pluginName, "yby-plugin-") {
 			pluginName = "yby-plugin-" + pluginName

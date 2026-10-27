@@ -1,0 +1,5 @@
+
+x erro ao registrar confiança do arquivo                  ERR_IO
+  causa     o arquivo .yby/tools/nao-existe.yaml não existe
+  faça      confira o caminho do arquivo e a permissão de escrita em ~/.yby
+  detalhes  rode de novo com --log-level=debug

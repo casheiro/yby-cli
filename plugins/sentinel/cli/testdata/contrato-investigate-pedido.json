@@ -1,0 +1,1 @@
+{"hook":"command","args":["investigate","worker-5d8b6-q7tvn","-n","payments","-o","json","--no-ai"],"context":{"infra":{"kube_context":"kind-yby","namespace":"payments"}}}
