@@ -50,13 +50,10 @@ func TestGetCoreContext_WithSynapstor(t *testing.T) {
 
 	// Create synapstor structure
 	synapstorDir := filepath.Join(tmpDir, ".synapstor")
-	ukiDir := filepath.Join(synapstorDir, ".uki")
-	os.MkdirAll(ukiDir, 0755)
+	os.MkdirAll(synapstorDir, 0755)
 
 	os.WriteFile(filepath.Join(synapstorDir, "00_PROJECT_OVERVIEW.md"), []byte("# My Project Overview"), 0644)
 	os.WriteFile(filepath.Join(synapstorDir, "02_BACKLOG_AND_DEBT.md"), []byte("# Backlog"), 0644)
-	os.WriteFile(filepath.Join(ukiDir, "UKI_AUTH.md"), []byte("# Auth"), 0644)
-	os.WriteFile(filepath.Join(ukiDir, "UKI_PAYMENTS.md"), []byte("# Payments"), 0644)
 
 	ctx, err := GetCoreContext(tmpDir)
 	if err != nil {
@@ -68,9 +65,6 @@ func TestGetCoreContext_WithSynapstor(t *testing.T) {
 	}
 	if !strings.Contains(ctx.Backlog, "Backlog") {
 		t.Errorf("expected Backlog to contain content, got: %s", ctx.Backlog)
-	}
-	if len(ctx.UKIIndex) != 2 {
-		t.Errorf("expected 2 UKIs indexed, got %d", len(ctx.UKIIndex))
 	}
 }
 
@@ -157,42 +151,5 @@ func TestReadFileLimited_Nonexistent(t *testing.T) {
 	_, err := readFileLimited("/nonexistent/file.md", 100)
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
-	}
-}
-
-// ---- indexUKIs Tests ----
-
-func TestIndexUKIs_EmptyDir(t *testing.T) {
-	tmpDir := t.TempDir()
-	index := indexUKIs(tmpDir)
-	if len(index) != 0 {
-		t.Errorf("expected empty index, got %d items", len(index))
-	}
-}
-
-func TestIndexUKIs_WithMarkdownFiles(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "UKI_AUTH.md"), []byte("# Auth"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "UKI_PAYMENTS.md"), []byte("# Payments"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "notes.txt"), []byte("ignored"), 0644) // should be skipped
-
-	index := indexUKIs(tmpDir)
-	if len(index) != 2 {
-		t.Errorf("expected 2 UKIs, got %d", len(index))
-	}
-	for _, u := range index {
-		if !strings.HasSuffix(u.Filename, ".md") {
-			t.Errorf("expected .md suffix in Filename, got %s", u.Filename)
-		}
-		if u.ID == "" {
-			t.Error("expected non-empty ID")
-		}
-	}
-}
-
-func TestIndexUKIs_NonexistentDir(t *testing.T) {
-	index := indexUKIs("/nonexistent/path/xyz")
-	if len(index) != 0 {
-		t.Errorf("expected empty index for nonexistent dir, got %d", len(index))
 	}
 }

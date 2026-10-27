@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/casheiro/yby-cli/plugins/bard/tui"
 )
 
 // TestFormatClusterContext_Nil verifica que nil retorna string vazia.
@@ -64,6 +67,39 @@ func TestFormatClusterContext_SemPods(t *testing.T) {
 	}
 	if strings.Contains(result, "Pods") {
 		t.Error("resultado não deveria conter seção de pods quando vazio")
+	}
+}
+
+// Com 1000 pods, o estado do cluster fica no teto: os pods com problema primeiro, até
+// maxPodsContexto, e uma linha com quantos ficaram de fora.
+func TestFormatClusterContext_MilPodsNoTeto(t *testing.T) {
+	cc := &ClusterContext{Cluster: "prod", Namespace: "payments"}
+	for i := 0; i < 1000; i++ {
+		pod := PodInfo{Name: fmt.Sprintf("app-%04d-5d8b6-q7tvn", i), Status: "Running", Ready: "1/1"}
+		if i == 990 {
+			pod = PodInfo{Name: "worker-quebrado", Status: "Running", Ready: "0/1"}
+		}
+		if i == 995 {
+			pod = PodInfo{Name: "job-pendente", Status: "Pending", Ready: "0/1"}
+		}
+		cc.Pods = append(cc.Pods, pod)
+	}
+	for i := 0; i < 5; i++ {
+		cc.RecentEvents = append(cc.RecentEvents, "Warning BackOff "+strings.Repeat("mensagem longa ", 100))
+	}
+
+	result := FormatClusterContext(cc)
+
+	if len(result) > tui.TetoCluster+64 {
+		t.Errorf("o estado do cluster deveria ficar no teto: %d bytes", len(result))
+	}
+	if strings.Count(result, "app-") > maxPodsContexto {
+		t.Errorf("no máximo %d pods listados", maxPodsContexto)
+	}
+	for _, trecho := range []string{"worker-quebrado", "job-pendente", "e mais", "1000 pods"} {
+		if !strings.Contains(result, trecho) {
+			t.Errorf("o estado do cluster deveria ter %q:\n%s", trecho, result)
+		}
 	}
 }
 

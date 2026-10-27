@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,7 +31,16 @@ import (
 // de processo exercitarem o stdin, o stdout e o stderr de verdade.
 const envProcessoTeste = "YBY_BARD_TESTE_PROCESSO"
 
+// envKubectlLento faz o binário de teste rodar como um kubectl lento: grava os args no
+// arquivo dado e dorme 30 s.
+const envKubectlLento = "YBY_BARD_TESTE_KUBECTL_LENTO"
+
 func TestMain(m *testing.M) {
+	if arq := os.Getenv(envKubectlLento); arq != "" {
+		_ = os.WriteFile(arq, []byte(strings.Join(os.Args[1:], " ")), 0o600)
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
 	if os.Getenv(envProcessoTeste) == "1" {
 		os.Exit(executar())
 	}
@@ -46,6 +56,7 @@ type iaFalsa struct {
 	falhas   []error
 	parcial  string
 	chamadas int
+	prompts  []string // o que cada chamada ao StreamCompletion recebeu
 }
 
 func (p *iaFalsa) Name() string                       { return "IA falsa" }
@@ -63,7 +74,9 @@ func (p *iaFalsa) StreamCompletion(_ context.Context, _, pergunta string, out io
 	p.mu.Lock()
 	n := p.chamadas
 	p.chamadas++
+	p.prompts = append(p.prompts, pergunta)
 	p.mu.Unlock()
+	pergunta = perguntaDoPrompt(pergunta)
 	if n < len(p.falhas) {
 		if p.parcial != "" {
 			_, _ = io.WriteString(out, p.parcial)
@@ -80,6 +93,15 @@ func (p *iaFalsa) StreamCompletion(_ context.Context, _, pergunta string, out io
 		}
 	}
 	return nil
+}
+
+// perguntaDoPrompt tira do prompt a conversa anterior, que vem antes do rótulo da pergunta.
+func perguntaDoPrompt(prompt string) string {
+	const rotulo = "Pergunta do Usuário: "
+	if i := strings.LastIndex(prompt, rotulo); i >= 0 {
+		return prompt[i+len(rotulo):]
+	}
+	return prompt
 }
 
 // retryDeTeste mantém a forma da política padrão com intervalos curtos.
@@ -104,7 +126,7 @@ func novoDiretoDeTeste(t *testing.T, p ai.Provider, etapas, continua bool) (*dir
 	t.Helper()
 	isolarModoVisual(t, "")
 	lipgloss.SetColorProfile(termenv.Ascii)
-	f := tui.NovoFluxo(p, nil, tui.Config{SystemPrompt: "sistema", TopK: 5, LimiarRelevancia: 0.6})
+	f := tui.NovoFluxo(p, nil, tui.Config{SystemPrompt: "sistema", TopK: 5, LimiarRelevancia: ai.RelevanciaMinima})
 	f.Retry = retryDeTeste
 	f.BuscarFerramenta = func(string) *tools.Tool { return nil }
 	var saida, erros bytes.Buffer
@@ -177,8 +199,62 @@ type iaClassifica struct {
 
 func (p *iaClassifica) Completion(_ context.Context, _, _ string) (string, error) { return p.json, nil }
 
+// buscadorComErro é a busca do Synapstor que falha com err depois de espera.
+type buscadorComErro struct {
+	err    error
+	espera time.Duration
+}
+
+func (b buscadorComErro) Search(context.Context, string, int) ([]ai.UnknownDocument, error) {
+	time.Sleep(b.espera)
+	return nil, b.err
+}
+
+// O índice de outro modelo: a etapa diz o que houve e o aviso inteiro, com o comando, fica
+// abaixo dela no terminal; fora dele, o stderr continua vazio e a resposta sai sem as notas.
+func TestDireto_IndiceDeOutroModelo(t *testing.T) {
+	erro := &ai.IndiceDeOutroModeloError{
+		Indice: ai.IdentidadeDoIndice{Provider: "ollama", Modelo: "nomic-embed-text", Dimensao: 768},
+		Atual:  ai.IdentidadeDoIndice{Provider: "local", Modelo: "multilingual-e5-small", Dimensao: 384},
+	}
+	d, saida, erros := novoDiretoDeTeste(t, &iaFalsa{}, true, false)
+	// A busca demora como a real: a coluna do tempo aparece e encurta o espaço da nota.
+	d.fluxo.Buscador = buscadorComErro{err: erro, espera: 60 * time.Millisecond}
+	if err := d.perguntar(context.Background(), "o que houve?"); err != nil {
+		t.Fatalf("a pergunta segue sem as notas: %v", err)
+	}
+	tela := ansi.Strip(erros.String())
+	// A nota cabe inteira na linha da etapa, mesmo com o tempo; o comando vem no aviso.
+	for _, trecho := range []string{"✕ contexto do projeto   " + tui.NotaIndiceDeOutroModelo + " ",
+		"o índice foi feito com ollama/nomic-embed-text (768 dimensões)",
+		"rode yby synapstor index --full para refazer o índice"} {
+		if !strings.Contains(tela, trecho) {
+			t.Errorf("stderr sem %q:\n%s", trecho, tela)
+		}
+	}
+	if saida.Len() == 0 {
+		t.Error("a resposta deveria sair no stdout")
+	}
+
+	var log bytes.Buffer
+	anterior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	t.Cleanup(func() { slog.SetDefault(anterior) })
+	d, saida, erros = novoDiretoDeTeste(t, &iaFalsa{}, false, false)
+	d.fluxo.Buscador = buscadorComErro{err: erro}
+	if err := d.perguntar(context.Background(), "o que houve?"); err != nil {
+		t.Fatalf("a pergunta segue sem as notas: %v", err)
+	}
+	if erros.Len() != 0 || saida.Len() == 0 {
+		t.Errorf("fora do terminal só a resposta: stdout=%q stderr=%q", saida.String(), erros.String())
+	}
+	if !strings.Contains(log.String(), "rode yby synapstor index --full") {
+		t.Errorf("fora do terminal o aviso vai ao log: %q", log.String())
+	}
+}
+
 func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}, parcial: "começo"}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}
 	d, saida, erros := novoDiretoDeTeste(t, ia, true, true)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -192,7 +268,7 @@ func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
 }
 
 func TestDireto_RespostaQueRecomecaNoPipe(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}, parcial: "começo"}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}
 	d, saida, _ := novoDiretoDeTeste(t, ia, false, false)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -262,7 +338,7 @@ func TestDireto_FalhaFinalComRespostaParcial(t *testing.T) {
 // A nova tentativa que começa sem nada da resposta na tela aparece como detalhe da
 // etapa, como a nota "tentativa 2" da TUI.
 func TestDireto_NovaTentativaSemTextoMostraANota(t *testing.T) {
-	ia := &iaFalsa{falhas: []error{errors.New("503 indisponível")}}
+	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}}
 	d, saida, erros := novoDiretoDeTeste(t, ia, true, true)
 	if err := d.perguntar(context.Background(), "oi"); err != nil {
 		t.Fatalf("erro inesperado: %v", err)
@@ -304,6 +380,35 @@ func TestLote_UmaPerguntaPorLinha(t *testing.T) {
 	}
 	if erros.Len() != 0 {
 		t.Errorf("stderr deveria ficar vazio: %q", erros.String())
+	}
+}
+
+// As perguntas do mesmo batch formam uma sessão: cada uma vai à IA com as anteriores e as
+// respostas delas; a pergunta que falhou vai sem resposta. O -p é uma rodada só.
+func TestLote_PerguntasDoMesmoBatchFormamASessao(t *testing.T) {
+	// Só a primeira chamada falha e, sem nova tentativa, a primeira pergunta fica sem resposta.
+	ia := &iaFalsa{falhas: []error{errors.New("401 chave inválida")}}
+	d, _, _ := novoDiretoDeTeste(t, ia, false, false)
+	d.fluxo.Retry = semNovaTentativa
+	_ = d.lote(context.Background(), strings.NewReader("qual pod reinicia?\no worker-1 reinicia?\ne os logs dele?\n"))
+
+	if len(ia.prompts) != 3 {
+		t.Fatalf("esperava 3 chamadas, vieram %d", len(ia.prompts))
+	}
+	if strings.Contains(ia.prompts[0], "Conversa") {
+		t.Errorf("a primeira pergunta vai sozinha: %q", ia.prompts[0])
+	}
+	ultimo := ia.prompts[2]
+	for _, trecho := range []string{"qual pod reinicia?", "(sem resposta)", "o worker-1 reinicia?", "resposta para o worker-1 reinicia?", "e os logs dele?"} {
+		if !strings.Contains(ultimo, trecho) {
+			t.Errorf("a terceira pergunta deveria levar %q:\n%s", trecho, ultimo)
+		}
+	}
+
+	um := &iaFalsa{}
+	d, _, _ = novoDiretoDeTeste(t, um, false, false)
+	if err := d.perguntar(context.Background(), "oi"); err != nil || um.prompts[0] != "oi" {
+		t.Errorf("o -p vai sem conversa: %q %v", um.prompts, err)
 	}
 }
 
@@ -351,7 +456,7 @@ func TestNovoDireto_SemProvider(t *testing.T) {
 	anterior := obterProvider
 	obterProvider = func(context.Context) ai.Provider { return nil }
 	t.Cleanup(func() { obterProvider = anterior })
-	_, err := novoDireto(context.Background(), nil)
+	_, err := novoDireto(context.Background(), nil, opcoesBard{})
 	var ye *yerrors.YbyError
 	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeConfig {
 		t.Fatalf("esperava ERR_CONFIG, veio %v", err)
@@ -416,7 +521,7 @@ func (o *ollamaFalso) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		o.respondeu = append(o.respondeu, req.Prompt)
-		for _, t := range []string{"resposta ", "para ", req.Prompt} {
+		for _, t := range []string{"resposta ", "para ", perguntaDoPrompt(req.Prompt)} {
 			_ = enc.Encode(map[string]interface{}{"response": t, "done": false})
 		}
 	default:
@@ -504,7 +609,11 @@ func TestProcesso_BatchSemTerminal(t *testing.T) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.classificou != 2 || len(o.respondeu) != 2 || len(o.inesperados) != 0 {
-		t.Errorf("chamadas ao Ollama falso: classificou=%d respondeu=%v inesperados=%v", o.classificou, o.respondeu, o.inesperados)
+		t.Fatalf("chamadas ao Ollama falso: classificou=%d respondeu=%v inesperados=%v", o.classificou, o.respondeu, o.inesperados)
+	}
+	// A segunda pergunta do batch vai com a primeira troca.
+	if !strings.Contains(o.respondeu[1], "quantos pods?") || !strings.Contains(o.respondeu[1], "resposta para quantos pods?") {
+		t.Errorf("a segunda pergunta deveria levar a primeira troca: %q", o.respondeu[1])
 	}
 }
 
@@ -594,4 +703,30 @@ func TestProcesso_SemProviderSemCorNoPipe(t *testing.T) {
 		t.Errorf("stderr inesperado:\n%s", erros)
 	}
 	semControle(t, "stderr", erros)
+}
+
+func TestNovoDireto_ClusterENamespaceDaSessao(t *testing.T) {
+	isolarModoVisual(t, "")
+	antProvider, antCluster := obterProvider, enriquecerCluster
+	obterProvider = func(context.Context) ai.Provider { return &iaFalsa{} }
+	enriquecerCluster = func(_ context.Context, contexto, namespace string) *ClusterContext {
+		return &ClusterContext{Cluster: "atual", Namespace: "default"}
+	}
+	t.Cleanup(func() { obterProvider, enriquecerCluster = antProvider, antCluster })
+
+	d, err := novoDireto(context.Background(), nil, opcoesBard{contexto: "prod", namespace: "payments"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.fluxo.Cluster != "prod" || d.fluxo.Namespace != "payments" {
+		t.Errorf("fluxo com %q/%q, esperava prod/payments", d.fluxo.Cluster, d.fluxo.Namespace)
+	}
+
+	d, err = novoDireto(context.Background(), nil, opcoesBard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.fluxo.Cluster != "atual" || d.fluxo.Namespace != "default" {
+		t.Errorf("sem flags, fluxo com %q/%q, esperava atual/default", d.fluxo.Cluster, d.fluxo.Namespace)
+	}
 }

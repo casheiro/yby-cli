@@ -32,8 +32,22 @@ jobs:
       - name: 🏃 Run Tests
         run: |
           set -e
-          PKGS=$(go list ./... | grep -v 'plugins/sentinel/cli')
-          go test -race -v $PKGS
+          go test -race -v ./...
+
+      - name: 🏃 Run Tests (Sentinel, build tag k8s)
+        # Polaris e OPA pesam na compilação: mesmo GOGC e limite de tempo do Lint K8s.
+        env:
+          GOGC: "30"
+        run: go test -race -tags k8s -p 1 ./plugins/sentinel/...
+        timeout-minutes: 15
+
+      - name: 🏃 Run Tests (Viz, módulo próprio)
+        working-directory: plugins/viz
+        run: go test -race ./...
+
+      - name: 🏃 Run Tests (Synapstor, módulo próprio)
+        working-directory: plugins/synapstor
+        run: go test -race ./...
 
       - name: 🧪 Run E2E Tests (Fast)
         run: go test -race -tags e2e -run "TestAI|TestEmbedding|TestCostTracking|TestBardSessions|TestOllama|TestAtlas_ShouldIgnore|TestSynapstor_Hook" ./test/e2e/scenarios/... -v
@@ -63,6 +77,14 @@ jobs:
           GOGC: "30" # Aggressive GC for K8s lint
         run: golangci-lint run --build-tags k8s --timeout=5m --concurrency=1 plugins/sentinel/cli/... pkg/plugin/sdk/...
         timeout-minutes: 15
+
+      - name: 🔍 Lint Viz (módulo próprio)
+        working-directory: plugins/viz
+        run: golangci-lint run --timeout=5m ./...
+
+      - name: 🔍 Lint Synapstor (módulo próprio)
+        working-directory: plugins/synapstor
+        run: golangci-lint run --timeout=5m ./...
 
       - name: 📜 Lint Commits
         uses: wagoid/commitlint-github-action@v6.2.1

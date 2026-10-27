@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"sort"
 	"strings"
+	"time"
+
+	"github.com/casheiro/yby-cli/plugins/bard/tui"
 )
 
 // PodInfo contém informações resumidas de um pod.
@@ -29,6 +33,10 @@ type ClusterContext struct {
 // contexto e namespace, quando dados (yby bard --context, --namespace), trocam o contexto
 // atual do kubeconfig e o namespace dele.
 func EnrichContext(ctx context.Context, contexto, namespace string) *ClusterContext {
+	// Cluster fora do ar não pode segurar a abertura: as chamadas são em sequência, então
+	// o prazo vale para o conjunto, além do --request-timeout de cada uma.
+	ctx, cancelar := context.WithTimeout(ctx, prazoEnriquecimento)
+	defer cancelar()
 	return enriquecer(func(args ...string) (string, error) { return runKubectl(ctx, args...) }, contexto, namespace)
 }
 
@@ -154,9 +162,23 @@ func fetchRecentEvents(kubectl rodarKubectl, namespace string) []string {
 	return events
 }
 
+// prazoEnriquecimento é o prazo total (e de cada requisição) da leitura do cluster.
+const prazoEnriquecimento = 5 * time.Second
+
+// binarioKubectl é o executável chamado; os testes trocam por um falso.
+var binarioKubectl = "kubectl"
+
+// comandoKubectl monta o kubectl com o prazo de requisição ao servidor.
+func comandoKubectl(ctx context.Context, args ...string) *exec.Cmd {
+	args = append([]string{"--request-timeout=" + prazoEnriquecimento.String()}, args...)
+	cmd := exec.CommandContext(ctx, binarioKubectl, args...)
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
 // runKubectl executa um comando kubectl e retorna o output.
 func runKubectl(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	cmd := comandoKubectl(ctx, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -164,7 +186,16 @@ func runKubectl(ctx context.Context, args ...string) (string, error) {
 	return string(output), nil
 }
 
-// FormatClusterContext formata o contexto do cluster para injeção no system prompt.
+// Teto do estado do cluster: quantos pods ele lista e o tamanho de cada evento. Com nomes
+// de pod de 63 caracteres, o bloco fica perto do tui.TetoCluster, que é a rede de proteção.
+const (
+	maxPodsContexto   = 20
+	maxEventoContexto = 160
+)
+
+// FormatClusterContext formata o contexto do cluster para injeção no system prompt, no
+// teto do orçamento: num namespace grande, os pods com problema vêm primeiro e só os
+// primeiros maxPodsContexto entram; o resto vira uma linha com a contagem.
 func FormatClusterContext(cc *ClusterContext) string {
 	if cc == nil {
 		return ""
@@ -176,9 +207,20 @@ func FormatClusterContext(cc *ClusterContext) string {
 	sb.WriteString(fmt.Sprintf("**Namespace**: %s\n\n", cc.Namespace))
 
 	if len(cc.Pods) > 0 {
-		sb.WriteString("**Pods**:\n")
-		for _, pod := range cc.Pods {
+		pods := cc.Pods
+		if len(pods) > maxPodsContexto {
+			pods = append([]PodInfo(nil), pods...)
+			sort.SliceStable(pods, func(i, j int) bool { return podComProblema(pods[i]) && !podComProblema(pods[j]) })
+			fmt.Fprintf(&sb, "**Pods** (%d pods; os com problema primeiro):\n", len(cc.Pods))
+			pods = pods[:maxPodsContexto]
+		} else {
+			sb.WriteString("**Pods**:\n")
+		}
+		for _, pod := range pods {
 			sb.WriteString(fmt.Sprintf("- %s (Status: %s, Ready: %s)\n", pod.Name, pod.Status, pod.Ready))
+		}
+		if resto := len(cc.Pods) - len(pods); resto > 0 {
+			fmt.Fprintf(&sb, "- … e mais %d pods\n", resto)
 		}
 		sb.WriteString("\n")
 	}
@@ -186,9 +228,22 @@ func FormatClusterContext(cc *ClusterContext) string {
 	if len(cc.RecentEvents) > 0 {
 		sb.WriteString("**Eventos Recentes**:\n")
 		for _, event := range cc.RecentEvents {
-			sb.WriteString(fmt.Sprintf("- %s\n", event))
+			sb.WriteString(fmt.Sprintf("- %s\n", tui.CortarLinha(event, maxEventoContexto)))
 		}
 	}
 
-	return sb.String()
+	return tui.Cortar(sb.String(), tui.TetoCluster)
+}
+
+// podComProblema diz se o pod não está rodando (nem terminou bem) ou tem contêiner que
+// não está pronto.
+func podComProblema(p PodInfo) bool {
+	if p.Status == "Succeeded" {
+		return false
+	}
+	if p.Status != "Running" {
+		return true
+	}
+	prontos, total, ok := strings.Cut(p.Ready, "/")
+	return !ok || prontos != total
 }

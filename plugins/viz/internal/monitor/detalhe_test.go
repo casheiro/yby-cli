@@ -183,20 +183,27 @@ func TestK8sClient_EventosDoObjeto(t *testing.T) {
 func TestK8sClient_LogsDoPod(t *testing.T) {
 	cs := fake.NewClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: "payments"}})
 	c := &K8sClient{clientset: cs}
-	logs, err := c.LogsDoPod("worker", "payments", "app", 5)
-	if err != nil || logs != "fake logs" {
+	logs, anterior, err := c.LogsDoPod("worker", "payments", "app", 5)
+	if err != nil || logs != "fake logs" || anterior {
 		t.Fatalf("logs = %q, %v", logs, err)
 	}
 	var pedidos []string
+	var limites []int64
 	for _, a := range cs.Actions() {
 		if g, ok := a.(k8stesting.GenericActionImpl); ok && a.GetSubresource() == "log" {
 			if o, ok := g.Value.(*corev1.PodLogOptions); ok {
 				pedidos = append(pedidos, o.Container)
+				if o.LimitBytes != nil {
+					limites = append(limites, *o.LimitBytes)
+				}
 			}
 		}
 	}
 	if strings.Join(pedidos, ",") != "app" {
 		t.Errorf("o log deveria ser pedido uma vez, do contêiner app: %v", pedidos)
+	}
+	if len(limites) != 1 || limites[0] != 1<<20 {
+		t.Errorf("o log deveria ser pedido com LimitBytes de 1 MiB: %v", limites)
 	}
 	if _, err := c.YAMLDoRecurso("pod", "worker", "payments"); err == nil {
 		t.Error("sem configuração do cluster, o YAML deveria dar erro")
@@ -228,8 +235,8 @@ func TestK8sClient_LogsDoPod_ExecucaoAnterior(t *testing.T) {
 	}}
 
 	logs = [2]string{"\n", "panic: connection refused\n"}
-	if got, err := c.LogsDoPod("worker", "payments", "worker", 5); err != nil || got != "panic: connection refused\n" {
-		t.Fatalf("log vazio deveria trazer o anterior: %q, %v", got, err)
+	if got, anterior, err := c.LogsDoPod("worker", "payments", "worker", 5); err != nil || got != "panic: connection refused\n" || !anterior {
+		t.Fatalf("log vazio deveria trazer o anterior: %q, %v, %v", got, anterior, err)
 	}
 	if !reflect.DeepEqual(pedidos, []pedido{{"worker", false}, {"worker", true}}) {
 		t.Errorf("pedidos: %+v", pedidos)
@@ -237,7 +244,7 @@ func TestK8sClient_LogsDoPod_ExecucaoAnterior(t *testing.T) {
 
 	atual := errors.New("container \"worker\" is waiting to start")
 	logs, errs = [2]string{}, [2]error{atual, errors.New("previous terminated container not found")}
-	if _, err := c.LogsDoPod("worker", "payments", "worker", 5); !errors.Is(err, atual) {
+	if _, anterior, err := c.LogsDoPod("worker", "payments", "worker", 5); !errors.Is(err, atual) || anterior {
 		t.Errorf("com as duas leituras falhando, o erro deveria ser o do log atual: %v", err)
 	}
 }
@@ -308,6 +315,28 @@ func TestGetResourceYAML_Evento(t *testing.T) {
 	}
 }
 
+// TestGetResourceYAML_SemRuido: managedFields e a annotation last-applied
+// (o manifesto inteiro de novo) não entram no YAML.
+func TestGetResourceYAML_SemRuido(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Pod","metadata":{"name":"worker","namespace":"payments",
+"annotations":{"kubectl.kubernetes.io/last-applied-configuration":"x","app":"worker"},
+"managedFields":[{"manager":"kubectl","operation":"Apply"}]},"spec":{}}`))
+	}))
+	defer srv.Close()
+	yaml, err := GetResourceYAML(&rest.Config{Host: srv.URL}, "pod", "worker", "payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(yaml, "managedFields") || strings.Contains(yaml, "last-applied") {
+		t.Errorf("o YAML não deveria trazer managedFields nem last-applied:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "app: worker") {
+		t.Errorf("as outras annotations ficam:\n%s", yaml)
+	}
+}
+
 // TestRetryClient_LeitorDeDetalhe: o RetryClient repassa ao K8sClient e avisa
 // quando o client de dentro não lê o detalhe.
 func TestRetryClient_LeitorDeDetalhe(t *testing.T) {
@@ -316,7 +345,7 @@ func TestRetryClient_LeitorDeDetalhe(t *testing.T) {
 	if eventos, err := r.EventosDoObjeto("Pod", "worker", "payments", 0); err != nil || len(eventos) != 1 {
 		t.Errorf("eventos pelo RetryClient: %v, %v", eventos, err)
 	}
-	if logs, err := r.LogsDoPod("worker", "payments", "", 1); err != nil || logs != "fake logs" {
+	if logs, _, err := r.LogsDoPod("worker", "payments", "", 1); err != nil || logs != "fake logs" {
 		t.Errorf("logs pelo RetryClient: %q, %v", logs, err)
 	}
 
@@ -324,7 +353,7 @@ func TestRetryClient_LeitorDeDetalhe(t *testing.T) {
 	if _, err := sem.EventosDoObjeto("Pod", "worker", "payments", 0); err == nil {
 		t.Error("sem leitor, os eventos deveriam dar erro")
 	}
-	if _, err := sem.LogsDoPod("worker", "payments", "", 1); err == nil {
+	if _, _, err := sem.LogsDoPod("worker", "payments", "", 1); err == nil {
 		t.Error("sem leitor, o log deveria dar erro")
 	}
 	if _, err := sem.YAMLDoRecurso("pod", "worker", "payments"); err == nil {

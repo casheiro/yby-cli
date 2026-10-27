@@ -3,6 +3,7 @@ package analyzers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -415,4 +416,85 @@ func TestHelmAnalyzer_ResultType(t *testing.T) {
 func TestHelmAnalyzer_ImplementaInterface(t *testing.T) {
 	// Garante que HelmAnalyzer implementa a interface Analyzer
 	var _ Analyzer = (*HelmAnalyzer)(nil)
+}
+
+func TestHelmAnalyzer_NomeTempladoESubpastas(t *testing.T) {
+	root := t.TempDir()
+	chartPath := filepath.Join(root, "api", "Chart.yaml")
+	helperWriteFile(t, chartPath, "apiVersion: v2\nname: api\nversion: 1.0.0\n")
+	helperWriteFile(t, filepath.Join(root, "api", "templates", "deployment.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "api.fullname" . }}
+  labels:
+    app: x
+`)
+	helperWriteFile(t, filepath.Join(root, "api", "templates", "sub", "svc.yaml"), `apiVersion: v1
+kind: Service
+metadata:
+  name: "api-svc"
+`)
+	helperWriteFile(t, filepath.Join(root, "api", "templates", "_helpers.tpl"), "kind: Nope\nname: x\n")
+	helperWriteFile(t, filepath.Join(root, "api", "templates", "front.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front # nome do front
+`)
+	helperWriteFile(t, filepath.Join(root, "api", "templates", "tests", "test-connection.yaml"), `apiVersion: v1
+kind: Pod
+metadata:
+  name: api-pod
+  annotations:
+    "helm.sh/hook": test
+`)
+
+	result, err := NewHelmAnalyzer().Analyze(root, []string{chartPath})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, r := range result.Resources {
+		ids[r.ID()] = true
+	}
+	for _, want := range []string{"Deployment/api-deployment", "Service/api-svc", "Deployment/front"} {
+		if !ids[want] {
+			t.Errorf("recurso %q não encontrado; obteve %v", want, ids)
+		}
+	}
+	for id := range ids {
+		if strings.Contains(id, "{{") || strings.Contains(id, "Nope") || strings.HasPrefix(id, "Pod/") || strings.Contains(id, "#") {
+			t.Errorf("recurso indevido: %q", id)
+		}
+	}
+}
+
+func TestHelmAnalyzer_RepositorioDeduplicado(t *testing.T) {
+	root := t.TempDir()
+	var files []string
+	for _, c := range []string{"a", "b"} {
+		p := filepath.Join(root, c, "Chart.yaml")
+		helperWriteFile(t, p, "apiVersion: v2\nname: "+c+"\nversion: 1.0.0\ndependencies:\n  - name: redis\n    version: 17.0.0\n    repository: https://charts.bitnami.com/bitnami\n")
+		files = append(files, p)
+	}
+	result, err := NewHelmAnalyzer().Analyze(root, files)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	repos, deps := 0, 0
+	for _, r := range result.Resources {
+		if r.Kind == "HelmRepository" {
+			repos++
+		}
+	}
+	for _, rel := range result.Relations {
+		if rel.To == "HelmRepository/redis" {
+			deps++
+		}
+	}
+	if repos != 1 {
+		t.Errorf("esperado 1 HelmRepository, obteve %d", repos)
+	}
+	if deps != 2 {
+		t.Errorf("esperado 2 relações para o repositório, obteve %d", deps)
+	}
 }

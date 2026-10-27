@@ -103,9 +103,10 @@ test/e2e/         → Testes E2E com godog/Cucumber (build tag: e2e)
 ### Protocolo de Plugins
 
 Plugins são binários independentes que se comunicam via JSON:
-- **Descoberta:** Manager escaneia `~/.yby/plugins/` e `./.yby/plugins/`
+- **Descoberta:** Manager escaneia `~/.yby/plugins/` e `./.yby/plugins/` (só `yby-plugin-*`; mesmo nome nas duas, vale o global). Com `EnableTrustCheck` (root, `yby plugin`, `yby init`), binário que não está em `~/.yby/plugins/trusted.json` não roda nem o `manifest`: entra com manifesto sintético (`NaoConfiavel`, "não confiável · rode yby plugin trust <nome>") e o executor o recusa. O registro guarda caminho, tamanho e mtime para a descoberta não recalcular o hash a cada comando; o executor sempre recalcula. Plugin não toma nome de comando do core (`help`, `completion`, `__complete`)
 - **Hooks:** `manifest` (capabilities), `context` (contribui dados), `command` (execução interativa), `assets` (arquivos estáticos)
 - **Execução:** `Run()` captura STDOUT/STDERR parseando JSON; `RunInteractive()` passa contexto via env var `YBY_PLUGIN_REQUEST` e conecta TTY
+- **Contexto do `command`:** declarar o hook `context` é fornecer contexto (o `yby init` e os consumidores o usam), não consumir. O contexto barato (`project_name`, `environment`, `infra` com o `kube_config` resolvido, o `kube_context` e o `namespace`, e os `values`) sai do `.yby/environments.yaml` sem rodar nada e vai a todo plugin, mas só quando o ambiente foi pedido: `-c`/`--context` antes do nome do plugin (`yby -c staging sentinel scan`, em qualquer forma do pflag, inclusive `-cstaging`; depois do nome, a flag é do plugin) ou `YBY_ENV`. Antes do nome, flag que não é do core é erro (`ERR_VALIDATION`), nunca descartada. Sem isso, nenhum ambiente vai (o `current` do environments.yaml não conta: Viz e Sentinel ficam no current-context do kubeconfig); ambiente pedido que não existe é erro. O caro (overview, backlog e os hooks `context` dos outros plugins) vai só para quem declara `"consome_contexto": true` no manifesto (`PluginManifest.ConsomeContexto`); nenhum plugin nativo declara. Args com `-h`/`--help` abrem sem contexto. O core passa o ambiente ao Manager por `DefinirAmbiente` (`cmd/plugin_ambiente.go`)
 - **Plugin que abre plugin:** `RunInteractive()` também passa em `YBY_BIN` o caminho do executável do core. O `b` do Viz (e o "b perguntar ao Bard" do menu `x`) roda `$YBY_BIN bard --pergunta "…" --voltar Viz --context … --namespace …` (sem `YBY_BIN`, o `yby` do PATH) com `tea.Exec`: passa pelo core e pela verificação de confiança, e o Viz volta quando o Bard fecha pelo esc; o ctrl+c faz o yby sair com 130 e fecha o Viz também (o core troca o código do ctrl+c do Windows por 130)
 
 ### Tratamento de Erros
@@ -148,6 +149,8 @@ Raw Provider → CachedEmbeddingProvider → TokenAwareProvider → CostTracking
 - `CostTrackingProvider` — extrai `usage` (prompt_tokens, completion_tokens) das respostas OpenAI/Gemini e loga custo estimado via `slog.Info("ai.usage", ...)`
 - `RateLimitProvider` — token bucket (`golang.org/x/time/rate`) + circuit breaker (closed/open/half-open). Respeita header `Retry-After`. Config: `ai.rate_limit.requests_per_second`
 - `RetryProvider` — retry com backoff exponencial (cenkalti/backoff) para erros 429/502/503
+
+Os providers CLI (claude-cli, gemini-cli) passam por `wrapCLIProvider`: só `TokenAwareProvider` (com a janela do CLI: 200 mil tokens no Claude, 1 milhão no Gemini, também sem modelo escolhido) e `RetryProvider`. Cache de embeddings, custo e taxa não valem para um processo local que não gera embeddings, não informa o uso nem devolve `APIError`.
 
 **VectorStore** (`pkg/ai/vector_store.go`): wrapper ChromemDB com `AddDocuments`, `Search`, `DeleteDocuments`, `DeleteByMetadata`, `Count`. O indexer do Synapstor usa `DeleteByMetadata` para limpar embeddings de arquivos removidos durante reindexação.
 
@@ -238,12 +241,16 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 - **Agent com intent classifier**: classifica intencao do usuario via IA e executa tools programaticamente (nao depende da IA gerar JSON)
 - **Tools integradas**: sentinel scan/investigate, kubectl get/logs/events/describe, atlas blueprint — executadas automaticamente pelo Bard
 - **Enriquecimento Synapstor**: busca semantica nos UKIs do projeto para contexto automatico (RAG)
-- **Capacidades do provider**: se o provider tem tools proprias (ex: Claude Code com MCP), o Bard aproveita sem restricoes
-- **Tools externas**: usuario pode registrar tools customizadas via YAML em `~/.yby/tools/` ou `.yby/tools/`
+- **Capacidades do provider**: se o provider tem tools proprias (ex: Claude Code com MCP), o prompt as libera só para consulta; ação que altera o cluster ou arquivos vira comando sugerido ao usuário. As tools externas (as únicas que podem escrever) passam pelas guardas (`tools/guardrails.go`): o valor da IA não monta delete de namespace ou ClusterRole, drain, cordon, apply --force nem scale a 0 que o próprio YAML não tenha
+- **Tools externas**: usuario pode registrar tools customizadas via YAML em `~/.yby/tools/` ou `.yby/tools/` (`plugins/bard/tools/loader.go`). A do projeto vence a global de mesmo nome, mas só com confiança: `yby plugin trust .yby/tools/<arquivo>` registra o SHA-256 do arquivo naquele caminho (`pkg/confianca`, em `~/.yby/trusted-files.json`); mudou o arquivo, a confiança cai e a tool aparece no `/ferramentas` com o motivo. O mesmo vale para os prompts do projeto (`.yby/prompts/*.txt`, `pkg/ai/prompts`). O `command` roda sem shell: cada `{{param}}` vira um argumento inteiro (ou parte de um), valor com `-` no começo é recusado, os parâmetros declarados vão também em `YBY_PARAM_<NOME>`, com o contexto do Bard e prazo de 2 min. Comando com `|`, `&`, `;`, `<`, `>`, `$` ou crase fora de aspas não carrega; quem precisa de shell chama `sh -c '…'` com `"$YBY_PARAM_<NOME>"` (shell com `{{}}` é recusado). No Windows, programa que roda pelo cmd.exe (`cmd`, `.bat`, `.cmd`, como o `az.cmd` e o `gcloud.cmd`) recusa na execução valor com `"`, `%`, `&`, `|`, `<`, `>`, `^`, `!`, parênteses ou quebra de linha: o escape de argumentos do Go não protege do cmd
 - **3 modos de uso**: TUI interativo (`yby bard`), one-shot (`yby bard -p "pergunta"`), batch (`echo "pergunta" | yby bard`). Fora da TUI só a resposta vai para o stdout (inteira no fim num pipe, linha a linha num terminal); as etapas (só num terminal) e os erros (`ui.WriteError`) vão para o stderr. Sai com 1 em falha (no batch, se qualquer pergunta falhar) e 130 no ctrl+c. `yby bard` com stdin num terminal e stdout fora dele devolve erro em vez de abrir a TUI.
 - **Rascunho e cluster**: `yby bard --pergunta "…"` abre a TUI com a pergunta escrita no campo, desde o começo, sem enviar (↵ envia); `--voltar <instrumento>` faz o esc fora da resposta fechar o Bard e voltar a quem o abriu ("esc voltar ao Viz" na legenda); `--context` e `-n/--namespace` trocam o cluster ▸ namespace do cabeçalho, do contexto do cluster no prompt, do kubectl e do Sentinel das ferramentas (`tools.DefinirKube`). A TUI sai com 130 no ctrl+c (`tui.ErrInterrompido`). A ajuda sai por `ui.EscreverAjuda` (`plugins/bard/ajuda.go`)
 - **Fluxo em eventos** (`plugins/bard/tui/fluxo.go`): cada pergunta vira `EtapaMsg` (contexto do projeto, entender o pedido, ferramenta, gerar resposta), `TrechoMsg` (pedaços do `StreamCompletion`) e `FimMsg` por canal; a TUI, o `-p` e o batch usam o mesmo `tui.Fluxo`. Retry com backoff (2 s, 10 s, até 30 s); esc cancela por contexto sem fechar o Bard.
 - **TUI da carta**: `ui.MolduraTexto` com cluster ▸ namespace e provider no cabeçalho (`Config.AIModel`), mensagens em blocos (VOCÊ / ◆ BARD com ferramentas e tempo), markdown por `pkg/ui/uimarkdown`, etapas ao vivo e linha de estado "◈ gerando resposta · N s". Teclas: só pgup/pgdn e o mouse rolam (o resto vai para o campo), ↑ no campo vazio edita a última pergunta, ctrl+j ou alt+enter faz nova linha (o Bubble Tea v1 não separa ⇧↵ de ↵ no console do Windows), ↵ no campo vazio abre a saída da ferramenta, ctrl+y copia o último comando (ou a saída aberta) por OSC 52, esc interrompe e ctrl+c sai. Goldens em `plugins/bard/tui/testdata` (`go test -run TestTela ./plugins/bard/tui/ -update`).
+- **Goldens de contrato**: as ferramentas do Bard leem os goldens do Atlas (`plugins/atlas/testdata/contrato-blueprint*.json`, `go test ./plugins/atlas/ -run TestContrato -update`) e do Sentinel (`plugins/sentinel/cli/testdata/contrato-*.json`, `go test -tags k8s ./plugins/sentinel/cli -run TestContrato -update`). Depois de regravá-los, rode `go test ./plugins/bard/tools -run TestContrato`.
+- **Memória da conversa**: as últimas trocas da sessão (`tui.Troca`, até 10, redigidas) vão antes da pergunta, na resposta e no classificador, dentro do `TetoConversa`; o `/limpar` e o `/sessões` zeram, o `/modelo` mantém. No batch, as perguntas da mesma entrada são uma sessão; o `-p` é uma rodada só.
+- **Orçamento** (`plugins/bard/tui/orcamento.go`): tetos em bytes por bloco do prompt (saída da ferramenta e notas do Synapstor 8 KB cada, conversa atual 3 KB, histórico das sessões anteriores 2 KB, cluster 3 KB, 1 KB por mensagem), para caber na janela de 8192 tokens; o que passa é cortado por linhas com "… N linhas omitidas".
+- **Índice de outro modelo**: com o índice do Synapstor feito com outros embeddings, a etapa de contexto falha com a nota "índice de outro modelo" e a pergunta segue sem notas; o aviso inteiro, com o comando `yby synapstor index --full`, fica na conversa da TUI (e abaixo das etapas no `-p`). O Bard não reindexa.
 - **Comandos `/`** (lista filtrável sobre o campo): `/sessões` (lista e retoma; `/sessões <id>`), `/limpar` (sessão nova, histórico preservado), `/contexto`, `/ferramentas`, `/modelo` (sem argumento, lista providers e modelos; `/modelo <provider>` troca o provider com o modelo padrão, `/modelo <provider>/<modelo>` troca os dois e `/modelo <modelo>` troca o modelo no provider da sessão ou no provider que o lista; vale só para a sessão e aparece no cabeçalho), `/copiar`, `/exportar [arquivo]` e `/ajuda`. Os apelidos antigos (`/clear`, `/session`, `/sessions`, `/help`) valem digitados por inteiro.
 
 ### Plugin Atlas — Scanner de Topologia (v1.0.0)
@@ -253,15 +260,16 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 - **Refinamento IA**: diagrama programático enviado ao LLM para reorganização e nomes legíveis. Desativável com `--no-ai`
 - **Filtros inteligentes**: exclui templates Helm não renderizados (`{{ }}`), secrets SOPS encriptados, nós isolados no overview
 - **Detecção de relações**: Service→Pod (selects), Ingress→Service (routes), ArgoCD App→Chart (syncs), Helm deps (depends_on)
+- **Hook context**: devolve o blueprint em `data.blueprint`; o argumento opcional `infra` (só a ferramenta `atlas_blueprint` do Bard pede) acrescenta a topologia da infraestrutura em `data.infra`
 
 ### Plugin Sentinel — Auditoria K8s (v1.0.0)
 
 - **Backends reais**: Polaris SDK (pod security, best practices) + OPA SDK (RBAC, network) em vez de checks artesanais
-- **Agrupamento inteligente**: findings deduplicados por check, mostra "Deployment/api (+5)" em vez de repetir por workload
+- **Agrupamento inteligente**: findings deduplicados por check; a linha mostra "3 recursos" e os nomes vêm embaixo (até 5, depois "e mais N"), e o JSON e o relatório trazem a lista inteira em `resources`
 - **Allowlists**: RBAC ignora automaticamente `system:*`, controllers conhecidos (argocd, cert-manager, traefik, etc.)
 - **Investigacao IA inteligente**: verifica saude do pod antes de chamar IA — so aciona quando detecta problemas reais
-- **Remediacao**: `--fix-dry-run` e `--fix` com strategic-merge patches
-- **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/sentinel-scan-{namespace}-{data}.md`
+- **Remediacao**: `--fix-dry-run` (dry-run no servidor) e `--fix` (confirma; sem terminal, exige `--yes`) com strategic-merge patches no template do dono do pod (`ownerReferences`), só as correções seguras (escalação de privilégios, capabilities); recusa recurso do Argo CD, pod sem dono e Job solto
+- **Relatorios**: resumo no terminal + relatorio completo em `~/.yby/reports/sentinel-scan-{namespace}-{contexto}-{data}-{hora}.md`
 - **Cache**: investigacoes em `~/.yby/sentinel/cache/` (TTL 1h), nao polui diretorio do projeto
 - **Fallback**: checks artesanais internos quando backends nao estao disponiveis
 
@@ -269,15 +277,15 @@ Arquivo `~/.yby/config.yaml` (`pkg/config/`) persiste preferências do usuário:
 
 - **Capture**: transforma texto livre em UKI estruturado via IA
 - **Study**: analisa codigo do projeto e gera documentacao tecnica via IA
-- **Search**: busca semantica nos UKIs via embeddings (Ollama local ou API)
-- **Index**: indexacao incremental com SHA-256 tracking e embeddings configuráveis por provider
+- **Search**: busca semantica nos UKIs via embeddings (Ollama, API configurada em `ai.embedding` ou, sem eles, o modelo local paraphrase-multilingual-MiniLM-L12-v2 em int8, que entende PT-BR, `pkg/ai/local_embedding.go`); o resumo do `index` e do `search` diz de onde vêm os embeddings
+- **Index**: indexacao incremental com SHA-256 tracking e embeddings configuráveis por provider; o primeiro uso do modelo local baixa ~120 MB para `~/.yby/models` numa etapa própria (`ai.PrepararEmbeddings`)
 - **Quality Scoring**: score 0-100 por UKI (contexto, exemplos, headers, links, metadata)
-- **Knowledge Decay**: deteccao de UKIs stale (>90 dias sem atividade git)
+- **Knowledge Decay**: UKI desatualizado quando o código que ele cita recebeu commit depois da nota (depois do último commit dela; sem commit, depois do `atualizado_em`, que sem hora vale o dia inteiro) ou com mais de 90 dias sem atividade (`plugins/synapstor/internal/decay`)
 - **Export multi-formato**: Docusaurus, Obsidian, Markdown puro
 
 ### Plugin Viz — Observabilidade TUI (v1.0.0)
 
-- **Moldura da carta** (`ui.Moldura`): masthead com contexto ▸ namespace do kubeconfig (começa no namespace do contexto; sem namespace no contexto, todos), client-go direto (`monitor.K8sClient` dentro do `RetryClient`), sem kubectl.
+- **Moldura da carta** (`ui.Moldura`): masthead com contexto ▸ namespace do kubeconfig (começa no namespace do contexto; sem namespace no contexto, todos). Com o ambiente pedido ao core (`yby -c staging viz` ou `YBY_ENV`), abre no kube_config, no kube_context e no namespace dele (`conexaoDoAmbiente`, `plugins/viz/main.go`); `--context` ou `--kubeconfig` trocam o cluster inteiro e `-n` só o namespace. Client-go direto (`monitor.K8sClient` dentro do `RetryClient`), sem kubectl.
 - **9 abas** (Pods, Deployments, StatefulSets, Services, Nodes, Jobs, Ingresses, ConfigMaps, Eventos) com contagem ao vivo: um informer por tipo no namespace (`monitor.Observador`, `plugins/viz/internal/monitor/vigia.go`) manda lotes de no máximo 4 por segundo, e o número de cada aba é o da lista que ela mostraria aberta, com os filtros da tela. Tipo que o RBAC não deixa listar fica sem número. O relógio de 2 s só lê a aba ativa: confirma a conexão e vira lista quando o watch não cobre a aba.
 - **Lista**: problemas primeiro (pods, deployments, statefulsets, nós, jobs), por nome (services, ingresses, configmaps), eventos dos mais recentes; a linha de estado traz o problema mais grave.
 - **Detalhe**: painel ao lado a partir de 120 colunas e por cima abaixo disso (↵ abre); quadros de logs (`l`, pods), YAML (`y`) e eventos (`e`).

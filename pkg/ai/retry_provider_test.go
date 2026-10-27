@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
+	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,8 +186,8 @@ func TestRetryProvider_EmbedDocuments_RetryEmErroDeRede(t *testing.T) {
 		embedFunc: func(_ context.Context, texts []string) ([][]float32, error) {
 			n := calls.Add(1)
 			if n <= 1 {
-				// Erro de rede (sem APIError) — retentavel por padrao
-				return nil, fmt.Errorf("connection reset by peer")
+				// Erro de rede (sem APIError): retentavel
+				return nil, fmt.Errorf("falha ao chamar: %w", &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET})
 			}
 			return [][]float32{{0.1, 0.2}}, nil
 		},
@@ -232,4 +235,32 @@ func TestRetryProvider_StatusCodesCustomizados(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ok", result)
 	assert.Equal(t, int32(2), calls.Load())
+}
+
+func TestRetryProvider_ErroPermanenteUmaChamada(t *testing.T) {
+	casos := []struct {
+		nome string
+		err  error
+	}{
+		{"limite de tokens", ybyerrors.New(ybyerrors.ErrCodeTokenLimit, "prompt grande demais")},
+		{"config", ybyerrors.New(ybyerrors.ErrCodeConfig, "chave ausente")},
+		{"CLI que falhou", fmt.Errorf("claude cli falhou: exit status 1")},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			var calls atomic.Int32
+			inner := &mockProvider{
+				name: "test",
+				streamFunc: func(_ context.Context, _, _ string, _ io.Writer) error {
+					calls.Add(1)
+					return c.err
+				},
+			}
+			rp := NewRetryProvider(inner, fastRetryOpts(), nil)
+
+			err := rp.StreamCompletion(context.Background(), "sys", "usr", &bytes.Buffer{})
+			require.ErrorIs(t, err, c.err)
+			assert.Equal(t, int32(1), calls.Load(), "erro permanente nao deveria ser repetido")
+		})
+	}
 }

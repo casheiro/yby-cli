@@ -3,98 +3,54 @@ package tools
 import (
 	"fmt"
 	"regexp"
-	"strings"
 )
 
-// dangerousPattern representa um padrão perigoso com uma verificação customizada opcional.
-type dangerousPattern struct {
-	Pattern *regexp.Regexp
-	Reason  string
-	// ExceptIf, quando não nil, permite a operação se o texto combinar com este padrão.
-	ExceptIf *regexp.Regexp
+// guarda é uma operação destrutiva que a IA não pode montar numa ferramenta.
+type guarda struct {
+	Padrao *regexp.Regexp
+	Motivo string
 }
 
-// dangerousPatterns contém padrões de operações perigosas que devem ser bloqueadas.
-var dangerousPatterns = []dangerousPattern{
+// guardas são as operações que mudam o cluster de um jeito difícil de desfazer. Uma
+// palavra só conta como comando inteira, separada por espaço: o pod "drain-worker" não é
+// um drain.
+var guardas = []guarda{
 	{
-		Pattern: regexp.MustCompile(`(?i)^delete\s+(namespace|ns)\b`),
-		Reason:  "exclusão de namespace pode destruir todos os recursos contidos nele",
+		Padrao: regexp.MustCompile(`(?i)(^|\s)delete\s+(namespaces?|ns)(\s|/|$)`),
+		Motivo: "exclusão de namespace destrói todos os recursos contidos nele",
 	},
 	{
-		Pattern: regexp.MustCompile(`(?i)^delete\s+clusterrole\b`),
-		Reason:  "exclusão de ClusterRole pode comprometer o RBAC do cluster",
+		Padrao: regexp.MustCompile(`(?i)(^|\s)delete\s+(clusterroles?|clusterrolebindings?)(\s|/|$)`),
+		Motivo: "exclusão de ClusterRole ou ClusterRoleBinding pode comprometer o RBAC do cluster",
 	},
 	{
-		Pattern: regexp.MustCompile(`(?i)^delete\s+clusterrolebinding\b`),
-		Reason:  "exclusão de ClusterRoleBinding pode comprometer o RBAC do cluster",
+		Padrao: regexp.MustCompile(`(?i)(^|\s)drain(\s|$)`),
+		Motivo: "drain de node despeja todos os pods dele",
 	},
 	{
-		Pattern:  regexp.MustCompile(`(?i)\bdrain\s+node\b`),
-		Reason:   "drain de node sem --ignore-daemonsets pode causar interrupção de serviço",
-		ExceptIf: regexp.MustCompile(`(?i)--ignore-daemonsets`),
+		Padrao: regexp.MustCompile(`(?i)(^|\s)cordon(\s|$)`),
+		Motivo: "cordon de node impede scheduling e pode causar degradação do cluster",
 	},
 	{
-		Pattern: regexp.MustCompile(`(?i)\bcordon\b`),
-		Reason:  "cordon de node impede scheduling e pode causar degradação do cluster",
+		Padrao: regexp.MustCompile(`(?i)(^|\s)apply\s.*--force(\s|=|$)`),
+		Motivo: "apply com --force pode recriar recursos destrutivamente",
 	},
 	{
-		Pattern: regexp.MustCompile(`(?i)\bapply\b.*--force\b`),
-		Reason:  "apply com --force pode recriar recursos destrutivamente",
-	},
-	{
-		Pattern: regexp.MustCompile(`(?i)\bscale\b.*\breplicas[= ]+0\b`),
-		Reason:  "escalar para 0 replicas pode causar downtime do serviço",
+		Padrao: regexp.MustCompile(`(?i)(^|\s)scale\s.*--replicas[= ]0+(\s|$)`),
+		Motivo: "escalar para 0 réplicas derruba o serviço",
 	},
 }
 
-// ValidateToolCall verifica se uma tool call contém operações perigosas.
-// Retorna erro se a operação for considerada perigosa.
-func ValidateToolCall(call ToolCall) error {
-	// Verificar parâmetros que possam conter operações perigosas
-	for _, param := range call.Params {
-		for _, dp := range dangerousPatterns {
-			if dp.Pattern.MatchString(param) {
-				if dp.ExceptIf != nil && dp.ExceptIf.MatchString(param) {
-					continue
-				}
-				return fmt.Errorf("operação bloqueada: %s", dp.Reason)
-			}
+// conferirGuardas barra a ferramenta externa que, com os valores da IA, viraria uma
+// operação destrutiva. linha é o comando como vai rodar (e os valores dos parâmetros,
+// que chegam também pela env a um script); modelo é o comando do YAML, com os {{}}. O
+// que o próprio YAML já faz (um "kubectl cordon {{no}}") foi escolha de quem o escreveu
+// e confiou nele: só bloqueia o que aparece na linha e não no modelo.
+func conferirGuardas(modelo, linha string) error {
+	for _, g := range guardas {
+		if g.Padrao.MatchString(linha) && !g.Padrao.MatchString(modelo) {
+			return fmt.Errorf("operação bloqueada: %s; rode o comando você mesmo, se for o caso", g.Motivo)
 		}
 	}
-
-	// Verificar combinação de tool name + params
-	checkValue := buildCheckString(call)
-	for _, dp := range dangerousPatterns {
-		if dp.Pattern.MatchString(checkValue) {
-			if dp.ExceptIf != nil && dp.ExceptIf.MatchString(checkValue) {
-				continue
-			}
-			return fmt.Errorf("operação bloqueada: %s", dp.Reason)
-		}
-	}
-
 	return nil
-}
-
-// buildCheckString constrói uma string representativa da operação para validação.
-func buildCheckString(call ToolCall) string {
-	var parts []string
-
-	// Para kubectl tools, reconstruir o comando lógico
-	switch call.Name {
-	case "kubectl_get":
-		parts = append(parts, "get")
-	case "kubectl_describe":
-		parts = append(parts, "describe")
-	case "kubectl_logs":
-		parts = append(parts, "logs")
-	case "kubectl_events":
-		parts = append(parts, "events")
-	}
-
-	for _, v := range call.Params {
-		parts = append(parts, v)
-	}
-
-	return strings.Join(parts, " ")
 }

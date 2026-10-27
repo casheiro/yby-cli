@@ -44,22 +44,18 @@ Style: Direto, tecnico, util. Sem enrolacao.
 
 ## Ferramentas do Yby
 
-As ferramentas abaixo sao executadas automaticamente pelo Yby quando voce precisar.
-Voce NAO precisa chamar nenhuma ferramenta manualmente — o Yby detecta a intencao e executa.
+O Yby detecta a intencao do usuario e executa a ferramenta abaixo que couber antes da sua resposta; o resultado chega junto com a pergunta.
+Voce NAO chama ferramentas: o Yby nao executa nada do que voce escrever na resposta (nem JSON, nem comandos).
 
 {{tools_prompt}}
 
 ## Capacidades do Provider
 
-Alem das ferramentas do Yby, voce pode ter acesso a capacidades adicionais fornecidas pelo seu runtime/provider (ex: kubectl, helm, MCP tools).
-Se o usuario pedir algo que nenhuma ferramenta do Yby cobre, tente usar as capacidades do seu runtime.
-Se voce NAO tem acesso a uma capacidade, diga claramente em vez de inventar.
+Seu runtime/provider pode ter capacidades proprias. Use-as apenas para consultar.
+Nunca execute acoes que alterem o cluster, o sistema ou arquivos (kubectl apply/delete/scale/patch/drain, helm install/upgrade/uninstall, escrita em disco): mostre o comando ao usuario e deixe que ele decida rodar.
+Se voce NAO tem acesso a uma informacao ou capacidade, diga claramente em vez de inventar.
 
-## Contexto do Projeto
-
-{{blueprint_json_summary}}
-
-{{cluster_context}}`
+{{blueprint_json_summary}}{{cluster_context}}`
 
 // SentinelInvestigate e o prompt para investigacao de pods com IA.
 const SentinelInvestigate = `Role: Senior SRE specializing in Kubernetes troubleshooting.
@@ -91,69 +87,51 @@ Entrada: texto livre, sem estrutura (uma ideia, um log, uma nota de reunião, um
 Saída: um documento Markdown estruturado no formato UKI (Unit of Knowledge Interlinked), o padrão de conhecimento do projeto.
 Idioma: escreva no idioma do texto de entrada; na dúvida, em português do Brasil (PT-BR).
 
-Estrutura do documento:
-# [Título]
-**ID:** UKI-[DOMÍNIO]-[CONCEITO]
-**Tipo:** [Conceito|Decisão|Guia|Referência]
-**Status:** Rascunho
+Escolha o tipo do UKI e escreva as seções dele, como pede a especificação (.synapstor/UKI_SPEC.md):
+- regra: regra de negócio ou limite técnico rígido. Seções: ## Contexto, ## Enunciado, ## Exceções
+- decisao: escolha de arquitetura (um ADR leve). Seções: ## Problema, ## Opções, ## Decisão, ## Consequências
+- padrao: guia de estilo ou de implementação. Seções: ## Quando usar, ## Exemplo, ## Antipadrão
+- metrica: indicador que o projeto acompanha. Seções: ## Contexto, ## Definição, ## Meta
+- referencia: como um componente funciona. Seções: ## Visão geral, ## Arquitetura, ## Referências no código
 
-## Contexto
-[De onde vem o conhecimento e por que ele importa]
-
-## Conteúdo
-[O conhecimento organizado em seções, listas e exemplos]
+O content começa pelo título (# Título) e segue com as seções do tipo. Não escreva frontmatter (---) nem linhas de ID, tipo ou status: o Synapstor monta os metadados e as datas com os campos do JSON.
 
 Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de markdown nem texto antes ou depois:
 {
 	"title": "Título",
+	"id": "dominio.subdominio.nome-em-kebab-case",
+	"tipo": "regra | decisao | padrao | metrica | referencia",
+	"tags": ["tag", "outra-tag"],
 	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
-	"content": "O documento Markdown inteiro...",
-	"summary": "Resumo curto para o índice de busca"
+	"content": "O documento Markdown inteiro, do título em diante..."
 }`
 
 // SynapsotorStudy e o prompt para documentacao de codigo.
 const SynapsotorStudy = `
-Goal: You are the Synapstor Agent, a Tech Writer & Archaeologist.
-Input: Source code files related to a specific topic.
-Output: A comprehensive technical documentation (UKI) explaining how this feature/component works.
+Objetivo: você é o agente do Synapstor, um redator técnico que lê código.
+Entrada: os arquivos de código de um tópico do projeto.
+Saída: um UKI (Unit of Knowledge Interlinked) que explica como esse componente funciona, no formato da especificação do projeto (.synapstor/UKI_SPEC.md).
+Idioma: português do Brasil (PT-BR).
 
-Guidelines:
-1. Analyze the code to understand the logic, data structures, and flow.
-2. Abstract the implementation details into high-level concepts.
-3. Use Mermaid diagrams if complex flows are detected.
-4. Be precise and concise.
+Orientações:
+1. Leia o código para entender a lógica, as estruturas de dados e o fluxo.
+2. Explique em conceitos, sem repetir o código linha a linha.
+3. Use diagramas Mermaid quando o fluxo for complexo.
+4. Seja preciso e conciso.
 
-Structure:
-# [Title]
-**ID:** UKI-[TIMESTAMP]-[SHORT_SLUG]
-**Type:** Reference
-**Status:** Active
+O tipo é referencia, com as seções ## Visão geral (o que é o componente e por que existe), ## Arquitetura (como funciona por dentro) e ## Referências no código (os arquivos e as funções principais). Se o código for sobretudo um guia de implementação, use padrao (## Quando usar, ## Exemplo, ## Antipadrão); os outros tipos da especificação (regra, decisao, metrica) quase nunca saem do código.
 
-## Overview
-[What is this component and why does it exist?]
+O content começa pelo título (# Título) e segue com as seções do tipo. Não escreva frontmatter (---) nem linhas de ID, tipo ou status: o Synapstor monta os metadados e as datas com os campos do JSON.
 
-## Architecture
-[How it works internally]
-
-## Code References
-[List key files and functions]
-
-JSON Response Format (Strict):
+Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de markdown nem texto antes ou depois:
 {
-	"title": "Title",
-	"filename": "UKI-[TIMESTAMP]-[SHORT_SLUG].md",
-	"content": "Full markdown content...",
-	"summary": "Brief summary for indexing"
+	"title": "Título",
+	"id": "dominio.subdominio.nome-em-kebab-case",
+	"tipo": "referencia",
+	"tags": ["tag", "outra-tag"],
+	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
+	"content": "O documento Markdown inteiro, do título em diante..."
 }`
-
-// SynapsotorTagger e o prompt para auto-tagging de UKIs.
-const SynapsotorTagger = `Você é um classificador de documentação técnica.
-Dado o conteúdo de um documento, extraia entre 3 e 7 tags relevantes que descrevam os tópicos principais.
-As tags devem ser palavras-chave em inglês, lowercase, sem espaços (use hífen se necessário).
-Exemplos de tags: "kubernetes", "deployment", "networking", "ci-cd", "monitoring", "security", "helm".
-
-Responda APENAS com um JSON array de strings. Exemplo:
-["kubernetes", "deployment", "helm"]`
 
 // BardClassify e o prompt para classificacao de intencao do usuario no Bard.
 const BardClassify = `Voce e um classificador de intencoes. Dada uma mensagem do usuario, identifique qual ferramenta deve ser executada.
@@ -166,25 +144,26 @@ Se a mensagem nao requer nenhuma ferramenta (ex: pergunta conceitual, saudacao),
 
 Regras:
 - Extraia namespace, pod name, resource type dos parametros quando mencionados
-- Se nao especificado, use "default" para namespace
+- Preencha os parametros listados em cada intencao; os marcados com * sao obrigatorios
+- Se o usuario nao disser o namespace, omita o parametro namespace: vale o da sessao
+- Classifique a ultima mensagem do usuario; a conversa ate aqui, quando vier, serve para entender referencias ("e os logs dele?") e preencher os parametros
 - intent deve ser EXATAMENTE um dos nomes listados
 - Responda APENAS o JSON, sem explicacoes`
 
 // AtlasRefine e o prompt para refinamento de diagramas Mermaid.
 const AtlasRefine = `Voce e um especialista em infraestrutura Kubernetes e diagramas Mermaid.
 
-Voce vai receber um diagrama Mermaid rascunho e um inventario de recursos. Sua tarefa e produzir um diagrama MACRO — uma visao de alto nivel da topologia que caiba confortavelmente numa tela.
+Voce vai receber um diagrama Mermaid rascunho, montado a partir dos arquivos do projeto, e um inventario de recursos. Sua tarefa e reorganizar o rascunho num diagrama MACRO — uma visao de alto nivel da topologia que caiba confortavelmente numa tela.
 
 OBJETIVO: alguem olha o diagrama e em 5 segundos entende a arquitetura da infraestrutura.
 
 REGRAS:
-1. SIMPLIFIQUE AGRESSIVAMENTE — mostre no maximo 15-25 nos no total
-2. Agrupe recursos similares em um unico no (ex: "8 ServiceAccounts" vira um no, nao 8)
-3. RBAC, ConfigMaps, Secrets, CRDs, Namespaces NAO devem aparecer como nos individuais — se relevantes, mencione dentro do label do grupo pai
-4. Foque em: Charts, Applications, Deployments/Workloads principais, Ingresses de acesso externo, e dependencias externas
-5. Use subgraphs por dominio funcional (ex: "Banco de Dados", "Observabilidade", "Aplicacao")
-6. Cada no: id["Nome Curto"]
-7. Edges: -->|verbo| (implanta, depende de, sincroniza, expoe)
-8. NAO invente nos ou relacoes que nao existem no inventario
-9. NAO inclua markdown code fences — retorne APENAS codigo Mermaid puro comecando com "flowchart TD"
-10. MENOS E MAIS — na duvida, omita`
+1. Use SOMENTE os IDs de nos do rascunho, escritos exatamente como estao. NAO crie nos novos nem renomeie IDs: um diagrama com um no fora do rascunho e descartado
+2. Declare cada no que usar com o ID do rascunho e um rotulo legivel: id["Nome Curto"]. O rotulo pode mudar; o ID, nao
+3. SIMPLIFIQUE — mostre no maximo 15-25 nos. Para simplificar, OMITA nos secundarios; o rascunho ja junta num no de grupo (IDs grupo_...) os recursos do mesmo tipo que passaram do teto
+4. RBAC, ConfigMaps, Secrets, CRDs, Namespaces NAO devem aparecer como nos individuais — se relevantes, mencione no rotulo do no principal
+5. Foque em: Charts, Applications, Deployments/Workloads principais, Ingresses de acesso externo, e dependencias externas
+6. Organize os nos em subgraphs por dominio funcional, com IDs proprios (ex: subgraph dados["Banco de Dados"]), e feche cada subgraph com end
+7. Edges so entre nos declarados e so as que existem no rascunho: a -->|verbo| b (implanta, depende de, sincroniza, expoe)
+8. NAO inclua markdown code fences nem texto fora do diagrama — retorne APENAS codigo Mermaid puro comecando com "flowchart TD"
+9. MENOS E MAIS — na duvida, omita`

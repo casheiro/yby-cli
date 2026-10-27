@@ -8,23 +8,30 @@ import (
 	"io"
 	"log"
 	"sort"
+	"strings"
 
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/kube"
 	"github.com/fairwindsops/polaris/pkg/validator"
 	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 // PolarisBackend implementa SecurityBackend usando a SDK do Polaris
 // para auditoria de segurança de workloads Kubernetes.
-type PolarisBackend struct{}
+type PolarisBackend struct {
+	// restConfig entrega o config do mesmo cluster do clientset do scan (kubeconfig e
+	// contexto do yby, token cloud), para o cliente dinâmico não cair no kubeconfig padrão.
+	restConfig func() (*rest.Config, error)
+}
 
-// NewPolarisBackend cria uma nova instância do backend Polaris.
-func NewPolarisBackend() *PolarisBackend {
-	return &PolarisBackend{}
+// NewPolarisBackend cria uma nova instância do backend Polaris. restConfig devolve o
+// config do cluster que o scan está auditando.
+func NewPolarisBackend(restConfig func() (*rest.Config, error)) *PolarisBackend {
+	return &PolarisBackend{restConfig: restConfig}
 }
 
 // Name retorna o identificador do backend.
@@ -41,9 +48,9 @@ func (p *PolarisBackend) IsAvailable() bool {
 // ScanCluster executa uma auditoria Polaris no namespace especificado
 // e retorna os findings mapeados para o formato unificado.
 func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Interface, namespace string) ([]Finding, error) {
-	// Silenciar logs do Polaris (usa logrus internamente)
-	logrus.SetOutput(io.Discard)
-	log.SetOutput(io.Discard)
+	// Silenciar logs do Polaris (usa logrus internamente) só durante a chamada: o
+	// processo é o do plugin inteiro e o resto do scan precisa do log de volta.
+	defer silenciarLogs()()
 
 	// Carregar configuração padrão do Polaris
 	cfg, err := polarisconfig.MergeConfigAndParseFile("", false)
@@ -54,8 +61,8 @@ func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Inte
 	// Definir namespace na configuração para filtrar recursos
 	cfg.Namespace = namespace
 
-	// Criar cliente dinâmico a partir do kubeconfig padrão
-	dynamicClient, err := buildDynamicClient()
+	// Criar cliente dinâmico a partir do config do mesmo cluster do clientset
+	dynamicClient, err := p.clienteDinamico()
 	if err != nil {
 		return nil, fmt.Errorf("falha ao criar cliente dinâmico kubernetes: %w", err)
 	}
@@ -72,37 +79,78 @@ func (p *PolarisBackend) ScanCluster(ctx context.Context, client kubernetes.Inte
 		return nil, fmt.Errorf("falha ao executar auditoria polaris: %w", err)
 	}
 
+	// Os recursos sem namespace (ClusterRoles e ClusterRoleBindings dos checks de RBAC)
+	// passam pelo recorte do escopo: no escopo namespace, só os que valem no namespace.
+	dentro := func(string, string) bool { return true }
+	var falhaDoRecorte error
+	if escopo.De(ctx) == escopo.Namespace && temRecursoSemNamespace(auditData) {
+		recorte, err := escopo.Ler(ctx, client, namespace)
+		if err != nil {
+			// Sem o recorte, não há como saber quais valem no namespace: ficam de fora, e
+			// o scan diz que essa parte não rodou.
+			falhaDoRecorte = err
+		}
+		dentro = recorte.Inclui
+	}
+
 	// Mapear resultados para o formato unificado
-	return mapPolarisResults(auditData, namespace), nil
+	findings := mapPolarisResults(auditData, namespace, dentro)
+	if falhaDoRecorte != nil {
+		return findings, &FalhaParcial{Falhas: []string{"RBAC do cluster"}, Causa: falhaDoRecorte}
+	}
+	return findings, nil
 }
 
-// buildDynamicClient cria um cliente dinâmico Kubernetes usando as regras
-// de carregamento padrão do kubeconfig.
-func buildDynamicClient() (dynamic.Interface, error) {
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	configOverrides := &clientcmd.ConfigOverrides{}
+// temRecursoSemNamespace diz se a auditoria trouxe algum recurso sem namespace.
+func temRecursoSemNamespace(auditData validator.AuditData) bool {
+	for _, r := range auditData.Results {
+		if r.Namespace == "" {
+			return true
+		}
+	}
+	return false
+}
 
-	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	restConfig, err := clientConfig.ClientConfig()
+// clienteDinamico cria o cliente dinâmico Kubernetes a partir do config injetado.
+func (p *PolarisBackend) clienteDinamico() (dynamic.Interface, error) {
+	if p.restConfig == nil {
+		return nil, fmt.Errorf("backend polaris sem config do cluster")
+	}
+	restConfig, err := p.restConfig()
 	if err != nil {
 		return nil, fmt.Errorf("falha ao obter rest config: %w", err)
 	}
-
 	return dynamic.NewForConfig(restConfig)
+}
+
+// silenciarLogs manda o logrus e o log padrão para io.Discard e devolve a função que
+// restaura os destinos de antes.
+func silenciarLogs() func() {
+	logrusAntes := logrus.StandardLogger().Out
+	logAntes := log.Writer()
+	logrus.SetOutput(io.Discard)
+	log.SetOutput(io.Discard)
+	return func() {
+		logrus.SetOutput(logrusAntes)
+		log.SetOutput(logAntes)
+	}
 }
 
 // mapPolarisResults converte os resultados da auditoria Polaris para o formato
 // unificado de findings do Sentinel.
 // Agrupa por check — cada check aparece uma vez com a lista de recursos afetados.
-// Só entram os recursos do namespace pedido (e os sem namespace, como um ClusterRole):
-// o Polaris pode trazer controllers de outros namespaces mesmo com cfg.Namespace. A
-// ordem é determinística: o recurso que representa o check é o primeiro em ordem
+// Só entram os recursos do namespace pedido, que o Polaris pode misturar com controllers
+// de outros namespaces mesmo com cfg.Namespace, e os sem namespace (um ClusterRole) que
+// dentro aceita; estes saem sem namespace e com escopo cluster. dentro nil aceita
+// todos. A ordem é determinística: o recurso que representa o check é o primeiro em ordem
 // alfabética, e os findings saem em ordem de check e severidade, para duas rodadas
 // iguais darem a mesma tela.
-func mapPolarisResults(auditData validator.AuditData, namespace string) []Finding {
+func mapPolarisResults(auditData validator.AuditData, namespace string, dentro func(kind, nome string) bool) []Finding {
 	// Agrupar: checkID+severity → lista de recursos afetados
 	type checkGroup struct {
 		id             string
+		escopo         escopo.Escopo
+		category       string
 		severity       string
 		message        string
 		recommendation string
@@ -111,11 +159,18 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		// ordem alfabética, para não depender da ordem dos maps do Polaris.
 		primeiro string
 	}
-	groups := make(map[string]*checkGroup) // chave: checkID+severity
+	groups := make(map[string]*checkGroup) // chave: checkID+severity+escopo
 
 	for _, result := range auditData.Results {
 		if result.Namespace != "" && namespace != "" && result.Namespace != namespace {
 			continue
+		}
+		esc := escopo.Namespace
+		if result.Namespace == "" {
+			if dentro != nil && !dentro(result.Kind, result.Name) {
+				continue
+			}
+			esc = escopo.Cluster
 		}
 		resource := fmt.Sprintf("%s/%s", result.Kind, result.Name)
 
@@ -124,15 +179,17 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 			if msg.Success {
 				return
 			}
-			sev := mapPolarisSeverity(msg.Severity)
+			cat, sev := classificarPolaris(checkID, msg)
 			if sev == "info" {
 				return
 			}
-			key := fmt.Sprintf("%s|%s", checkID, sev)
+			key := fmt.Sprintf("%s|%s|%s", checkID, sev, esc)
 			g, ok := groups[key]
 			if !ok {
 				g = &checkGroup{
 					id:             checkID,
+					escopo:         esc,
+					category:       cat,
 					severity:       sev,
 					message:        msg.Message,
 					recommendation: formatRecommendation(msg.Details),
@@ -178,37 +235,94 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		}
 		sort.Strings(resources)
 
-		resourceStr := resources[0]
-		if len(resources) > 1 {
-			resourceStr = fmt.Sprintf("%s (+%d)", resources[0], len(resources)-1)
+		ns := namespace
+		if g.escopo == escopo.Cluster {
+			ns = ""
 		}
-
 		findings = append(findings, Finding{
 			ID:             fmt.Sprintf("polaris/%s", g.id),
 			Source:         "polaris",
 			Severity:       g.severity,
-			Category:       "pod-security",
-			Resource:       resourceStr,
-			Namespace:      namespace,
+			Category:       g.category,
+			Resource:       resources[0],
+			Resources:      resources,
+			Namespace:      ns,
 			Message:        g.message,
 			Recommendation: g.recommendation,
+			Scope:          string(g.escopo),
 		})
 	}
 
 	return findings
 }
 
-// mapPolarisSeverity converte a severidade do Polaris para o formato do Sentinel.
-// Mapeamento: danger → critical, warning → high, ignore → info.
-func mapPolarisSeverity(severity polarisconfig.Severity) string {
-	switch severity {
-	case polarisconfig.SeverityDanger:
-		return "critical"
-	case polarisconfig.SeverityWarning:
-		return "high"
-	default:
-		return "info"
+// categoriasDeSeguranca dá a seção dos checks de Security do Polaris que não são do pod:
+// RBAC, rede e secrets ficam junto dos achados do OPA e dos checks internos. Os outros
+// checks de Security ficam em "pod-security".
+var categoriasDeSeguranca = map[string]string{
+	"clusterrolebindingClusterAdmin":      "rbac",
+	"clusterrolebindingPodExecAttach":     "rbac",
+	"clusterrolePodExecAttach":            "rbac",
+	"rolebindingClusterAdminClusterRole":  "rbac",
+	"rolebindingClusterAdminRole":         "rbac",
+	"rolebindingClusterRolePodExecAttach": "rbac",
+	"rolebindingRolePodExecAttach":        "rbac",
+	"rolePodExecAttach":                   "rbac",
+	"missingNetworkPolicy":                "network",
+	"tlsSettingsMissing":                  "network",
+	"sensitiveContainerEnvVar":            "secrets",
+	"sensitiveConfigmapContent":           "secrets",
+}
+
+// avisosDeSegurancaMedios são os checks de Security que o Polaris marca como warning e
+// que são endurecimento (defesa em profundidade), não uma porta aberta: saem como médio.
+// Os outros warnings de Security, inclusive os que não estão aqui (hostPathSet,
+// hostProcess, procMount e os checks customizados), saem como alto.
+var avisosDeSegurancaMedios = map[string]bool{
+	"automountServiceAccountToken": true,
+	"hostPortSet":                  true,
+	"insecureCapabilities":         true,
+	"linuxHardening":               true,
+	"missingNetworkPolicy":         true,
+	"notReadOnlyRootFilesystem":    true,
+	"tlsSettingsMissing":           true,
+}
+
+// classificarPolaris dá a categoria e a severidade do Sentinel a um check do Polaris,
+// pela categoria do próprio check (ResultMessage.Category):
+//   - Reliability e Efficiency vão para "reliability" e "efficiency", com danger como
+//     médio e warning como baixo: não são falhas de segurança;
+//   - Security (e o check sem categoria) vai para a seção de categoriasDeSeguranca, com
+//     danger como crítico e warning como alto ou médio (avisosDeSegurancaMedios).
+//
+// ignore (ou severidade vazia) vira info, que o scan descarta.
+func classificarPolaris(checkID string, msg validator.ResultMessage) (categoria, severidade string) {
+	switch msg.Category {
+	case "Reliability", "Efficiency":
+		categoria = strings.ToLower(msg.Category)
+		switch msg.Severity {
+		case polarisconfig.SeverityDanger:
+			return categoria, "medium"
+		case polarisconfig.SeverityWarning:
+			return categoria, "low"
+		}
+		return categoria, "info"
 	}
+
+	categoria = "pod-security"
+	if c, ok := categoriasDeSeguranca[checkID]; ok {
+		categoria = c
+	}
+	switch msg.Severity {
+	case polarisconfig.SeverityDanger:
+		return categoria, "critical"
+	case polarisconfig.SeverityWarning:
+		if avisosDeSegurancaMedios[checkID] {
+			return categoria, "medium"
+		}
+		return categoria, "high"
+	}
+	return categoria, "info"
 }
 
 // formatRecommendation formata os detalhes de um check como recomendação legível.

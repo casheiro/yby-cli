@@ -8,6 +8,7 @@ import (
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -47,6 +48,7 @@ type Model struct {
 	agora          func() time.Time   // relógio, injetável nos testes
 	vigia          observacao         // o watch aberto no namespace atual
 	vigiadas       uint16             // bit por aba: a lista vem do watch (o relógio não a troca)
+	negadas        [tabCount]error    // o Forbidden de cada aba que o RBAC não deixa listar (o relógio não a lista)
 	cancelouAcao   bool               // a janela pequena fechou uma camada: o aviso sai quando ela crescer
 	ajuda          bool               // a tela ? está aberta
 	ajudaScroll    int                // primeira linha da ajuda na janela
@@ -57,10 +59,11 @@ type Model struct {
 	lendoExtras    string             // recurso cujos extras estão sendo lidos
 	leituraExtras  int                // leitura de extras mais nova: a resposta de outra é descartada
 	extras         map[string]extrasDetalhe
-	quadro         quadroAberto // logs, YAML ou eventos ocupando o corpo
-	idQuadro       int          // último pedido de conteúdo do quadro: resposta de outro é descartada
-	bard           ligacaoBard  // o b abre o Bard (bard.go)
-	bardAbrindo    bool         // o yby do b rodando: outro b espera ele voltar
+	quadro         quadroAberto  // logs, YAML ou eventos ocupando o corpo
+	idQuadro       int           // último pedido de conteúdo do quadro: resposta de outro é descartada
+	bard           ligacaoBard   // o b abre o Bard (bard.go)
+	bardAbrindo    bool          // o yby do b rodando: outro b espera ele voltar
+	cache          *cacheDeItens // a lista de cada aba já filtrada e ordenada (itensDaAba)
 	// tique agenda a próxima leitura do relógio (tea.Tick; injetável nos testes).
 	tique func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
@@ -91,6 +94,7 @@ func NewModel(client monitor.Client) Model {
 		toast:  yui.NovoToast(),
 		copiar: yui.CopiarOSC52,
 		bard:   novaLigacaoBard(),
+		cache:  &cacheDeItens{},
 	}
 	// Começa no namespace pedido (--namespace) ou no do contexto do kubeconfig,
 	// como o kubectl; n troca.
@@ -138,15 +142,34 @@ type leituraMsg struct {
 // status e a busca são filtros da tela: a leitura traz a lista inteira, que
 // também dá o total do "N de M".
 func (m Model) ler(relogio bool, tabs ...ResourceTab) tea.Cmd {
-	client, ns := m.client, m.filter.Namespace
+	client, ns, vigiadas, negadas := m.client, m.filter.Namespace, m.vigiadas, m.negadas
 	return func() tea.Msg {
 		msg := leituraMsg{namespace: ns, relogio: relogio, abas: tabs}
 		for _, t := range tabs {
+			negada := negadas[t] != nil
+			if sondador, ok := client.(monitor.Sondador); ok && relogio && (vigiadas&(1<<uint(t)) != 0 || negada) {
+				// A lista é do watch, ou o RBAC não deixa listar (repetir o LIST a
+				// cada 2 s só encheria o log da API): o relógio só confirma que o
+				// cluster responde.
+				if err := sondador.Sondar(); err != nil {
+					msg.respostas = append(msg.respostas, err)
+				} else {
+					msg.respostas = append(msg.respostas, sondaOK{})
+				}
+				continue
+			}
+			if relogio && negada {
+				msg.respostas = append(msg.respostas, sondaOK{}) // sem sonda, nada a confirmar
+				continue
+			}
 			msg.respostas = append(msg.respostas, lerAba(client, ns, t))
 		}
 		return msg
 	}
 }
+
+// sondaOK é a resposta da sonda de conexão de uma aba vigiada: não traz lista.
+type sondaOK struct{}
 
 // lerAba busca a lista de uma aba; devolve a lista ou o erro.
 func lerAba(client monitor.Client, ns string, tab ResourceTab) tea.Msg {
@@ -206,7 +229,7 @@ func (m Model) linhasDeDados() int {
 
 // itemCount retorna o número de linhas da lista visível da aba ativa.
 func (m Model) itemCount() int {
-	return len(m.itensDaAba(m.activeTab))
+	return m.contagemDaAba(m.activeTab)
 }
 
 // seguirSelecao rola a lista para a linha selecionada ficar na janela, sem
@@ -340,6 +363,7 @@ func (m *Model) guardarLista(msg tea.Msg) (ResourceTab, bool) {
 		return 0, false
 	}
 	m.carregadas |= 1 << uint(tab)
+	m.negadas[tab] = nil // a lista chegou: o RBAC deixa listar
 	m.atualizado = m.agora()
 	return tab, true
 }
@@ -372,6 +396,7 @@ func (m *Model) esquecerListas() {
 	m.pods, m.deployments, m.services, m.nodes, m.statefulsets = nil, nil, nil, nil, nil
 	m.jobs, m.ingresses, m.configmaps, m.events = nil, nil, nil, nil
 	m.carregadas, m.vigiadas = 0, 0
+	m.negadas = [tabCount]error{} // a permissão do namespace novo é outra
 	m.scrollY, m.selectedIndex = 0, 0
 }
 
@@ -403,6 +428,19 @@ func (m *Model) esquecerAba(tab ResourceTab) {
 	if tab == m.activeTab {
 		m.reselecionar(chave, antes)
 	}
+}
+
+// negar registra que o RBAC não deixa listar a aba: ela perde a lista e o
+// número, e o relógio deixa de listá-la até a troca de namespace, o r ou uma
+// lista que chegue (a troca de aba lê uma vez).
+func (m *Model) negar(tab ResourceTab, err error) {
+	m.negadas[tab] = err
+	m.esquecerAba(tab)
+}
+
+// negada diz se o RBAC não deixa listar a aba.
+func (m Model) negada(tab ResourceTab) bool {
+	return m.negadas[tab] != nil
 }
 
 // irParaAba troca a aba ativa, volta ao topo e lê a lista nova.
@@ -517,10 +555,26 @@ func (m Model) processar(msg tea.Msg) (tea.Model, tea.Cmd) {
 					tab = msg.abas[i]
 				}
 				if err, ok := r.(error); ok {
-					// Só a falha da aba ativa derruba a tela: a de uma aba de fundo
-					// (RBAC) ou de uma aba que a pessoa já deixou, não.
-					if temAba && tab == m.activeTab {
+					switch {
+					case temAba && apierrors.IsForbidden(err):
+						// Falta de permissão não é queda: o cluster respondeu. A aba
+						// diz o que falta, sem reconectar.
+						m.negar(tab, err)
+						if tab == m.activeTab {
+							m.conexaoDePe()
+						}
+					case temAba && tab == m.activeTab:
+						// Só a falha da aba ativa derruba a tela: a de uma aba de
+						// fundo ou de uma aba que a pessoa já deixou, não.
 						m.falhar(err)
+					}
+					continue
+				}
+				if _, sonda := r.(sondaOK); sonda {
+					// A aba pode ter deixado o watch (ou ganhado a permissão) entre o
+					// pedido e a resposta: o próximo tique volta a ler a lista.
+					if temAba && (m.vigiada(tab) || m.negada(tab)) {
+						m.conexaoDePe()
 					}
 					continue
 				}

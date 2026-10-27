@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 )
 
@@ -56,9 +58,9 @@ func TestCapture(t *testing.T) {
 	// Mock AI Response
 	mockJson := `{
 		"title": "Test UKI",
+		"tipo": "regra",
 		"filename": "UKI-123-test.md",
-		"content": "**ID:** UKI-MOCK-TEST\n# Test UKI\nContent here.",
-		"summary": "Summary"
+		"content": "**ID:** UKI-MOCK-TEST\n# Test UKI\nContent here."
 	}`
 
 	mockProvider := &MockProvider{
@@ -82,9 +84,10 @@ func TestCapture(t *testing.T) {
 	}
 
 	content, _ := os.ReadFile(expectedPath)
-	// Check for semantic ID format
-	if !strings.Contains(string(content), "**ID:** UKI-") {
-		t.Errorf("Expected content to contain semantic ID format, but got: %s", string(content))
+	// o frontmatter da especificação vem antes do content; sem id no JSON, vale o do
+	// formato antigo que a IA escreveu no content
+	if !strings.HasPrefix(string(content), "---\nid: uki-mock-test\ntipo: regra\nstatus: rascunho\n") {
+		t.Errorf("UKI sem o frontmatter da especificação: %s", string(content))
 	}
 	// Original content check (assuming it should still be there or modified)
 	if !strings.Contains(string(content), "# Test UKI\nContent here.") {
@@ -145,7 +148,7 @@ func TestValidateResponse_CamposObrigatorios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateResponse(&tt.resp)
+			err := validateResponse(&tt.resp, "referencia")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateResponse() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -160,7 +163,7 @@ func TestValidateResponse_NormalizaFilename(t *testing.T) {
 		Filename: "documento.md",
 		Content:  "conteúdo",
 	}
-	err := validateResponse(&resp)
+	err := validateResponse(&resp, "referencia")
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -179,7 +182,7 @@ func TestValidateResponse_AdicionaExtensaoMd(t *testing.T) {
 		Filename: "UKI-123-teste",
 		Content:  "conteúdo",
 	}
-	err := validateResponse(&resp)
+	err := validateResponse(&resp, "referencia")
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -195,15 +198,15 @@ func TestSaveResponse_ComValidacaoERetry(t *testing.T) {
 	// Primeira resposta inválida (título vazio), segunda resposta válida
 	callCount := 0
 	mockProvider := &MockProvider{
-		Response: `{"title": "Corrigido", "filename": "UKI-123-corrigido.md", "content": "conteúdo corrigido", "summary": "resumo"}`,
+		Response: `{"title": "Corrigido", "tipo": "padrao", "filename": "UKI-123-corrigido.md", "content": "conteúdo corrigido"}`,
 	}
 
 	// Simular resposta inválida na primeira chamada
 	agent := NewAgent(mockProvider, tmpDir)
 
 	// Usar diretamente saveResponse com JSON inválido (título vazio)
-	invalidJson := `{"title": "", "filename": "UKI-123-teste.md", "content": "conteúdo", "summary": "resumo"}`
-	res, err := agent.saveResponse(context.Background(), invalidJson)
+	invalidJson := `{"title": "", "filename": "UKI-123-teste.md", "content": "conteúdo"}`
+	res, err := agent.saveResponse(context.Background(), invalidJson, "", "synapstor.capture")
 	if err != nil {
 		t.Fatalf("saveResponse deveria ter corrigido via retry, mas falhou: %v", err)
 	}
@@ -258,7 +261,7 @@ func TestCapture_NomeDoArquivoFicaNaPastaDosUKIs(t *testing.T) {
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			raiz := t.TempDir()
-			b, _ := json.Marshal(SynapstorResponse{Title: c.titulo, Filename: c.filename, Content: "# Fuga"})
+			b, _ := json.Marshal(SynapstorResponse{Title: c.titulo, Tipo: "regra", Filename: c.filename, Content: "# Fuga"})
 			res, err := NewAgent(&MockProvider{Response: string(b)}, raiz).Capture(context.Background(), "texto")
 			if err != nil {
 				t.Fatal(err)
@@ -284,7 +287,7 @@ func TestCapture_NomeDoArquivoFicaNaPastaDosUKIs(t *testing.T) {
 // ganha um sufixo em vez de apagar o anterior.
 func TestCapture_NaoSobrescreveUKI(t *testing.T) {
 	raiz := t.TempDir()
-	resp := `{"title": "Deploy", "filename": "UKI-1-deploy.md", "content": "# Novo", "summary": ""}`
+	resp := `{"title": "Deploy", "tipo": "regra", "filename": "UKI-1-deploy.md", "content": "# Novo"}`
 	agt := NewAgent(&MockProvider{Response: resp}, raiz)
 	primeiro, err := agt.Capture(context.Background(), "texto")
 	if err != nil {
@@ -318,5 +321,87 @@ func TestNomeDoUKI(t *testing.T) {
 		if !strings.HasPrefix(obtido, c.prefixo) || !strings.HasSuffix(obtido, c.sufixo) || strings.ContainsAny(obtido, `/\:`) {
 			t.Errorf("nomeDoUKI(%q, %q) = %q", c.nome, c.titulo, obtido)
 		}
+	}
+}
+
+// TestCapture_GravaNoFormatoDaEspecificacao: o UKI gravado tem o frontmatter da
+// especificação, com o tipo e as tags da IA, o status rascunho e as datas do dia vindas
+// do código; o frontmatter que a IA escreveu no content não vira um segundo bloco.
+func TestCapture_GravaNoFormatoDaEspecificacao(t *testing.T) {
+	raiz := t.TempDir()
+	resp := `{"title": "Saída em JSON", "id": "CLI.UX.Saída JSON", "tipo": "Decisão", "tags": ["CLI", "json"],
+		"filename": "UKI-1-saida.md", "content": "---\nstatus: active\ncreated_at: 1999-01-01\n---\n# Saída em JSON\n\n## Problema\n"}`
+	agt := NewAgent(&MockProvider{Response: resp}, raiz)
+	agt.agora = func() time.Time { return time.Date(2026, 10, 26, 15, 0, 0, 0, time.Local) }
+	res, err := agt.Capture(context.Background(), "texto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dados, err := os.ReadFile(filepath.Join(raiz, res.Arquivo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	esperado := "---\nid: cli.ux.saida-json\ntipo: decisao\nstatus: rascunho\ncriado_em: 2026-10-26\n" +
+		"atualizado_em: 2026-10-26\ntags: [cli, json]\n---\n\n# Saída em JSON\n\n## Problema\n"
+	if string(dados) != esperado {
+		t.Errorf("UKI fora do formato:\nesperado:\n%s\nobtido:\n%s", esperado, dados)
+	}
+}
+
+// TestCapture_TipoForaDaListaPedeCorrecao: um tipo que a especificação não conhece leva à
+// correção pela IA; o study sem tipo fica com referencia.
+func TestCapture_TipoForaDaListaPedeCorrecao(t *testing.T) {
+	resp := SynapstorResponse{Title: "A", Filename: "UKI-1-a.md", Content: "# A", Tipo: "conceito"}
+	if err := validateResponse(&resp, ""); err == nil || !strings.Contains(err.Error(), "tipo") {
+		t.Errorf("esperado erro de tipo, obtido %v", err)
+	}
+	resp = SynapstorResponse{Title: "A", Filename: "UKI-1-a.md", Content: "# A"}
+	if err := validateResponse(&resp, ""); err == nil {
+		t.Error("sem tipo e sem padrão, esperado erro")
+	}
+	resp = SynapstorResponse{Title: "A", Filename: "UKI-1-a.md", Content: "# A"}
+	if err := validateResponse(&resp, "referencia"); err != nil || resp.Tipo != "referencia" {
+		t.Errorf("esperado o tipo padrão, obtido %q (%v)", resp.Tipo, err)
+	}
+	// o tipo do formato antigo no content vale quando o JSON não traz
+	resp = SynapstorResponse{Title: "A", Filename: "UKI-1-a.md", Content: "# A\n**Tipo:** Regra\n"}
+	if err := validateResponse(&resp, ""); err != nil || resp.Tipo != "regra" {
+		t.Errorf("esperado o tipo do content, obtido %q (%v)", resp.Tipo, err)
+	}
+}
+
+// provedorQueGrava guarda os prompts de sistema de cada chamada e responde em sequência.
+type provedorQueGrava struct {
+	MockProvider
+	respostas []string
+	sistemas  []string
+}
+
+func (p *provedorQueGrava) Completion(ctx context.Context, sistema, usuario string) (string, error) {
+	p.sistemas = append(p.sistemas, sistema)
+	r := p.respostas[0]
+	p.respostas = p.respostas[1:]
+	return r, nil
+}
+
+// TestStudy_CorrecaoUsaOPromptDoStudy: a resposta inválida do study é corrigida com o prompt
+// do próprio comando, não com o do capture.
+func TestStudy_CorrecaoUsaOPromptDoStudy(t *testing.T) {
+	raiz := t.TempDir()
+	if err := os.WriteFile(filepath.Join(raiz, "bootstrap.go"), []byte("package bootstrap\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	prov := &provedorQueGrava{respostas: []string{
+		`{"title": "", "filename": "UKI-1-x.md", "content": "c"}`,
+		`{"title": "Ok", "tipo": "referencia", "filename": "UKI-1-ok.md", "content": "# Ok"}`,
+	}}
+	if _, err := NewAgent(prov, raiz).Study(context.Background(), "bootstrap"); err != nil {
+		t.Fatalf("Study falhou: %v", err)
+	}
+	if len(prov.sistemas) != 2 {
+		t.Fatalf("esperadas 2 chamadas, obtidas %d", len(prov.sistemas))
+	}
+	if !strings.HasPrefix(prov.sistemas[1], prompts.Get("synapstor.study")) {
+		t.Error("a correção não usou o prompt synapstor.study")
 	}
 }

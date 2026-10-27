@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"sort"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,7 +113,7 @@ func observar(ctx context.Context, cs kubernetes.Interface, namespace string, in
 		ctxTipo, parar := context.WithCancel(ctx)
 		t := &tipoObservado{kind: kind, informer: informerDe(fabrica, kind), parar: parar, versao: 1}
 		// O informer ainda não rodou: as três chamadas não falham.
-		_ = t.informer.SetTransform(semManagedFields)
+		_ = t.informer.SetTransform(paraOCache)
 		_ = t.informer.SetWatchErrorHandlerWithContext(func(_ context.Context, _ *cache.Reflector, err error) {
 			v.falhou(ctx, t, err)
 		})
@@ -160,11 +162,48 @@ func informerDe(f informers.SharedInformerFactory, kind string) cache.SharedInde
 	return f.Core().V1().Events().Informer()
 }
 
-// semManagedFields tira os managedFields antes de o objeto entrar no cache:
-// o Viz não os mostra, e eles são boa parte da memória de cada objeto.
-func semManagedFields(o any) (any, error) {
+// anotacaoTamanho guarda, só no cache do watch, o tamanho em bytes dos dados
+// do ConfigMap, que sai do cache sem os valores.
+const anotacaoTamanho = "viz.yby/tamanho-dos-dados"
+
+// paraOCache enxuga o objeto antes de ele entrar no cache, deixando só o que
+// as conversões das abas leem: sem managedFields nem a annotation
+// last-applied (o manifesto inteiro de novo) em todo tipo; o ConfigMap sem os
+// valores (as chaves ficam, e o tamanho vai na anotacaoTamanho); o Pod sem
+// env, volumes, args e command. O YAML do detalhe vem da API, inteiro. Roda de
+// novo sem estragar o objeto já enxuto, como o client-go pede.
+func paraOCache(o any) (any, error) {
 	if a, ok := o.(metav1.Object); ok {
 		a.SetManagedFields(nil)
+		if anotacoes := a.GetAnnotations(); anotacoes != nil {
+			delete(anotacoes, "kubectl.kubernetes.io/last-applied-configuration")
+			if len(anotacoes) == 0 {
+				a.SetAnnotations(nil)
+			}
+		}
+	}
+	switch v := o.(type) {
+	case *corev1.ConfigMap:
+		if _, ok := v.Annotations[anotacaoTamanho]; !ok {
+			if v.Annotations == nil {
+				v.Annotations = map[string]string{}
+			}
+			v.Annotations[anotacaoTamanho] = strconv.Itoa(tamanhoDosDados(v))
+		}
+		for k := range v.Data {
+			v.Data[k] = ""
+		}
+		for k := range v.BinaryData {
+			v.BinaryData[k] = nil
+		}
+	case *corev1.Pod:
+		v.Spec.Volumes = nil
+		for _, cs := range [][]corev1.Container{v.Spec.InitContainers, v.Spec.Containers} {
+			for i := range cs {
+				cs[i].Env, cs[i].EnvFrom, cs[i].VolumeMounts = nil, nil, nil
+				cs[i].Command, cs[i].Args = nil, nil
+			}
+		}
 	}
 	return o, nil
 }
@@ -273,17 +312,29 @@ func (v *vigia) entregar(ctx context.Context, saida chan<- Lote, intervalo time.
 	}
 }
 
+// comChave é um objeto do cache com a chave namespace/nome dele.
+type comChave struct {
+	chave string
+	obj   any
+}
+
 // listaDoCache converte os objetos do cache de um tipo, na ordem da API
-// (namespace e nome): a ordem "problemas primeiro" desempata por ela.
+// (namespace e nome): a ordem "problemas primeiro" desempata por ela. A chave
+// de cada objeto é calculada uma vez, ao lado dele: buscá-la num mapa a cada
+// comparação custava mais que a conversão.
 func listaDoCache(kind string, objs []any) any {
-	chaves := make(map[any]string, len(objs))
-	for _, o := range objs {
-		chaves[o], _ = cache.MetaNamespaceKeyFunc(o)
+	ordenados := make([]comChave, len(objs))
+	for i, o := range objs {
+		k, _ := cache.MetaNamespaceKeyFunc(o)
+		ordenados[i] = comChave{chave: k, obj: o}
 	}
-	sort.Slice(objs, func(i, j int) bool { return chaves[objs[i]] < chaves[objs[j]] })
+	slices.SortFunc(ordenados, func(a, b comChave) int { return strings.Compare(a.chave, b.chave) })
+	for i := range ordenados {
+		objs[i] = ordenados[i].obj
+	}
 	switch kind {
 	case "pod":
-		return converter(objs, func(p *corev1.Pod) Pod { return podDeK8s(p, nil) })
+		return converter(objs, func(p *corev1.Pod) Pod { return podDeK8s(p) })
 	case "deployment":
 		return converter(objs, deploymentDeK8s)
 	case "statefulset":
@@ -299,8 +350,7 @@ func listaDoCache(kind string, objs []any) any {
 	case "configmap":
 		return converter(objs, configMapDeK8s)
 	}
-	eventos := converter(objs, func(e *corev1.Event) corev1.Event { return *e })
-	return eventosDeK8s(eventos, nil)
+	return eventosDePonteiros(converter(objs, func(e *corev1.Event) *corev1.Event { return e }), nil)
 }
 
 // converter aplica f a cada objeto do tipo O (os outros, que o cache não

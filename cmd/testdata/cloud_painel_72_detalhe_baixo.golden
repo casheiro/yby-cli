@@ -4,17 +4,17 @@
                                                                         
 ┌ EKS · staging ───────────────────────────────────────────────────────┐
 │ IDENTIDADE                                                           │
-│ token     ✕ expirou às 11:55                                         │
 │ conta     4821·…·9310                                                │
 │ papel     yby-staging-admin                                          │
 │ método    SSO · Identity Center                                      │
-│ ambiente  staging (.yby/environments)                                │
+│ token     ✕ expirou às 11:55                                         │
+│ AUDITORIA RECENTE                                                    │
+│ 11:55  ✕ renova  SSO vencido                                         │
 └──────────────────────────────────────────────────────────────────────┘
 ────────────────────────────────────────────────────────────────────────
 CLOUD  CLUSTER    REGIÃO       K8S   STATUS     TOKEN                   
-aws    prod-core  us-east-1    1.31  ✓ pronto   ━━┄┄┄┄┄┄┄  11 min       
 aws    staging    us-east-1    1.31  ✕ token    expirou há 12 min       
-↓ 2 clusters abaixo                                                     
+↑ 1 cluster acima   ↓ 2 clusters abaixo                                 
 ────────────────────────────────────────────────────────────────────────
 ✕ staging sem token: t renova (com o SSO vencido, r… atualizado 12:07:00
 esc voltar  ↵ abrir no Viz  t renovar token  ? mais          ctrl+c sair

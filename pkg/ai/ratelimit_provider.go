@@ -129,6 +129,9 @@ func NewRateLimitProvider(inner Provider, rps float64) *RateLimitProvider {
 	}
 }
 
+// Unwrap devolve o provider embrulhado.
+func (r *RateLimitProvider) Unwrap() Provider { return r.inner }
+
 func (r *RateLimitProvider) Name() string                         { return r.inner.Name() }
 func (r *RateLimitProvider) IsAvailable(ctx context.Context) bool { return r.inner.IsAvailable(ctx) }
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -351,8 +352,8 @@ func TestLoadBardConfig_Defaults(t *testing.T) {
 	if cfg.TopK != 5 {
 		t.Errorf("TopK padrão esperado 5, obtido %d", cfg.TopK)
 	}
-	if cfg.RelevanceThreshold != 0.6 {
-		t.Errorf("RelevanceThreshold padrão esperado 0.6, obtido %f", cfg.RelevanceThreshold)
+	if cfg.RelevanceThreshold != ai.RelevanciaMinima {
+		t.Errorf("RelevanceThreshold padrão esperado %v (o corte do pkg/ai), obtido %f", ai.RelevanciaMinima, cfg.RelevanceThreshold)
 	}
 	if cfg.SystemPromptExtra != "" {
 		t.Errorf("SystemPromptExtra padrão esperado vazio, obtido '%s'", cfg.SystemPromptExtra)
@@ -388,6 +389,22 @@ system_prompt_extra: "Responda sempre em formato de lista."
 	}
 	if cfg.SystemPromptExtra != "Responda sempre em formato de lista." {
 		t.Errorf("SystemPromptExtra inesperado: '%s'", cfg.SystemPromptExtra)
+	}
+}
+
+// TestLoadBardConfig_LimiarZeroExplicito: o relevance_threshold do bard.yaml vale mesmo
+// quando é 0 (aceita todas as notas), e não volta ao corte do pkg/ai.
+func TestLoadBardConfig_LimiarZeroExplicito(t *testing.T) {
+	restore := chdir(t, t.TempDir())
+	defer restore()
+	if err := os.MkdirAll(".yby", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".yby/bard.yaml", []byte("relevance_threshold: 0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := loadBardConfig(); cfg.RelevanceThreshold != 0 {
+		t.Errorf("o 0 explícito deveria valer, veio %v", cfg.RelevanceThreshold)
 	}
 }
 
@@ -563,5 +580,83 @@ func TestBuildSystemPrompt_SemHistorico(t *testing.T) {
 	}
 	if strings.Contains(prompt, "Histórico de Conversas Anteriores") {
 		t.Error("prompt sem histórico não deveria conter bloco de histórico")
+	}
+}
+
+// TestSaveMessage_RedigeSegredos verifica que o histórico grava sem JWT nem credencial em URL.
+func TestSaveMessage_RedigeSegredos(t *testing.T) {
+	tmpDir := t.TempDir()
+	restore := chdir(t, tmpDir)
+	defer restore()
+
+	saveMessage("user", "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig e https://u:senha123@h.io", "s")
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, historyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"eyJhbGci", "senha123"} {
+		if bytes.Contains(data, []byte(q)) {
+			t.Errorf("histórico guardou %q: %s", q, data)
+		}
+	}
+}
+
+// O Bard escolhe e roda as ferramentas pelo classificador: o system prompt não pede
+// chamada em JSON (nada a executaria) nem empurra o runtime do provider a rodar
+// kubectl ou helm por conta própria, fora das guardas do Bard.
+func TestBuildSystemPrompt_SemChamadaJSONNemRuntimeQueEscreve(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Chdir(t.TempDir())
+
+	prompt := buildSystemPrompt(nil, BardConfig{}, nil)
+	if !strings.Contains(prompt, "kubectl_get") {
+		t.Fatalf("o prompt deveria listar as ferramentas nativas:\n%s", prompt)
+	}
+	for _, proibido := range []string{"bloco JSON", `{"tool"`, "kubectl, helm, MCP", "tente usar as capacidades do seu runtime"} {
+		if strings.Contains(prompt, proibido) {
+			t.Errorf("o prompt não deveria conter %q:\n%s", proibido, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "Nunca execute") {
+		t.Errorf("o prompt deveria proibir ações de escrita pelo runtime do provider:\n%s", prompt)
+	}
+}
+
+// As seções Project Overview, Backlog & Debt e Technical Blueprint nunca recebiam dado
+// (o Bard declara só o hook command): o prompt não promete o que não tem, mesmo que
+// ctxData traga as chaves antigas.
+func TestBuildSystemPrompt_SemSecoesMortas(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Chdir(t.TempDir())
+
+	ctx := map[string]interface{}{"overview": "visão", "backlog": "dívida", "blueprint": map[string]interface{}{"a": 1}}
+	for _, c := range []map[string]interface{}{nil, ctx} {
+		prompt := buildSystemPrompt(c, BardConfig{}, nil)
+		for _, proibido := range []string{"Technical Blueprint", "Nenhum blueprint disponível", "Project Overview", "Backlog & Debt", "Contexto do Projeto", "{{"} {
+			if strings.Contains(prompt, proibido) {
+				t.Errorf("o prompt não deveria conter %q:\n%s", proibido, prompt)
+			}
+		}
+	}
+}
+
+// Override antigo do usuário que ainda usa {{blueprint_json_summary}} segue válido:
+// a variável é trocada por vazio.
+func TestBuildSystemPrompt_OverrideComPlaceholderAntigo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".yby", "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".yby", "prompts", "bard.system.txt"), []byte("A[{{blueprint_json_summary}}]B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := buildSystemPrompt(nil, BardConfig{}, nil); !strings.HasPrefix(got, "A[]B") {
+		t.Errorf("placeholder antigo deveria virar vazio, obteve %q", got)
 	}
 }

@@ -60,8 +60,8 @@ func TestExportScanMarkdown_SeveridadeComoNoTerminal(t *testing.T) {
 	})
 	for _, esperado := range []string{
 		"**Resumo:** 1 alto, 1 baixo\n",
-		"- ▲ **[supply-chain]** `Deployment/api`",
-		"- ○ **[supply-chain]** `StatefulSet/redis`",
+		"### Cadeia de suprimentos\n\n- ▲ `Deployment/api`",
+		"- ○ `StatefulSet/redis`",
 	} {
 		if !strings.Contains(content, esperado) {
 			t.Errorf("esperava %q no relatório:\n%s", esperado, content)

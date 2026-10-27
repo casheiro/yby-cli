@@ -191,6 +191,11 @@ func getEmbeddingModelForBedrock() string {
 	return "amazon.titan-embed-text-v2:0"
 }
 
+// IdentidadeDosEmbeddings diz que os embeddings vêm do Bedrock e com que modelo.
+func (p *BedrockProvider) IdentidadeDosEmbeddings(context.Context) (IdentidadeDoIndice, error) {
+	return IdentidadeDoIndice{Provider: "bedrock", Modelo: getEmbeddingModelForBedrock()}, nil
+}
+
 func (p *BedrockProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	embeddingModel := getEmbeddingModelForBedrock()
 	results := make([][]float32, len(texts))

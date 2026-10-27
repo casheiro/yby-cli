@@ -6,11 +6,10 @@ import "time"
 type Pod struct {
 	Name      string
 	Namespace string
+	UID       string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	// Status é o estado como o kubectl mostra: o motivo do contêiner quando há
 	// um (CrashLoopBackOff, Completed, OOMKilled), senão a fase do pod.
 	Status     string
-	CPU        string
-	Memory     string
 	Prontos    int32 // contêineres prontos
 	Containers int32 // contêineres no pod
 	Reinicios  int32 // soma dos reinícios dos contêineres
@@ -43,6 +42,7 @@ type Recursos struct {
 type Deployment struct {
 	Name        string
 	Namespace   string
+	UID         string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	Replicas    int32
 	Ready       int32
 	Available   int32
@@ -58,6 +58,7 @@ type Deployment struct {
 type Service struct {
 	Name      string
 	Namespace string
+	UID       string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	Type      string
 	ClusterIP string
 	Ports     string
@@ -84,6 +85,7 @@ type Node struct {
 type StatefulSet struct {
 	Name        string
 	Namespace   string
+	UID         string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	Replicas    int32
 	Ready       int32
 	Atualizados int32 // réplicas já na revisão atual
@@ -98,6 +100,7 @@ type StatefulSet struct {
 type Job struct {
 	Name        string
 	Namespace   string
+	UID         string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	Completions int32
 	Active      int32
 	Succeeded   int32
@@ -114,6 +117,7 @@ type Job struct {
 type Ingress struct {
 	Name      string
 	Namespace string
+	UID       string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	Class     string
 	Hosts     string
 	Paths     string
@@ -126,6 +130,7 @@ type Ingress struct {
 type ConfigMap struct {
 	Name      string
 	Namespace string
+	UID       string // metadata.uid: a exclusão só vale para este objeto, não para um homônimo recriado
 	Keys      int
 	DataSize  string
 	CriadoEm  time.Time

@@ -29,19 +29,29 @@ const (
 	CategoryNetwork     Category = "network"
 	CategorySecrets     Category = "secrets"
 	CategorySupplyChain Category = "supply-chain"
+	// CategoryReliability e CategoryEfficiency recebem os checks de Reliability e de
+	// Efficiency do Polaris (probes, réplicas, requests e limits), que não são de segurança.
+	CategoryReliability Category = "reliability"
+	CategoryEfficiency  Category = "efficiency"
 )
 
 // SecurityFinding representa uma vulnerabilidade encontrada por um check.
 type SecurityFinding struct {
-	CheckID        string   `json:"check_id"`
-	Severity       Severity `json:"severity"`
-	Category       Category `json:"category"`
-	Pod            string   `json:"pod,omitempty"`
-	Container      string   `json:"container,omitempty"`
-	Namespace      string   `json:"namespace"`
-	Resource       string   `json:"resource"`
+	CheckID   string   `json:"check_id"`
+	Severity  Severity `json:"severity"`
+	Category  Category `json:"category"`
+	Pod       string   `json:"pod,omitempty"`
+	Container string   `json:"container,omitempty"`
+	Namespace string   `json:"namespace"`
+	Resource  string   `json:"resource"`
+	// Resources lista todos os recursos afetados quando o achado agrupa vários (Resource
+	// é o primeiro); vazio quando é de um recurso só.
+	Resources      []string `json:"resources,omitempty"`
 	Message        string   `json:"message"`
 	Recommendation string   `json:"recommendation,omitempty"`
+	// Scope é o escopo do recurso (escopo.Escopo): "cluster" para um ClusterRole ou um
+	// ClusterRoleBinding, "namespace" para o resto (o scan preenche quando o check não diz).
+	Scope string `json:"scope"`
 	// Type mantém compatibilidade com o formato antigo (mapeia para severity).
 	Type string `json:"type"`
 	// Description mantém compatibilidade com o formato antigo (mapeia para message).
@@ -57,3 +67,12 @@ type SecurityCheck interface {
 	Description() string
 	Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error)
 }
+
+// ErrNaoVerificado é o erro que um check devolve quando não tem como verificar (falta
+// configuração ou ferramenta), o que não é falha de cluster nem achado: o scan registra
+// como "não rodou", com o Motivo, e segue.
+type ErrNaoVerificado struct {
+	Motivo string
+}
+
+func (e *ErrNaoVerificado) Error() string { return e.Motivo }

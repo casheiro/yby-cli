@@ -12,13 +12,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
 	"github.com/casheiro/yby-cli/plugins/sentinel/cli/remediation"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,17 +32,44 @@ import (
 
 // ScanReport contém o resultado completo do scan de segurança.
 type ScanReport struct {
-	Namespace       string                   `json:"namespace"`
+	Namespace string `json:"namespace"`
+	// Scope é o escopo do scan: "namespace" (só o RBAC que vale no namespace) ou
+	// "cluster" (o RBAC do cluster todo, com --scope cluster).
+	Scope           string                   `json:"scope"`
 	Findings        []checks.SecurityFinding `json:"findings"`
 	Sources         []string                 `json:"sources,omitempty"`
 	Recommendations string                   `json:"recommendations,omitempty"`
+	// IgnoradosPelaAllowlist conta os recursos de RBAC que a allowlist deixou de fora
+	// (cada um uma vez, mesmo que mais de uma verificação o ignore).
+	IgnoradosPelaAllowlist int `json:"ignored_by_allowlist"`
+	// NaoRodaram diz o que o scan não conseguiu verificar, para o JSON não parecer limpo
+	// quando faltou verificação.
+	NaoRodaram []NaoRodou `json:"nao_rodaram,omitempty"`
+	// Perfil é o perfil de conformidade do --profile; ForaDoPerfil conta os achados que
+	// ele deixou de fora.
+	Perfil       string `json:"perfil,omitempty"`
+	ForaDoPerfil int    `json:"fora_do_perfil,omitempty"`
+	// Contexto é o contexto do kubeconfig que o scan olhou; GeradoEm é a hora em que o
+	// relatório foi gravado (só entra no markdown e no nome do arquivo).
+	Contexto string    `json:"contexto,omitempty"`
+	GeradoEm time.Time `json:"-"`
+}
+
+// NaoRodou registra as verificações de uma fonte que ficaram de fora. Verificacoes vazio
+// quer dizer que a fonte inteira falhou; Motivo é o texto em PT-BR da tela.
+type NaoRodou struct {
+	Backend      string   `json:"backend"`
+	Verificacoes []string `json:"verificacoes,omitempty"`
+	Motivo       string   `json:"motivo"`
 }
 
 // Dependências do scan e do investigate, substituíveis nos testes.
 var (
 	novoClienteKube = getKubeClient
+	nomeDoContexto  = contextoDoKube
+	namespacePadrao = namespaceDoKube
 	backendsDoScan  = func() []backends.SecurityBackend {
-		return []backends.SecurityBackend{backends.NewPolarisBackend(), backends.NewOPABackend()}
+		return []backends.SecurityBackend{backends.NewPolarisBackend(getRestConfig), backends.NewOPABackend()}
 	}
 	checksDoScan = checks.GetAll
 	provedorDeIA = func(ctx context.Context) ai.Provider { return ai.GetProvider(ctx, "auto") }
@@ -56,7 +87,7 @@ func semCluster(err error) error {
 func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error {
 	namespace := op.namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = namespacePadrao()
 	}
 	var selecionados []checks.SecurityCheck
 	if op.perfil != "" {
@@ -68,6 +99,13 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 		selecionados = checks.GetByIDs(p.CheckIDs)
 	} else {
 		selecionados = checksDoScan()
+	}
+	// O --fix pergunta antes de mudar o cluster; sem terminal na entrada, não há a quem
+	// perguntar, e ele para aqui, antes do scan, em vez de aplicar calado.
+	aplica := op.fix && !op.fixDryRun
+	if aplica && !op.sim && !entradaTerminal() {
+		return yerrors.New(yerrors.ErrCodeValidation, "o --fix pede confirmação, e a entrada não é um terminal").
+			WithHint("rode num terminal, ou passe --yes para aplicar sem perguntar (veja antes o plano com --fix-dry-run)")
 	}
 
 	k8sClient, err := novoClienteKube()
@@ -84,7 +122,14 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 	if op.paraScripts() {
 		telaDasEtapas = erros
 	} else {
-		ui.Title(saida, "sentinel", "scan · namespace "+namespace)
+		titulo := "scan · namespace " + namespace
+		if op.escopo == escopo.Cluster {
+			titulo += " · escopo cluster"
+		}
+		if op.perfil != "" {
+			titulo += " · perfil " + op.perfil
+		}
+		ui.Title(saida, "sentinel", titulo)
 		fmt.Fprintln(saida)
 	}
 
@@ -98,9 +143,18 @@ func scanNamespace(ctx context.Context, saida, erros io.Writer, op opcoes) error
 	if err := escreverResultadoScan(saida, c, namespace, op); err != nil {
 		return err
 	}
-	// Patches que o --fix não aplicou saem como erro depois do resultado, para o código de
-	// saída dizer a scripts e à CI que nada (ou nem tudo) foi corrigido.
-	return c.falhaPatches
+	if len(c.report.Findings) == 0 || (!op.fix && !op.fixDryRun) {
+		return nil
+	}
+	// No json e no markdown, o plano de correção vai para a tela das etapas, fora do
+	// resultado; no terminal, ele já saiu no resultado.
+	if op.formato != "" {
+		escreverRemediacao(telaDasEtapas, c, op)
+	}
+	if !aplica {
+		return nil
+	}
+	return aplicarCorrecoes(ctx, telaDasEtapas, erros, k8sClient, c, namespace, op)
 }
 
 // verificarNamespace lê o namespace antes do scan, como o investigate lê o pod: um
@@ -146,28 +200,36 @@ func escreverResultadoScan(saida io.Writer, c coleta, namespace string, op opcoe
 	}
 	if len(report.Findings) == 0 {
 		fmt.Fprintln(saida)
-		if c.naoRodaram > 0 {
+		switch {
+		case c.naoRodaram > 0:
 			ui.Check(saida, ui.CheckAviso, "nenhum problema nas verificações que rodaram · "+contar(c.naoRodaram, "não rodou", "não rodaram"), "", "")
-		} else {
+		case report.Perfil != "":
+			ui.Check(saida, ui.CheckOk, "nenhum problema do perfil "+report.Perfil, "", "")
+		default:
 			ui.Check(saida, ui.CheckOk, "nenhum problema de segurança encontrado", "", "")
 		}
-		ui.Campos(saida, ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)})
+		ui.Campos(saida,
+			ui.Campo{Rotulo: "perfil", Valor: textoDoPerfil(report)},
+			ui.Campo{Rotulo: "fontes", Valor: nomesDasFontes(report.Sources)},
+			ui.Campo{Rotulo: "allowlist", Valor: textoDaAllowlist(report.IgnoradosPelaAllowlist)},
+		)
 		return nil
 	}
 	caminho, errRelatorio := saveReportToGlobal(report, namespace)
-	escreverScan(saida, report, c.patches, op, caminho, errRelatorio)
+	escreverScan(saida, c, op, caminho, errRelatorio)
 	return nil
 }
 
-// coleta é o que coletarScan junta: o relatório, os patches gerados com --fix ou
-// --fix-dry-run, o erro dos patches que o --fix não aplicou e quantas verificações não
-// rodaram (um backend que falhou por inteiro conta 1; as de uma falha parcial e os checks
-// internos que falharam contam cada uma).
+// coleta é o que coletarScan junta: o relatório, o plano de correção do --fix ou do
+// --fix-dry-run com os patches que o servidor aceitou e recusou no dry-run e quantas
+// verificações não rodaram (um backend que falhou por inteiro conta 1; as de uma falha
+// parcial e os checks internos que falharam contam cada uma).
 type coleta struct {
-	report       ScanReport
-	patches      []remediation.RemediationPatch
-	falhaPatches error
-	naoRodaram   int
+	report     ScanReport
+	plano      remediation.Plano
+	validos    []remediation.RemediationPatch
+	recusados  []remediation.Falha
+	naoRodaram int
 }
 
 // coletarScan roda os backends (ou os checks internos), as recomendações da IA e, com
@@ -178,7 +240,13 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 	var findings []checks.SecurityFinding
 	var sources []string
 	consultou := false
+	backendRodou := false
 	var primeiroErro error
+	var naoRodou []NaoRodou
+	// Os backends e os checks registram nesta contagem o que a allowlist deixou de fora,
+	// e leem do contexto o escopo do RBAC (só o do namespace, ou o do cluster todo).
+	ctx, ignorados := allowlist.ComContagem(ctx)
+	ctx = escopo.Com(ctx, op.escopo)
 
 	// 1. Backends de segurança (Polaris, OPA)
 	for _, b := range backendsDoScan() {
@@ -193,6 +261,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			slog.Debug("o backend falhou", "backend", b.Name(), "erro", errBackend)
 			prog.Detalhe(motivoNaTela(errBackend))
 			c.naoRodaram++
+			naoRodou = append(naoRodou, NaoRodou{Backend: b.Name(), Motivo: motivoNaTela(errBackend)})
 			if primeiroErro == nil {
 				primeiroErro = errBackend
 			}
@@ -205,11 +274,11 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 			// aviso na etapa, e o motivo vai para o log de depuração.
 			slog.Debug("verificações do backend não rodaram", "backend", b.Name(), "erro", parcial.Causa)
 			c.naoRodaram += len(parcial.Falhas)
+			naoRodou = append(naoRodou, NaoRodou{Backend: b.Name(), Verificacoes: parcial.Falhas, Motivo: motivoNaTela(parcial.Causa)})
 			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(parcial.Falhas), "verificação não rodou", "verificações não rodaram"), strings.Join(parcial.Falhas, ", ")))
 		}
-		if len(bf) > 0 {
-			sources = append(sources, b.Name())
-		}
+		backendRodou = true
+		sources = append(sources, b.Name())
 		for _, f := range bf {
 			findings = append(findings, checks.SecurityFinding{
 				CheckID:        f.ID,
@@ -217,22 +286,36 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 				Category:       checks.Category(f.Category),
 				Namespace:      f.Namespace,
 				Resource:       f.Resource,
+				Resources:      f.Resources,
 				Message:        f.Message,
 				Recommendation: f.Recommendation,
+				Scope:          f.Scope,
 				Type:           f.Severity,
 				Description:    f.Message,
 			})
 		}
 	}
 
-	// 2. Sem achados dos backends, os checks internos
-	if len(sources) == 0 {
+	// 2. Os checks internos são o plano B: só rodam quando nenhum backend consegue varrer
+	// (nenhum disponível ou todos falharam). Backend que roda e não acha nada é resultado
+	// limpo, não motivo para repetir a varredura com outro motor.
+	if !backendRodou {
 		sources = append(sources, "checks-internos")
+		// Os pods são listados uma vez só para todos os checks.
+		ctx = checks.ComCachePods(ctx)
 		prog.Iniciar("checks internos")
 		var falhas []string
 		antes := len(findings)
 		for _, check := range selecionados {
 			cf, errCheck := check.Run(ctx, client, namespace)
+			var naoVerif *checks.ErrNaoVerificado
+			if errors.As(errCheck, &naoVerif) {
+				// Não é falha de cluster nem achado: vira "não rodou" com o motivo.
+				naoRodou = append(naoRodou, NaoRodou{Backend: "checks-internos", Verificacoes: []string{check.Name()}, Motivo: naoVerif.Motivo})
+				c.naoRodaram++
+				prog.Avisar(fmt.Sprintf("%s não rodou: %s", check.Name(), naoVerif.Motivo))
+				continue
+			}
 			if errCheck != nil {
 				slog.Debug("o check falhou", "check", check.Name(), "erro", errCheck)
 				falhas = append(falhas, check.Name())
@@ -255,22 +338,27 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		prog.Concluir(contar(len(findings)-antes, "achado", "achados"))
 		c.naoRodaram += len(falhas)
 		if len(falhas) > 0 {
+			naoRodou = append(naoRodou, NaoRodou{Backend: "checks-internos", Verificacoes: falhas, Motivo: motivoNaTela(primeiroErro)})
 			prog.Avisar(fmt.Sprintf("%s: %s", contar(len(falhas), "check falhou", "checks falharam"), strings.Join(falhas, ", ")))
 		}
 	}
 
-	// 3. Deduplicar findings (mesmo recurso + mesma mensagem)
-	findings = deduplicateFindings(findings)
-	c.report = ScanReport{Namespace: namespace, Findings: findings, Sources: sources}
+	// 3. Deduplicar findings (mesmo recurso + mesma mensagem) e, com --profile, deixar só
+	// os do perfil, venham de que motor vierem; a IA e o --fix só veem estes.
+	findings = deduplicateFindings(normalizarAchados(findings))
+	findings, fora := filtrarPeloPerfil(findings, op.perfil)
+	c.report = ScanReport{Namespace: namespace, Scope: string(escopo.De(ctx)), Findings: findings, Sources: sources, IgnoradosPelaAllowlist: ignorados.Total(), NaoRodaram: naoRodou, Perfil: op.perfil, ForaDoPerfil: fora, Contexto: nomeDoContexto()}
 	if len(findings) == 0 {
 		return c, nil
 	}
 
-	// 4. Recomendações via IA
-	if provider := provedorDeIA(ctx); provider != nil {
+	// 4. Recomendações via IA (o --no-ai as pula: o Bard, que chama o scan, já é a IA)
+	if provider := provedorDeIA(ctx); provider != nil && !op.semIA {
 		prog.Iniciar("recomendações da IA")
+		// As mensagens dos achados podem trazer valores do cluster (env, anotações):
+		// redigidas antes de ir a um provider que pode ser remoto.
 		findingsJSON, _ := json.MarshalIndent(findings, "", "  ")
-		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), string(findingsJSON))
+		recommendations, errIA := provider.Completion(ctx, prompts.Get("sentinel.scan"), redacao.Redigir(string(findingsJSON)))
 		if errIA != nil {
 			prog.Falhar("indisponíveis")
 			slog.Debug("as recomendações da IA falharam", "provider", provider.Name(), "erro", errIA)
@@ -281,28 +369,106 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 		}
 	}
 
-	// 5. Remediação
+	// 5. Remediação: o plano (o dono de cada pod, só as correções seguras) e o dry-run no
+	// servidor, que confere cada patch sem gravar nada. O --fix aplica depois do resultado,
+	// com confirmação (aplicarCorrecoes).
 	if !op.fix && !op.fixDryRun {
 		return c, nil
 	}
-	patches := remediation.GeneratePatches(findings)
-	c.patches = patches
-	if op.fix && !op.fixDryRun && len(patches) > 0 {
-		prog.Iniciar("aplicar patches")
-		if errs := remediation.ApplyPatches(ctx, client, patches); len(errs) > 0 {
-			prog.Falhar(fmt.Sprintf("%d de %d falharam", len(errs), len(patches)))
-			for _, e := range errs {
-				prog.Detalhe(e.Error())
-			}
-			c.falhaPatches = yerrors.Wrap(errs[0], yerrors.ErrCodePlugin,
-				fmt.Sprintf("o --fix não aplicou %d de %d patches", len(errs), len(patches))).
-				WithContext("namespace", namespace).
-				WithHint("o motivo de cada um está na etapa aplicar patches; confira as permissões com kubectl auth can-i patch deployments -n " + namespace)
-		} else {
-			prog.Concluir(contar(len(patches), "aplicado", "aplicados"))
+	prog.Iniciar("plano de correção")
+	c.plano = remediation.Planejar(ctx, client, findings)
+	c.validos, c.recusados = remediation.Aplicar(ctx, client, c.plano.Patches, true)
+	if len(c.plano.Patches) == 0 {
+		prog.Concluir("nenhum patch")
+		return c, nil
+	}
+	prog.Concluir(contar(len(c.validos), "patch validado no servidor", "patches validados no servidor"))
+	if len(c.recusados) > 0 {
+		for _, f := range c.recusados {
+			slog.Debug("o servidor recusou o patch no dry-run", "recurso", f.Patch.Recurso(), "erro", f.Err)
 		}
+		prog.Avisar(contar(len(c.recusados), "patch recusado pelo servidor", "patches recusados pelo servidor"))
 	}
 	return c, nil
+}
+
+// aplicarCorrecoes aplica os patches que o servidor aceitou no dry-run, depois de mostrar
+// o plano: pergunta antes, a não ser com --yes, e diz em tela o que aplicou. Os patches
+// que o servidor recusou (no dry-run ou agora) voltam como erro, para o código de saída
+// dizer a scripts e à CI que nada (ou nem tudo) foi corrigido; o cancelamento não é erro.
+func aplicarCorrecoes(ctx context.Context, tela, erros io.Writer, client kubernetes.Interface, c coleta, namespace string, op opcoes) error {
+	falhas := c.recusados
+	if len(c.validos) > 0 {
+		if !op.sim {
+			sim, err := confirmar(tela, "aplicar correções", perguntaDoFix(c.validos, namespace))
+			if err != nil {
+				return yerrors.Wrap(err, yerrors.ErrCodePlugin, "a confirmação do --fix falhou").
+					WithHint("rode de novo, ou passe --yes para aplicar sem perguntar")
+			}
+			if !sim {
+				fmt.Fprintln(tela)
+				ui.Check(tela, ui.CheckNeutro, "nada foi aplicado: a correção foi cancelada", "", "")
+				return nil
+			}
+		}
+		fmt.Fprintln(tela)
+		prog := novoProgresso(tela)
+		parar := animar(prog, erros)
+		prog.Iniciar("aplicar patches")
+		_, agora := remediation.Aplicar(ctx, client, c.validos, false)
+		if len(agora) > 0 {
+			prog.Falhar(fmt.Sprintf("%d de %d falharam", len(agora), len(c.validos)))
+			for _, f := range agora {
+				slog.Debug("o servidor recusou o patch", "recurso", f.Patch.Recurso(), "erro", f.Err)
+				prog.Detalhe(f.Patch.Recurso() + ": " + motivoNaTela(f.Err))
+			}
+		} else {
+			prog.Concluir(contar(len(c.validos), "aplicado", "aplicados"))
+		}
+		parar()
+		falhas = append(falhas, agora...)
+	}
+	if len(falhas) == 0 {
+		return nil
+	}
+	return yerrors.Wrap(falhas[0], yerrors.ErrCodePlugin,
+		fmt.Sprintf("o --fix não aplicou %d de %d patches", len(falhas), len(c.plano.Patches))).
+		WithContext("namespace", namespace).
+		WithHint(fmt.Sprintf("o motivo de cada um está na remediação ou na etapa aplicar patches; confira as permissões com kubectl auth can-i patch %ss -n %s",
+			strings.ToLower(falhas[0].Patch.ResourceKind), namespace))
+}
+
+// perguntaDoFix é a pergunta da confirmação do --fix: quantos patches, onde, e que os pods
+// são recriados (o rollout do template).
+func perguntaDoFix(patches []remediation.RemediationPatch, namespace string) string {
+	return fmt.Sprintf("aplicar %s no namespace %s?\nos pods dos recursos são recriados com a correção",
+		contar(len(patches), "patch", "patches"), namespace)
+}
+
+// filtrarPeloPerfil deixa só os achados dos checks do perfil (profiles.Inclui) e conta os
+// que ficaram de fora. Sem perfil, devolve todos.
+func filtrarPeloPerfil(findings []checks.SecurityFinding, perfil string) (dentro []checks.SecurityFinding, fora int) {
+	p, ok := profiles.GetProfile(perfil)
+	if !ok {
+		return findings, 0
+	}
+	for _, f := range findings {
+		if p.Inclui(f.CheckID) {
+			dentro = append(dentro, f)
+		} else {
+			fora++
+		}
+	}
+	return dentro, fora
+}
+
+// textoDoPerfil diz o perfil aplicado e quantos achados ele deixou de fora ("pci-dss · 3
+// achados fora do perfil"); sem perfil, fica vazio e a linha não aparece.
+func textoDoPerfil(report ScanReport) string {
+	if report.Perfil == "" || report.ForaDoPerfil == 0 {
+		return report.Perfil
+	}
+	return report.Perfil + " · " + contar(report.ForaDoPerfil, "achado fora do perfil", "achados fora do perfil")
 }
 
 // gravarRelatorio escreve o json ou o markdown no stdout ou, com -f, no arquivo; neste
@@ -327,7 +493,7 @@ func deduplicateFindings(findings []checks.SecurityFinding) []checks.SecurityFin
 	seen := make(map[string]bool)
 	var result []checks.SecurityFinding
 	for _, f := range findings {
-		key := fmt.Sprintf("%s|%s|%s", f.Resource, f.Category, f.Message)
+		key := fmt.Sprintf("%s|%s|%s|%s", f.CheckID, f.Resource, f.Category, f.Message)
 		if seen[key] {
 			continue
 		}
@@ -349,16 +515,55 @@ func saveReportToGlobal(report ScanReport, namespace string) (string, error) {
 		return "", err
 	}
 
-	date := relogio().Format("2006-01-02")
-	filename := fmt.Sprintf("sentinel-scan-%s-%s.md", namespace, date)
-	reportPath := filepath.Join(reportsDir, filename)
-
-	content := exportScanMarkdown(report)
-	if err := os.WriteFile(reportPath, []byte(content), 0644); err != nil {
-		return "", err
+	// O nome traz o contexto e a hora, para o segundo scan do dia (ou de outro cluster)
+	// não apagar o primeiro.
+	report.GeradoEm = relogio()
+	base := "sentinel-scan-" + namespace
+	if ctx := nomeSeguro(report.Contexto); ctx != "" {
+		base += "-" + ctx
 	}
+	base += "-" + report.GeradoEm.Format("2006-01-02-150405")
 
-	return reportPath, nil
+	content := []byte(exportScanMarkdown(report))
+	// Dois scans no mesmo segundo ganham um sufixo em vez de um sobrescrever o outro.
+	for i := 1; ; i++ {
+		nome := base + ".md"
+		if i > 1 {
+			nome = fmt.Sprintf("%s-%d.md", base, i)
+		}
+		reportPath := filepath.Join(reportsDir, nome)
+		f, err := os.OpenFile(reportPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, err = f.Write(content)
+		if errClose := f.Close(); err == nil {
+			err = errClose
+		}
+		if err != nil {
+			return "", err
+		}
+		return reportPath, nil
+	}
+}
+
+// nomeSeguro deixa só o que cabe num nome de arquivo em qualquer sistema: o nome de um
+// contexto pode ser um ARN do EKS (com ":" e "/"). Letras, números, ponto e hífen ficam;
+// o resto vira "-".
+func nomeSeguro(nome string) string {
+	var sb strings.Builder
+	for _, r := range nome {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			sb.WriteRune(r)
+		default:
+			sb.WriteRune('-')
+		}
+	}
+	return strings.Trim(sb.String(), "-.")
 }
 
 // exportScanMarkdown gera o relatório de scan em formato Markdown.
@@ -366,16 +571,44 @@ func exportScanMarkdown(report ScanReport) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("# Relatório de Segurança Sentinel — %s\n\n", report.Namespace))
 
+	if report.Contexto != "" {
+		sb.WriteString("**Contexto:** " + report.Contexto + "\n")
+	}
+	if !report.GeradoEm.IsZero() {
+		sb.WriteString("**Gerado em:** " + report.GeradoEm.Format("2006-01-02 15:04:05") + "\n")
+	}
 	sb.WriteString("**Resumo:** " + resumoDoRelatorio(report.Findings) + "\n")
+	if t := textoDoPerfil(report); t != "" {
+		sb.WriteString("**Perfil:** " + t + "\n")
+	}
+	if report.Scope == string(escopo.Cluster) {
+		sb.WriteString("**Escopo:** cluster (RBAC do cluster todo)\n")
+	}
 	if len(report.Sources) > 0 {
 		sb.WriteString(fmt.Sprintf("**Backends:** %s\n", strings.Join(report.Sources, ", ")))
 	}
+	if t := textoDaAllowlist(report.IgnoradosPelaAllowlist); t != "" {
+		sb.WriteString("**Allowlist:** " + t + "\n")
+	}
+	for _, n := range report.NaoRodaram {
+		sb.WriteString("**Não rodou:** " + n.Backend)
+		if len(n.Verificacoes) > 0 {
+			sb.WriteString(" (" + strings.Join(n.Verificacoes, ", ") + ")")
+		}
+		sb.WriteString(" · " + n.Motivo + "\n")
+	}
 	sb.WriteString("\n")
-	sb.WriteString("## Vulnerabilidades\n\n")
+	sb.WriteString("## Vulnerabilidades\n")
 
-	for _, f := range report.Findings {
+	// Uma seção por categoria, na ordem da tela.
+	var categoria checks.Category
+	for i, f := range achadosPorSecao(report.Findings) {
+		if i == 0 || f.Category != categoria {
+			categoria = f.Category
+			sb.WriteString("\n### " + tituloDaCategoria(categoria) + "\n\n")
+		}
 		icon := glifoDoRelatorio(severidades[severidadeDe(f)].tipo)
-		sb.WriteString(fmt.Sprintf("- %s **[%s]** `%s`: %s\n", icon, f.Category, f.Resource, f.Description))
+		sb.WriteString(fmt.Sprintf("- %s %s: %s\n", icon, recursosEmCodigo(f), f.Description))
 	}
 
 	if report.Recommendations != "" {
@@ -384,6 +617,19 @@ func exportScanMarkdown(report ScanReport) string {
 	}
 
 	return sb.String()
+}
+
+// recursosEmCodigo lista no markdown todos os recursos do achado, cada um em código.
+func recursosEmCodigo(f checks.SecurityFinding) string {
+	lista := f.Resources
+	if len(lista) == 0 {
+		lista = []string{f.Resource}
+	}
+	itens := make([]string, len(lista))
+	for i, r := range lista {
+		itens[i] = "`" + r + "`"
+	}
+	return strings.Join(itens, ", ")
 }
 
 // resumoDoRelatorio conta os achados por severidade com o mesmo mapa do terminal

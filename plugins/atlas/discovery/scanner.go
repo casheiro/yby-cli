@@ -3,10 +3,15 @@ package discovery
 import (
 	"bufio"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
@@ -27,11 +32,6 @@ func ShouldIgnore(path string, ignores []string) bool {
 	return false
 }
 
-// Scan percorre o diretório e aplica as regras padrão para identificar componentes.
-func Scan(root string, ignores []string) (*Blueprint, error) {
-	return ScanWithRules(root, ignores, DefaultRules)
-}
-
 // ScanWithRules percorre o diretório e aplica as regras fornecidas para identificar componentes.
 func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, error) {
 	bp := &Blueprint{
@@ -39,13 +39,14 @@ func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, err
 		Roots:      []string{root},
 	}
 
+	filtro := novoFiltro(root, ignores)
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Verificar diretórios ignorados
-		if ShouldIgnore(path, ignores) {
+		// Verificar diretórios ignorados (pelo caminho relativo à raiz) e o .gitignore
+		if filtro.pular(path, d) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -106,7 +107,16 @@ func ScanWithRules(root string, ignores []string, rules []Rule) (*Blueprint, err
 	}
 
 	// Segunda passagem: detectar relacionamentos entre componentes
-	bp.Relations = detectRelations(root, bp.Components)
+	bp.Relations = detectRelations(root, bp.Components, filtro)
+
+	// O blueprint sai com caminhos relativos ao root e com '/', iguais em
+	// qualquer SO e sem expor o diretório da máquina que fez o scan.
+	for i := range bp.Components {
+		if rel, err := relSlash(root, bp.Components[i].Path); err == nil {
+			bp.Components[i].Path = rel
+		}
+	}
+	bp.Roots = []string{"."}
 
 	return bp, nil
 }
@@ -125,15 +135,20 @@ func extractGoModuleName(goModPath string) string {
 }
 
 // detectRelations analisa os componentes descobertos e identifica relacionamentos entre eles.
-func detectRelations(root string, components []Component) []Relation {
+func detectRelations(root string, components []Component, filtro *filtroVarredura) []Relation {
 	var relations []Relation
 
 	// Mapa de caminhos de componentes para busca rápida
 	compPaths := make(map[string]Component)
 	for _, comp := range components {
-		relPath, err := filepath.Rel(root, comp.Path)
+		relPath, err := relSlash(root, comp.Path)
 		if err != nil {
 			relPath = comp.Path
+		}
+		// App e infra na mesma pasta dividem o caminho: o app fica, porque
+		// carrega o módulo Go usado para casar os imports.
+		if existente, ok := compPaths[relPath]; ok && existente.Type == "app" {
+			continue
 		}
 		compPaths[relPath] = comp
 	}
@@ -144,7 +159,7 @@ func detectRelations(root string, components []Component) []Relation {
 			// Verificar go.mod por diretivas replace locais
 			relations = append(relations, detectGoModRelations(comp, root, compPaths)...)
 			// Verificar imports Go entre módulos do monorepo
-			relations = append(relations, detectGoImportRelations(root, comp, compPaths)...)
+			relations = append(relations, detectGoImportRelations(root, comp, compPaths, filtro)...)
 			// Verificar package.json por dependências locais
 			relations = append(relations, detectPackageJsonRelations(root, comp, compPaths)...)
 		case "infra":
@@ -160,7 +175,22 @@ func detectRelations(root string, components []Component) []Relation {
 		}
 	}
 
-	return relations
+	return deduplicarRelacoes(relations)
+}
+
+// deduplicarRelacoes remove as relações repetidas (mesmos from, to e type),
+// mantendo a ordem da primeira ocorrência.
+func deduplicarRelacoes(relations []Relation) []Relation {
+	vistas := make(map[Relation]bool, len(relations))
+	var saida []Relation
+	for _, r := range relations {
+		if vistas[r] {
+			continue
+		}
+		vistas[r] = true
+		saida = append(saida, r)
+	}
+	return saida
 }
 
 // detectGoModRelations detecta relacionamentos a partir de diretivas replace em go.mod.
@@ -185,10 +215,10 @@ func detectGoModRelations(comp Component, root string, compPaths map[string]Comp
 				// Caminho local começa com ./ ou ../
 				if strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") {
 					absTarget := filepath.Join(comp.Path, target)
-					relTarget, err := filepath.Rel(root, absTarget)
+					relTarget, err := relSlash(root, absTarget)
 					if err == nil {
 						if _, ok := compPaths[relTarget]; ok {
-							compRel, _ := filepath.Rel(root, comp.Path)
+							compRel, _ := relSlash(root, comp.Path)
 							relations = append(relations, Relation{
 								From: compRel,
 								To:   relTarget,
@@ -232,11 +262,11 @@ func detectDockerfileRelations(comp Component, root string, compPaths map[string
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
-			if strings.HasPrefix(line, "COPY") || strings.HasPrefix(line, "ADD") {
-				// Procurar referências a diretórios de outros componentes
-				for relPath := range compPaths {
-					if strings.Contains(line, relPath) {
-						compRel, _ := filepath.Rel(root, comp.Path)
+			if strings.HasPrefix(line, "COPY ") || strings.HasPrefix(line, "ADD ") {
+				compRel, _ := relSlash(root, comp.Path)
+				// Casa as origens do COPY, por segmento de caminho, com os componentes
+				for _, origem := range origensDoCopy(line) {
+					for _, relPath := range componenteDaOrigem(origem, compRel, compPaths) {
 						if compRel != relPath {
 							relations = append(relations, Relation{
 								From: compRel,
@@ -291,10 +321,10 @@ func detectHelmRelations(comp Component, root string, compPaths map[string]Compo
 			if strings.HasPrefix(repo, "file://") {
 				localPath := strings.TrimPrefix(repo, "file://")
 				absTarget := filepath.Join(comp.Path, localPath)
-				relTarget, err := filepath.Rel(root, absTarget)
+				relTarget, err := relSlash(root, absTarget)
 				if err == nil {
 					if _, ok := compPaths[relTarget]; ok {
-						compRel, _ := filepath.Rel(root, comp.Path)
+						compRel, _ := relSlash(root, comp.Path)
 						relations = append(relations, Relation{
 							From: compRel,
 							To:   relTarget,
@@ -309,90 +339,142 @@ func detectHelmRelations(comp Component, root string, compPaths map[string]Compo
 	return relations
 }
 
+// origensDoCopy extrai as origens de uma instrução COPY/ADD (tudo menos o
+// destino), já normalizadas com '/'. COPY --from=… não vem para cá: é de outro
+// stage ou imagem e tem detector próprio. Origens com variável, URL ou caminho
+// absoluto são descartadas.
+func origensDoCopy(linha string) []string {
+	campos := strings.Fields(linha)
+	var args []string
+	for _, c := range campos[1:] {
+		if strings.HasPrefix(c, "--") {
+			if strings.HasPrefix(c, "--from") {
+				return nil
+			}
+			continue
+		}
+		args = append(args, c)
+	}
+	if len(args) < 2 {
+		return nil
+	}
+	var origens []string
+	for _, a := range args[:len(args)-1] {
+		a = filepath.ToSlash(strings.Trim(a, "\"'[],"))
+		if a == "" || strings.ContainsAny(a, "$*?") || strings.Contains(a, "://") || strings.HasPrefix(a, "/") {
+			continue
+		}
+		origens = append(origens, path.Clean(a))
+	}
+	return origens
+}
+
+// componenteDaOrigem devolve os caminhos de componente que contêm a origem do
+// COPY, casando por segmento ("api" não casa com "apigateway") e nunca a raiz
+// ("."). A origem vale relativa à raiz do projeto e à pasta do Dockerfile; para
+// cada uma fica só o componente mais específico, e o próprio componente do
+// Dockerfile e seus ancestrais são descartados (um "COPY . ." dentro de
+// services/api2 não aponta para services).
+func componenteDaOrigem(origem, compRel string, compPaths map[string]Component) []string {
+	candidatos := []string{origem}
+	if compRel != "." {
+		candidatos = append(candidatos, path.Join(compRel, origem))
+	}
+	unicos := map[string]bool{}
+	for _, c := range candidatos {
+		melhor := ""
+		for relPath := range compPaths {
+			if relPath == "." {
+				continue
+			}
+			if (c == relPath || strings.HasPrefix(c, relPath+"/")) && len(relPath) > len(melhor) {
+				melhor = relPath
+			}
+		}
+		if melhor == "" || compRel == melhor || strings.HasPrefix(compRel, melhor+"/") {
+			continue
+		}
+		unicos[melhor] = true
+	}
+	achados := make([]string, 0, len(unicos))
+	for relPath := range unicos {
+		achados = append(achados, relPath)
+	}
+	sort.Strings(achados)
+	return achados
+}
+
 // detectGoImportRelations detecta relações de import Go entre módulos do monorepo.
-func detectGoImportRelations(root string, comp Component, compPaths map[string]Component) []Relation {
+// Lê os .go de todo o módulo do componente (cmd/, internal/ e demais pastas),
+// sem entrar em módulos aninhados, vendor, testdata, pastas ocultas nem no que
+// o filtro da varredura (ignores e .gitignore) pula.
+func detectGoImportRelations(root string, comp Component, compPaths map[string]Component, filtro *filtroVarredura) []Relation {
+	if extractGoModuleName(filepath.Join(comp.Path, "go.mod")) == "" {
+		return nil
+	}
+	compRel, _ := relSlash(root, comp.Path)
+
+	// Módulos conhecidos, com o caminho do componente que os declara
+	type modulo struct{ path, rel string }
+	var modulos []modulo
+	for relPath, c := range compPaths {
+		if m := c.Metadata["module"]; m != "" {
+			modulos = append(modulos, modulo{m, relPath})
+		}
+	}
+
 	var relations []Relation
-
-	// Ler go.mod do componente para obter module path
-	goModPath := filepath.Join(comp.Path, "go.mod")
-	rootModulePath := extractGoModuleName(goModPath)
-	if rootModulePath == "" {
-		return nil
-	}
-
-	// Obter module path do monorepo (go.mod na raiz)
-	rootGoMod := extractGoModuleName(filepath.Join(root, "go.mod"))
-	if rootGoMod == "" {
-		// Usar o próprio module path como base do monorepo
-		rootGoMod = rootModulePath
-	}
-
-	// Escanear arquivos .go no diretório do componente
-	entries, err := os.ReadDir(comp.Path)
-	if err != nil {
-		return nil
-	}
-
-	importRe := regexp.MustCompile(`^\s*"([^"]+)"`)
-	compRel, _ := filepath.Rel(root, comp.Path)
-
-	// Coletar todos os imports do componente
-	seenImports := make(map[string]bool)
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
-			continue
-		}
-
-		file, err := os.Open(filepath.Join(comp.Path, entry.Name()))
+	_ = filepath.WalkDir(comp.Path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			continue
+			return nil
 		}
-
-		inImportBlock := false
-		sc := bufio.NewScanner(file)
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-
-			if line == "import (" {
-				inImportBlock = true
+		if filtro != nil && filtro.pular(p, d) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			if p == comp.Path {
+				return nil
+			}
+			nome := d.Name()
+			if nome == "vendor" || nome == "testdata" || strings.HasPrefix(nome, ".") {
+				return filepath.SkipDir
+			}
+			if _, err := os.Stat(filepath.Join(p, "go.mod")); err == nil {
+				return filepath.SkipDir // módulo aninhado é outro componente
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		arq, err := parser.ParseFile(token.NewFileSet(), p, nil, parser.ImportsOnly)
+		if err != nil || arq == nil {
+			return nil
+		}
+		for _, imp := range arq.Imports {
+			importPath, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
 				continue
 			}
-			if inImportBlock && line == ")" {
-				inImportBlock = false
-				continue
-			}
-
-			if inImportBlock {
-				matches := importRe.FindStringSubmatch(line)
-				if len(matches) >= 2 {
-					importPath := matches[1]
-					if strings.HasPrefix(importPath, rootGoMod) && !seenImports[importPath] {
-						seenImports[importPath] = true
-						// Mapear import para componente conhecido
-						for relPath, target := range compPaths {
-							if target.Path == comp.Path {
-								continue
-							}
-							targetMod := ""
-							if target.Metadata != nil {
-								targetMod = target.Metadata["module"]
-							}
-							if targetMod != "" && strings.HasPrefix(importPath, targetMod) {
-								relations = append(relations, Relation{
-									From: compRel,
-									To:   relPath,
-									Type: "imports",
-								})
-							}
-						}
-					}
+			// O módulo mais longo com fronteira '/' é o dono do import
+			melhor := modulo{}
+			for _, m := range modulos {
+				if (importPath == m.path || strings.HasPrefix(importPath, m.path+"/")) && len(m.path) > len(melhor.path) {
+					melhor = m
 				}
 			}
+			if melhor.path == "" || melhor.rel == compRel {
+				continue
+			}
+			relations = append(relations, Relation{From: compRel, To: melhor.rel, Type: "imports"})
 		}
-		file.Close()
-	}
+		return nil
+	})
 
+	sort.SliceStable(relations, func(i, j int) bool { return relations[i].To < relations[j].To })
 	return relations
 }
 
@@ -439,7 +521,7 @@ func detectDockerFromRelations(root string, comp Component, compPaths map[string
 		file.Close()
 
 		// Segunda passagem: encontrar COPY --from referenciando componentes
-		compRel, _ := filepath.Rel(root, comp.Path)
+		compRel, _ := relSlash(root, comp.Path)
 		for _, line := range lines {
 			matches := copyFromRe.FindStringSubmatch(line)
 			if len(matches) < 2 {
@@ -502,7 +584,7 @@ func detectHelmRemoteRelations(root string, comp Component) []Relation {
 
 			// Apenas repositórios remotos (não file://)
 			if repo != "" && !strings.HasPrefix(repo, "file://") {
-				compRel, _ := filepath.Rel(root, comp.Path)
+				compRel, _ := relSlash(root, comp.Path)
 				relations = append(relations, Relation{
 					From: compRel,
 					To:   repo,
@@ -543,11 +625,12 @@ var k8sExcludeNames = map[string]bool{
 func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 	// 1. Coletar todos os arquivos relevantes
 	var allFiles []string
+	filtro := novoFiltro(rootPath, ignores)
 	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if ShouldIgnore(path, ignores) {
+		if filtro.pular(path, d) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -566,17 +649,22 @@ func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 	// 2. Classificar arquivos por analyzer
 	classified := classifyFiles(allFiles)
 
-	// 3. Rodar analyzers disponíveis
+	// 3. Rodar analyzers disponíveis. O Kustomize lê antes: o K8s precisa saber
+	// quais arquivos são patches e em que namespace cada manifest entra antes de
+	// extrair as relações.
+	kustomize := analyzers.NewKustomizeAnalyzer()
+	k8s := analyzers.NewK8sAnalyzer()
+	k8s.Kustomize = kustomize.Plano(rootPath, classified["kustomize"])
 	allAnalyzers := []analyzers.Analyzer{
 		analyzers.NewHelmAnalyzer(),
-		analyzers.NewK8sAnalyzer(),
+		k8s,
 		analyzers.NewComposeAnalyzer(),
-		analyzers.NewKustomizeAnalyzer(),
+		kustomize,
 		analyzers.NewTerraformAnalyzer(),
 	}
 
 	bp := &InfraBlueprint{
-		RootPath: rootPath,
+		RootPath: ".",
 	}
 
 	for _, a := range allAnalyzers {
@@ -598,6 +686,7 @@ func ScanInfra(rootPath string, ignores []string) (*InfraBlueprint, error) {
 		bp.Analyzers = append(bp.Analyzers, a.Name())
 	}
 
+	ordenarBlueprint(bp)
 	return bp, nil
 }
 
@@ -616,6 +705,12 @@ func classifyFiles(files []string) map[string][]string {
 	for _, f := range files {
 		name := filepath.Base(f)
 		ext := filepath.Ext(f)
+
+		// Compose e variantes (docker-compose.prod.yml, override...)
+		if analyzers.EhArquivoCompose(name) {
+			result["compose"] = append(result["compose"], f)
+			continue
+		}
 
 		// Arquivos com nomes específicos
 		if analyzerType, ok := infraFileNames[name]; ok {
@@ -643,10 +738,8 @@ func classifyFiles(files []string) map[string][]string {
 				continue
 			}
 
-			// Excluir arquivos encriptados por SOPS
-			if isSopsEncrypted(f) {
-				continue
-			}
+			// Arquivos encriptados por SOPS são descartados pelo K8sAnalyzer,
+			// que já lê o arquivo.
 
 			result["k8s"] = append(result["k8s"], f)
 		}
@@ -677,18 +770,6 @@ func isInsideHelmTemplates(filePath string, helmChartDirs map[string]bool) bool 
 	return false
 }
 
-// isSopsEncrypted verifica se um arquivo YAML está encriptado por SOPS.
-// Detecta a presença de markers SOPS (ENC[AES256_GCM,...] ou campo sops:).
-func isSopsEncrypted(filePath string) bool {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return false
-	}
-	content := string(data)
-	// SOPS encripta valores com ENC[AES256_GCM,...] e adiciona metadata sops: no final
-	return strings.Contains(content, "ENC[AES256_GCM,") || strings.Contains(content, "sops:\n")
-}
-
 // detectPackageJsonRelations detecta relações a partir de dependências locais em package.json.
 func detectPackageJsonRelations(root string, comp Component, compPaths map[string]Component) []Relation {
 	var relations []Relation
@@ -707,7 +788,7 @@ func detectPackageJsonRelations(root string, comp Component, compPaths map[strin
 		return nil
 	}
 
-	compRel, _ := filepath.Rel(root, comp.Path)
+	compRel, _ := relSlash(root, comp.Path)
 
 	allDeps := make(map[string]string)
 	for k, v := range pkg.Dependencies {
@@ -728,7 +809,7 @@ func detectPackageJsonRelations(root string, comp Component, compPaths map[strin
 		}
 
 		absTarget := filepath.Join(comp.Path, localPath)
-		relTarget, err := filepath.Rel(root, absTarget)
+		relTarget, err := relSlash(root, absTarget)
 		if err != nil {
 			continue
 		}
@@ -745,4 +826,37 @@ func detectPackageJsonRelations(root string, comp Component, compPaths map[strin
 	}
 
 	return relations
+}
+
+// ordenarBlueprint fixa a ordem dos recursos e das relações. Os analyzers
+// percorrem mapas, cuja ordem muda a cada execução; sem isto o diagrama
+// sairia diferente a cada vez.
+func ordenarBlueprint(bp *InfraBlueprint) {
+	sort.SliceStable(bp.Resources, func(i, j int) bool {
+		a, b := bp.Resources[i], bp.Resources[j]
+		if a.ID() != b.ID() {
+			return a.ID() < b.ID()
+		}
+		return a.Path < b.Path
+	})
+	sort.SliceStable(bp.Relations, func(i, j int) bool {
+		a, b := bp.Relations[i], bp.Relations[j]
+		if a.From != b.From {
+			return a.From < b.From
+		}
+		if a.To != b.To {
+			return a.To < b.To
+		}
+		return a.Type < b.Type
+	})
+}
+
+// relSlash devolve o caminho de target relativo a base, sempre com '/', para que
+// o blueprint seja igual no Windows e no Linux.
+func relSlash(base, target string) (string, error) {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }
