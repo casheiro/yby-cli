@@ -6,30 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"time"
+
+	"github.com/casheiro/yby-cli/pkg/redacao"
 )
 
 const maxHistoryEntries = 20
 const historyFile = ".yby/.bard_history.jsonl"
 const maxHistoryAge = 30 * 24 * time.Hour
-
-// secretPatterns contém expressões regulares para detectar secrets comuns.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`ghp_[A-Za-z0-9_]{36,}`),                        // GitHub personal access token
-	regexp.MustCompile(`gho_[A-Za-z0-9_]{36,}`),                        // GitHub OAuth token
-	regexp.MustCompile(`ghu_[A-Za-z0-9_]{36,}`),                        // GitHub user-to-server token
-	regexp.MustCompile(`ghs_[A-Za-z0-9_]{36,}`),                        // GitHub server-to-server token
-	regexp.MustCompile(`github_pat_[A-Za-z0-9_]{22,}`),                 // GitHub fine-grained PAT
-	regexp.MustCompile(`sk-[A-Za-z0-9]{20,}`),                          // OpenAI / Stripe secret key
-	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),                             // AWS access key ID
-	regexp.MustCompile(`(?i)password\s*[=:]\s*\S+`),                    // password=xxx ou password: xxx
-	regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*`),           // Bearer tokens
-	regexp.MustCompile(`(?i)api[_-]?key\s*[=:]\s*\S+`),                 // api_key=xxx ou api-key: xxx
-	regexp.MustCompile(`(?i)secret[_-]?key\s*[=:]\s*\S+`),              // secret_key=xxx
-	regexp.MustCompile(`xox[bporas]-[A-Za-z0-9\-]+`),                   // Slack tokens
-	regexp.MustCompile(`(?i)token\s*[=:]\s*[A-Za-z0-9\-._~+/]{20,}=*`), // token genérico longo
-}
 
 // HistoryEntry representa uma entrada no histórico de conversas.
 type HistoryEntry struct {
@@ -45,14 +29,6 @@ type SessionSummary struct {
 	MessageCount int
 	FirstMessage time.Time
 	LastMessage  time.Time
-}
-
-// sanitizeContent substitui patterns de secrets conhecidos por "[REDACTED]".
-func sanitizeContent(content string) string {
-	for _, pattern := range secretPatterns {
-		content = pattern.ReplaceAllString(content, "[REDACTED]")
-	}
-	return content
 }
 
 // loadAllEntries lê todas as entradas do arquivo de histórico JSONL.
@@ -179,7 +155,7 @@ func saveMessage(role, content, sessionID string) {
 
 	entry := HistoryEntry{
 		Role:      role,
-		Content:   sanitizeContent(content),
+		Content:   redacao.Redigir(content),
 		Timestamp: time.Now().Format(time.RFC3339),
 		SessionID: sessionID,
 	}

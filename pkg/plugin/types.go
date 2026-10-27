@@ -6,6 +6,10 @@ type PluginManifest struct {
 	Version     string   `json:"version"`
 	Description string   `json:"description,omitempty"`
 	Hooks       []string `json:"hooks"`
+	// ConsomeContexto pede, no command, o contexto caro: os hooks context dos outros
+	// plugins e o overview e o backlog do projeto. Declarar o hook context é fornecer
+	// contexto, não consumir. O contexto barato (ambiente pedido) vai a todo plugin.
+	ConsomeContexto bool `json:"consome_contexto,omitempty"`
 }
 
 // PluginRequest defines the structure sent to the plugin via STDIN or Env Var.

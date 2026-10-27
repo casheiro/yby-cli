@@ -8,20 +8,20 @@ package checks
 
 // systemClusterRoleBindings são bindings built-in do K8s que sempre existem.
 var systemClusterRoleBindings = map[string]bool{
-	"cluster-admin":                          true, // system:masters — admin padrão do K8s
-	"system:basic-user":                      true,
-	"system:discovery":                       true,
-	"system:monitoring":                      true,
-	"system:node-proxier":                    true,
-	"system:public-info-viewer":              true,
-	"system:volume-scheduler":                true,
-	"system:kube-controller-manager":         true,
-	"system:kube-dns":                        true,
-	"system:kube-scheduler":                  true,
-	"system:node":                            true,
-	"system:controller:node-controller":      true,
-	"system:controller:job-controller":       true,
-	"system:controller:endpoint-controller":  true,
+	"cluster-admin":                                true, // system:masters — admin padrão do K8s
+	"system:basic-user":                            true,
+	"system:discovery":                             true,
+	"system:monitoring":                            true,
+	"system:node-proxier":                          true,
+	"system:public-info-viewer":                    true,
+	"system:volume-scheduler":                      true,
+	"system:kube-controller-manager":               true,
+	"system:kube-dns":                              true,
+	"system:kube-scheduler":                        true,
+	"system:node":                                  true,
+	"system:controller:node-controller":            true,
+	"system:controller:job-controller":             true,
+	"system:controller:endpoint-controller":        true,
 	"system:controller:service-account-controller": true,
 }
 
@@ -42,22 +42,22 @@ var systemClusterRolePrefixes = []string{
 // knownControllerRoles são roles de ferramentas conhecidas que precisam de
 // permissões amplas por design. Não são vulnerabilidades.
 var knownControllerRolePrefixes = []string{
-	"argocd-",                         // ArgoCD precisa de acesso amplo para sync
-	"cert-manager-",                   // cert-manager gerencia certificados/secrets
-	"traefik-",                        // Traefik ingress controller
-	"helm-",                           // Helm release management
-	"k3s-",                            // K3s system controllers
-	"local-path-provisioner-",         // K3s local path provisioner
-	"monitoring-kube-prometheus-",     // Prometheus operator
-	"monitoring-kube-state-metrics",   // kube-state-metrics
-	"monitoring-grafana-",             // Grafana
-	"loki-",                           // Loki log aggregator
-	"cnpg-",                           // CloudNativePG operator
-	"keda-",                           // KEDA autoscaler
-	"argo-events-",                    // Argo Events
-	"argo-aggregate-",                 // Argo Workflows aggregation roles
-	"argo-cluster-",                   // Argo Workflows cluster role
-	"argo-server-",                    // Argo Workflows server
+	"argocd-",                       // ArgoCD precisa de acesso amplo para sync
+	"cert-manager-",                 // cert-manager gerencia certificados/secrets
+	"traefik-",                      // Traefik ingress controller
+	"helm-",                         // Helm release management
+	"k3s-",                          // K3s system controllers
+	"local-path-provisioner-",       // K3s local path provisioner
+	"monitoring-kube-prometheus-",   // Prometheus operator
+	"monitoring-kube-state-metrics", // kube-state-metrics
+	"monitoring-grafana-",           // Grafana
+	"loki-",                         // Loki log aggregator
+	"cnpg-",                         // CloudNativePG operator
+	"keda-",                         // KEDA autoscaler
+	"argo-events-",                  // Argo Events
+	"argo-aggregate-",               // Argo Workflows aggregation roles
+	"argo-cluster-",                 // Argo Workflows cluster role
+	"argo-server-",                  // Argo Workflows server
 }
 
 // knownControllerBindings são bindings de ferramentas conhecidas.

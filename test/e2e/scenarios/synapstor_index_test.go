@@ -89,17 +89,10 @@ func TestSynapstor_HookContext(t *testing.T) {
 	resp := runSynapstorHook(t, binary, workDir, "context", nil)
 	require.Empty(t, resp.Error, "synapstor retornou erro: %s", resp.Error)
 
-	// A resposta do synapstor tem um duplo wrapping: respond() wrapa em PluginResponse{Data: ...}
-	// e handleContextHook passa um PluginResponse como Data. O resultado real pode ser:
-	// {"data": {"data": {...}}} ou {"data": {...}} dependendo da implementação.
-	data, ok := resp.Data.(map[string]interface{})
+	// A resposta vem com um só embrulho: {"data": {"synapstor_…": …}}.
+	contextData, ok := resp.Data.(map[string]interface{})
 	require.True(t, ok, "Data deveria ser mapa, obteve: %T", resp.Data)
-
-	// Verificar se o data contém os campos diretamente ou dentro de outro "data"
-	contextData := data
-	if inner, ok := data["data"].(map[string]interface{}); ok {
-		contextData = inner
-	}
+	require.NotContains(t, contextData, "data", "a resposta não pode vir embrulhada duas vezes")
 
 	assert.Contains(t, contextData, "synapstor_indexed_files",
 		"resposta deveria conter synapstor_indexed_files")
@@ -132,13 +125,9 @@ func TestSynapstor_HookContext_NotIndexed(t *testing.T) {
 	resp := runSynapstorHook(t, binary, workDir, "context", nil)
 	require.Empty(t, resp.Error, "synapstor retornou erro: %s", resp.Error)
 
-	data, ok := resp.Data.(map[string]interface{})
+	contextData, ok := resp.Data.(map[string]interface{})
 	require.True(t, ok, "Data deveria ser mapa")
-
-	contextData := data
-	if inner, ok := data["data"].(map[string]interface{}); ok {
-		contextData = inner
-	}
+	require.NotContains(t, contextData, "data", "a resposta não pode vir embrulhada duas vezes")
 
 	status, _ := contextData["synapstor_status"].(string)
 	assert.Equal(t, "not_indexed", status,

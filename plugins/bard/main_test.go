@@ -565,3 +565,22 @@ func TestBuildSystemPrompt_SemHistorico(t *testing.T) {
 		t.Error("prompt sem histórico não deveria conter bloco de histórico")
 	}
 }
+
+// TestSaveMessage_RedigeSegredos verifica que o histórico grava sem JWT nem credencial em URL.
+func TestSaveMessage_RedigeSegredos(t *testing.T) {
+	tmpDir := t.TempDir()
+	restore := chdir(t, tmpDir)
+	defer restore()
+
+	saveMessage("user", "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig e https://u:senha123@h.io", "s")
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, historyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"eyJhbGci", "senha123"} {
+		if bytes.Contains(data, []byte(q)) {
+			t.Errorf("histórico guardou %q: %s", q, data)
+		}
+	}
+}

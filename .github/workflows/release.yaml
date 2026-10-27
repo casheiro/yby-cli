@@ -40,6 +40,21 @@ jobs:
       - name: 🏃 Run Tests
         run: go test ./... -v
 
+      - name: 🏃 Run Tests (Sentinel, build tag k8s)
+        # Polaris e OPA pesam na compilação: mesmo GOGC e limite de tempo do Lint K8s.
+        env:
+          GOGC: "30"
+        run: go test -tags k8s -p 1 ./plugins/sentinel/...
+        timeout-minutes: 15
+
+      - name: 🏃 Run Tests (Viz, módulo próprio)
+        working-directory: plugins/viz
+        run: go test ./...
+
+      - name: 🏃 Run Tests (Synapstor, módulo próprio)
+        working-directory: plugins/synapstor
+        run: go test ./...
+
   goreleaser:
     name: 🚀 Build & Publish
     runs-on: ubuntu-latest

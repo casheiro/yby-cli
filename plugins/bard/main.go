@@ -16,6 +16,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/pkg/redacao"
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/bard/tools"
 	"github.com/casheiro/yby-cli/plugins/bard/tui"
@@ -247,7 +248,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 		RetomarSessao: retomador(ctxData, bardCfg, clusterCtx),
 		Modelos:       modelosDetectados,
 		Diretorio:     cwd,
-		Sanitizar:     sanitizeContent,
+		Sanitizar:     redacao.Redigir,
 		Historico:     contarHistorico(history),
 	}
 	aplicarCluster(&tuiConfig, clusterCtx, opcoes)

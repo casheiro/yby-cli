@@ -340,7 +340,6 @@ func TestScan_ConteudoPreservado(t *testing.T) {
 	}
 }
 
-
 // TestIsText_TableDriven verifica o heurístico isText com diversos cenários.
 func TestIsText_TableDriven(t *testing.T) {
 	tests := []struct {

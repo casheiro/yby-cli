@@ -23,8 +23,7 @@ issues:
   exclude-dirs:
     - vendor
     - testdata
-    - plugins/sentinel/cli
-    - test
+    - ^test($|/)
 
 linters-settings:
   revive:

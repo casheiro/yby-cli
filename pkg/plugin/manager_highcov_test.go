@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -460,6 +461,9 @@ func TestExecuteCommandHook_PluginNaoEncontrado(t *testing.T) {
 }
 
 func TestExecuteCommandHook_PluginEncontrado_ComScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("o plugin falso é um script sh, que o Windows não executa")
+	}
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 
@@ -510,6 +514,9 @@ func TestExecuteCommandHook_PluginFalha(t *testing.T) {
 }
 
 func TestExecuteCommandHook_ComContextoDeAmbiente(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("o plugin falso é um script sh, que o Windows não executa")
+	}
 	saveAndRestoreGlobals(t)
 	tmp := t.TempDir()
 
@@ -745,7 +752,7 @@ func TestExecuteContextHook_DataNaoMap(t *testing.T) {
 		ProjectName: "test",
 		Data:        map[string]interface{}{"existente": "valor"},
 	}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err)
 	// Data original deve estar preservada (patch não aplicado)
 	assert.Equal(t, "valor", ctx.Data["existente"])
