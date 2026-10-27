@@ -29,7 +29,7 @@ func exportJSON(result AnalysisResult, podName, namespace string) (string, error
 		Metadata: ReportMetadata{
 			Pod:       podName,
 			Namespace: namespace,
-			Timestamp: time.Now(),
+			Timestamp: relogio(),
 		},
 		Analysis: result,
 	}
@@ -70,7 +70,7 @@ type HealthyReport struct {
 // exportHealthyJSON serializa o relatório de pod saudável em JSON.
 func exportHealthyJSON(podName, namespace, phase string) (string, error) {
 	data, err := json.MarshalIndent(HealthyReport{
-		Metadata: ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: time.Now()},
+		Metadata: ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: relogio()},
 		Healthy:  true,
 		Phase:    phase,
 	}, "", "  ")

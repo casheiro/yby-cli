@@ -40,16 +40,19 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 		return "", err
 	}
 
-	if resp.Data == nil {
-		return "Nenhuma informação de segurança encontrada para o pod.", nil
-	}
+	return formatInvestigateResults(resp.Data), nil
+}
 
-	formatted, err := json.MarshalIndent(resp.Data, "", "  ")
+// formatInvestigateResults converte os dados do investigate em texto para a IA.
+func formatInvestigateResults(data interface{}) string {
+	if data == nil {
+		return "Nenhuma informação de segurança encontrada para o pod."
+	}
+	formatted, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		return fmt.Sprintf("%v", resp.Data), nil
+		return fmt.Sprintf("%v", data)
 	}
-
-	return string(formatted), nil
+	return string(formatted)
 }
 
 // pedidoSentinelInvestigate é o pedido ao Sentinel para investigar o pod, no cluster e no

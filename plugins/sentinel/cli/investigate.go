@@ -439,7 +439,7 @@ func eventosDe(l *corev1.EventList) []corev1.Event {
 // mensagens dos eventos passam pela redação: o Bard manda esses dados à IA dele.
 func montarDadosBrutos(pod *corev1.Pod, eventos []corev1.Event, logs string, saudavel bool, podName, namespace string) DadosBrutos {
 	d := DadosBrutos{
-		Metadata:   ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: time.Now()},
+		Metadata:   ReportMetadata{Pod: podName, Namespace: namespace, Timestamp: relogio()},
 		Healthy:    saudavel,
 		Phase:      string(pod.Status.Phase),
 		Containers: []ConteinerBruto{},

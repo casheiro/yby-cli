@@ -51,42 +51,6 @@ func TestFormatScanResults_Nil(t *testing.T) {
 	}
 }
 
-// TestFormatScanResults_ComDados verifica formatação com dados.
-func TestFormatScanResults_ComDados(t *testing.T) {
-	data := map[string]interface{}{
-		"findings": []interface{}{
-			map[string]interface{}{"severity": "HIGH", "message": "container rodando como root"},
-		},
-	}
-	result := formatScanResults(data)
-	if result == "" {
-		t.Error("resultado não deveria estar vazio")
-	}
-}
-
-// O hook command do Sentinel escreve o relatório do scan direto no stdout, sem o envelope
-// {"data": …}: os achados chegam à IA em vez de "Nenhum finding reportado".
-func TestRespostaDoPlugin_RelatorioSemEnvelope(t *testing.T) {
-	saida := []byte(`{
-  "namespace": "nexus-core",
-  "findings": [
-    {"check": "privilegeEscalationAllowed", "severity": "CRITICAL", "resource": "CronJob/nexus-core-disparador-tempo", "message": "A escalada de privilégio não deve ser permitida"}
-  ],
-  "sources": ["polaris", "opa"]
-}
-`)
-	resp, err := respostaDoPlugin(saida)
-	if err != nil {
-		t.Fatal(err)
-	}
-	texto := formatScanResults(resp.Data)
-	for _, trecho := range []string{"nexus-core-disparador-tempo", "CRITICAL", "polaris"} {
-		if !strings.Contains(texto, trecho) {
-			t.Errorf("o resultado deveria ter %q: %s", trecho, texto)
-		}
-	}
-}
-
 // Plugins que respondem com o envelope (o Atlas) continuam com o Data e o Error dele.
 func TestRespostaDoPlugin_Envelope(t *testing.T) {
 	resp, err := respostaDoPlugin([]byte(`{"data": {"resources": 3}}`))

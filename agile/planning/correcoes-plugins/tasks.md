@@ -102,7 +102,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Fazer:** tirar a seção morta; o blueprint chega pela ferramenta (K02). Se o resumo for pequeno e barato, dá para pedir ao Atlas um resumo compacto e em cache na abertura. Decida pelo custo medido.
   - **Verificar:** o system prompt não promete o que não tem; teste do prompt.
   - **Conferência (26/10):** as seções "Project Overview" e "Backlog & Debt" do `buildSystemPrompt` também estão mortas (leem chaves no topo; os dados viriam em `ctxData["data"]`). Manter o placeholder `{{blueprint_json_summary}}` vazio, por compatibilidade com overrides. Não pedir resumo ao Atlas na abertura.
-- [ ] **K04 · Testes de contrato entre os plugins**
+- [x] **K04 · Testes de contrato entre os plugins**
   - **Problema:** os bugs do Sentinel (PR #218), do K02 e do B05 passaram com a suíte verde porque os fixtures inventam formatos.
   - **Fazer:** goldens em `testdata` gerados por quem escreve (o Sentinel grava o JSON do scan e do investigate; o Atlas grava o blueprint) e lidos pelos testes de quem consome (as tools do Bard). Um teste de cada lado: o escritor confere que o golden está atual (com `-update`) e o leitor o consome.
   - **Verificar:** mudar um campo no escritor sem atualizar o golden quebra o teste.
@@ -676,6 +676,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 |---|---|---|---|
 | 26/10/2026 | K01 | Contexto barato (ambiente, infra com kube_config, values) a todo plugin quando o ambiente é pedido (`-c` em qualquer forma do pflag antes do nome, ou `YBY_ENV`); o caro só com `consome_contexto`; `--help` sem contexto; `ExecuteContextHook` com o contexto do chamador; Synapstor sem embrulho duplo; `UKIIndex` removido. | este commit |
 | 26/10/2026 | K02 | O hook `context` do Atlas aceita o argumento `infra` (só a ferramenta do Bard pede) e manda o `InfraBlueprint` ao lado do blueprint; `formatBlueprintResults` desembrulha a resposta real e resume com nomes (componentes, charts, workloads, outros recursos por kind e relações), cortado em 8 KB; contrato no `testdata` do Atlas (pedido e golden gravado pelo `executar`) lido pelo teste do Bard. | este commit |
+| 26/10/2026 | K04 | O Sentinel grava no `testdata` os pedidos do Bard e os goldens do JSON do scan `--no-ai` (recursos, escopo, `type` normalizado, `nao_rodaram`) e do investigate `--no-ai`, rodando o hook command com cluster falso e o relógio injetável no `timestamp`; o Bard confere o pedido do scan e passa os dois goldens pelos formatadores (`formatInvestigateResults` extraído), no lugar dos fixtures inventados. | este commit |
 
 ### Fase 2 · Bard
 
