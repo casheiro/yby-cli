@@ -171,3 +171,172 @@ func TestLoadUKIs_DiretorioInexistente(t *testing.T) {
 		t.Error("esperado erro para diretório inexistente")
 	}
 }
+
+// TestLoadUKIs_SubpastasETags: o UKI de uma subpasta de domínio também entra, com as tags
+// do frontmatter e o caminho relativo à pasta dos UKIs.
+func TestLoadUKIs_SubpastasETags(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "dominio"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "A.md"), []byte("# A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := "---\nid: d.b\ntipo: regra\nstatus: ativo\ntags: [k8s, deploy]\n---\n\n# B\n"
+	if err := os.WriteFile(filepath.Join(dir, "dominio", "B.md"), []byte(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ukis, err := LoadUKIs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ukis) != 2 {
+		t.Fatalf("esperados 2 UKIs, obtido %d", len(ukis))
+	}
+	if ukis[1].Relativo != "dominio/B.md" || ukis[1].Title != "B" || strings.Join(ukis[1].Tags, ",") != "k8s,deploy" {
+		t.Errorf("UKI da subpasta inesperado: %+v", ukis[1])
+	}
+}
+
+// TestExport_UmFrontmatterSo: o UKI que já tem frontmatter sai com um bloco --- só, no
+// Docusaurus e no Obsidian, e o da subpasta não colide com o de mesmo nome na raiz.
+func TestExport_UmFrontmatterSo(t *testing.T) {
+	conteudo := "---\nid: d.b\ntipo: regra\nstatus: ativo\ntags: [k8s]\n---\n\n# Regra B\n\nTexto.\n"
+	ukis := []UKIFile{
+		{Path: "/tmp/B.md", Relativo: "B.md", Title: "Raiz", Content: "# Raiz\n"},
+		{Path: "/tmp/dominio/B.md", Relativo: "dominio/B.md", Title: "Regra B", Content: conteudo, Tags: []string{"k8s"}},
+	}
+	for formato, pasta := range map[string]string{"docusaurus": "docs", "obsidian": ""} {
+		t.Run(formato, func(t *testing.T) {
+			out := t.TempDir()
+			exp, _ := NewExporter(formato)
+			if err := exp.Export(ukis, out); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(out, pasta, "dominio", "B.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n := strings.Count(string(data), "---\n"); n != 2 {
+				t.Errorf("esperado um frontmatter só (2 linhas ---), obtido %d:\n%s", n, data)
+			}
+			if !strings.Contains(string(data), "  - k8s\n") || !strings.Contains(string(data), "# Regra B\n\nTexto.\n") {
+				t.Errorf("faltam as tags ou o corpo:\n%s", data)
+			}
+			if _, err := os.Stat(filepath.Join(out, pasta, "B.md")); err != nil {
+				t.Errorf("o UKI da raiz sumiu: %v", err)
+			}
+		})
+	}
+}
+
+// TestExport_LimpaSoOQueOExportGerou: o UKI apagado da fonte sai do destino no export
+// seguinte, e o arquivo da pessoa na mesma pasta fica.
+func TestExport_LimpaSoOQueOExportGerou(t *testing.T) {
+	for formato, pasta := range map[string]string{"docusaurus": "docs", "obsidian": "", "markdown": ""} {
+		t.Run(formato, func(t *testing.T) {
+			out := t.TempDir()
+			base := filepath.Join(out, pasta)
+			a := UKIFile{Path: "/x/A.md", Relativo: "A.md", Title: "A", Content: "# A\n"}
+			b := UKIFile{Path: "/x/d/B.md", Relativo: "d/B.md", Title: "B", Content: "# B\n"}
+			exp, _ := NewExporter(formato)
+			if err := exp.Export([]UKIFile{a, b}, out); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(base, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			minha := filepath.Join(base, "minha.md")
+			if err := os.WriteFile(minha, []byte("meu"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := exp.Export([]UKIFile{a}, out); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(base, "d", "B.md")); !os.IsNotExist(err) {
+				t.Errorf("o UKI apagado continua no destino: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(base, "d")); !os.IsNotExist(err) {
+				t.Errorf("a subpasta vazia continua no destino: %v", err)
+			}
+			for _, f := range []string{minha, filepath.Join(base, "A.md")} {
+				if _, err := os.Stat(f); err != nil {
+					t.Errorf("arquivo que devia ficar sumiu: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestExport_ManifestoAdulteradoNaoSaiDaPasta: caminho com .. no manifesto é ignorado.
+func TestExport_ManifestoAdulteradoNaoSaiDaPasta(t *testing.T) {
+	out := t.TempDir()
+	fora := filepath.Join(out, "fora.md")
+	if err := os.WriteFile(fora, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(out, "dest")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := `{"arquivos": ["../fora.md"]}`
+	if err := os.WriteFile(filepath.Join(dest, nomeManifesto), []byte(m), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exp, _ := NewExporter("obsidian")
+	if err := exp.Export([]UKIFile{{Path: "/x/A.md", Relativo: "A.md", Title: "A", Content: "# A\n"}}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fora); err != nil {
+		t.Errorf("apagou fora do destino: %v", err)
+	}
+}
+
+// TestExport_ManifestoComSymlinkNaoApagaFora: subpasta que é link para fora do destino
+// não deixa o manifesto adulterado apagar arquivo alheio.
+func TestExport_ManifestoComSymlinkNaoApagaFora(t *testing.T) {
+	out := t.TempDir()
+	alheia := filepath.Join(out, "alheia")
+	if err := os.MkdirAll(alheia, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	segredo := filepath.Join(alheia, "segredo.txt")
+	if err := os.WriteFile(segredo, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(out, "dest")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(alheia, filepath.Join(dest, "link")); err != nil {
+		t.Skipf("sem permissão para criar symlink: %v", err)
+	}
+	m := `{"arquivos": ["link/segredo.txt"]}`
+	if err := os.WriteFile(filepath.Join(dest, nomeManifesto), []byte(m), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exp, _ := NewExporter("obsidian")
+	if err := exp.Export([]UKIFile{{Path: "/x/A.md", Relativo: "A.md", Title: "A", Content: "# A\n"}}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(segredo); err != nil {
+		t.Errorf("apagou arquivo fora do destino pelo symlink: %v", err)
+	}
+}
+
+// TestDocusaurus_EscapaMDX: chaves e < fora do código são escapados; o código fica.
+func TestDocusaurus_EscapaMDX(t *testing.T) {
+	out := t.TempDir()
+	c := "# T\n\nUse {{ .Values }} e <pod> e `{{ ok }}`.\n\n```yaml\nx: {{ y }} <z>\n```\n"
+	exp, _ := NewExporter("docusaurus")
+	if err := exp.Export([]UKIFile{{Path: "/x/A.md", Relativo: "A.md", Title: "T", Content: c}}, out); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(out, "docs", "A.md"))
+	got := string(data)
+	for _, quer := range []string{"\\{\\{ .Values }} e &lt;pod>", "`{{ ok }}`", "x: {{ y }} <z>"} {
+		if !strings.Contains(got, quer) {
+			t.Errorf("falta %q em:\n%s", quer, got)
+		}
+	}
+}

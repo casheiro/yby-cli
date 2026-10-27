@@ -91,69 +91,51 @@ Entrada: texto livre, sem estrutura (uma ideia, um log, uma nota de reunião, um
 Saída: um documento Markdown estruturado no formato UKI (Unit of Knowledge Interlinked), o padrão de conhecimento do projeto.
 Idioma: escreva no idioma do texto de entrada; na dúvida, em português do Brasil (PT-BR).
 
-Estrutura do documento:
-# [Título]
-**ID:** UKI-[DOMÍNIO]-[CONCEITO]
-**Tipo:** [Conceito|Decisão|Guia|Referência]
-**Status:** Rascunho
+Escolha o tipo do UKI e escreva as seções dele, como pede a especificação (.synapstor/UKI_SPEC.md):
+- regra: regra de negócio ou limite técnico rígido. Seções: ## Contexto, ## Enunciado, ## Exceções
+- decisao: escolha de arquitetura (um ADR leve). Seções: ## Problema, ## Opções, ## Decisão, ## Consequências
+- padrao: guia de estilo ou de implementação. Seções: ## Quando usar, ## Exemplo, ## Antipadrão
+- metrica: indicador que o projeto acompanha. Seções: ## Contexto, ## Definição, ## Meta
+- referencia: como um componente funciona. Seções: ## Visão geral, ## Arquitetura, ## Referências no código
 
-## Contexto
-[De onde vem o conhecimento e por que ele importa]
-
-## Conteúdo
-[O conhecimento organizado em seções, listas e exemplos]
+O content começa pelo título (# Título) e segue com as seções do tipo. Não escreva frontmatter (---) nem linhas de ID, tipo ou status: o Synapstor monta os metadados e as datas com os campos do JSON.
 
 Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de markdown nem texto antes ou depois:
 {
 	"title": "Título",
+	"id": "dominio.subdominio.nome-em-kebab-case",
+	"tipo": "regra | decisao | padrao | metrica | referencia",
+	"tags": ["tag", "outra-tag"],
 	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
-	"content": "O documento Markdown inteiro...",
-	"summary": "Resumo curto para o índice de busca"
+	"content": "O documento Markdown inteiro, do título em diante..."
 }`
 
 // SynapsotorStudy e o prompt para documentacao de codigo.
 const SynapsotorStudy = `
-Goal: You are the Synapstor Agent, a Tech Writer & Archaeologist.
-Input: Source code files related to a specific topic.
-Output: A comprehensive technical documentation (UKI) explaining how this feature/component works.
+Objetivo: você é o agente do Synapstor, um redator técnico que lê código.
+Entrada: os arquivos de código de um tópico do projeto.
+Saída: um UKI (Unit of Knowledge Interlinked) que explica como esse componente funciona, no formato da especificação do projeto (.synapstor/UKI_SPEC.md).
+Idioma: português do Brasil (PT-BR).
 
-Guidelines:
-1. Analyze the code to understand the logic, data structures, and flow.
-2. Abstract the implementation details into high-level concepts.
-3. Use Mermaid diagrams if complex flows are detected.
-4. Be precise and concise.
+Orientações:
+1. Leia o código para entender a lógica, as estruturas de dados e o fluxo.
+2. Explique em conceitos, sem repetir o código linha a linha.
+3. Use diagramas Mermaid quando o fluxo for complexo.
+4. Seja preciso e conciso.
 
-Structure:
-# [Title]
-**ID:** UKI-[TIMESTAMP]-[SHORT_SLUG]
-**Type:** Reference
-**Status:** Active
+O tipo é referencia, com as seções ## Visão geral (o que é o componente e por que existe), ## Arquitetura (como funciona por dentro) e ## Referências no código (os arquivos e as funções principais). Se o código for sobretudo um guia de implementação, use padrao (## Quando usar, ## Exemplo, ## Antipadrão); os outros tipos da especificação (regra, decisao, metrica) quase nunca saem do código.
 
-## Overview
-[What is this component and why does it exist?]
+O content começa pelo título (# Título) e segue com as seções do tipo. Não escreva frontmatter (---) nem linhas de ID, tipo ou status: o Synapstor monta os metadados e as datas com os campos do JSON.
 
-## Architecture
-[How it works internally]
-
-## Code References
-[List key files and functions]
-
-JSON Response Format (Strict):
+Formato da resposta (estrito): responda APENAS com este JSON, sem cercas de markdown nem texto antes ou depois:
 {
-	"title": "Title",
-	"filename": "UKI-[TIMESTAMP]-[SHORT_SLUG].md",
-	"content": "Full markdown content...",
-	"summary": "Brief summary for indexing"
+	"title": "Título",
+	"id": "dominio.subdominio.nome-em-kebab-case",
+	"tipo": "referencia",
+	"tags": ["tag", "outra-tag"],
+	"filename": "UKI-[TIMESTAMP]-[SLUG_CURTO].md",
+	"content": "O documento Markdown inteiro, do título em diante..."
 }`
-
-// SynapsotorTagger e o prompt para auto-tagging de UKIs.
-const SynapsotorTagger = `Você é um classificador de documentação técnica.
-Dado o conteúdo de um documento, extraia entre 3 e 7 tags relevantes que descrevam os tópicos principais.
-As tags devem ser palavras-chave em inglês, lowercase, sem espaços (use hífen se necessário).
-Exemplos de tags: "kubernetes", "deployment", "networking", "ci-cd", "monitoring", "security", "helm".
-
-Responda APENAS com um JSON array de strings. Exemplo:
-["kubernetes", "deployment", "helm"]`
 
 // BardClassify e o prompt para classificacao de intencao do usuario no Bard.
 const BardClassify = `Voce e um classificador de intencoes. Dada uma mensagem do usuario, identifique qual ferramenta deve ser executada.

@@ -191,3 +191,33 @@ func TestVectorStore_AddAndSearch(t *testing.T) {
 		t.Errorf("Expected top result to be 'hello', got %s", results[0].Content)
 	}
 }
+
+func TestVectorStore_Search_TopKMaiorQueColecao(t *testing.T) {
+	ctx := context.Background()
+	vs, err := NewVectorStore(ctx, filepath.Join(t.TempDir(), "db"), &MockAIProvider{})
+	if err != nil {
+		t.Fatalf("falha ao criar o store: %v", err)
+	}
+
+	// Coleção vazia: vazio, sem erro.
+	vazio, err := vs.Search(ctx, "hello", 5)
+	if err != nil {
+		t.Fatalf("busca em coleção vazia não deveria falhar: %v", err)
+	}
+	if len(vazio) != 0 {
+		t.Errorf("esperava 0 resultados, veio %d", len(vazio))
+	}
+
+	if err := vs.AddDocuments(ctx, []string{"hello", "world"}, []map[string]string{{"id": "1"}, {"id": "2"}}, []string{"1", "2"}); err != nil {
+		t.Fatalf("falha ao adicionar: %v", err)
+	}
+
+	// TopK 5 com 2 documentos devolve os 2.
+	res, err := vs.Search(ctx, "hello", 5)
+	if err != nil {
+		t.Fatalf("busca com topK maior que a coleção falhou: %v", err)
+	}
+	if len(res) != 2 {
+		t.Errorf("esperava 2 resultados, veio %d", len(res))
+	}
+}

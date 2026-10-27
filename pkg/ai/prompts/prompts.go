@@ -14,7 +14,6 @@ var defaultPrompts = map[string]string{
 	"sentinel.scan":        SentinelScan,
 	"synapstor.capture":    SynapsotorCapture,
 	"synapstor.study":      SynapsotorStudy,
-	"synapstor.tagger":     SynapsotorTagger,
 	"atlas.refine":         AtlasRefine,
 	"governance.system":    GovernanceSystem,
 }

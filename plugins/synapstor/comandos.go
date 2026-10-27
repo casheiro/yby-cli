@@ -43,10 +43,21 @@ func semProvider() error {
 		WithHint("rode ollama serve, exporte OPENAI_API_KEY ou GEMINI_API_KEY, ou defina ai.provider no ~/.yby/config.yaml")
 }
 
-// semEmbeddings é o erro de quando nenhum provider gera embeddings.
-func semEmbeddings() error {
-	return yerrors.New(yerrors.ErrCodeConfig, "nenhum provider de IA com embeddings disponível").
-		WithHint("rode ollama serve, ou exporte OPENAI_API_KEY ou GEMINI_API_KEY (os CLIs claude e gemini não geram embeddings)")
+// nomeDosEmbeddings diz de onde vêm os embeddings, como "local/paraphrase-multilingual-
+// MiniLM-L12-v2-int8" ou "ollama/nomic-embed-text": sem Ollama nem embeddings configurados,
+// são os locais, e quem lê o resumo precisa saber disso.
+func nomeDosEmbeddings(ctx context.Context, p ai.Provider) string {
+	id, err := ai.IdentidadeDosEmbeddings(ctx, p)
+	if err != nil || id.Provider == "" {
+		return p.Name()
+	}
+	return id.String()
+}
+
+// erroDoDownload é a falha ao baixar o modelo de embeddings local.
+func erroDoDownload(err error) error {
+	return yerrors.Wrap(err, yerrors.ErrCodeUnreachable, "não deu para baixar o modelo de embeddings").
+		WithHint("confira a conexão; sem acesso ao huggingface.co, aponte HF_ENDPOINT para um espelho ou rode ollama serve")
 }
 
 // semUKIs informa se a pasta dos UKIs não existe ainda.
@@ -150,9 +161,6 @@ func runIndex(ctx context.Context, raiz string, args []string, saida, erros io.W
 	}
 
 	provider := provedorDeEmbeddings(ctx)
-	if provider == nil {
-		return semEmbeddings()
-	}
 
 	modo := "incremental"
 	if fullReindex {
@@ -170,17 +178,25 @@ func runIndex(ctx context.Context, raiz string, args []string, saida, erros io.W
 
 	report, err := idx.Run(ctx)
 	parar()
+	if errors.Is(err, indexer.ErrIndexEmAndamento) {
+		return yerrors.New(yerrors.ErrCodeExec, "outro yby synapstor index está rodando neste projeto").
+			WithHint("espere ele terminar e rode de novo")
+	}
+	if errors.Is(err, ai.ErrBaixarModelo) {
+		return erroDoDownload(err)
+	}
 	if err != nil {
 		return yerrors.Wrap(err, yerrors.ErrCodeExec, "a indexação parou").
 			WithHint("confira o provider de embeddings com yby doctor; para ver o log, rode com YBY_LOG_LEVEL=debug").
 			WithContext("provider", provider.Name())
 	}
-	escreverIndexacao(saida, report)
+	escreverIndexacao(saida, report, nomeDosEmbeddings(ctx, provider))
 	return nil
 }
 
-// escreverIndexacao escreve o resumo da indexação: indexados, removidos e sem mudança.
-func escreverIndexacao(w io.Writer, r *indexer.IndexReport) {
+// escreverIndexacao escreve o resumo da indexação: arquivos indexados, removidos, trechos
+// gerados e arquivos sem mudança, a pasta do índice e de onde vêm os embeddings.
+func escreverIndexacao(w io.Writer, r *indexer.IndexReport, embeddings string) {
 	if r.FilesScanned == 0 && r.FilesRemoved == 0 {
 		fmt.Fprintln(w)
 		ui.Check(w, ui.CheckNeutro, "nenhum UKI em "+filepath.ToSlash(pastaDosUKIs)+" nem em docs/wiki", "", "")
@@ -189,18 +205,24 @@ func escreverIndexacao(w io.Writer, r *indexer.IndexReport) {
 		return
 	}
 	indexados := ui.CheckOk
-	if r.EmbeddingsCreated == 0 {
+	if r.FilesIndexed == 0 {
 		indexados = ui.CheckNeutro
 	}
 	partes := []ui.ParteResumo{
-		{Texto: plural(r.EmbeddingsCreated, "indexado", "indexados"), Tipo: indexados},
+		{Texto: plural(r.FilesIndexed, "indexado", "indexados"), Tipo: indexados},
 		{Texto: plural(r.FilesRemoved, "removido", "removidos"), Tipo: ui.CheckNeutro},
+	}
+	if r.EmbeddingsCreated > 0 {
+		partes = append(partes, ui.ParteResumo{Texto: plural(r.EmbeddingsCreated, "trecho", "trechos"), Tipo: ui.CheckNeutro})
 	}
 	if r.FilesSkipped > 0 {
 		partes = append(partes, ui.ParteResumo{Texto: plural(r.FilesSkipped, "sem mudança", "sem mudança"), Tipo: ui.CheckNeutro})
 	}
 	ui.SummaryCom(w, partes, "")
-	ui.Campos(w, ui.Campo{Rotulo: "índice", Valor: filepath.ToSlash(filepath.Join(".synapstor", ".index")), Caminho: true})
+	ui.Campos(w,
+		ui.Campo{Rotulo: "índice", Valor: filepath.ToSlash(filepath.Join(".synapstor", ".index")), Caminho: true},
+		ui.Campo{Rotulo: "embeddings", Valor: embeddings},
+	)
 }
 
 // faixaDaNota classifica a nota de um UKI: 70 ou mais é bom, abaixo de 40 é fraco.
@@ -232,10 +254,12 @@ func oQueFalta(b quality.QualityBreakdown) string {
 	if !b.HasContext {
 		sem = append(sem, "contexto")
 	}
-	if !b.HasExamples {
+	if b.ExigeExemplos && !b.HasExamples {
 		sem = append(sem, "exemplos")
 	}
-	if !b.HasHeaders {
+	if len(b.SecoesFaltando) > 0 {
+		sem = append(sem, "a seção "+strings.Join(b.SecoesFaltando, ", "))
+	} else if b.Tipo == "" && !b.HasHeaders {
 		sem = append(sem, "seções")
 	}
 	if b.LinkCount == 0 {
@@ -327,7 +351,7 @@ func runDecay(raiz string, saida io.Writer) error {
 	return nil
 }
 
-// escreverDecay escreve a idade de cada UKI (▲ nos desatualizados) e o resumo.
+// escreverDecay escreve a idade de cada UKI e os commits no código que ela cita (▲ nos desatualizados) e o resumo.
 func escreverDecay(w io.Writer, infos []decay.DecayInfo) {
 	ui.Title(w, "synapstor", fmt.Sprintf("decay · limite de %d dias", decay.StaleThresholdDays))
 	if len(infos) == 0 {
@@ -349,7 +373,11 @@ func escreverDecay(w io.Writer, infos []decay.DecayInfo) {
 		idade := plural(info.DaysSinceActivity, "dia", "dias")
 		if info.IsStale {
 			desatualizados++
-			ui.CheckCom(w, col, ui.CheckAviso, nomes[i], idade, "pode estar desatualizado")
+			detalhe := "pode estar desatualizado"
+			if info.CodeCommits > 0 {
+				detalhe = plural(info.CodeCommits, "commit", "commits") + " no código desde a nota"
+			}
+			ui.CheckCom(w, col, ui.CheckAviso, nomes[i], idade, detalhe)
 			continue
 		}
 		ui.CheckCom(w, col, ui.CheckOk, nomes[i], idade, "")

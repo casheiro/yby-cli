@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/decay"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gofrs/flock"
 	"github.com/muesli/termenv"
 )
 
@@ -108,9 +110,16 @@ type provedorFalso struct {
 	chamadas int
 	// aviso, se não vazio, é logado com slog.Warn a cada EmbedDocuments.
 	aviso string
+	// nome, se não vazio, troca o nome "falso": outro nome são outros embeddings.
+	nome string
 }
 
-func (p *provedorFalso) Name() string { return "falso" }
+func (p *provedorFalso) Name() string {
+	if p.nome != "" {
+		return p.nome
+	}
+	return "falso"
+}
 
 func (p *provedorFalso) Completion(context.Context, string, string) (string, error) {
 	p.chamadas++
@@ -257,9 +266,11 @@ func TestComandoDesconhecido_ErroComHint(t *testing.T) {
 	}
 }
 
+// TestSemProvider_ErroComHint: só capture e study pedem um provider de IA; index e search
+// sempre têm embeddings (sem Ollama nem API, os locais).
 func TestSemProvider_ErroComHint(t *testing.T) {
 	usarDependencias(t, nil)
-	for _, args := range [][]string{{"capture", "texto"}, {"study", "deploy"}, {"index"}, {"search", "deploy"}} {
+	for _, args := range [][]string{{"capture", "texto"}, {"study", "deploy"}} {
 		_, _, err := rodar(t, t.TempDir(), args...)
 		var ye *yerrors.YbyError
 		if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeConfig || !strings.Contains(ye.GetHint(), "ollama serve") {
@@ -267,6 +278,9 @@ func TestSemProvider_ErroComHint(t *testing.T) {
 		}
 	}
 }
+
+// campoEmbeddings é o campo "embeddings  falso" do resumo, com as cores no meio.
+var campoEmbeddings = regexp.MustCompile(`embeddings +(\x1b\[[0-9;]*m)*falso`)
 
 func TestIndexESearch_Golden(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.TrueColor)
@@ -282,9 +296,12 @@ func TestIndexESearch_Golden(t *testing.T) {
 		t.Errorf("nada no stderr nem no log fora do terminal, obtido %q e %q", erros, log.String())
 	}
 	conferirGolden(t, "index.golden", saida)
+	if !campoEmbeddings.MatchString(saida) {
+		t.Errorf("o resumo do index tem de dizer de onde vêm os embeddings:\n%s", saida)
+	}
 
-	// o manifest e o índice continuam onde sempre estiveram
-	for _, p := range []string{".index_manifest.json", ".index"} {
+	// o manifest mora dentro da pasta do índice
+	for _, p := range []string{filepath.Join(".index", "manifest.json"), ".index"} {
 		if _, err := os.Stat(filepath.Join(raiz, ".synapstor", p)); err != nil {
 			t.Errorf("%s não foi gravado: %v", p, err)
 		}
@@ -295,6 +312,9 @@ func TestIndexESearch_Golden(t *testing.T) {
 		t.Fatal(err)
 	}
 	conferirGolden(t, "search.golden", saida)
+	if !campoEmbeddings.MatchString(saida) {
+		t.Errorf("o resumo do search tem de dizer de onde vêm os embeddings:\n%s", saida)
+	}
 
 	// sem nada mudado e com um UKI apagado: 0 indexados, 1 removido
 	if err := os.Remove(filepath.Join(raiz, ".synapstor", ".uki", "UKI-1761390200-rascunho.md")); err != nil {
@@ -305,6 +325,74 @@ func TestIndexESearch_Golden(t *testing.T) {
 		t.Fatal(err)
 	}
 	conferirGolden(t, "index-removido.golden", saida)
+}
+
+// provedorQueBaixa é o provedorFalso com um modelo a baixar no primeiro uso, como o local.
+type provedorQueBaixa struct {
+	*provedorFalso
+	baixado bool
+	err     error
+}
+
+func (p *provedorQueBaixa) TamanhoABaixar() string {
+	if p.baixado {
+		return ""
+	}
+	return "~120 MB"
+}
+
+func (p *provedorQueBaixa) BaixarModelo(context.Context) error {
+	if p.err != nil {
+		return p.err
+	}
+	p.baixado = true
+	return nil
+}
+
+// TestIndexESearch_EtapaDeBaixarOModelo: o download do modelo local tinha só um slog.Info,
+// dentro da etapa "gerar embeddings". Agora tem etapa própria, antes de gerar os embeddings
+// e antes de buscar, e só no primeiro uso.
+func TestIndexESearch_EtapaDeBaixarOModelo(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	prov := &provedorQueBaixa{provedorFalso: &provedorFalso{}}
+	usarDependencias(t, prov.provedorFalso)
+	provedorDeEmbeddings = func(context.Context) ai.Provider { return prov }
+	raiz := projetoDeExemplo(t)
+
+	saida, _, err := rodar(t, raiz, "index")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baixar := strings.Index(saida, "baixar o modelo de embeddings (~120 MB)")
+	if baixar < 0 || baixar > strings.Index(saida, "gerar embeddings") {
+		t.Errorf("a etapa do download tem de vir antes de gerar os embeddings:\n%s", saida)
+	}
+
+	// Já baixado: a busca não abre a etapa.
+	saida, _, err = rodar(t, raiz, "search", "deploy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(saida, "baixar o modelo") {
+		t.Errorf("com o modelo no disco não há etapa de download:\n%s", saida)
+	}
+
+	// Sem o modelo, a busca baixa antes de buscar; a falha do download para a busca.
+	prov.baixado = false
+	saida, _, err = rodar(t, raiz, "search", "deploy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baixar = strings.Index(saida, "baixar o modelo de embeddings")
+	if baixar < 0 || baixar > strings.Index(saida, "buscar no índice") {
+		t.Errorf("a etapa do download tem de vir antes de buscar:\n%s", saida)
+	}
+	prov.baixado, prov.err = false, errors.New("status HTTP 503")
+	_, _, err = rodar(t, raiz, "search", "deploy")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeUnreachable || !strings.Contains(ye.GetHint(), "HF_ENDPOINT") {
+		t.Errorf("esperado erro de rede com hint do HF_ENDPOINT, obtido %v", err)
+	}
 }
 
 func TestSearch_IndiceVazio(t *testing.T) {
@@ -320,6 +408,34 @@ func TestSearch_IndiceVazio(t *testing.T) {
 	}
 }
 
+func TestSearchEIndex_TrocarDeEmbeddings(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	usarDependencias(t, &provedorFalso{})
+	raiz := projetoDeExemplo(t)
+	if _, _, err := rodar(t, raiz, "index"); err != nil {
+		t.Fatal(err)
+	}
+
+	usarDependencias(t, &provedorFalso{nome: "outro"})
+	_, _, err := rodar(t, raiz, "search", "deploy")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || ye.Code != yerrors.ErrCodeValidation || !strings.Contains(ye.GetHint(), "yby synapstor index --full") ||
+		!strings.Contains(ye.Message, "falso (128 dimensões)") || !strings.Contains(ye.Message, "outro (128 dimensões)") {
+		t.Fatalf("a busca com outros embeddings diz com que o índice foi feito e como refazer, obtido %v", err)
+	}
+
+	saida, _, err := rodar(t, raiz, "index")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saida, "apagar o índice antigo") || !strings.Contains(saida, "refeito do zero") || !strings.Contains(saida, "3 indexados") {
+		t.Errorf("o index com outros embeddings refaz tudo e avisa:\n%s", saida)
+	}
+	if _, _, err := rodar(t, raiz, "search", "deploy"); err != nil {
+		t.Errorf("depois de refeito, a busca funciona: %v", err)
+	}
+}
+
 func TestIndex_SemUKIs(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
 	usarDependencias(t, &provedorFalso{})
@@ -329,6 +445,26 @@ func TestIndex_SemUKIs(t *testing.T) {
 	}
 	if !strings.Contains(saida, "nenhum UKI em .synapstor/.uki nem em docs/wiki") || !strings.Contains(saida, "PRÓXIMO PASSO") {
 		t.Errorf("estado vazio fora do formato:\n%s", saida)
+	}
+}
+
+func TestIndex_OutroIndexEmAndamento(t *testing.T) {
+	usarDependencias(t, &provedorFalso{})
+	raiz := projetoDeExemplo(t)
+	pasta := filepath.Join(raiz, ".synapstor", ".index")
+	if err := os.MkdirAll(pasta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outro := flock.New(filepath.Join(pasta, "index.lock"))
+	if ok, err := outro.TryLock(); err != nil || !ok {
+		t.Fatalf("preparo: não deu para travar (%v)", err)
+	}
+	t.Cleanup(func() { _ = outro.Unlock() })
+
+	_, _, err := rodar(t, raiz, "index")
+	var ye *yerrors.YbyError
+	if !errors.As(err, &ye) || !strings.Contains(ye.Message, "outro yby synapstor index") || !strings.Contains(ye.GetHint(), "espere") {
+		t.Fatalf("esperado o erro do index em andamento, com dica, obtido %v", err)
 	}
 }
 
@@ -389,6 +525,7 @@ func TestDecay_Golden(t *testing.T) {
 			{Title: "Deploy com Argo CD", DaysSinceActivity: 3},
 			{Title: "Charts do Helm", DaysSinceActivity: 120, IsStale: true},
 			{Path: "UKI-1761390200-rascunho.md", DaysSinceActivity: 1},
+			{Title: "Rollback do payments", DaysSinceActivity: 5, IsStale: true, CodeCommits: 3},
 		}, nil
 	}
 	saida, _, err := rodar(t, projetoDeExemplo(t), "decay")
@@ -399,8 +536,9 @@ func TestDecay_Golden(t *testing.T) {
 }
 
 // respostaDoUKI é a resposta falsa da IA no capture e no study.
-const respostaDoUKI = "```json\n{\"title\": \"Rollback do payments\", \"filename\": \"UKI-1761390300-rollback.md\", " +
-	"\"content\": \"# Rollback do payments\\n\\nUse o histórico do Argo CD.\", \"summary\": \"rollback\"}\n```"
+const respostaDoUKI = "```json\n{\"title\": \"Rollback do payments\", \"id\": \"deploy.argo.rollback\", \"tipo\": \"padrao\", " +
+	"\"tags\": [\"argo-cd\", \"rollback\"], \"filename\": \"UKI-1761390300-rollback.md\", " +
+	"\"content\": \"# Rollback do payments\\n\\nUse o histórico do Argo CD.\"}\n```"
 
 func TestCapture_Golden(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.TrueColor)
@@ -414,13 +552,17 @@ func TestCapture_Golden(t *testing.T) {
 	}
 	conferirGolden(t, "capture.golden", saida)
 
-	// o UKI gravado não muda de formato: é o content da IA, como veio
+	// o UKI gravado é o content da IA com o frontmatter da especificação, montado pelo
+	// código (status rascunho e as datas do dia)
 	uki, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".uki", "UKI-1761390300-rollback.md"))
 	if err != nil {
 		t.Fatalf("UKI não gravado: %v", err)
 	}
-	if string(uki) != "# Rollback do payments\n\nUse o histórico do Argo CD." {
-		t.Errorf("conteúdo do UKI mudou: %q", uki)
+	hoje := time.Now().Format(time.DateOnly)
+	esperado := "---\nid: deploy.argo.rollback\ntipo: padrao\nstatus: rascunho\ncriado_em: " + hoje +
+		"\natualizado_em: " + hoje + "\ntags: [argo-cd, rollback]\n---\n\n# Rollback do payments\n\nUse o histórico do Argo CD."
+	if string(uki) != esperado {
+		t.Errorf("UKI fora do formato da especificação:\n%s", uki)
 	}
 	if prov.chamadas != 1 {
 		t.Errorf("esperada 1 chamada à IA, houve %d", prov.chamadas)
@@ -532,7 +674,7 @@ func TestIndex_NoTerminalRedesenhaEDesviaOLog(t *testing.T) {
 		}
 	}
 	// a barra da etapa de embeddings avança com o AoAvancar do VectorStore
-	for _, pct := range []string{"33%", "67%", "100%"} {
+	for _, pct := range []string{"25%", "50%", "100%"} {
 		if !strings.Contains(saida, pct) {
 			t.Errorf("a barra de gerar embeddings não passou por %s:\n%q", pct, saida)
 		}
@@ -565,7 +707,7 @@ func TestIndex_TodosApagadosLimpaOIndice(t *testing.T) {
 	if !strings.Contains(saida, "tirar os removidos do índice") || !strings.Contains(saida, "3 removidos") {
 		t.Errorf("os 3 UKIs apagados saem do índice:\n%s", saida)
 	}
-	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index_manifest.json"))
+	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index", "manifest.json"))
 	if err != nil || strings.Contains(string(manifest), "UKI-") {
 		t.Errorf("o manifest fica vazio, obtido %s (%v)", manifest, err)
 	}
@@ -586,12 +728,24 @@ func TestIndex_FalhaAoTirarRemovidosAvisaEMantemNoManifest(t *testing.T) {
 	if err := os.Remove(filepath.Join(raiz, ".synapstor", ".uki", "UKI-1761390200-rascunho.md")); err != nil {
 		t.Fatal(err)
 	}
-	// o índice vira um arquivo: o vector store não abre e o removido não sai
+	// o índice ganha uma coleção quebrada (sem metadados): o vector store não abre e o
+	// removido não sai; o manifest, dentro da pasta, continua lá
 	indice := filepath.Join(raiz, ".synapstor", ".index")
-	if err := os.RemoveAll(indice); err != nil {
+	entradas, err := os.ReadDir(indice)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(indice, []byte("x"), 0o644); err != nil {
+	for _, e := range entradas {
+		if e.Name() != "manifest.json" {
+			if err := os.RemoveAll(filepath.Join(indice, e.Name())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(indice, "quebrada"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(indice, "quebrada", "00000000.gob"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	saida, _, err := rodar(t, raiz, "index")
@@ -601,7 +755,7 @@ func TestIndex_FalhaAoTirarRemovidosAvisaEMantemNoManifest(t *testing.T) {
 	if !strings.Contains(saida, "não deu para tirar do índice 1 arquivo apagado") || !strings.Contains(saida, "0 removidos") {
 		t.Errorf("a falha ao tirar o removido aparece como aviso e não conta como removido:\n%s", saida)
 	}
-	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index_manifest.json"))
+	manifest, err := os.ReadFile(filepath.Join(raiz, ".synapstor", ".index", "manifest.json"))
 	if err != nil || !strings.Contains(string(manifest), "UKI-1761390200-rascunho.md") {
 		t.Errorf("o removido que ficou no índice continua no manifest, para a próxima tentativa: %s (%v)", manifest, err)
 	}

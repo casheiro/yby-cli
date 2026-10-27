@@ -1,16 +1,17 @@
 ◆ YBY  SYNAPSTOR     search · "deploy argo cd helm chart values"
 
-  ✓ buscar no índice   3 parecid…  1,5 s
+  ✓ buscar no índice   8 parecid…  1,5 s
 
 RESULTADOS
-  0,61  Charts do Helm
+  0,62  Charts do Helm · Valores
         …i/UKI-1761390100-helm-charts.md
-        Contexto Os charts ficam em
-        charts/ e seguem a versão do…
+        Valores Cada ambiente tem um
+        values próprio…
 
-  0,55  Deploy com Argo CD
+  0,55  Deploy com Argo CD · Observações
         …i/UKI-1761390000-deploy-argo.md
-        ID: UKI-1 Tipo: procedimento
-        Status: ativo Contexto O…
+        Observações deploy argo cd sync
+        payments deploy argo cd sync…
 
 RESUMO  2 resultados  · 1 abaixo de 0,35 ficou de fora
+  embeddings  falso

@@ -221,7 +221,8 @@ func GetEmbeddingProvider(ctx context.Context) Provider {
 		}
 	}
 
-	// 3. Fallback: embeddings locais (all-MiniLM-L6-v2, 512 tokens com truncagem)
+	// 3. Fallback: embeddings locais (paraphrase-multilingual-MiniLM-L12-v2 em int8, entende
+	// português; o texto é cortado em 512 tokens antes do modelo). Por isso nunca devolve nil.
 	return NewLocalEmbeddingProvider()
 }
 

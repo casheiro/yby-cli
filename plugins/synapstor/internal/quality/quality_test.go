@@ -3,6 +3,7 @@ package quality
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -191,31 +192,86 @@ func TestScoreAll_DiretorioInexistente(t *testing.T) {
 	}
 }
 
-func TestFormatScore(t *testing.T) {
-	qs := QualityScore{
-		Path:  "/tmp/UKI-1.md",
-		Title: "Teste",
-		Score: 75,
+// TestScoreUKI_FrontmatterDaEspecificacao: um UKI só com o frontmatter da especificação
+// tem metadados, e o contexto vale em qualquer caixa e com numeração.
+func TestScoreUKI_FrontmatterDaEspecificacao(t *testing.T) {
+	content := "---\nid: cli.ux.saida\ntipo: regra\nstatus: ativo\ncriado_em: 2026-10-26\n" +
+		"atualizado_em: 2026-10-26\ntags: [cli]\n---\n\n# Saída\n\n## 1. CONTEXTO e definição\n\nTexto.\n"
+	qs := ScoreUKI(content)
+	if !qs.Breakdown.HasMetadata || !qs.Breakdown.HasContext || qs.Title != "Saída" {
+		t.Errorf("esperado metadados, contexto e título, obtido %+v (%q)", qs.Breakdown, qs.Title)
 	}
-
-	result := FormatScore(qs)
-	if result == "" {
-		t.Error("resultado não deve ser vazio")
-	}
-	if !contains(result, "75") {
-		t.Error("resultado deve conter o score")
+	// as palavras do frontmatter não contam no tamanho
+	if qs.Breakdown.WordCount != 8 {
+		t.Errorf("esperadas 8 palavras no corpo, obtido %d", qs.Breakdown.WordCount)
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+// TestScoreAll_Subpastas: o UKI de uma subpasta de domínio também ganha nota.
+func TestScoreAll_Subpastas(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "dominio"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, nome := range []string{"A.md", filepath.Join("dominio", "B.md")} {
+		if err := os.WriteFile(filepath.Join(dir, nome), []byte("# "+nome), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	return false
+	scores, err := ScoreAll(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scores) != 2 {
+		t.Errorf("esperados 2 UKIs, obtido %d", len(scores))
+	}
+}
+
+func palavras(n int) string {
+	return strings.TrimSpace(strings.Repeat("palavra ", n))
+}
+
+func TestScoreUKI_DecisaoCompletaSemCodigo(t *testing.T) {
+	content := "---\nid: dec-banco\ntipo: decisao\nstatus: ativo\n---\n# Escolha do banco\n\n" +
+		"## Problema\n" + palavras(30) + "\n\n## Opções\n" + palavras(30) +
+		"\n\n## Decisão\n" + palavras(30) + "\n\n## Consequências\n" + palavras(60) + "\n"
+	score := ScoreUKI(content)
+
+	if score.Score < 70 {
+		t.Errorf("decisão completa sem código deveria ter 70 ou mais, obtido %d", score.Score)
+	}
+	if score.Breakdown.ExigeExemplos {
+		t.Error("decisão não exige exemplo")
+	}
+	if len(score.Breakdown.SecoesFaltando) != 0 {
+		t.Errorf("não deveria faltar seção, faltam %v", score.Breakdown.SecoesFaltando)
+	}
+}
+
+func TestScoreUKI_DecisaoSemSecoesPerdePontos(t *testing.T) {
+	completa := "---\nid: dec-banco\ntipo: decisao\nstatus: ativo\n---\n# T\n\n## Problema\na\n\n## Opções\na\n\n## Decisão\na\n\n## Consequências\na\n"
+	sem := "---\nid: dec-banco\ntipo: decisao\nstatus: ativo\n---\n# T\n\n## Problema\na\n\n## Decisão\na\n"
+	a, b := ScoreUKI(completa), ScoreUKI(sem)
+	if b.Score >= a.Score {
+		t.Errorf("faltando seções a nota deveria cair: %d >= %d", b.Score, a.Score)
+	}
+	if got := strings.Join(b.Breakdown.SecoesFaltando, ","); got != "Opções,Consequências" {
+		t.Errorf("seções faltando = %q", got)
+	}
+}
+
+func TestScoreUKI_PadraoSemExemplo(t *testing.T) {
+	base := "---\nid: pad-erros\ntipo: padrao\nstatus: ativo\n---\n# Erros\n\n## Quando usar\n" + palavras(20) + "\n\n## Antipadrão\n" + palavras(20) + "\n"
+	sem := ScoreUKI(base)
+	com := ScoreUKI(base + "\n## Exemplo\n```go\nreturn err\n```\n")
+
+	if !sem.Breakdown.ExigeExemplos {
+		t.Error("padrão exige exemplo")
+	}
+	if sem.Score >= com.Score {
+		t.Errorf("padrão sem exemplo deveria perder pontos: %d >= %d", sem.Score, com.Score)
+	}
+	if got := strings.Join(sem.Breakdown.SecoesFaltando, ","); got != "Exemplo" {
+		t.Errorf("seções faltando = %q", got)
+	}
 }

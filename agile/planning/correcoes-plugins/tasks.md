@@ -216,7 +216,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 ### Fase 3 · Synapstor
 
-- [ ] **Y01 · Índice versionado por provider/modelo/dimensão** ✓▶
+- [x] **Y01 · Índice versionado por provider/modelo/dimensão** ✓▶
   - **Problema:** `GetEmbeddingProvider` (`pkg/ai/factory.go:~197-226`) escolhe conforme o momento (Ollama se no ar, senão config, senão MiniLM local com 384 dimensões). A coleção tem nome fixo `synapstor-knowledge` (`pkg/ai/vector_store.go:~41`) e o manifest só guarda sha256 e data (`plugins/synapstor/internal/indexer/indexer.go:~19-28`). Trocando de provider, a busca falha com `vectors must have the same length` (reproduzido neste repo). No Bard isso vira só "Synapstor indisponível" (`plugins/bard/tui/fluxo.go:~287-290`).
   - **Fazer:**
     - gravar provider, modelo e dimensão no manifest (ou no nome da coleção, ex.: `synapstor-<modelo>-<dim>`);
@@ -224,7 +224,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - `search` e Bard com erro claro: "o índice foi feito com X; rode yby synapstor index --full".
   - **Verificar:** teste com provider falso de dimensão configurável.
   - **Conferência (26/10):** a identidade do índice (provider, modelo e dimensão) mora no `VectorStore` de `pkg/ai`, e não só no manifest do Synapstor, porque o Bard precisa dela para o erro claro. O Ollama sem config usa o primeiro modelo do `/api/tags`, e o `Name()` não traz o modelo: expor o modelo efetivo pelos decorators. O lado do Bard (mensagem em `tui/fluxo.go`) fica na onda 2.
-- [ ] **Y02 · `--full` refaz de verdade; órfãos; IDs com `/`**
+- [x] **Y02 · `--full` refaz de verdade; órfãos; IDs com `/`**
   - **Problema:**
     - o `--full` só regrava pelo mesmo ID (`indexer.go:~175`) e nunca limpa, e só sai do índice o que está no manifest (`indexer.go:~217-224`);
     - neste repo há 183 trechos antigos de docs que não existem mais;
@@ -235,15 +235,15 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - `filepath.ToSlash` no ID, no `source` e nas chaves do manifest;
     - a dica "rode index --full" (`search.go:~108`) passa a ser verdade.
   - **Verificar:** testes.
-- [ ] **Y03 · Manifest sem índice**
+- [x] **Y03 · Manifest sem índice**
   - **Problema:** o `.gitignore` ignora `.synapstor/.index`, mas não `.synapstor/.index_manifest.json`. Num clone com o manifest, o `index` pula tudo por hash (`indexer.go:~175-180`) e o `search` diz "índice vazio".
   - **Fazer:** com a pasta do índice ausente ou `Count()==0`, tratar o manifest como vazio. De preferência, guardar o manifest dentro de `.synapstor/.index/`.
   - **Verificar:** teste.
-- [ ] **Y04 · TopK e corte de relevância**
+- [x] **Y04 · TopK e corte de relevância**
   - **Problema:** o chromem recusa `nResults > len(documents)`. O Synapstor limita (`search.go:~117`), mas o Bard passa `TopK=5` direto (`plugins/bard/tui/fluxo.go:~287`, `plugins/bard/config.go:~20`), então com menos de 5 UKIs o RAG some. O corte é 0,35 na busca (`search.go:~20`) e 0,6 no Bard (`plugins/bard/config.go:~21`).
   - **Fazer:** limitar `min(topK, Count())` dentro de `VectorStore.Search` (`pkg/ai/vector_store.go`), com vazio quando não houver documento, e definir o corte num lugar só.
   - **Verificar:** teste com 2 documentos e TopK 5.
-- [ ] **Y05 · Divisão em trechos**
+- [x] **Y05 · Divisão em trechos**
   - **Problema:** o arquivo inteiro vira um vetor (`indexer.go:~188-207`), e o `splitMarkdown` (`~309-351`) é código morto. O MiniLM corta em 2000 bytes, podendo partir um caractere UTF-8 (`pkg/ai/local_embedding.go:~211-216`). O Bard injeta o documento inteiro (`fluxo.go:~293-296`): até 5 docs por pergunta.
   - **Fazer:**
     - dividir por H2, com ~1500 caracteres e sobreposição; ID `caminho#n`; título e seção nos metadados e no começo do trecho;
@@ -252,7 +252,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - ignorar `_Footer.md`/`_Sidebar.md`.
   - **Verificar:** testes do split e do corte.
   - **Conferência (26/10):** apagar os trechos do arquivo (por `source`) antes de readicionar, senão um UKI que encolhe deixa trechos órfãos. O resumo do `index` passa a contar trechos e arquivos. A injeção no Bard (`tui/fluxo.go`) fica na onda 2.
-- [ ] **Y06 · Embeddings: dizer qual é, avisar o download e usar modelo que entende PT-BR**
+- [x] **Y06 · Embeddings: dizer qual é, avisar o download e usar modelo que entende PT-BR**
   - **Problema:** `GetEmbeddingProvider` nunca devolve nil, então `semEmbeddings` e as checagens de nil (`comandos.go:~46-50,152-155`, `search.go:~87-90`) nunca rodam. Sem Ollama, tudo "funciona" com o all-MiniLM-L6-v2, que só entende inglês, contra UKIs em PT-BR. O primeiro uso baixa ~90 MB só com `slog.Info`.
   - **Fazer:**
     - campo "embeddings: <provider/modelo>" no resumo do `index` e do `search`;
@@ -260,7 +260,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - modelo local multilíngue como padrão (multilingual-e5-small ou paraphrase-multilingual-MiniLM-L12-v2: conferir o formato que o `local_embedding.go` carrega e o tamanho). A troca de modelo depende do Y01;
     - remover o erro morto.
   - **Verificar:** teste do resumo; teste manual de busca em PT-BR.
-- [ ] **Y07 · Um formato só de UKI**
+- [x] **Y07 · Um formato só de UKI**
   - **Problema:**
     - `.synapstor/UKI_SPEC.md` exige frontmatter (`uki_id`, `type`, `status`, `created_at`, `updated_at`, `tags`) e subpastas `.uki/<dominio>/`;
     - os prompts geram `**ID:**`/`**Tipo:**` sem frontmatter (`pkg/ai/prompts/defaults.go:~94-104`);
@@ -272,7 +272,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prompts de capture e study gerando o formato da especificação;
     - quality aceitando as seções da especificação ("## Contexto" sem depender da caixa).
   - **Verificar:** testes com UKI nos dois formatos e em subpasta.
-- [ ] **Y08 · `study`: busca, prioridade, idioma e prompt de correção**
+- [x] **Y08 · `study`: busca, prioridade, idioma e prompt de correção**
   - **Problema:**
     - `scanner.go:~25,84,100` procura a frase inteira como substring;
     - o limite de 50 conta os achados por conteúdo antes dos melhores (simulado: `pkg/services/bootstrap` ficou fora para "bootstrap");
@@ -287,19 +287,19 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prompt em PT-BR no formato da especificação;
     - correção com o prompt do próprio comando.
   - **Verificar:** testes do scanner com fixture de mais de 50 achados.
-- [ ] **Y09 · Arquivo ilegível não é apagado; trava do índice**
+- [x] **Y09 · Arquivo ilegível não é apagado; trava do índice**
   - **Problema:** erro de leitura faz `continue` (`indexer.go:~169-186`), e o arquivo some do manifest e cai em `removedFiles`. O arquivo é lido duas vezes, e não há trava contra dois `index` ao mesmo tempo.
   - **Fazer:** manter a entrada antiga e avisar; hash do conteúdo já lido; `.synapstor/.index.lock`.
   - **Verificar:** testes.
-- [ ] **Y10 · `decay` mede o código, não só a nota**
+- [x] **Y10 · `decay` mede o código, não só a nota**
   - **Problema:** `decay.go:~116-117` roda `git log` só no próprio UKI. Sem histórico, usa o timestamp do nome (`decay.go:~88-93`), que a IA escolhe (`agent.go:~177-179` aceita qualquer `UKI-…`). Um `UKI-20261026-x` pode ser lido como unix de 1970. UKI não commitado dá 0 dias.
   - **Fazer:** extrair os caminhos citados no UKI e contar os commits neles depois do último commit do UKI; usar o `updated_at` do frontmatter (Y07); validar o timestamp do nome.
   - **Verificar:** testes com repo git temporário.
-- [ ] **Y11 · `quality` pelos critérios da especificação**
+- [x] **Y11 · `quality` pelos critérios da especificação**
   - **Problema:** um bloco de código vale 20 pontos (`quality.go:~53-56`), o que pune Decisões, e o tamanho vale até 20.
   - **Fazer:** critérios por tipo, vindos do `UKI_SPEC.md` (ex.: Decisão: Problema, Opções, Decisão, Consequências).
   - **Verificar:** testes por tipo.
-- [ ] **Y12 · Export**
+- [x] **Y12 · Export**
   - **Problema:** `Tags` fica sempre vazio (`exporter.go:~17,93-98`), UKIs apagados continuam no destino e o H1 duplica o título.
   - **Fazer:**
     - tags do frontmatter (ou do tipo);
@@ -307,7 +307,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - tirar o H1 duplicado;
     - conferir a hipótese do MDX no Docusaurus 3 (`{{ }}`, `<pod>`) e escapar ou documentar.
   - **Verificar:** testes.
-- [ ] **Y13 · Código morto**
+- [x] **Y13 · Código morto**
   - **Problema:** código sem uso:
     - `internal/graph`;
     - `internal/tagger`, a menos que vire as tags do Y12;
@@ -317,6 +317,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o campo `Summary` descartado (`agent.go:~26`): usar como metadado ou tirar do prompt;
     - `semEmbeddings` (Y06).
   - **Fazer:** apagar ou ligar, conforme indicado em cada item.
+  - **Decisão (26/10, execução):** `Summary` sai do prompt e do struct (nada o lê; o índice usa o título e o trecho); `internal/tagger` sai junto com o prompt `synapstor.tagger`, porque as tags já vêm da resposta da IA no capture (Y07); `internal/graph` sai sem consumidor e sem promessa na ajuda ou no README.
   - **Verificar:** `go vet`, testes.
 
 ### Fase 4 · Sentinel
@@ -677,6 +678,20 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | Y01 | O `VectorStore` grava com que provider, modelo e dimensão o índice foi feito (`identidade.json`); a busca com outros embeddings devolve `IndiceDeOutroModeloError` com "rode yby synapstor index --full", e o `index` apaga e refaz tudo sozinho quando o modelo muda. | este commit |
+| 26/10/2026 | Y02 | O `--full` apaga e recria o índice, o `index` refaz tudo quando o número de documentos não bate com o manifest (órfãos) e o ID, o `source` e as chaves do manifest usam `/`. | este commit |
+| 26/10/2026 | Y03 | O manifest passou para `.synapstor/.index/manifest.json` (dentro do que o git ignora); o do lugar antigo conta como vazio e é apagado na primeira gravação. | este commit |
+| 26/10/2026 | Y09 | Arquivo que não abre mantém a entrada antiga no manifest e no índice, com aviso; cada arquivo é lido uma vez e o hash sai do conteúdo lido; o `index` pega uma trava do sistema (`gofrs/flock`) em `.synapstor/.index/index.lock`, que sai sozinha quando o processo cai, e o segundo `index` para com "outro yby synapstor index está rodando neste projeto". | este commit |
+| 26/10/2026 | Y10 | O `decay` conta os commits nos arquivos que o UKI cita (que existem no projeto) depois do último commit da nota e marca como desatualizado se houver algum; usa o `updated_at` do frontmatter, descarta timestamp do nome fora de 2000..amanhã e roda o git com prazo de 15 s. | este commit |
+| 26/10/2026 | Y11 | O `quality` pontua pelas seções do padrão do tipo (regra, decisão, padrão, métrica, referência), com bloco de código só exigido de padrão e UKI sem tipo, e o resumo diz qual seção falta. | este commit |
+| 26/10/2026 | Y12 | O export grava um manifesto `.synapstor-export.json` no destino e apaga só o que ele listou e sumiu da fonte (com as subpastas vazias), e o Docusaurus escapa `{` e `<` fora do código para o MDX; tags e frontmatter único já vinham do Y07. | este commit |
+| 26/10/2026 | Y04 | `VectorStore.Search` limita o topK ao número de documentos e devolve vazio com a coleção vazia, sem o erro do chromem; a unificação do corte de relevância com o Bard fica na onda 2. | este commit |
+| 26/10/2026 | Y05 | O índice guarda um trecho por seção H2 (ID `caminho#n`, ~1500 caracteres com sobreposição), apaga os trechos do arquivo antes de readicionar, ignora `_Footer.md`/`_Sidebar.md`, corta o texto do MiniLM em divisa de runa e a busca mostra cada UKI uma vez; a injeção no Bard fica na onda 2. | este commit |
+| 26/10/2026 | Y06 | O modelo local passou a ser o paraphrase-multilingual-MiniLM-L12-v2 em int8 (~120 MB, revisão fixada, conferido no hugot em Go puro), baixado numa etapa própria (`ai.PrepararEmbeddings`) antes de gerar embeddings e de buscar; o resumo do `index` e do `search` diz de onde vêm os embeddings, o `semEmbeddings` morto saiu, a ajuda do `index` diz a verdade sobre o modelo local e o texto vai ao modelo cortado em 512 tokens com o tokenizador dele (antes, em 2000 bytes, um UKI com kubeconfig ou certificado derrubava o `index` inteiro). | este commit |
+| 26/10/2026 | Y07 | O pacote `internal/uki` lista os UKIs com as subpastas de domínio e lê os metadados do frontmatter em PT-BR, do em inglês e das linhas em negrito; quality, decay, export e index usam os dois, o export sai com um frontmatter só, o capture e o study gravam o frontmatter da especificação (ID, tipo e tags da IA; status e datas do código) e o `UKI_SPEC.md` foi traduzido, com os tipos `regra`, `decisao`, `padrao`, `metrica` e `referencia`. | este commit |
+| 26/10/2026 | Y08 | O `study` quebra a pergunta em termos sem palavras vazias, pontua nome > caminho > conteúdo e só então corta em 50, usa `git ls-files` (respeita o `.gitignore`), pula testes e goldens, devolve caminhos com barras, pede e corrige a resposta com o prompt `synapstor.study` e a mensagem ao modelo saiu em PT-BR. | este commit |
+| 26/10/2026 | Y13 | Saíram o `internal/graph` e o `internal/tagger` (sem uso fora dos testes), o prompt `synapstor.tagger`, `quality.FormatScore` e `decay.FindStale` (os testes de decay filtram `IsStale` por helper) e o campo `Summary` da resposta, que saiu do prompt e do JSON; `splitMarkdown` e `semEmbeddings` já tinham saído nos Y05 e Y06. | este commit |
+| 26/10/2026 | Y10 | Ajuste da revisão: sem commit da nota, o `updated_at` só com a data vale o dia inteiro, e os commits do mesmo dia (feitos antes da nota) deixam de marcá-la como desatualizada. | este commit |
 
 ### Fase 4 · Sentinel
 
