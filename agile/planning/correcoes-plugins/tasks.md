@@ -661,6 +661,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | C02 | O `.golangci.yml` deixa de excluir o Sentinel e exclui só a pasta `test/` da raiz; o pipeline ganha lint do Viz e do Synapstor; gofmt nos dois arquivos. Validado com o golangci-lint v1.64.8 do CI (GOTOOLCHAIN=go1.26.1). | este commit |
 | 26/10/2026 | C01 | Testes do Sentinel (`-tags k8s`, GOGC=30, `-p 1`), do Viz e do Synapstor no feature-pipeline, no release-pipeline, no release.yaml e no `task test`. Rodados com `-race` no Linux (golang:1.26) sem falha; a raiz no Linux pede LANG=C.UTF-8 por causa dos glifos. | este commit |
 | 26/10/2026 | R01 | Pacote-folha `pkg/redacao` (`Redigir`, marca `[REDIGIDO]`) no lugar do `sanitizeContent` do Bard: tokens com formato próprio, PEM, senha em URL, Authorization, Bearer/Basic e valores de nomes sensíveis (inclusive camelCase, compostos colados e `senha`), redigidos pela união dos trechos achados sobre o mesmo texto. Seis voltas de revisão adversarial com busca diferencial contra o antigo: nenhum vazamento novo realista. | este commit |
+| 26/10/2026 | R01 | Ajuste (achado do B06): nome terminado em `name`/`ref` (`secretName`, `SecretName` do describe, `secretKeyRef`, `secret_ref`) deixa de ser sensível; o Bard e o Sentinel precisam dele para dizer qual Secret falta. | este commit |
 
 ### Fase 1 · Contratos
 

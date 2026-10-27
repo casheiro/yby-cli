@@ -179,6 +179,9 @@ var sufixosSensiveis = []string{
 	"privatekey", "sshkey", "signingkey", "encryptionkey", "masterkey", "authkey",
 }
 
+// referencias, como última palavra, fazem do nome a referência a um segredo, e não ele.
+var referencias = map[string]bool{"name": true, "names": true, "ref": true, "refs": true}
+
 // nomeSensivel diz se o nome guarda segredo e se é um cabeçalho Authorization.
 // "key" sozinho não é sensível (key: app em matchExpressions, tolerations e
 // secretKeyRef); em composto é (SSH_KEY, KEY_ID, apiKey, tls.key).
@@ -199,8 +202,16 @@ func nomeSensivel(nome string) (sensivel, autorizacao bool) {
 			autorizacao = true
 		}
 	}
-	if autorizacao || (temKey && len(palavras) > 1) {
-		return true, autorizacao
+	if autorizacao {
+		return true, true
+	}
+	// Nome e referência não são o segredo (secretName, SecretName do describe,
+	// secretKeyRef, secret_ref): quem diagnostica precisa saber qual Secret falta.
+	if n := len(palavras); n > 1 && referencias[palavras[n-1]] {
+		return false, false
+	}
+	if temKey && len(palavras) > 1 {
+		return true, false
 	}
 	// "auth" só como última palavra: auth, basic_auth, basicAuth (authMethod não).
 	if n := len(palavras); n > 0 && palavras[n-1] == "auth" {
