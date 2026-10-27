@@ -322,3 +322,15 @@ func TestListModels_OllamaSoComEmbeddings(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "só tem modelos de embeddings")
 }
+
+// Com o modelo no config, o CLI roda com ele: o catálogo tem de dizer o mesmo, senão o
+// Bard mostraria "modelo padrão do CLI" com outro modelo em uso.
+func TestListModels_CLIsComModeloDoConfig(t *testing.T) {
+	isolarConfig(t)
+	t.Setenv("YBY_AI_MODEL", "opus")
+
+	claude := ListModels(context.Background(), "claude-cli")
+	assert.Equal(t, "opus", claude.Default)
+	assert.Equal(t, []string{"opus", "sonnet", "haiku"}, claude.Models)
+	assert.Equal(t, "opus", ListModels(context.Background(), "gemini-cli").Default)
+}

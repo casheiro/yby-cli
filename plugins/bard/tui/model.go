@@ -375,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// que acabou é do provider antigo e a nota da troca vem depois dela.
 		if t := m.trocaPronta; t != nil {
 			m.trocaPronta, m.trocando = nil, ""
-			m.usarProvider(t.mod.Rotulo, t.modelo, t.provider)
+			m.usarProvider(t.mod, t.modelo, t.provider)
 		}
 		m.updateViewport()
 		return m, nil

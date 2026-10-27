@@ -239,6 +239,7 @@ func startChat(ctxData map[string]interface{}, opcoes opcoesBard) error {
 		SystemPrompt: systemPrompt,
 		SessionID:    sessionID,
 		AIModel:      rotuloProvider(provider),
+		ModeloIA:     modeloEmUso(provider),
 		SaveMessage:  saveMessage,
 
 		TopK:             bardCfg.TopK,

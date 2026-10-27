@@ -132,3 +132,24 @@ func TestGetProvider_FalhaDoCLINaoRepete(t *testing.T) {
 	// O primeiro intervalo do retry é de 1 s: falha de CLI não é retentável e volta antes.
 	assert.Less(t, time.Since(inicio), time.Second, "a falha do CLI foi repetida: %v", err)
 }
+
+func TestGetProvider_CLIsUsamOModeloDoConfig(t *testing.T) {
+	isolarConfig(t)
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(home+"/.yby", 0o755))
+	require.NoError(t, os.WriteFile(home+"/.yby/config.yaml", []byte("ai:\n  model: opus\n"), 0o644))
+
+	cliFalso(t, "claude")
+	token := cadeiaCLI(t, GetProvider(context.Background(), "claude-cli"))
+	claude, ok := token.inner.(*ClaudeCLIProvider)
+	require.True(t, ok)
+	assert.Equal(t, []string{"--model", "opus", "-p"}, claude.args())
+	assert.Equal(t, "opus", ConfiguredModel("claude-cli"))
+
+	// O modelo pedido de forma explícita vence o do config.
+	p, _, err := GetProviderWithModel(context.Background(), "claude-cli", "sonnet")
+	require.NoError(t, err)
+	claude = cadeiaCLI(t, p).inner.(*ClaudeCLIProvider)
+	assert.Equal(t, []string{"--model", "sonnet", "-p"}, claude.args())
+}

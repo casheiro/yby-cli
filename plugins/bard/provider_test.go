@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -71,5 +73,34 @@ func TestModeloDetectado(t *testing.T) {
 	outro := modeloDetectado(context.Background(), nomeado{nome: "Meu Provider"})
 	if outro.Rotulo != "meu provider" || outro.ComModelo != nil || len(outro.Modelos) != 0 {
 		t.Errorf("provider desconhecido: %+v", outro)
+	}
+}
+
+func TestModeloEmUso(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("YBY_AI_MODEL", "")
+	claude := nomeado{nome: "Claude Code CLI"}
+
+	if got := modeloEmUso(claude); got != "" {
+		t.Errorf("sem config, esperava o padrão do provider (vazio), veio %q", got)
+	}
+	if got := modeloEmUso(nil); got != "" {
+		t.Errorf("provider nil: esperava vazio, veio %q", got)
+	}
+
+	if err := os.MkdirAll(filepath.Join(home, ".yby"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "ai:\n  model: sonnet\n  models:\n    claude-cli: opus\n"
+	if err := os.WriteFile(filepath.Join(home, ".yby", "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := modeloEmUso(claude); got != "opus" {
+		t.Errorf("modelo do provider no config: esperava opus, veio %q", got)
+	}
+	if got := modeloEmUso(nomeado{nome: "Gemini CLI"}); got != "sonnet" {
+		t.Errorf("sem modelo próprio, vale o global: esperava sonnet, veio %q", got)
 	}
 }

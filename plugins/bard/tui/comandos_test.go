@@ -633,9 +633,9 @@ func TestComandos_ModeloTrocaOModelo(t *testing.T) {
 	if m.config.AIModel != "ollama" || m.config.ModeloIA != "hf.co/autor/modelo:Q4" {
 		t.Errorf("/modelo hf.co/autor/modelo:Q4: %q %q %+v", m.config.AIModel, m.config.ModeloIA, m.aviso)
 	}
-	// O padrão do Ollama é o provider detectado, sem criar outro.
+	// O padrão do Ollama é o provider detectado, sem criar outro; o cabeçalho mostra o padrão.
 	m = pedirComando(t, m, "/modelo ollama/qwen2.5:7b")
-	if m.config.ModeloIA != "" || m.provider != ai.Provider(ollama) || criados["ollama/qwen2.5:7b"] != nil {
+	if m.config.ModeloIA != "qwen2.5:7b" || m.provider != ai.Provider(ollama) || criados["ollama/qwen2.5:7b"] != nil {
 		t.Errorf("o modelo padrão usa o provider detectado: %q", m.config.ModeloIA)
 	}
 	if ultima := m.messages[len(m.messages)-1]; ultima.content != "modelo trocado para o padrão do ollama" {

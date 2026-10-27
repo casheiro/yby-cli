@@ -52,6 +52,14 @@ func getConfiguredModel(providerNames ...string) string {
 	return cfg.AI.Model
 }
 
+// ConfiguredModel é o modelo de IA que o config (ai.models.<provider>, ai.model ou
+// YBY_AI_MODEL) fixa para o provider, ou vazio quando vale o padrão dele. É o mesmo que
+// os providers usam ao subir sem modelo explícito, para o cabeçalho do Bard mostrar o que
+// está em uso de fato.
+func ConfiguredModel(providerName string) string {
+	return getConfiguredModel(providerName)
+}
+
 // GetEmbeddingModel retorna o modelo de embedding configurado para um provider específico.
 // Se não configurado, retorna vazio (o provider usa seu default).
 // Configuração em ~/.yby/config.yaml:
@@ -127,12 +135,18 @@ func createProviderWithModel(ctx context.Context, name, model string) Provider {
 		}
 	case "claude-cli":
 		p := NewClaudeCLIProvider()
+		if model == "" {
+			model = getConfiguredModel(name)
+		}
 		p.model = model
 		if p.IsAvailable(ctx) {
 			return wrapCLIProvider(p, name, model)
 		}
 	case "gemini-cli":
 		p := NewGeminiCLIProvider()
+		if model == "" {
+			model = getConfiguredModel(name)
+		}
 		p.model = model
 		if p.IsAvailable(ctx) {
 			return wrapCLIProvider(p, name, model)

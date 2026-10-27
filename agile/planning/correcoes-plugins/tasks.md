@@ -205,7 +205,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - parâmetros `container` e `previous` (e mostrar os contêineres no erro);
     - no investigate, usar o modo de dados brutos do Sentinel (S12) em vez da análise por IA dele.
   - **Verificar:** testes dos args montados.
-- [ ] **B13 · Cabeçalho do Bard com o modelo do config** (pendência antiga)
+- [x] **B13 · Cabeçalho do Bard com o modelo do config** (pendência antiga)
   - **Problema:** o cabeçalho não mostra o modelo vindo de `ai.model` do config.
   - **Fazer:** mostrar o modelo do config.
   - **Verificar:** golden da TUI.
@@ -681,6 +681,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B09 | `invokePlugin` roda com `exec.CommandContext` (o esc mata o Sentinel/Atlas, com `WaitDelay`); o `EnrichContext` tem prazo total de 5 s e o kubectl leva `--request-timeout=5s`, então cluster fora do ar não segura a abertura da TUI. | este commit |
 | 26/10/2026 | B11 | O system prompt do Bard não pede chamada de ferramenta em JSON nem manda usar kubectl/helm do runtime (só consulta; escrita vira comando sugerido); o parser morto saiu, e as guardas (delete de namespace/ClusterRole, drain, cordon, apply --force, scale a 0) valem na execução das tools externas, barrando o que os valores da IA montam e o YAML não tinha. | este commit |
 | 26/10/2026 | B14 | claude-cli e gemini-cli passam por `wrapCLIProvider` (TokenAware com a janela do CLI, 200 mil tokens no Claude e 1 milhão no Gemini, também sem modelo escolhido, e Retry, que não repete a falha do CLI); cache, custo e taxa ficam de fora porque não valem para um processo local. | este commit |
+| 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
 
 ### Fase 3 · Synapstor
 
