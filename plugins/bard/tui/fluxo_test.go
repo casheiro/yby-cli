@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -646,20 +647,21 @@ func TestFluxo_IndiceDeOutroModelo(t *testing.T) {
 	}
 }
 
-// Os trechos do índice entram com o caminho e a seção; os do mesmo arquivo ficam juntos,
-// sob um cabeçalho só, e a etapa conta arquivos, não trechos.
+// Os trechos do índice entram sob o caminho do arquivo e com o título e a seção que já
+// trazem no começo (o Synapstor os põe em cada trecho), sem repeti-los; os do mesmo
+// arquivo ficam juntos, sob um cabeçalho só, e a etapa conta arquivos, não trechos.
 func TestFluxo_TrechosComCaminhoESecao(t *testing.T) {
 	isolarHome(t)
 	p := &provedorFalso{trechos: []string{"ok"}}
 	f := fluxoDeTeste(p)
 	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{
-		{ID: "decisoes/postgres.md#1", Content: "rede do postgres", Score: 0.9,
+		{ID: "decisoes/postgres.md#1", Content: "# Postgres\n## Rede\nrede do postgres", Score: 0.9,
 			Metadata: map[string]string{"source": "decisoes/postgres.md", "title": "Postgres", "section": "Rede"}},
-		{ID: "runbooks/worker.md#0", Content: "deploy do worker", Score: 0.8,
+		{ID: "runbooks/worker.md#0", Content: "# Worker\ndeploy do worker", Score: 0.8,
 			Metadata: map[string]string{"source": "runbooks/worker.md", "title": "Worker"}},
-		{ID: "decisoes/postgres.md#2", Content: "backup do postgres", Score: 0.7,
+		{ID: "decisoes/postgres.md#2", Content: "# Postgres\n## Backup\nbackup do postgres", Score: 0.7,
 			Metadata: map[string]string{"source": "decisoes/postgres.md", "title": "Postgres", "section": "Backup"}},
-		{ID: "outra.md#0", Content: "irrelevante", Score: 0.1,
+		{ID: "outra.md#0", Content: "# Outra\nirrelevante", Score: 0.1,
 			Metadata: map[string]string{"source": "outra.md", "title": "Outra"}},
 	}}
 	eventos := coletar(t, f.Iniciar(context.Background(), 1, "como é o postgres?"), nil)
@@ -668,9 +670,22 @@ func TestFluxo_TrechosComCaminhoESecao(t *testing.T) {
 	if n := strings.Count(entrada, "decisoes/postgres.md"); n != 1 {
 		t.Errorf("o arquivo deveria aparecer uma vez, apareceu %d: %q", n, entrada)
 	}
-	for _, trecho := range []string{"Postgres (decisoes/postgres.md)", "[seção: Rede]", "[seção: Backup]", "backup do postgres", "Worker (runbooks/worker.md)"} {
+	for _, trecho := range []string{
+		"--- Contexto: decisoes/postgres.md ---\n# Postgres\n## Rede\nrede do postgres",
+		"# Postgres\n## Backup\nbackup do postgres",
+		"--- Contexto: runbooks/worker.md ---\n# Worker\ndeploy do worker",
+	} {
 		if !strings.Contains(entrada, trecho) {
 			t.Errorf("o prompt deveria ter %q: %q", trecho, entrada)
+		}
+	}
+	// O título e a seção saem uma vez por trecho, do próprio trecho.
+	if n := strings.Count(entrada, "Postgres"); n != 2 {
+		t.Errorf("o título deveria sair só nos dois trechos, saiu %d vezes: %q", n, entrada)
+	}
+	for _, repetido := range []string{"[seção:", "Postgres (", "Worker ("} {
+		if strings.Contains(entrada, repetido) {
+			t.Errorf("o prompt não deveria repetir %q, que o trecho já traz: %q", repetido, entrada)
 		}
 	}
 	// O trecho de menor pontuação do Postgres fica com o arquivo, antes do Worker.
@@ -682,6 +697,36 @@ func TestFluxo_TrechosComCaminhoESecao(t *testing.T) {
 	}
 	if n := ultimaEtapa(t, eventos, EtapaContexto).Nota; n != "2 notas do Synapstor" {
 		t.Errorf("a etapa deveria contar os arquivos: %q", n)
+	}
+}
+
+// Trecho que não traz o título nem a seção no começo (sem o prefixo do Synapstor) entra
+// com eles no cabeçalho e na marca de seção.
+func TestFluxo_TrechoSemTituloNemSecaoNoTexto(t *testing.T) {
+	isolarHome(t)
+	p := &provedorFalso{trechos: []string{"ok"}}
+	f := fluxoDeTeste(p)
+	f.Buscador = buscadorFalso{docs: []ai.UnknownDocument{
+		{ID: "decisoes/postgres.md#1", Content: "rede do postgres", Score: 0.9,
+			Metadata: map[string]string{"source": "decisoes/postgres.md", "title": "Postgres", "section": "Rede"}},
+	}}
+	coletar(t, f.Iniciar(context.Background(), 1, "como é o postgres?"), nil)
+
+	if entrada := p.ultimaEntrada(); !strings.Contains(entrada, "--- Contexto: Postgres (decisoes/postgres.md) ---\n[seção: Rede]\nrede do postgres") {
+		t.Errorf("o título e a seção deveriam vir de fora do trecho: %q", entrada)
+	}
+}
+
+// O corte compara em float32, como o Synapstor: o trecho com a pontuação exata do corte
+// (float32(ai.RelevanciaMinima)) entra, e o logo abaixo fica de fora.
+func TestNotasPorArquivo_FronteiraDoCorte(t *testing.T) {
+	corte := float32(ai.RelevanciaMinima)
+	notas := notasPorArquivo([]ai.UnknownDocument{
+		{ID: "a.md#0", Score: corte, Metadata: map[string]string{"source": "a.md"}},
+		{ID: "b.md#0", Score: math.Nextafter32(corte, 0), Metadata: map[string]string{"source": "b.md"}},
+	}, ai.RelevanciaMinima)
+	if len(notas) != 1 || notas[0].caminho != "a.md" {
+		t.Errorf("só o trecho no corte deveria passar: %+v", notas)
 	}
 }
 

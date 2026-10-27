@@ -288,8 +288,10 @@ func aplicarCluster(c *tui.Config, cc *ClusterContext, opcoes opcoesBard) {
 }
 
 // buildSystemPrompt constrói o system prompt enriquecido com histórico e cluster.
-// O Bard declara só o hook command e não recebe contexto do core: o blueprint chega
-// pela ferramenta atlas_blueprint, não pelo prompt. O primeiro argumento fica por
+// O Bard não declara consome_contexto: do core só chega o contexto barato, e só quando o
+// ambiente é pedido (-c/--context antes do nome do plugin ou YBY_ENV); o caro (overview,
+// backlog e os hooks context dos outros plugins) fica de fora, e o blueprint chega pela
+// ferramenta atlas_blueprint, não pelo prompt. O primeiro argumento fica por
 // compatibilidade com os chamadores.
 func buildSystemPrompt(_ map[string]interface{}, bardCfg BardConfig, history []HistoryEntry, clusterCtx ...*ClusterContext) string {
 	// Injetar contexto do cluster se disponível

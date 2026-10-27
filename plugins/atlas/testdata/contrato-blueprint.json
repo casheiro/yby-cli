@@ -51,6 +51,15 @@
     "infra": {
       "resources": [
         {
+          "kind": "ComposeService",
+          "api_group": "compose",
+          "name": "worker",
+          "path": "meu-servico/docker-compose.yml",
+          "metadata": {
+            "image": "loja/worker:2.0.1"
+          }
+        },
+        {
           "kind": "Deployment",
           "api_group": "k8s",
           "name": "api-server",
@@ -110,7 +119,8 @@
       ],
       "analyzers": [
         "helm",
-        "k8s"
+        "k8s",
+        "compose"
       ],
       "root_path": "."
     }

@@ -73,6 +73,9 @@ func TestContrato_SentinelScan(t *testing.T) {
 		"6 achados: 2 critical, 1 high, 1 medium, 2 low",
 		"namespace payments",
 		"kind-yby",
+		// O escopo do relatório e o do achado de cluster, como vêm no golden.
+		"escopo namespace",
+		"ClusterRoleBinding/ci-deployer (cluster)",
 	} {
 		if !strings.Contains(texto, trecho) {
 			t.Errorf("o texto para a IA deveria ter %q:\n%s", trecho, texto)

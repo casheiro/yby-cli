@@ -135,6 +135,9 @@ func TestMain(m *testing.M) {
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	}
+	if arquivo := os.Getenv(envKubectlFalso); arquivo != "" {
+		os.Exit(rodarKubectlFalso(arquivo))
+	}
 	os.Exit(m.Run())
 }
 

@@ -84,12 +84,13 @@ func previousPedido(valor string) bool {
 
 // conteineresDoPod devolve a linha "Contêineres do pod: a, b" para o erro do kubectl logs
 // quando a falha é de contêiner (o kubectl já lista os contêineres na mensagem de "escolha
-// um"; o nome inválido ele não lista). Vazio nos outros erros ou se a consulta falha.
+// um"; o nome inválido ele não lista). Entram os contêineres, os de init e os efêmeros,
+// que o kubectl logs -c também aceita. Vazio nos outros erros ou se a consulta falha.
 func conteineresDoPod(ctx context.Context, pod string, params map[string]string, saida string) string {
 	if !strings.Contains(saida, "container") || strings.Contains(saida, "choose one of") {
 		return ""
 	}
-	args := []string{"get", "pod", pod, "-o", "jsonpath={.spec.containers[*].name}"}
+	args := []string{"get", "pod", pod, "-o", "jsonpath={.spec.containers[*].name} {.spec.initContainers[*].name} {.spec.ephemeralContainers[*].name}"}
 	if ns := namespaceDe(params); ns != "" {
 		args = append(args, "-n", ns)
 	}

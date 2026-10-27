@@ -35,9 +35,12 @@ func argsKubectl(args []string) []string {
 	return append([]string{"--context", kube.contexto}, args...)
 }
 
+// binarioKubectl é o executável chamado; os testes trocam por um falso.
+var binarioKubectl = "kubectl"
+
 // comandoKubectl é o kubectl com os args e o contexto da sessão.
 func comandoKubectl(ctx context.Context, args []string) *exec.Cmd {
-	return exec.CommandContext(ctx, "kubectl", argsKubectl(args)...)
+	return exec.CommandContext(ctx, binarioKubectl, argsKubectl(args)...)
 }
 
 // pedidoAoPlugin é o pedido do hook command a um plugin do Yby (o Sentinel) no cluster da

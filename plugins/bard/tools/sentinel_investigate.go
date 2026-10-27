@@ -48,7 +48,7 @@ func executeSentinelInvestigate(ctx context.Context, params map[string]string) (
 // linha só, e o teto do Fluxo, que guarda o fim de uma saída longa, perderia o fim deles.
 func formatInvestigateResults(data interface{}) string {
 	if data == nil {
-		return "Nenhuma informação de segurança encontrada para o pod."
+		return "O Sentinel não devolveu dados do pod (estado, eventos e logs)."
 	}
 	logs := ""
 	if campos, ok := data.(map[string]interface{}); ok {

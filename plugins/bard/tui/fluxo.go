@@ -326,12 +326,15 @@ type notaBuscada struct {
 
 // notasPorArquivo junta os trechos acima do limiar por arquivo, na ordem do trecho de
 // maior pontuação de cada um: o índice guarda trechos de seção, e o mesmo arquivo não
-// deve aparecer várias vezes. Trecho sem source nem ID fica sozinho.
+// deve aparecer várias vezes. Trecho sem source nem ID fica sozinho. O corte compara em
+// float32, a precisão da pontuação, como o Synapstor: em float64, o trecho com pontuação
+// float32(ai.RelevanciaMinima) ficaria de fora no Bard e dentro no Synapstor.
 func notasPorArquivo(resultados []ai.UnknownDocument, limiar float64) []*notaBuscada {
 	var notas []*notaBuscada
 	porCaminho := map[string]*notaBuscada{}
+	corte := float32(limiar)
 	for _, res := range resultados {
-		if float64(res.Score) < limiar {
+		if res.Score < corte {
 			continue
 		}
 		caminho := res.Metadata["source"]
@@ -351,16 +354,39 @@ func notasPorArquivo(resultados []ai.UnknownDocument, limiar float64) []*notaBus
 	return notas
 }
 
-// cabecalho apresenta a nota com o título e o caminho no índice.
+// cabecalho apresenta a nota pelo caminho no índice, que identifica o arquivo. Os trechos
+// do Synapstor já começam com "# Título" (e "## Seção"): o título só entra no cabeçalho
+// quando o primeiro trecho não o traz, ou quando não há caminho.
 func (n *notaBuscada) cabecalho() string {
-	nome := n.titulo
+	nome := n.caminho
+	trazTitulo := len(n.trechos) > 0 && strings.HasPrefix(n.trechos[0].Content, "# ")
 	switch {
+	case n.titulo == "" || (trazTitulo && nome != ""):
 	case nome == "":
-		nome = n.caminho
-	case n.caminho != "":
-		nome += " (" + n.caminho + ")"
+		nome = n.titulo
+	default:
+		nome = n.titulo + " (" + nome + ")"
 	}
 	return fmt.Sprintf("\n--- Contexto: %s ---\n", nome)
+}
+
+// marcaDeSecao é o "[seção: X]" do trecho que não começa com o "## X" da seção (os do
+// Synapstor começam, logo depois do "# Título"); vazio sem seção ou quando o trecho já a traz.
+func marcaDeSecao(res ai.UnknownDocument) string {
+	secao := res.Metadata["section"]
+	if secao == "" {
+		return ""
+	}
+	linhas := strings.SplitN(res.Content, "\n", 3)
+	for i, linha := range linhas[:min(len(linhas), 2)] {
+		if linha == "## "+secao {
+			return ""
+		}
+		if i == 0 && !strings.HasPrefix(linha, "# ") {
+			break
+		}
+	}
+	return "[seção: " + secao + "]\n"
 }
 
 // NotaIndiceDeOutroModelo é a nota da etapa de contexto quando o índice do Synapstor foi
@@ -398,18 +424,15 @@ func (f *Fluxo) buscarContexto(ctx context.Context, entrada string) contextoBusc
 		return contextoBuscado{nota: "Synapstor indisponível"}
 	}
 	// As notas vão na ordem da busca até o teto, cada uma com o caminho e os trechos com
-	// a seção: o trecho que não cabe inteiro entra cortado, se ainda houver espaço para um
-	// pedaço útil, e os seguintes ficam de fora.
+	// o título e a seção que trazem: o trecho que não cabe inteiro entra cortado, se ainda
+	// houver espaço para um pedaço útil, e os seguintes ficam de fora.
 	var sb strings.Builder
 	n := 0
 notas:
 	for _, nota := range notasPorArquivo(resultados, f.Limiar) {
 		cabecalho := nota.cabecalho()
 		for _, res := range nota.trechos {
-			secao := ""
-			if s := res.Metadata["section"]; s != "" {
-				secao = "[seção: " + s + "]\n"
-			}
+			secao := marcaDeSecao(res)
 			resta := TetoNotas - sb.Len() - len(cabecalho) - len(secao) - 1
 			conteudo := res.Content
 			if len(conteudo) > resta {

@@ -2,7 +2,10 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -280,6 +283,59 @@ func TestConferirParams_NomesValidos(t *testing.T) {
 	}
 }
 
+// envKubectlFalso faz o binário de teste rodar como o kubectl (TestMain): anota os args de
+// cada chamada, uma por linha, no arquivo da variável. O "logs" falha com a saída de
+// envKubectlFalsoLogs; o "get" devolve os nomes de contêineres de nomesDoPodFalso.
+const (
+	envKubectlFalso     = "YBY_BARD_TOOLS_KUBECTL_FALSO"
+	envKubectlFalsoLogs = "YBY_BARD_TOOLS_KUBECTL_FALSO_LOGS"
+	nomesDoPodFalso     = "app sidecar init-db debugger"
+)
+
+// rodarKubectlFalso é o kubectl falso; devolve o código de saída.
+func rodarKubectlFalso(arquivo string) int {
+	args := os.Args[1:]
+	f, err := os.OpenFile(arquivo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 2
+	}
+	_, _ = fmt.Fprintln(f, strings.Join(args, " "))
+	_ = f.Close()
+	if len(args) > 0 && args[0] == "logs" {
+		fmt.Print(os.Getenv(envKubectlFalsoLogs))
+		return 1
+	}
+	fmt.Print(nomesDoPodFalso)
+	return 0
+}
+
+// usarKubectlFalso troca o kubectl das ferramentas pelo falso, com saidaLogs como a saída
+// do "logs", e devolve o arquivo das chamadas.
+func usarKubectlFalso(t *testing.T, saidaLogs string) string {
+	t.Helper()
+	DefinirKube("", "")
+	arquivo := filepath.Join(t.TempDir(), "chamadas.txt")
+	t.Setenv(envKubectlFalso, arquivo)
+	t.Setenv(envKubectlFalsoLogs, saidaLogs)
+	anterior := binarioKubectl
+	binarioKubectl = os.Args[0]
+	t.Cleanup(func() { binarioKubectl = anterior })
+	return arquivo
+}
+
+// chamadasKubectl lê as chamadas anotadas pelo kubectl falso (nenhuma, sem o arquivo).
+func chamadasKubectl(t *testing.T, arquivo string) []string {
+	t.Helper()
+	dados, err := os.ReadFile(arquivo)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimRight(string(dados), "\n"), "\n")
+}
+
 // kubectl_events com pod filtra pelo objeto; sem pod, o namespace inteiro.
 func TestKubectlEvents_FiltraPeloPod(t *testing.T) {
 	args := strings.Join(argsKubectlEvents(map[string]string{"pod": "api-1", "namespace": "prod"}), " ")
@@ -289,8 +345,14 @@ func TestKubectlEvents_FiltraPeloPod(t *testing.T) {
 	if strings.Contains(strings.Join(argsKubectlEvents(map[string]string{}), " "), "field-selector") {
 		t.Error("sem pod não deve filtrar")
 	}
-	if _, err := executeKubectlEvents(context.Background(), map[string]string{"pod": "-A"}); err == nil {
-		t.Error("pod começando com '-' não pode virar flag")
+	// Pod começando com '-' não vira flag: a validação recusa antes do kubectl.
+	arquivo := usarKubectlFalso(t, "")
+	_, err := executeKubectlEvents(context.Background(), map[string]string{"pod": "-A"})
+	if err == nil || !strings.Contains(err.Error(), "parâmetro 'pod' inválido") {
+		t.Errorf("o pod -A deveria ser recusado pela validação, veio: %v", err)
+	}
+	if chamadas := chamadasKubectl(t, arquivo); len(chamadas) != 0 {
+		t.Errorf("o kubectl não deveria ter sido chamado: %q", chamadas)
 	}
 }
 
@@ -304,9 +366,58 @@ func TestKubectlLogs_ContainerEPrevious(t *testing.T) {
 	if strings.Contains(args, "--previous") || strings.Contains(args, "-c ") {
 		t.Errorf("não pedido, não vai: %s", args)
 	}
-	for _, p := range []map[string]string{{"pod": "a", "container": "--all-containers"}, {"pod": "a", "previous": "-x"}} {
-		if _, err := executeKubectlLogs(context.Background(), p); err == nil {
-			t.Errorf("%v deveria ser recusado", p)
+	arquivo := usarKubectlFalso(t, "")
+	casos := []struct {
+		params map[string]string
+		campo  string
+	}{
+		{map[string]string{"pod": "a", "container": "--all-containers"}, "container"},
+		{map[string]string{"pod": "a", "previous": "-x"}, "previous"},
+	}
+	for _, c := range casos {
+		_, err := executeKubectlLogs(context.Background(), c.params)
+		if err == nil || !strings.Contains(err.Error(), "parâmetro '"+c.campo+"' inválido") {
+			t.Errorf("%v deveria ser recusado pela validação, veio: %v", c.params, err)
 		}
+	}
+	if chamadas := chamadasKubectl(t, arquivo); len(chamadas) != 0 {
+		t.Errorf("o kubectl não deveria ter sido chamado: %q", chamadas)
+	}
+}
+
+// No erro de contêiner que o kubectl não lista (nome inválido), a ferramenta consulta os
+// contêineres do pod, inclusive os de init e os efêmeros, que o kubectl logs -c também
+// aceita. No "choose one of" (o kubectl já lista) e nos outros erros, não consulta.
+func TestKubectlLogs_ConteineresDoPodNoErro(t *testing.T) {
+	t.Run("contêiner inválido", func(t *testing.T) {
+		arquivo := usarKubectlFalso(t, "error: container foo is not valid for pod a\n")
+		_, err := executeKubectlLogs(context.Background(), map[string]string{"pod": "a", "container": "foo"})
+		if err == nil || !strings.Contains(err.Error(), "Contêineres do pod: app, sidecar, init-db, debugger") {
+			t.Errorf("o erro deveria listar os contêineres do pod: %v", err)
+		}
+		chamadas := chamadasKubectl(t, arquivo)
+		if len(chamadas) != 2 {
+			t.Fatalf("esperava o logs e o get, vieram %q", chamadas)
+		}
+		for _, campo := range []string{".spec.containers[*].name", ".spec.initContainers[*].name", ".spec.ephemeralContainers[*].name"} {
+			if !strings.Contains(chamadas[1], campo) {
+				t.Errorf("a consulta dos contêineres deveria pedir %s: %s", campo, chamadas[1])
+			}
+		}
+	})
+	for nome, saida := range map[string]string{
+		"o kubectl já lista": "error: a container name must be specified for pod a, choose one of: [app sidecar]\n",
+		"outro erro":         "Error from server (NotFound): pods \"a\" not found\n",
+	} {
+		t.Run(nome, func(t *testing.T) {
+			arquivo := usarKubectlFalso(t, saida)
+			_, err := executeKubectlLogs(context.Background(), map[string]string{"pod": "a"})
+			if err == nil || strings.Contains(err.Error(), "Contêineres do pod") {
+				t.Errorf("o erro não deveria trazer a lista consultada: %v", err)
+			}
+			if chamadas := chamadasKubectl(t, arquivo); len(chamadas) != 1 {
+				t.Errorf("só o logs deveria rodar, vieram %q", chamadas)
+			}
+		})
 	}
 }

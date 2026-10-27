@@ -51,9 +51,10 @@ func TestContrato_AtlasBlueprint(t *testing.T) {
 		"lib (app, go) em lib",
 		"Charts Helm (1)",
 		"api em charts/api",
-		"Workloads (2)",
+		"Workloads (3)",
 		"Deployment api-server",
 		"Deployment loja/web",
+		"ComposeService worker em meu-servico/docker-compose.yml · imagem loja/worker:2.0.1",
 		"Service: loja/web",
 		"HelmRepository: redis",
 		"Relações entre componentes (2)",
@@ -65,6 +66,10 @@ func TestContrato_AtlasBlueprint(t *testing.T) {
 		if !strings.Contains(texto, trecho) {
 			t.Errorf("o resumo deveria ter %q:\n%s", trecho, texto)
 		}
+	}
+	// O chart do blueprint não se repete entre os outros recursos da infra.
+	if strings.Contains(texto, "HelmChart:") {
+		t.Errorf("o chart já listado em Charts Helm não deveria se repetir em outros recursos:\n%s", texto)
 	}
 	// Os caminhos chegam relativos: nada da máquina que gravou o golden.
 	if strings.Contains(texto, `\`) || strings.Contains(texto, "Temp") {

@@ -18,8 +18,9 @@ import (
 // sem regravar o golden quebra este teste; regravar sem ajustar o Bard quebra o dele.
 
 // projetoDoContrato monta, numa pasta temporária que vira a atual, um projeto com dois
-// módulos Go (um importa o outro por replace), um Dockerfile, um chart com dependência
-// remota e manifests com um Deployment e o Service que o seleciona.
+// módulos Go (um importa o outro por replace), um Dockerfile, um Compose com a imagem do
+// serviço, um chart com dependência remota e manifests com um Deployment e o Service que
+// o seleciona.
 func projetoDoContrato(t *testing.T) {
 	t.Helper()
 	raiz := t.TempDir()
@@ -27,6 +28,7 @@ func projetoDoContrato(t *testing.T) {
 		"meu-servico/go.mod":                   "module example.com/meu-servico\n\ngo 1.26\n\nrequire (\n\texample.com/lib v0.0.0\n\tgithub.com/gin-gonic/gin v1.10.0\n)\n\nreplace example.com/lib => ../lib\n",
 		"meu-servico/main.go":                  "package main\n\nimport (\n\t\"example.com/lib\"\n\t\"github.com/gin-gonic/gin\"\n)\n\nfunc main() { lib.Ola(); gin.New() }\n",
 		"meu-servico/Dockerfile":               "FROM golang:1.26\nCOPY . .\n",
+		"meu-servico/docker-compose.yml":       "services:\n  worker:\n    image: loja/worker:2.0.1\n",
 		"lib/go.mod":                           "module example.com/lib\n\ngo 1.26\n",
 		"lib/lib.go":                           "package lib\n\nfunc Ola() {}\n",
 		"charts/api/Chart.yaml":                "apiVersion: v2\nname: api\nversion: 1.0.0\ndependencies:\n  - name: redis\n    version: 17.0.0\n    repository: https://charts.bitnami.com/bitnami\n",

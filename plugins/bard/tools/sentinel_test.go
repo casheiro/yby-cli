@@ -139,6 +139,15 @@ func TestFormatInvestigateResults_Compacto(t *testing.T) {
 	}
 }
 
+// Sem dados, a IA fica sabendo que faltou o que a ferramenta coleta (estado, eventos e
+// logs), não "informação de segurança", que é do modelo antigo do investigate.
+func TestFormatInvestigateResults_SemDados(t *testing.T) {
+	texto := formatInvestigateResults(nil)
+	if strings.Contains(texto, "segurança") || !strings.Contains(texto, "estado, eventos e logs") {
+		t.Errorf("mensagem inesperada sem dados: %q", texto)
+	}
+}
+
 // Plugins que respondem com o envelope (o Atlas) continuam com o Data e o Error dele.
 func TestRespostaDoPlugin_Envelope(t *testing.T) {
 	resp, err := respostaDoPlugin([]byte(`{"data": {"resources": 3}}`))

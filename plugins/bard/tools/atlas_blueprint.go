@@ -107,6 +107,9 @@ func formatBlueprintResults(data interface{}) string {
 	var sb strings.Builder
 	sb.WriteString("## Blueprint do Projeto\n")
 
+	// Os charts listados em "Charts Helm" não se repetem como HelmChart entre os outros
+	// recursos da infra (o resumo tem limite de tamanho).
+	chartsListados := false
 	if bp := r.Blueprint; bp != nil {
 		// Nas relações, o caminho do componente vira o nome dele.
 		nomePorCaminho := make(map[string]string)
@@ -129,6 +132,7 @@ func formatBlueprintResults(data interface{}) string {
 		}
 		escreverLista(&sb, "Componentes", componentes)
 		escreverLista(&sb, "Charts Helm", charts)
+		chartsListados = len(charts) > 0
 
 		var relacoes []string
 		for _, rel := range bp.Relations {
@@ -153,6 +157,9 @@ func formatBlueprintResults(data interface{}) string {
 				nome = rec.Namespace + "/" + rec.Name
 			}
 			if !kindsDeWorkload[rec.Kind] {
+				if rec.Kind == "HelmChart" && chartsListados {
+					continue
+				}
 				outros[rec.Kind] = append(outros[rec.Kind], nome)
 				continue
 			}

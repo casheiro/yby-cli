@@ -89,6 +89,31 @@ func TestFormatBlueprintResults_ComDados(t *testing.T) {
 	}
 }
 
+// O chart listado em Charts Helm não se repete entre os outros recursos da infra; sem
+// chart no blueprint, o HelmChart da infra continua lá.
+func TestFormatBlueprintResults_ChartSemRepetir(t *testing.T) {
+	infra := map[string]interface{}{"resources": []interface{}{
+		map[string]interface{}{"kind": "HelmChart", "name": "api", "path": "charts/api/Chart.yaml"},
+		map[string]interface{}{"kind": "HelmRepository", "name": "redis", "path": "charts/api/Chart.yaml"},
+	}}
+	comChart := formatBlueprintResults(map[string]interface{}{
+		"blueprint": map[string]interface{}{"components": []interface{}{
+			map[string]interface{}{"name": "api", "type": "helm", "path": "charts/api"},
+		}},
+		"infra": infra,
+	})
+	if strings.Contains(comChart, "HelmChart:") || !strings.Contains(comChart, "HelmRepository: redis") {
+		t.Errorf("o chart deveria sair só em Charts Helm:\n%s", comChart)
+	}
+	if !strings.Contains(comChart, "Outros recursos de infraestrutura (1)") {
+		t.Errorf("a contagem dos outros recursos não deveria contar o chart:\n%s", comChart)
+	}
+	semChart := formatBlueprintResults(map[string]interface{}{"infra": infra})
+	if !strings.Contains(semChart, "HelmChart: api") {
+		t.Errorf("sem Charts Helm, o chart da infra deveria aparecer:\n%s", semChart)
+	}
+}
+
 // Um Data sem blueprint nem infra (outro formato) não vira um resumo vazio com título.
 func TestFormatBlueprintResults_FormatoDesconhecido(t *testing.T) {
 	result := formatBlueprintResults(map[string]interface{}{"components": []interface{}{}})

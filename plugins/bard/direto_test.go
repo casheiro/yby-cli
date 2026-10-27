@@ -126,7 +126,7 @@ func novoDiretoDeTeste(t *testing.T, p ai.Provider, etapas, continua bool) (*dir
 	t.Helper()
 	isolarModoVisual(t, "")
 	lipgloss.SetColorProfile(termenv.Ascii)
-	f := tui.NovoFluxo(p, nil, tui.Config{SystemPrompt: "sistema", TopK: 5, LimiarRelevancia: 0.6})
+	f := tui.NovoFluxo(p, nil, tui.Config{SystemPrompt: "sistema", TopK: 5, LimiarRelevancia: ai.RelevanciaMinima})
 	f.Retry = retryDeTeste
 	f.BuscarFerramenta = func(string) *tools.Tool { return nil }
 	var saida, erros bytes.Buffer
