@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -197,6 +198,54 @@ type iaClassifica struct {
 }
 
 func (p *iaClassifica) Completion(_ context.Context, _, _ string) (string, error) { return p.json, nil }
+
+// buscadorComErro é a busca do Synapstor que sempre falha com err.
+type buscadorComErro struct{ err error }
+
+func (b buscadorComErro) Search(context.Context, string, int) ([]ai.UnknownDocument, error) {
+	return nil, b.err
+}
+
+// O índice de outro modelo: a etapa diz o comando e o aviso inteiro fica abaixo dela no
+// terminal; fora dele, o stderr continua vazio e a resposta sai sem as notas.
+func TestDireto_IndiceDeOutroModelo(t *testing.T) {
+	erro := &ai.IndiceDeOutroModeloError{
+		Indice: ai.IdentidadeDoIndice{Provider: "ollama", Modelo: "nomic-embed-text", Dimensao: 768},
+		Atual:  ai.IdentidadeDoIndice{Provider: "local", Modelo: "multilingual-e5-small", Dimensao: 384},
+	}
+	d, saida, erros := novoDiretoDeTeste(t, &iaFalsa{}, true, false)
+	d.fluxo.Buscador = buscadorComErro{err: erro}
+	if err := d.perguntar(context.Background(), "o que houve?"); err != nil {
+		t.Fatalf("a pergunta segue sem as notas: %v", err)
+	}
+	tela := ansi.Strip(erros.String())
+	// A linha da etapa corta a nota, mas não o comando; o aviso vem inteiro abaixo.
+	for _, trecho := range []string{"✕ contexto do projeto   rode yby synapstor index --full",
+		"o índice foi feito com ollama/nomic-embed-text (768 dimensões)"} {
+		if !strings.Contains(tela, trecho) {
+			t.Errorf("stderr sem %q:\n%s", trecho, tela)
+		}
+	}
+	if saida.Len() == 0 {
+		t.Error("a resposta deveria sair no stdout")
+	}
+
+	var log bytes.Buffer
+	anterior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	t.Cleanup(func() { slog.SetDefault(anterior) })
+	d, saida, erros = novoDiretoDeTeste(t, &iaFalsa{}, false, false)
+	d.fluxo.Buscador = buscadorComErro{err: erro}
+	if err := d.perguntar(context.Background(), "o que houve?"); err != nil {
+		t.Fatalf("a pergunta segue sem as notas: %v", err)
+	}
+	if erros.Len() != 0 || saida.Len() == 0 {
+		t.Errorf("fora do terminal só a resposta: stdout=%q stderr=%q", saida.String(), erros.String())
+	}
+	if !strings.Contains(log.String(), "rode yby synapstor index --full") {
+		t.Errorf("fora do terminal o aviso vai ao log: %q", log.String())
+	}
+}
 
 func TestDireto_RespostaQueRecomecaNoTerminal(t *testing.T) {
 	ia := &iaFalsa{falhas: []error{&ai.APIError{Provider: "falso", StatusCode: 503, Body: "indisponível"}}, parcial: "começo"}

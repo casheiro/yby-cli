@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/casheiro/yby-cli/pkg/ai"
 	"github.com/casheiro/yby-cli/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
@@ -351,8 +352,8 @@ func TestLoadBardConfig_Defaults(t *testing.T) {
 	if cfg.TopK != 5 {
 		t.Errorf("TopK padrão esperado 5, obtido %d", cfg.TopK)
 	}
-	if cfg.RelevanceThreshold != 0.6 {
-		t.Errorf("RelevanceThreshold padrão esperado 0.6, obtido %f", cfg.RelevanceThreshold)
+	if cfg.RelevanceThreshold != ai.RelevanciaMinima {
+		t.Errorf("RelevanceThreshold padrão esperado %v (o corte do pkg/ai), obtido %f", ai.RelevanciaMinima, cfg.RelevanceThreshold)
 	}
 	if cfg.SystemPromptExtra != "" {
 		t.Errorf("SystemPromptExtra padrão esperado vazio, obtido '%s'", cfg.SystemPromptExtra)
@@ -388,6 +389,22 @@ system_prompt_extra: "Responda sempre em formato de lista."
 	}
 	if cfg.SystemPromptExtra != "Responda sempre em formato de lista." {
 		t.Errorf("SystemPromptExtra inesperado: '%s'", cfg.SystemPromptExtra)
+	}
+}
+
+// TestLoadBardConfig_LimiarZeroExplicito: o relevance_threshold do bard.yaml vale mesmo
+// quando é 0 (aceita todas as notas), e não volta ao corte do pkg/ai.
+func TestLoadBardConfig_LimiarZeroExplicito(t *testing.T) {
+	restore := chdir(t, t.TempDir())
+	defer restore()
+	if err := os.MkdirAll(".yby", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".yby/bard.yaml", []byte("relevance_threshold: 0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := loadBardConfig(); cfg.RelevanceThreshold != 0 {
+		t.Errorf("o 0 explícito deveria valer, veio %v", cfg.RelevanceThreshold)
 	}
 }
 

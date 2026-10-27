@@ -213,7 +213,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** claude-cli e gemini-cli não passam pelo `wrapProvider` (`pkg/ai/factory.go`), então ficam sem retry, token-aware e custo.
   - **Fazer:** passar os dois pela cadeia, se ela fizer sentido para eles.
   - **Verificar:** teste da factory.
-- [ ] **B15 · O Bard usa o índice do Synapstor como ele é** (lado do Bard do Y01, Y04 e Y05)
+- [x] **B15 · O Bard usa o índice do Synapstor como ele é** (lado do Bard do Y01, Y04 e Y05)
   - **Problema:** `tui/fluxo.go:~306-310` mostra "Synapstor indisponível" para qualquer erro, inclusive o índice feito com outros embeddings (`ai.ErrIndiceDeOutroModelo`, do Y01). O corte de relevância é 0,6 no Bard (`config.go:~21`) e 0,35 no Synapstor (`search.go:~21`). Desde o Y05 o índice guarda trechos de seção, mas o Bard injeta o trecho só com o título e pode repetir o mesmo arquivo.
   - **Fazer:**
     - erro claro na etapa de contexto: "o índice foi feito com X; rode yby synapstor index --full";
@@ -697,6 +697,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B07 | Orçamento do que vai à IA (`plugins/bard/tui/orcamento.go`: `Cortar` por linhas com "… N linhas omitidas", `Recentes` e os tetos por bloco): saída de ferramenta ≤ 8 KB, notas do Synapstor ≤ 8 KB somadas, histórico ≤ 4 KB (1 KB por mensagem), cluster ≤ 3 KB com 20 pods (os com problema primeiro); scan do Sentinel resumido (contagem por severidade, os 10 mais graves com até 10 recursos, o que não rodou), investigate em JSON compacto com os logs no fim, `kubectl_events` com os 50 últimos e `--tail` até 200; `GetModelMetadata` casa pelo nome base sem a tag do Ollama (`llama3.1:8b`, `qwen2.5:7b`). | este commit |
 | 26/10/2026 | B02 | O `Fluxo` recebe as trocas anteriores da sessão (`tui.Troca`, até 10, redigidas pelo `pkg/redacao` e no novo `TetoConversa` de 3 KB, com o `TetoHistorico` das sessões anteriores baixado a 2 KB) e as põe antes da pergunta na resposta e no classificador; a TUI guarda as trocas da conversa (o `/limpar` e o `/sessões` recomeçam, porque a retomada já vai pelo system prompt; o `/modelo` mantém) e as perguntas do mesmo batch formam uma sessão. | este commit |
 | 26/10/2026 | B12 | `kubectl_events` filtra por `involvedObject.name` quando há pod, `kubectl_logs` ganha `container` e `previous` (e lista os contêineres no erro de contêiner), `sentinel_investigate` pede `--no-ai` e o Bard analisa com o próprio provider; os valores novos passam pela validação do B06. | este commit |
+| 26/10/2026 | B15 | O índice feito com outros embeddings vira falha da etapa de contexto, com a nota começando pelo comando ("rode yby synapstor index --full (índice de outro modelo)", que cabe em 80 colunas), e o aviso inteiro ("o índice foi feito com X, e os embeddings agora vêm de Y", com o comando na linha de baixo) fica na conversa da TUI depois da rodada e abaixo das etapas no `-p`, em vez de "Synapstor indisponível"; o corte de relevância é o `ai.RelevanciaMinima` (0,35), usado pela busca do Synapstor e como padrão do Bard (o `relevance_threshold` do bard.yaml, mesmo 0, continua valendo); os trechos entram juntos por arquivo, com título e caminho no cabeçalho e a seção em cada trecho, no teto das notas, e a etapa conta arquivos. | este commit |
 
 ### Fase 3 · Synapstor
 

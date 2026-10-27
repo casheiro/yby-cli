@@ -54,8 +54,8 @@ type Config struct {
 	// Vazio, o esc só interrompe a resposta.
 	Voltar      string
 	SaveMessage func(role, content, sessionID string)
-	// TopK e LimiarRelevancia controlam a busca no Synapstor, como vêm do
-	// bard.yaml (padrões 5 e 0,6 no loadBardConfig). TopK 0 vira 5; limiar 0
+	// TopK e LimiarRelevancia controlam a busca no Synapstor, como vêm do bard.yaml
+	// (padrões 5 e ai.RelevanciaMinima no loadBardConfig). TopK 0 vira 5; limiar 0
 	// aceita todas as notas.
 	TopK             int
 	LimiarRelevancia float64
@@ -730,6 +730,12 @@ func (m *Model) encerrarRodada(msg FimMsg) {
 		m.messages = append(m.messages, resposta)
 		if m.config.SaveMessage != nil {
 			m.config.SaveMessage("assistant", msg.Resposta, m.config.SessionID)
+		}
+	}
+	// As etapas somem com a rodada: o que pede ação do usuário fica na conversa.
+	for _, e := range m.etapas {
+		if e.Aviso != "" {
+			m.messages = append(m.messages, chatMessage{role: "nota", content: e.Aviso})
 		}
 	}
 }

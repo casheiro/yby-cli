@@ -252,9 +252,22 @@ func (d *direto) responder(ctx context.Context, rodada int, pergunta string) tui
 			}
 			if prog == nil {
 				slog.Debug("bard.etapa", "etapa", m.Rotulo, "estado", m.Estado, "nota", m.Nota)
+				if m.Aviso != "" {
+					// Fora do terminal o stderr fica só para os erros; o aviso vai ao log.
+					slog.Warn("bard.aviso", "etapa", m.Rotulo, "aviso", m.Aviso)
+				}
 				continue
 			}
 			atual = mostrarEtapa(prog, atual, m)
+			if m.Aviso != "" {
+				// A linha da etapa corta a nota; o aviso inteiro fica logo abaixo dela, cada
+				// linha quebrada na largura do terminal menos o recuo do Detalhe.
+				var linhas []string
+				for _, l := range strings.Split(m.Aviso, "\n") {
+					linhas = append(linhas, ui.Quebrar(l, ui.Largura(d.erros)-4)...)
+				}
+				prog.Detalhe(strings.Join(linhas, "\n"))
+			}
 		case tui.TrechoMsg:
 			if d.continua {
 				_, _ = resposta.Write([]byte(m.Texto))
