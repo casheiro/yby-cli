@@ -278,3 +278,30 @@ func contar(v []int) int {
 	}
 	return n
 }
+
+// TabelaJanela desenha o cabeçalho e as linhas da janela exatamente como a
+// Tabela inteira as desenharia (larguras medidas em todas as linhas, seleção
+// contada na lista inteira); fora dos limites, a janela é cortada.
+func TestTabelaJanela_IgualAoTrechoDaTabela(t *testing.T) {
+	usarTema(t, true, termenv.TrueColor, false)
+	linhas := tableLinhas()
+	for _, largura := range []int{40, 80, 140} {
+		for sel := -1; sel < len(linhas); sel++ {
+			inteira := strings.Split(Tabela(tableColunas(), linhas, sel, largura), "\n")
+			for ini := 0; ini <= len(linhas); ini++ {
+				for fim := ini; fim <= len(linhas); fim++ {
+					want := strings.Join(append([]string{inteira[0]}, inteira[1+ini:1+fim]...), "\n")
+					if got := TabelaJanela(tableColunas(), linhas, sel, largura, ini, fim); got != want {
+						t.Fatalf("largura %d, sel %d, janela %d-%d:\n%s\nesperava:\n%s", largura, sel, ini, fim, got, want)
+					}
+				}
+			}
+		}
+	}
+	if got, want := TabelaJanela(tableColunas(), linhas, 0, 80, -3, 99), Tabela(tableColunas(), linhas, 0, 80); got != want {
+		t.Errorf("a janela além dos limites deveria ser a tabela inteira:\n%s", got)
+	}
+	if got := TabelaJanela(tableColunas(), linhas, 0, 80, 4, 2); strings.Count(got, "\n") != 0 {
+		t.Errorf("a janela vazia deveria ter só o cabeçalho:\n%s", got)
+	}
+}

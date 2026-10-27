@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -41,19 +42,23 @@ func GetResourceYAML(config *rest.Config, kind, name, namespace string) (string,
 	defer cancelar()
 
 	var resource interface{}
+	var bruto *unstructured.Unstructured
 	if namespace != "" {
 		obj, err := dynClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("falha ao buscar %s '%s': %w", kind, name, err)
 		}
-		resource = obj.Object
+		bruto = obj
 	} else {
 		obj, err := dynClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("falha ao buscar %s '%s': %w", kind, name, err)
 		}
-		resource = obj.Object
+		bruto = obj
 	}
+
+	semRuido(bruto)
+	resource = bruto.Object
 
 	yamlBytes, err := sigsyaml.Marshal(resource)
 	if err != nil {
@@ -61,4 +66,20 @@ func GetResourceYAML(config *rest.Config, kind, name, namespace string) (string,
 	}
 
 	return string(yamlBytes), nil
+}
+
+// semRuido tira do objeto o que só atrapalha a leitura: os managedFields e a
+// annotation last-applied (que repete o manifesto inteiro).
+func semRuido(obj *unstructured.Unstructured) {
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+	anotacoes := obj.GetAnnotations()
+	if _, ok := anotacoes["kubectl.kubernetes.io/last-applied-configuration"]; !ok {
+		return
+	}
+	delete(anotacoes, "kubectl.kubernetes.io/last-applied-configuration")
+	if len(anotacoes) == 0 {
+		unstructured.RemoveNestedField(obj.Object, "metadata", "annotations")
+		return
+	}
+	obj.SetAnnotations(anotacoes)
 }

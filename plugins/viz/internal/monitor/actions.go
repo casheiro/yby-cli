@@ -19,26 +19,43 @@ func contextoDaAcao() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), PrazoDaAcao)
 }
 
-// DeleteResource deleta um recurso Kubernetes pelo kind, nome e namespace
-func DeleteResource(clientset kubernetes.Interface, kind, name, namespace string) error {
+// opcoesDeExclusao monta as opções da exclusão: propagação em segundo plano
+// (o batch/v1 deixaria os pods do Job órfãos por padrão) e, havendo UID, a
+// precondição que recusa apagar um objeto recriado com o mesmo nome. UID vazio
+// não vira precondição.
+func opcoesDeExclusao(uid string) metav1.DeleteOptions {
+	politica := metav1.DeletePropagationBackground
+	op := metav1.DeleteOptions{PropagationPolicy: &politica}
+	if uid != "" {
+		u := types.UID(uid)
+		op.Preconditions = &metav1.Preconditions{UID: &u}
+	}
+	return op
+}
+
+// DeleteResource deleta um recurso Kubernetes pelo kind, nome e namespace. Com
+// uid, só apaga o objeto que a pessoa viu; se ele foi recriado, a API responde
+// conflito.
+func DeleteResource(clientset kubernetes.Interface, kind, name, namespace, uid string) error {
 	ctx, cancelar := contextoDaAcao()
 	defer cancelar()
+	op := opcoesDeExclusao(uid)
 
 	switch kind {
 	case "pod":
-		return clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.CoreV1().Pods(namespace).Delete(ctx, name, op)
 	case "deployment":
-		return clientset.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.AppsV1().Deployments(namespace).Delete(ctx, name, op)
 	case "service":
-		return clientset.CoreV1().Services(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.CoreV1().Services(namespace).Delete(ctx, name, op)
 	case "statefulset":
-		return clientset.AppsV1().StatefulSets(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.AppsV1().StatefulSets(namespace).Delete(ctx, name, op)
 	case "job":
-		return clientset.BatchV1().Jobs(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.BatchV1().Jobs(namespace).Delete(ctx, name, op)
 	case "configmap":
-		return clientset.CoreV1().ConfigMaps(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.CoreV1().ConfigMaps(namespace).Delete(ctx, name, op)
 	case "ingress":
-		return clientset.NetworkingV1().Ingresses(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		return clientset.NetworkingV1().Ingresses(namespace).Delete(ctx, name, op)
 	default:
 		return fmt.Errorf("deleção não suportada para tipo '%s'", kind)
 	}

@@ -431,9 +431,12 @@ func TestAcao_FundoSemPainelPorCima(t *testing.T) {
 func telaDeAcoes(t *testing.T, largura, altura int) Model {
 	t.Helper()
 	m := telaDaPrancha(t, largura, altura)
-	for i := range m.deployments {
-		m.deployments[i].Seletor = "app=" + m.deployments[i].Name
+	// Uma lista nova, como as que chegam do cluster: o Model não muda listas no lugar.
+	deployments := append([]monitor.Deployment(nil), m.deployments...)
+	for i := range deployments {
+		deployments[i].Seletor = "app=" + deployments[i].Name
 	}
+	m.deployments = deployments
 	m, _ = teclas(t, m, "2")
 	return m
 }
@@ -483,5 +486,29 @@ func TestTelaAcoes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAcao_ExcluirMandaOUIDDaLinha: o UID do objeto da linha chega à API como
+// precondição da exclusão; o homônimo recriado (UID outro) não é apagado.
+func TestAcao_ExcluirMandaOUIDDaLinha(t *testing.T) {
+	cs := fake.NewClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "loja"}})
+	var uid string
+	cs.PrependReactor("delete", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if p := a.(k8stesting.DeleteAction).GetDeleteOptions().Preconditions; p != nil && p.UID != nil {
+			uid = string(*p.UID)
+		}
+		return true, nil, nil
+	})
+	m := NewModel(&clientComAcesso{MockClient: &MockClient{}, cs: cs})
+	alvo := m.alvoDaLinha("pod", itemLista{nome: "api-0", namespace: "loja", obj: monitor.Pod{Name: "api-0", Namespace: "loja", UID: "uid-do-pod"}})
+	if alvo.uid != "uid-do-pod" {
+		t.Fatalf("alvo.uid = %q", alvo.uid)
+	}
+	if r := fazer(m.client, acaoExcluir, alvo, 0); r.falha {
+		t.Fatalf("falhou: %+v", r)
+	}
+	if uid != "uid-do-pod" {
+		t.Errorf("a API recebeu o UID %q", uid)
 	}
 }

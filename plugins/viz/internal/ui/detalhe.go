@@ -40,11 +40,12 @@ const (
 
 // extrasDetalhe são os eventos e a última linha de log de um recurso.
 type extrasDetalhe struct {
-	eventos    []monitor.Event
-	errEventos error
-	log        string // última linha do log (só pods)
-	errLog     error
-	lidoEm     time.Time
+	eventos     []monitor.Event
+	errEventos  error
+	log         string // última linha do log (só pods)
+	logAnterior bool   // a linha é da execução anterior
+	errLog      error
+	lidoEm      time.Time
 }
 
 // paradaMsg chega atrasoDetalhe depois de a seleção mudar; só a do pedido
@@ -222,7 +223,8 @@ func (m *Model) lerExtras(forcar bool) tea.Cmd {
 		x.eventos, x.errEventos = l.EventosDoObjeto(obj.kind, obj.nome, obj.namespace, eventosNoPainel)
 		if kind == "pod" {
 			var logs string
-			logs, x.errLog = l.LogsDoPod(it.nome, it.namespace, conteiner, linhasParaUltima)
+			logs, anterior, errLog := l.LogsDoPod(it.nome, it.namespace, conteiner, linhasParaUltima)
+			x.errLog, x.logAnterior = errLog, anterior
 			x.log = ultimaLinha(logs)
 		}
 		x.lidoEm = agora()
@@ -506,6 +508,9 @@ func (m Model) secoesExtras(it itemLista, interno int) []secao {
 		case x.log == "":
 			logs.linhas = []string{yui.NovoEstadoVazio("nenhuma linha de log", "").View()}
 		default:
+			if x.logAnterior {
+				x.log = "(execução anterior) " + x.log
+			}
 			logs.linhas = duasLinhas(x.log, interno)
 		}
 	}

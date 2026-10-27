@@ -2,10 +2,11 @@ package monitor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,8 @@ type K8sClient struct {
 	lerLog     lerLog // lê o log de um contêiner; nil usa lerLogs (os testes trocam)
 	// intervaloLote é o tempo entre lotes do watch; zero usa intervaloDoLote.
 	intervaloLote time.Duration
+	// prazo limita cada leitura (listas, eventos e logs do detalhe); zero usa prazoDeLeitura.
+	prazo time.Duration
 }
 
 // Kubeconfig devolve o arquivo pedido no --kubeconfig (vazio: o padrão do kubectl).
@@ -141,60 +144,52 @@ func NovoK8sClient(c Conexao) (*K8sClient, error) {
 	return &K8sClient{clientset: clientset, restConfig: config, kubeconfig: c.Kubeconfig, contexto: contexto, namespace: namespace}, nil
 }
 
-// podMetricsResult representa a resposta da API de métricas de pods.
-type podMetricsResult struct {
-	Items []struct {
-		Metadata struct {
-			Name      string `json:"name"`
-			Namespace string `json:"namespace"`
-		} `json:"metadata"`
-		Containers []struct {
-			Usage struct {
-				CPU    string `json:"cpu"`
-				Memory string `json:"memory"`
-			} `json:"usage"`
-		} `json:"containers"`
-	} `json:"items"`
+// Sondador confirma que o cluster responde sem listar nada: é o sinal de
+// conexão do relógio nas abas cuja lista vem do watch.
+type Sondador interface {
+	// Sondar pede a versão do servidor; o erro é o da conexão.
+	Sondar() error
 }
 
-// podMetricsKey gera uma chave única para identificar um pod nas métricas.
-func podMetricsKey(namespace, name string) string {
-	return namespace + "/" + name
-}
+var (
+	_ Sondador = (*K8sClient)(nil)
+	_ Sondador = (*RetryClient)(nil)
+)
 
-// fetchPodMetrics busca métricas de CPU e memória do metrics-server.
-// Retorna um mapa de "namespace/name" -> {cpu, memory}. Falha silenciosamente.
-func (c *K8sClient) fetchPodMetrics() map[string][2]string {
-	result := make(map[string][2]string)
+// prazoDaSonda limita a espera da sonda: cluster que não responde vira erro.
+const prazoDaSonda = 10 * time.Second
 
+// Sondar faz GET /version, a leitura mais barata do servidor. Sem REST (o
+// clientset falso dos testes), não há o que sondar.
+func (c *K8sClient) Sondar() error {
 	rc := c.clientset.Discovery().RESTClient()
 	if rc == nil {
-		return result // client sem REST (o falso dos testes)
+		return nil
 	}
-	data, err := rc.
-		Get().
-		AbsPath("/apis/metrics.k8s.io/v1beta1/pods").
-		DoRaw(context.Background())
-	if err != nil {
-		return result // metrics-server indisponível
+	ctx, cancelar := context.WithTimeout(context.Background(), prazoDaSonda)
+	defer cancelar()
+	if _, err := rc.Get().AbsPath("/version").DoRaw(ctx); err != nil {
+		return fmt.Errorf("falha ao sondar o cluster: %w", err)
 	}
+	return nil
+}
 
-	var metrics podMetricsResult
-	if err := json.Unmarshal(data, &metrics); err != nil {
-		return result
+// contextoDeLeitura é o contexto de uma leitura, com o prazo do client. O
+// prazo vai em cada leitura, e não no Timeout do rest.Config, que cortaria
+// também o watch dos informers.
+func (c *K8sClient) contextoDeLeitura() (context.Context, context.CancelFunc) {
+	prazo := c.prazo
+	if prazo <= 0 {
+		prazo = prazoDeLeitura
 	}
+	return context.WithTimeout(context.Background(), prazo)
+}
 
-	for _, item := range metrics.Items {
-		var totalCPU, totalMem string
-		if len(item.Containers) > 0 {
-			totalCPU = item.Containers[0].Usage.CPU
-			totalMem = item.Containers[0].Usage.Memory
-		}
-		key := podMetricsKey(item.Metadata.Namespace, item.Metadata.Name)
-		result[key] = [2]string{totalCPU, totalMem}
-	}
-
-	return result
+// ErroDeCredencial diz se a leitura falhou ao obter a credencial pelo plugin
+// exec do kubeconfig (aws, kubelogin, gke-gcloud-auth-plugin): o client-go não
+// tipa esse erro, só escreve "getting credentials: …" na mensagem.
+func ErroDeCredencial(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "getting credentials: ")
 }
 
 // GetPods lista pods com filtros opcionais de namespace e label.
@@ -204,30 +199,28 @@ func (c *K8sClient) GetPods(filter ListFilter) ([]Pod, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().Pods(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Pods(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
 
-	// Buscar métricas (fallback graceful se metrics-server indisponível)
-	metrics := c.fetchPodMetrics()
-
 	var pods []Pod
 	for i := range list.Items {
-		pods = append(pods, podDeK8s(&list.Items[i], metrics))
+		pods = append(pods, podDeK8s(&list.Items[i]))
 	}
 	return pods, nil
 }
 
 // podDeK8s converte o pod da API: estado como o kubectl mostra, contêineres
-// prontos, reinícios, nó, IP e as métricas, quando o metrics-server responde.
-func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
+// prontos, reinícios, nó e IP.
+func podDeK8s(p *corev1.Pod) Pod {
 	pod := Pod{
 		Name:       p.Name,
 		Namespace:  p.Namespace,
+		UID:        string(p.UID),
 		Status:     statusDoPod(p),
-		CPU:        "N/A",
-		Memory:     "N/A",
 		Containers: int32(len(p.Spec.Containers)),
 		No:         p.Spec.NodeName,
 		IP:         p.Status.PodIP,
@@ -238,14 +231,6 @@ func podDeK8s(p *corev1.Pod, metrics map[string][2]string) Pod {
 		Dono:       donoDoPod(p),
 		Recursos:   recursosDe(p.Spec.Containers),
 		Conteiner:  conteinerDoLog(p),
-	}
-	if m, ok := metrics[podMetricsKey(p.Namespace, p.Name)]; ok {
-		if m[0] != "" {
-			pod.CPU = m[0]
-		}
-		if m[1] != "" {
-			pod.Memory = m[1]
-		}
 	}
 	for _, c := range p.Status.ContainerStatuses {
 		if c.Ready {
@@ -313,7 +298,9 @@ func (c *K8sClient) GetDeployments(filter ListFilter) ([]Deployment, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.AppsV1().Deployments(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.AppsV1().Deployments(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar deployments: %w", err)
 	}
@@ -333,6 +320,7 @@ func deploymentDeK8s(d *appsv1.Deployment) Deployment {
 	return Deployment{
 		Name:        d.Name,
 		Namespace:   d.Namespace,
+		UID:         string(d.UID),
 		Replicas:    replicas,
 		Ready:       d.Status.ReadyReplicas,
 		Available:   d.Status.AvailableReplicas,
@@ -352,7 +340,9 @@ func (c *K8sClient) GetServices(filter ListFilter) ([]Service, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().Services(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Services(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar services: %w", err)
 	}
@@ -375,6 +365,7 @@ func serviceDeK8s(s *corev1.Service) Service {
 	return Service{
 		Name:      s.Name,
 		Namespace: s.Namespace,
+		UID:       string(s.UID),
 		Type:      string(s.Spec.Type),
 		ClusterIP: s.Spec.ClusterIP,
 		Ports:     ports,
@@ -391,7 +382,9 @@ func (c *K8sClient) GetNodes(filter ListFilter) ([]Node, error) {
 	if filter.LabelSelector != "" {
 		opts.LabelSelector = filter.LabelSelector
 	}
-	list, err := c.clientset.CoreV1().Nodes().List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Nodes().List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar nodes: %w", err)
 	}
@@ -431,7 +424,9 @@ func (c *K8sClient) GetStatefulSets(filter ListFilter) ([]StatefulSet, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.AppsV1().StatefulSets(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.AppsV1().StatefulSets(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar statefulsets: %w", err)
 	}
@@ -451,6 +446,7 @@ func statefulSetDeK8s(s *appsv1.StatefulSet) StatefulSet {
 	return StatefulSet{
 		Name:        s.Name,
 		Namespace:   s.Namespace,
+		UID:         string(s.UID),
 		Replicas:    replicas,
 		Ready:       s.Status.ReadyReplicas,
 		Atualizados: s.Status.UpdatedReplicas,
@@ -469,7 +465,9 @@ func (c *K8sClient) GetJobs(filter ListFilter) ([]Job, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.BatchV1().Jobs(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.BatchV1().Jobs(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar jobs: %w", err)
 	}
@@ -501,6 +499,7 @@ func jobDeK8s(j *batchv1.Job) Job {
 	return Job{
 		Name:        j.Name,
 		Namespace:   j.Namespace,
+		UID:         string(j.UID),
 		Completions: completions,
 		Active:      j.Status.Active,
 		Succeeded:   j.Status.Succeeded,
@@ -519,7 +518,9 @@ func (c *K8sClient) GetIngresses(filter ListFilter) ([]Ingress, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.NetworkingV1().Ingresses(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.NetworkingV1().Ingresses(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar ingresses: %w", err)
 	}
@@ -551,6 +552,7 @@ func ingressDeK8s(ing *networkingv1.Ingress) Ingress {
 	return Ingress{
 		Name:      ing.Name,
 		Namespace: ing.Namespace,
+		UID:       string(ing.UID),
 		Class:     class,
 		Hosts:     strings.Join(hosts, ", "),
 		Paths:     strings.Join(paths, ", "),
@@ -567,7 +569,9 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().ConfigMaps(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().ConfigMaps(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar configmaps: %w", err)
 	}
@@ -578,14 +582,12 @@ func (c *K8sClient) GetConfigMaps(filter ListFilter) ([]ConfigMap, error) {
 	return result, nil
 }
 
-// configMapDeK8s converte o configmap da API: chaves e tamanho dos dados.
+// configMapDeK8s converte o configmap da API: chaves e tamanho dos dados. O
+// que vem do cache do watch, sem os valores, traz o tamanho na anotação.
 func configMapDeK8s(cm *corev1.ConfigMap) ConfigMap {
-	totalSize := 0
-	for _, v := range cm.Data {
-		totalSize += len(v)
-	}
-	for _, v := range cm.BinaryData {
-		totalSize += len(v)
+	totalSize, err := strconv.Atoi(cm.Annotations[anotacaoTamanho])
+	if err != nil {
+		totalSize = tamanhoDosDados(cm)
 	}
 	dataSize := fmt.Sprintf("%dB", totalSize)
 	if totalSize >= 1024 {
@@ -594,12 +596,25 @@ func configMapDeK8s(cm *corev1.ConfigMap) ConfigMap {
 	return ConfigMap{
 		Name:      cm.Name,
 		Namespace: cm.Namespace,
+		UID:       string(cm.UID),
 		Keys:      len(cm.Data) + len(cm.BinaryData),
 		DataSize:  dataSize,
 		CriadoEm:  cm.CreationTimestamp.Time,
 		Labels:    cm.Labels,
 		Chaves:    chavesDe(cm),
 	}
+}
+
+// tamanhoDosDados soma os bytes dos valores do ConfigMap (texto e binários).
+func tamanhoDosDados(cm *corev1.ConfigMap) int {
+	total := 0
+	for _, v := range cm.Data {
+		total += len(v)
+	}
+	for _, v := range cm.BinaryData {
+		total += len(v)
+	}
+	return total
 }
 
 // formatAge formata uma duração em formato legível (ex: "5m", "2h", "3d")
@@ -636,7 +651,9 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 		opts.LabelSelector = filter.LabelSelector
 	}
 	ns := filter.Namespace
-	list, err := c.clientset.CoreV1().Events(ns).List(context.Background(), opts)
+	ctx, cancelar := c.contextoDeLeitura()
+	defer cancelar()
+	list, err := c.clientset.CoreV1().Events(ns).List(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar eventos: %w", err)
 	}
@@ -647,9 +664,18 @@ func (c *K8sClient) GetEvents(filter ListFilter) ([]Event, error) {
 // eventosDeK8s converte os eventos que passam em aceitar (todos, se nil), dos
 // mais recentes para os mais antigos.
 func eventosDeK8s(itens []corev1.Event, aceitar func(*corev1.Event) bool) []Event {
-	var result []Event
+	ponteiros := make([]*corev1.Event, len(itens))
 	for i := range itens {
-		e := &itens[i]
+		ponteiros[i] = &itens[i]
+	}
+	return eventosDePonteiros(ponteiros, aceitar)
+}
+
+// eventosDePonteiros é o eventosDeK8s sobre os objetos do cache do watch, sem
+// copiá-los (cada corev1.Event tem perto de 1 KB).
+func eventosDePonteiros(itens []*corev1.Event, aceitar func(*corev1.Event) bool) []Event {
+	result := make([]Event, 0, len(itens))
+	for _, e := range itens {
 		if aceitar != nil && !aceitar(e) {
 			continue
 		}
@@ -676,7 +702,7 @@ func eventosDeK8s(itens []corev1.Event, aceitar func(*corev1.Event) bool) []Even
 			Quando:    quando,
 		})
 	}
-	sort.SliceStable(result, func(i, j int) bool { return result[i].Quando.After(result[j].Quando) })
+	slices.SortStableFunc(result, func(a, b Event) int { return b.Quando.Compare(a.Quando) })
 	return result
 }
 

@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -57,7 +60,7 @@ func executarComando(t *testing.T, args ...string) (monitor.Conexao, bool, strin
 	cmd := novoComando(func(c monitor.Conexao) error {
 		pedida, abriu = c, true
 		return nil
-	})
+	}, monitor.Conexao{})
 	var saida bytes.Buffer
 	cmd.SetOut(&saida)
 	cmd.SetErr(&saida)
@@ -158,6 +161,77 @@ func TestExecutar_ContextoInvalidoNaoAbreATUI(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	usarKubeconfig(t)
 	t.Setenv("YBY_PLUGIN_REQUEST", `{"hook":"command","args":["--context","prod"]}`)
+
+	var saida bytes.Buffer
+	if codigo := executar(&saida); codigo != 1 {
+		t.Fatalf("código %d, esperado 1", codigo)
+	}
+	texto := ansi.Strip(saida.String())
+	for _, trecho := range []string{"o contexto prod não existe no kubeconfig", "k3d-yby-local, staging", "ERR_CONFIG_INVALID"} {
+		if !strings.Contains(texto, trecho) {
+			t.Errorf("a saída não tem %q:\n%s", trecho, texto)
+		}
+	}
+}
+
+// pedidoNoAmbiente é o pedido do yby -c <ambiente> viz <args>: o core manda o infra do
+// ambiente no contexto.
+func pedidoNoAmbiente(t *testing.T, infra plugin.PluginInfrastructure, args ...string) PluginRequest {
+	t.Helper()
+	var contexto map[string]interface{}
+	b, _ := json.Marshal(plugin.PluginFullContext{Environment: "staging", Infra: infra})
+	if err := json.Unmarshal(b, &contexto); err != nil {
+		t.Fatal(err)
+	}
+	return PluginRequest{Hook: "command", Args: args, Context: contexto}
+}
+
+// TestComando_AmbienteDoCore: sem --context, --kubeconfig e -n, o Viz abre no cluster e no
+// namespace do ambiente pedido ao core; a flag explícita vence. Escolher outro cluster
+// pela flag descarta o kubeconfig e o namespace do ambiente, que são do cluster dele.
+func TestComando_AmbienteDoCore(t *testing.T) {
+	infra := plugin.PluginInfrastructure{KubeConfig: "infra/kubeconfig-staging", KubeContext: "k3d-yby-local", Namespace: "kube-system"}
+	casos := []struct {
+		nome     string
+		infra    plugin.PluginInfrastructure
+		args     []string
+		esperada monitor.Conexao
+	}{
+		{"só o ambiente", infra, nil, monitor.Conexao{Kubeconfig: "infra/kubeconfig-staging", Contexto: "k3d-yby-local", Namespace: "kube-system"}},
+		{"ambiente sem kubeconfig", plugin.PluginInfrastructure{KubeContext: "k3d-yby-local", Namespace: "kube-system"}, nil, monitor.Conexao{Contexto: "k3d-yby-local", Namespace: "kube-system"}},
+		{"-n vence o namespace", infra, []string{"-n", "payments"}, monitor.Conexao{Kubeconfig: "infra/kubeconfig-staging", Contexto: "k3d-yby-local", Namespace: "payments"}},
+		{"--context vence o cluster", infra, []string{"--context", "staging"}, monitor.Conexao{Contexto: "staging"}},
+		{"--kubeconfig vence o cluster", infra, []string{"--kubeconfig", "outro"}, monitor.Conexao{Kubeconfig: "outro"}},
+		{"sem ambiente", plugin.PluginInfrastructure{}, nil, monitor.Conexao{}},
+	}
+	for _, c := range casos {
+		req := pedidoNoAmbiente(t, c.infra, c.args...)
+		var pedida monitor.Conexao
+		cmd := novoComando(func(con monitor.Conexao) error {
+			pedida = con
+			return nil
+		}, conexaoDoAmbiente(req.Context))
+		cmd.SetArgs(req.Args)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%s: %v", c.nome, err)
+		}
+		if pedida != c.esperada {
+			t.Errorf("%s: conexão %+v, esperada %+v", c.nome, pedida, c.esperada)
+		}
+	}
+}
+
+// TestExecutar_ContextoDoAmbienteInexistente: o kube_context do ambiente que o kubeconfig
+// não tem sai como ERR_CONFIG, sem abrir a TUI.
+func TestExecutar_ContextoDoAmbienteInexistente(t *testing.T) {
+	isolarModoVisual(t, "")
+	t.Setenv("NO_COLOR", "1")
+	usarKubeconfig(t)
+	req := pedidoNoAmbiente(t, plugin.PluginInfrastructure{KubeContext: "prod"})
+	b, _ := json.Marshal(req)
+	t.Setenv("YBY_PLUGIN_REQUEST", string(b))
 
 	var saida bytes.Buffer
 	if codigo := executar(&saida); codigo != 1 {
