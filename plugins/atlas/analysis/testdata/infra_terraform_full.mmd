@@ -1,0 +1,27 @@
+flowchart TD
+  subgraph Terraform_Data["Terraform Data"]
+    TerraformData_modules_net_aws_availability_zones_disponiveis["modules/net/aws_availability_zones.disponiveis\n(TerraformData)"]
+  end
+  subgraph Terraform_Modules["Terraform Modules"]
+    TerraformModule_envs_dev_module_net["envs/dev/module.net\n(TerraformModule)"]
+    TerraformModule_envs_prod_module_net["envs/prod/module.net\n(TerraformModule)"]
+    TerraformModule_modules_net["modules/net\n(TerraformModule)"]
+  end
+  subgraph Terraform_Resources["Terraform Resources"]
+    TerraformResource_envs_dev_aws_instance_app["envs/dev/aws_instance.app\n(TerraformResource)"]
+    TerraformResource_envs_dev_aws_s3_bucket_logs["envs/dev/aws_s3_bucket.logs\n(TerraformResource)"]
+    TerraformResource_envs_dev_aws_s3_bucket_policy_logs["envs/dev/aws_s3_bucket_policy.logs\n(TerraformResource)"]
+    TerraformResource_envs_prod_aws_s3_bucket_logs["envs/prod/aws_s3_bucket.logs\n(TerraformResource)"]
+    TerraformResource_modules_net_aws_subnet_a["modules/net/aws_subnet.a\n(TerraformResource)"]
+    TerraformResource_modules_net_aws_vpc_this["modules/net/aws_vpc.this\n(TerraformResource)"]
+  end
+  TerraformModule_envs_dev_module_net -->|includes| TerraformModule_modules_net
+  TerraformModule_envs_prod_module_net -->|includes| TerraformModule_modules_net
+  TerraformModule_modules_net -->|includes| TerraformData_modules_net_aws_availability_zones_disponiveis
+  TerraformModule_modules_net -->|includes| TerraformResource_modules_net_aws_subnet_a
+  TerraformModule_modules_net -->|includes| TerraformResource_modules_net_aws_vpc_this
+  TerraformResource_envs_dev_aws_instance_app -->|references| TerraformModule_envs_dev_module_net
+  TerraformResource_envs_dev_aws_instance_app -->|references| TerraformResource_envs_dev_aws_s3_bucket_logs
+  TerraformResource_envs_dev_aws_s3_bucket_policy_logs -->|references| TerraformResource_envs_dev_aws_s3_bucket_logs
+  TerraformResource_modules_net_aws_subnet_a -->|references| TerraformData_modules_net_aws_availability_zones_disponiveis
+  TerraformResource_modules_net_aws_subnet_a -->|references| TerraformResource_modules_net_aws_vpc_this

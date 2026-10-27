@@ -3,6 +3,7 @@ package analyzers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -90,14 +91,15 @@ module "eks" {
 		t.Fatal(err)
 	}
 
+	// As duas chamadas e o nó do diretório do módulo local
 	modCount := 0
 	for _, r := range result.Resources {
 		if r.Kind == "TerraformModule" {
 			modCount++
 		}
 	}
-	if modCount != 2 {
-		t.Errorf("esperado 2 TerraformModule, obteve %d", modCount)
+	if modCount != 3 {
+		t.Errorf("esperado 3 TerraformModule, obteve %d", modCount)
 	}
 
 	// Apenas o módulo local (./modules/vpc) deve gerar relação includes
@@ -257,8 +259,8 @@ module "network" {
 	for _, rel := range result.Relations {
 		if rel.Type == "includes" {
 			includesCount++
-			// O alvo deve ser o nome base do diretório
-			expected := "TerraformModule/network"
+			// O alvo é o diretório resolvido, mesmo fora da raiz varrida
+			expected := "TerraformModule/../modules/network"
 			if rel.To != expected {
 				t.Errorf("esperado relação para %q, obteve %q", expected, rel.To)
 			}
@@ -309,7 +311,45 @@ resource "aws_internet_gateway" "gw" {
 	if kinds["TerraformData"] != 1 {
 		t.Errorf("esperado 1 TerraformData, obteve %d", kinds["TerraformData"])
 	}
-	if kinds["TerraformModule"] != 1 {
-		t.Errorf("esperado 1 TerraformModule, obteve %d", kinds["TerraformModule"])
+	// A chamada e o nó do diretório ./modules/subnets
+	if kinds["TerraformModule"] != 2 {
+		t.Errorf("esperado 2 TerraformModule, obteve %d", kinds["TerraformModule"])
+	}
+}
+
+// module "net" { source = "./net" } na raiz não pode virar um laço: a chamada
+// se chama module.net e o módulo, pelo diretório net.
+func TestTerraformAnalyzer_Analyze_ModuloComMesmoNomeDoDiretorio(t *testing.T) {
+	dir := t.TempDir()
+	raiz := filepath.Join(dir, "main.tf")
+	filho := filepath.Join(dir, "net", "main.tf")
+	if err := os.MkdirAll(filepath.Dir(filho), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(raiz, []byte("module \"net\" {\n  source = \"./net\"\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filho, []byte("resource \"aws_vpc\" \"this\" {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&TerraformAnalyzer{}).Analyze(dir, []string{raiz, filho})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var relacoes []string
+	for _, rel := range result.Relations {
+		if rel.From == rel.To {
+			t.Errorf("laço em %s", rel.From)
+		}
+		relacoes = append(relacoes, rel.From+" -"+rel.Type+"-> "+rel.To)
+	}
+	esperadas := []string{
+		"TerraformModule/module.net -includes-> TerraformModule/net",
+		"TerraformModule/net -includes-> TerraformResource/net/aws_vpc.this",
+	}
+	if strings.Join(relacoes, "\n") != strings.Join(esperadas, "\n") {
+		t.Errorf("relações:\n%s\nesperadas:\n%s", strings.Join(relacoes, "\n"), strings.Join(esperadas, "\n"))
 	}
 }

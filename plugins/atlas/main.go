@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -151,9 +152,6 @@ func falhaJSON(saida, erros io.Writer, err error) int {
 	return 1
 }
 
-// ignoradosPadrao são as pastas que o Atlas nunca percorre.
-var ignoradosPadrao = []string{"node_modules", "vendor", ".git", ".idea", ".vscode"}
-
 // scanProject executa a descoberta de componentes no diretório atual,
 // aplicando configuração externa quando disponível.
 func scanProject() (*discovery.Blueprint, error) {
@@ -163,7 +161,7 @@ func scanProject() (*discovery.Blueprint, error) {
 	}
 
 	cfg := loadConfig()
-	ignores := append([]string(nil), ignoradosPadrao...)
+	ignores := append([]string(nil), discovery.IgnoradosPadrao...)
 	var rules []discovery.Rule
 	if cfg != nil {
 		if len(cfg.Ignores) > 0 {
@@ -237,8 +235,16 @@ func lerOpcoesDiagrama(args []string) (opcoesDiagrama, error) {
 	return op, nil
 }
 
-// arquivoDoDiagrama é onde o diagrama é gravado, relativo à pasta do projeto.
-var arquivoDoDiagrama = filepath.Join(".yby", "atlas-diagram.mmd")
+// arquivoDoDiagrama é onde o diagrama é gravado, relativo à pasta do projeto, e
+// arquivoDoRascunho, onde fica sempre o programático (o que a IA recebe para refinar).
+var (
+	arquivoDoDiagrama = filepath.Join(".yby", "atlas-diagram.mmd")
+	arquivoDoRascunho = filepath.Join(".yby", "atlas-diagram.raw.mmd")
+)
+
+// prazoDaIA é quanto o refinamento pode levar, somados todos os providers; passado o
+// prazo, fica o programático (trocado nos testes).
+var prazoDaIA = 60 * time.Second
 
 // handleDiagram gera diagrama da topologia de infraestrutura e salva em arquivo.
 func handleDiagram(args []string, saida, erros io.Writer) error {
@@ -258,7 +264,7 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 	defer parar()
 
 	prog.Iniciar("procurar a infraestrutura")
-	ignores := append([]string(nil), ignoradosPadrao...)
+	ignores := append([]string(nil), discovery.IgnoradosPadrao...)
 	cfg, errCfg := lerConfig()
 	if cfg != nil && len(cfg.Ignores) > 0 {
 		ignores = append(ignores, cfg.Ignores...)
@@ -299,21 +305,39 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 		ui.Passos(saida, "yby atlas diagram --detail full mostra todos os recursos")
 		return nil
 	}
-	prog.Concluir(fmt.Sprintf("%s · %s", plural(stats.VisibleResources, "nó", "nós"), plural(stats.Relations, "relação", "relações")))
+	prog.Concluir(fmt.Sprintf("%s · %s", plural(stats.Nodes, "nó", "nós"), plural(stats.Relations, "relação", "relações")))
+	rascunho := diagram
 
 	// Tentar refinar com IA (se disponível e habilitado)
 	prog.Iniciar("refinar com a IA")
-	if !op.useAI {
+	refinado := false
+	switch {
+	case !op.useAI:
 		prog.Pular("desligado com --no-ai")
-	} else {
+	case op.detail == analysis.DetailFull:
+		// O full promete todos os recursos; a IA reorganiza e resume, então não entra.
+		prog.Pular("o full mostra todos os recursos")
+	default:
 		summary := buildResourceSummary(infraBP)
-		refinedDiagram, source, refineErr := refineDiagramWithAI(context.Background(), diagram, summary)
+		ctx, cancelar := context.WithTimeout(context.Background(), prazoDaIA)
+		refinedDiagram, source, refineErr := refineDiagramWithAI(ctx, diagram, summary)
+		cancelar()
 		switch {
 		case refineErr == nil && refinedDiagram != "":
 			diagram = refinedDiagram
+			refinado = true
 			prog.Concluir(source)
 		case errors.Is(refineErr, errSemIA):
 			prog.Pular("sem IA disponível")
+		case errors.Is(refineErr, context.DeadlineExceeded):
+			slog.Debug("a IA passou do prazo; ficou o programático", "prazo", prazoDaIA, "erro", refineErr)
+			prog.Pular("a IA passou do prazo")
+			prog.Detalhe("ficou o diagrama montado a partir dos arquivos")
+		case errors.Is(refineErr, errDiagramaInvalido):
+			// O motivo (nó fora do rascunho, subgraph sem end) fica no log de depuração.
+			slog.Debug("o diagrama da IA não confere; ficou o programático", "erro", refineErr)
+			prog.Pular("o diagrama da IA não confere")
+			prog.Detalhe("ficou o diagrama montado a partir dos arquivos")
 		case errors.Is(refineErr, errSemDiagrama):
 			// A IA respondeu, mas sem um Mermaid: o motivo vai na etapa, e a resposta, no
 			// log de depuração.
@@ -327,33 +351,52 @@ func handleDiagram(args []string, saida, erros io.Writer) error {
 		}
 	}
 
-	// Salvar arquivo
+	// Salvar arquivo: o diagrama final e, ao lado, o programático, para comparar com o da IA
 	prog.Iniciar("gravar o diagrama")
 	if err := os.MkdirAll(filepath.Dir(arquivoDoDiagrama), 0755); err != nil {
 		prog.Falhar("")
 		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para criar a pasta .yby").
 			WithContext("pasta", filepath.Join(cwd, ".yby"))
 	}
-	if err := os.WriteFile(arquivoDoDiagrama, []byte(diagram), 0644); err != nil {
-		prog.Falhar("")
-		return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para gravar o diagrama").
-			WithContext("arquivo", filepath.Join(cwd, arquivoDoDiagrama))
+	for _, f := range []struct{ arquivo, texto string }{
+		{arquivoDoDiagrama, diagram},
+		{arquivoDoRascunho, rascunho},
+	} {
+		if err := os.WriteFile(f.arquivo, []byte(f.texto), 0644); err != nil {
+			prog.Falhar("")
+			return yerrors.Wrap(err, yerrors.ErrCodeIO, "não deu para gravar o diagrama").
+				WithContext("arquivo", filepath.Join(cwd, f.arquivo))
+		}
 	}
 	prog.Concluir("")
 	parar()
 
+	// As estatísticas são do que foi gravado: o diagrama da IA tem os nós e as arestas dele.
+	recursos := fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)
+	if stats.Agrupados > 0 {
+		recursos += fmt.Sprintf(" · %d agrupados por tipo", stats.Agrupados)
+	}
+	if refinado {
+		nos, arestas := analysis.ContarMermaid(diagram)
+		recursos = fmt.Sprintf("%s de %s", plural(nos, "nó", "nós"), plural(stats.TotalResources, "recurso", "recursos"))
+		stats.Relations = arestas
+	}
 	nivel := "full"
 	if op.detail == analysis.DetailOverview {
 		nivel = "overview · --detail full mostra todos os recursos"
 	}
-	ui.Section(saida, "diagrama")
-	ui.Campos(saida,
-		ui.Campo{Rotulo: "arquivo", Valor: filepath.ToSlash(arquivoDoDiagrama), Caminho: true},
-		ui.Campo{Rotulo: "recursos", Valor: fmt.Sprintf("%d de %d no diagrama", stats.VisibleResources, stats.TotalResources)},
+	campos := []ui.Campo{{Rotulo: "arquivo", Valor: filepath.ToSlash(arquivoDoDiagrama), Caminho: true}}
+	if refinado {
+		campos = append(campos, ui.Campo{Rotulo: "programático", Valor: filepath.ToSlash(arquivoDoRascunho), Caminho: true})
+	}
+	campos = append(campos,
+		ui.Campo{Rotulo: "recursos", Valor: recursos},
 		ui.Campo{Rotulo: "relações", Valor: fmt.Sprintf("%d", stats.Relations)},
 		ui.Campo{Rotulo: "analisadores", Valor: strings.Join(stats.Analyzers, ", ")},
 		ui.Campo{Rotulo: "nível", Valor: nivel},
 	)
+	ui.Section(saida, "diagrama")
+	ui.Campos(saida, campos...)
 	ui.Section(saida, "para ver")
 	ui.Passos(saida, "abra o arquivo em https://mermaid.live ou na extensão Mermaid do VS Code")
 	return nil
@@ -366,10 +409,16 @@ func plural(n int, singular, plur string) string {
 	return fmt.Sprintf("%d %s", n, plur)
 }
 
-// buildResourceSummary cria um resumo compacto dos recursos para o prompt da IA.
+// maxNomesPorKind é quantos nomes de cada kind vão no inventário do prompt; o resto vira
+// contagem, para um projeto grande não estourar o contexto da IA.
+const maxNomesPorKind = 10
+
+// buildResourceSummary cria um resumo compacto dos recursos para o prompt da IA: a
+// contagem por kind e os primeiros nomes. As relações não entram: já estão no rascunho,
+// com os IDs que a IA tem de usar, e repeti-las aqui ofereceria outros IDs.
 func buildResourceSummary(bp *discovery.InfraBlueprint) string {
 	var b strings.Builder
-	b.WriteString("INVENTARIO DE RECURSOS DESCOBERTOS:\n\n")
+	fmt.Fprintf(&b, "INVENTARIO DE RECURSOS DESCOBERTOS (%d recursos; as relacoes estao no rascunho):\n\n", len(bp.Resources))
 
 	// Agrupar por kind
 	byKind := make(map[string][]string)
@@ -390,36 +439,34 @@ func buildResourceSummary(bp *discovery.InfraBlueprint) string {
 
 	for _, kind := range kinds {
 		names := byKind[kind]
-		b.WriteString(fmt.Sprintf("%s (%d): %s\n", kind, len(names), strings.Join(names, ", ")))
-	}
-
-	b.WriteString(fmt.Sprintf("\nRELACOES (%d total):\n", len(bp.Relations)))
-	seen := make(map[string]bool)
-	for _, rel := range bp.Relations {
-		key := fmt.Sprintf("%s --%s--> %s", rel.From, rel.Type, rel.To)
-		if seen[key] {
-			continue
+		mais := ""
+		if len(names) > maxNomesPorKind {
+			mais = fmt.Sprintf(" e mais %d", len(names)-maxNomesPorKind)
+			names = names[:maxNomesPorKind]
 		}
-		seen[key] = true
-		b.WriteString(fmt.Sprintf("  %s\n", key))
+		fmt.Fprintf(&b, "%s (%d): %s%s\n", kind, len(byKind[kind]), strings.Join(names, ", "), mais)
 	}
 
 	return b.String()
 }
 
-// Por que o refinamento não trouxe diagrama: nenhuma IA disponível, ou alguma respondeu,
-// mas sem um Mermaid. Uma falha de todos os providers (fora do ar, cota) é outro erro.
+// Por que o refinamento não trouxe diagrama: nenhuma IA disponível, alguma respondeu sem
+// um Mermaid, ou respondeu com um Mermaid que não confere com o rascunho. O prazo vencido
+// vem como context.DeadlineExceeded; uma falha de todos os providers (fora do ar, cota) é
+// outro erro.
 var (
-	errSemIA       = errors.New("nenhum provider de IA disponível")
-	errSemDiagrama = errors.New("a resposta da IA não trouxe um diagrama Mermaid")
+	errSemIA            = errors.New("nenhum provider de IA disponível")
+	errSemDiagrama      = errors.New("a resposta da IA não trouxe um diagrama Mermaid")
+	errDiagramaInvalido = errors.New("o diagrama da IA não confere com o rascunho")
 )
 
-// refineDiagramWithAI tenta refinar o diagrama usando múltiplos providers em cascata.
-// Tenta cada provider disponível até um funcionar. Se nenhum trouxer diagrama, retorna
-// errSemIA (não há provider), errSemDiagrama (algum respondeu sem Mermaid) ou o último
-// erro dos providers.
+// refineDiagramWithAI tenta refinar o diagrama usando múltiplos providers em cascata,
+// até um devolver um Mermaid que passe no analysis.ValidarMermaid contra o rascunho. Se
+// nenhum trouxer, retorna o erro do prazo (ctx vencido, sem tentar os seguintes), errSemIA
+// (não há provider), errDiagramaInvalido (algum devolveu Mermaid que não confere),
+// errSemDiagrama (algum respondeu sem Mermaid) ou o último erro dos providers.
 func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary string) (string, string, error) {
-	userPrompt := fmt.Sprintf("DIAGRAMA RASCUNHO:\n\n%s\n\n%s\n\nProduza o diagrama Mermaid refinado:", mermaidDraft, resourceSummary)
+	userPrompt := fmt.Sprintf("DIAGRAMA RASCUNHO:\n\n%s\n\n%s\n\nProduza o diagrama Mermaid refinado, usando so os IDs de nos do rascunho:", mermaidDraft, resourceSummary)
 
 	// Montar lista de providers para tentar em ordem
 	providers := provedoresDeIA(ctx)
@@ -427,9 +474,12 @@ func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary stri
 		return "", "", errSemIA
 	}
 
-	var lastErr error
+	var lastErr, invalido error
 	respondeuSemDiagrama := false
 	for _, provider := range providers {
+		if ctx.Err() != nil {
+			break
+		}
 		result, err := provider.Completion(ctx, prompts.Get("atlas.refine"), userPrompt)
 		if err != nil {
 			slog.Debug("o provider falhou; tentando o próximo", "provider", provider.Name(), "erro", err)
@@ -438,16 +488,25 @@ func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary stri
 		}
 
 		refined := extractMermaidFromResponse(result)
-		if refined == "" || !strings.Contains(refined, "flowchart") {
-			slog.Debug("o provider não devolveu um Mermaid válido; tentando o próximo", "provider", provider.Name(), "resposta", result)
-			respondeuSemDiagrama = true
+		if err := analysis.ValidarMermaid(refined, mermaidDraft); err != nil {
+			slog.Debug("o provider não devolveu um Mermaid válido; tentando o próximo", "provider", provider.Name(), "motivo", err, "resposta", result)
+			if errors.Is(err, analysis.ErrNaoEhMermaid) {
+				respondeuSemDiagrama = true
+			} else {
+				invalido = err
+			}
 			continue
 		}
 
 		return refined, provider.Name(), nil
 	}
 
-	if respondeuSemDiagrama {
+	switch {
+	case ctx.Err() != nil:
+		return "", "", fmt.Errorf("a IA não respondeu no prazo: %w", ctx.Err())
+	case invalido != nil:
+		return "", "", fmt.Errorf("%w: %w", errDiagramaInvalido, invalido)
+	case respondeuSemDiagrama:
 		return "", "", errSemDiagrama
 	}
 	return "", "", fmt.Errorf("todos os providers falharam, último erro: %w", lastErr)
@@ -457,8 +516,8 @@ func refineDiagramWithAI(ctx context.Context, mermaidDraft, resourceSummary stri
 func extractMermaidFromResponse(response string) string {
 	response = strings.TrimSpace(response)
 
-	// Se começa com flowchart, já é Mermaid puro
-	if strings.HasPrefix(response, "flowchart") {
+	// Se começa com flowchart ou graph, já é Mermaid puro
+	if strings.HasPrefix(response, "flowchart") || strings.HasPrefix(response, "graph") {
 		return response
 	}
 

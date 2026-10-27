@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,6 +20,8 @@ import (
 	yerrors "github.com/casheiro/yby-cli/pkg/errors"
 	"github.com/casheiro/yby-cli/pkg/logger"
 	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
+	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -36,6 +40,15 @@ func TestMain(m *testing.M) {
 	dirTestdata = filepath.Join(wd, "testdata")
 	// A home dos testes (e dos binários que eles rodam) é temporária: o
 	// ~/.yby/config.yaml de verdade não muda o visual nem o log.
+	// Com a home trocada o go não acharia o cache de compilação nem o de módulos
+	// e o `go build` do helperBuildAtlas partiria do zero: fixa os dois antes.
+	if saida, err := exec.Command("go", "env", "GOCACHE", "GOMODCACHE").Output(); err == nil {
+		linhas := strings.Fields(string(saida))
+		if len(linhas) == 2 {
+			os.Setenv("GOCACHE", linhas[0])
+			os.Setenv("GOMODCACHE", linhas[1])
+		}
+	}
 	dir, err := os.MkdirTemp("", "atlas-home-")
 	if err != nil {
 		panic(err)
@@ -47,6 +60,9 @@ func TestMain(m *testing.M) {
 	}
 	codigo := m.Run()
 	os.RemoveAll(dir)
+	if binAtlasDir != "" {
+		os.RemoveAll(binAtlasDir)
+	}
 	os.Exit(codigo)
 }
 
@@ -108,16 +124,25 @@ type provedorFalso struct {
 	chamadas int
 	// aviso, se não vazio, é logado com slog.Warn a cada Completion.
 	aviso string
+	// travar faz o Completion esperar o contexto acabar, como uma IA que não responde.
+	travar bool
 }
 
 func (p *provedorFalso) Name() string { return p.nome }
-func (p *provedorFalso) Completion(context.Context, string, string) (string, error) {
+func (p *provedorFalso) Completion(ctx context.Context, _, _ string) (string, error) {
 	p.chamadas++
 	if p.aviso != "" {
 		slog.Warn(p.aviso)
 	}
+	if p.travar {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	return p.resposta, p.err
 }
+
+// refinadoDoChart é um Mermaid válido para o projetoComChart: usa os IDs do rascunho.
+const refinadoDoChart = "flowchart TD\n  subgraph app[\"Aplicação\"]\n    HelmChart_api[\"API\"] -->|implanta| Deployment_api_server[\"api-server\"]\n  end\n  HelmChart_api -->|depende de| HelmRepository_redis[(Redis)]"
 
 // usarDependencias troca a IA por falsos, fixa o relógio, a largura (64) e a detecção de
 // terminal (fora dele), e restaura tudo no fim.
@@ -221,7 +246,7 @@ func TestDiagram_GoldenSemIA(t *testing.T) {
 func TestDiagram_GoldenComIA(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.TrueColor)
 	falho := &provedorFalso{nome: "ollama", err: errors.New("fora do ar")}
-	bom := &provedorFalso{nome: "gemini-cli", resposta: "```mermaid\nflowchart TD\n  api[API] --> redis[(Redis)]\n```"}
+	bom := &provedorFalso{nome: "gemini-cli", resposta: "```mermaid\n" + refinadoDoChart + "\n```"}
 	usarDependencias(t, falho, bom)
 	raiz := projetoComChart(t)
 	log := capturarLog(t)
@@ -236,8 +261,13 @@ func TestDiagram_GoldenComIA(t *testing.T) {
 		t.Errorf("nada no stderr nem no log no nível info, obtido %q e %q", erros, log.String())
 	}
 	mmd, err := os.ReadFile(filepath.Join(raiz, ".yby", "atlas-diagram.mmd"))
-	if err != nil || string(mmd) != "flowchart TD\n  api[API] --> redis[(Redis)]" {
+	if err != nil || string(mmd) != refinadoDoChart {
 		t.Errorf("o .mmd é o diagrama refinado, obtido %q (%v)", mmd, err)
+	}
+	// o programático fica ao lado, para comparar com o da IA
+	raw, err := os.ReadFile(filepath.Join(raiz, ".yby", "atlas-diagram.raw.mmd"))
+	if err != nil || !strings.Contains(string(raw), "HelmChart_api -->|deploys| Deployment_api_server") {
+		t.Errorf("o .raw.mmd é o diagrama programático, obtido %q (%v)", raw, err)
 	}
 	if falho.chamadas != 1 || bom.chamadas != 1 {
 		t.Errorf("cascata de providers: %d e %d chamadas", falho.chamadas, bom.chamadas)
@@ -265,7 +295,7 @@ func TestDiagram_IAIndisponivelPula(t *testing.T) {
 		usarDependencias(t, c.provs...)
 		projetoComChart(t)
 		log := capturarLog(t)
-		saida, erros, err := rodar(t, "diagram", "-d", "full")
+		saida, erros, err := rodar(t, "diagram", "-d", "overview")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +337,7 @@ func TestDiagram_AtlasYamlIlegivelAvisaUmaVez(t *testing.T) {
 
 func TestDiagram_NoTerminalRedesenhaEDesviaOLog(t *testing.T) {
 	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
-	prov := &provedorFalso{nome: "gemini-cli", aviso: "a IA demorou para responder", resposta: "flowchart TD\n  api[API] --> redis[(Redis)]"}
+	prov := &provedorFalso{nome: "gemini-cli", aviso: "a IA demorou para responder", resposta: refinadoDoChart}
 	usarDependencias(t, prov)
 	projetoComChart(t)
 	log := capturarLog(t)
@@ -350,6 +380,32 @@ func TestDiagram_SemInfra(t *testing.T) {
 	}
 }
 
+// No overview, acima do teto, a etapa conta os nós desenhados e o resumo diz
+// quantos recursos foram agrupados.
+func TestDiagram_OverviewComTetoContaOsNosDesenhados(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	usarDependencias(t)
+	raiz := t.TempDir()
+	var manifesto strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&manifesto, "---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: app-%02d\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(raiz, "deploys.yaml"), []byte(manifesto.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(raiz)
+
+	saida, _, err := rodar(t, "diagram", "--no-ai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, trecho := range []string{"1 nó · 0 relações", "30 de 30 no diagrama · 30 agrupados por tipo"} {
+		if !strings.Contains(saida, trecho) {
+			t.Errorf("faltou %q na saída:\n%s", trecho, saida)
+		}
+	}
+}
+
 func TestDiagram_FlagsInvalidas(t *testing.T) {
 	usarDependencias(t)
 	for _, args := range [][]string{
@@ -374,5 +430,130 @@ func TestSairComErro_FormatoDoUI(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "ERR_VALIDATION") || !strings.Contains(b.String(), "faça") {
 		t.Errorf("erro fora do formato do ui.WriteError:\n%s", b.String())
+	}
+}
+
+func TestDiagram_FullNaoPassaPelaIA(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	prov := &provedorFalso{nome: "falso", resposta: "flowchart TD\n  a --> b"}
+	usarDependencias(t, prov)
+	raiz := projetoComChart(t)
+	saida, _, err := rodar(t, "diagram", "-d", "full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prov.chamadas != 0 {
+		t.Errorf("o full mostra todos os recursos e não passa pela IA, houve %d chamadas", prov.chamadas)
+	}
+	if !strings.Contains(saida, "○ refinar com a IA") {
+		t.Errorf("a etapa da IA é pulada com o motivo:\n%s", saida)
+	}
+	mmd, err := os.ReadFile(filepath.Join(raiz, ".yby", "atlas-diagram.mmd"))
+	if err != nil || strings.Contains(string(mmd), "a --> b") {
+		t.Errorf("o .mmd é o programático, obtido %q (%v)", mmd, err)
+	}
+}
+
+func TestDiagram_EstatisticasSaoDoQueFoiGravado(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	usarDependencias(t, &provedorFalso{nome: "falso", resposta: "flowchart TD\n  HelmChart_api[API] --> Deployment_api_server[api-server]"})
+	projetoComChart(t)
+	saida, _, err := rodar(t, "diagram")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saida, "2 nós de 3 recursos") || strings.Contains(saida, "3 de 3") {
+		t.Errorf("recursos reflete os 2 nós gravados:\n%s", saida)
+	}
+	if !strings.Contains(saida, "relações      1") {
+		t.Errorf("relações reflete a 1 aresta gravada:\n%s", saida)
+	}
+}
+
+// Resposta da IA que não é um Mermaid que confere com o rascunho não é gravada: fica o
+// programático, e a etapa diz o motivo.
+func TestDiagram_MermaidInvalidoDaIAFicaOProgramatico(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	casos := []struct{ nome, resposta, etapa string }{
+		{"prosa com a palavra flowchart", "Aqui está o flowchart:\nA-->B", "a resposta veio sem diagrama"},
+		{"subgraph sem end", "flowchart TD\n subgraph x\n HelmChart_api[API] --> Deployment_api_server[api]", "o diagrama da IA não confere"},
+		{"nós fora do rascunho", "```mermaid\nflowchart TD\n  api[API] --> redis[(Redis)]\n```", "o diagrama da IA não confere"},
+		{"aresta para nó não declarado", "flowchart TD\n  HelmChart_api[API] --> Deployment_api_server", "o diagrama da IA não confere"},
+	}
+	for _, c := range casos {
+		usarDependencias(t, &provedorFalso{nome: "gemini-cli", resposta: c.resposta})
+		raiz := projetoComChart(t)
+		saida, _, err := rodar(t, "diagram")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(saida, "○ refinar com a IA   "+c.etapa) || !strings.Contains(saida, "ficou o diagrama montado a partir dos arquivos") {
+			t.Errorf("%s: a etapa diz que ficou o programático (%q):\n%s", c.nome, c.etapa, saida)
+		}
+		mmd, err := os.ReadFile(filepath.Join(raiz, ".yby", "atlas-diagram.mmd"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := os.ReadFile(filepath.Join(raiz, ".yby", "atlas-diagram.raw.mmd"))
+		if strings.Contains(string(mmd), "A-->B") || strings.Contains(string(mmd), "redis[(Redis)]") || string(mmd) != string(raw) {
+			t.Errorf("%s: o .mmd é o programático, obtido %q", c.nome, mmd)
+		}
+	}
+}
+
+// A IA tem prazo: um provider que não responde não trava o diagram.
+func TestDiagram_IAComPrazo(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro, SemCor: true}, termenv.Ascii)
+	travado := &provedorFalso{nome: "ollama", travar: true}
+	depois := &provedorFalso{nome: "gemini-cli", resposta: refinadoDoChart}
+	usarDependencias(t, travado, depois)
+	anterior := prazoDaIA
+	t.Cleanup(func() { prazoDaIA = anterior })
+	prazoDaIA = 50 * time.Millisecond
+	raiz := projetoComChart(t)
+
+	type resultado struct {
+		saida string
+		err   error
+	}
+	fim := make(chan resultado, 1)
+	go func() {
+		saida, _, err := rodar(t, "diagram")
+		fim <- resultado{saida, err}
+	}()
+	select {
+	case r := <-fim:
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		if !strings.Contains(r.saida, "○ refinar com a IA   a IA passou do prazo") || !strings.Contains(r.saida, "ficou o diagrama montado a partir dos arquivos") {
+			t.Errorf("a etapa diz que a IA passou do prazo:\n%s", r.saida)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("o diagram travou esperando a IA")
+	}
+	if depois.chamadas != 0 {
+		t.Errorf("depois do prazo, nenhum outro provider é chamado: %d chamadas", depois.chamadas)
+	}
+	if _, err := os.Stat(filepath.Join(raiz, ".yby", "atlas-diagram.mmd")); err != nil {
+		t.Errorf("o programático é gravado: %v", err)
+	}
+}
+
+func TestResumoDoInventario_GrandeEhResumido(t *testing.T) {
+	bp := &discovery.InfraBlueprint{}
+	for i := 0; i < 40; i++ {
+		bp.Resources = append(bp.Resources, analyzers.InfraResource{Kind: "Deployment", Name: fmt.Sprintf("app-%02d", i), Namespace: "loja"})
+	}
+	bp.Resources = append(bp.Resources, analyzers.InfraResource{Kind: "Service", Name: "api"})
+	resumo := buildResourceSummary(bp)
+	if !strings.Contains(resumo, "Deployment (40): loja/app-00") || !strings.Contains(resumo, "e mais 30") {
+		t.Errorf("um kind grande mostra os primeiros nomes e a contagem do resto:\n%s", resumo)
+	}
+	if strings.Contains(resumo, "app-10") {
+		t.Errorf("os nomes além do limite não vão no prompt:\n%s", resumo)
+	}
+	if !strings.Contains(resumo, "Service (1): api\n") {
+		t.Errorf("um kind pequeno vai inteiro:\n%s", resumo)
 	}
 }

@@ -3,6 +3,7 @@ package analyzers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -164,6 +165,10 @@ metadata:
 spec:
   replicas: 1
   template:
+    metadata:
+      labels:
+        app: api
+        tier: backend
     spec:
       containers:
       - name: api
@@ -189,6 +194,65 @@ spec:
 	}
 	if !found {
 		t.Errorf("esperado relação 'selects' de Service/prod/api-svc para Deployment/prod/api, relações: %+v", result.Relations)
+	}
+}
+
+func TestK8sAnalyzer_ServiceSelecaSoWorkloadDoMesmoNamespace(t *testing.T) {
+	dir := t.TempDir()
+	file := writeTestFile(t, dir, "svc.yaml", `
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: prod
+spec:
+  selector:
+    app: api
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cfg
+  namespace: prod
+  labels:
+    app: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: prod
+spec:
+  template:
+    metadata:
+      labels:
+        app: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: dev
+spec:
+  template:
+    metadata:
+      labels:
+        app: api
+`)
+
+	result, err := NewK8sAnalyzer().Analyze(dir, []string{file})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var alvos []string
+	for _, rel := range result.Relations {
+		if rel.Type == "selects" {
+			alvos = append(alvos, rel.To)
+		}
+	}
+	if len(alvos) != 1 || alvos[0] != "Deployment/prod/api" {
+		t.Errorf("esperado só Deployment/prod/api, veio %v", alvos)
 	}
 }
 
@@ -568,7 +632,7 @@ metadata:
 		t.Fatalf("esperado 1 recurso, obtido %d", len(result.Resources))
 	}
 
-	expectedPath := filepath.Join("k8s", "base", "deploy.yaml")
+	expectedPath := "k8s/base/deploy.yaml"
 	if result.Resources[0].Path != expectedPath {
 		t.Errorf("esperado Path '%s', obtido '%s'", expectedPath, result.Resources[0].Path)
 	}
@@ -632,5 +696,52 @@ func TestLabelsMatch(t *testing.T) {
 	labelsParciais := map[string]string{"app": "web"}
 	if labelsMatch(selector, labelsParciais) {
 		t.Error("esperado não-match quando labels não contêm todas as chaves do selector")
+	}
+}
+
+func TestK8sAnalyzer_PlanoKustomize(t *testing.T) {
+	dir := t.TempDir()
+	recursos := writeTestFile(t, dir, "base/recursos.yaml", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cfg
+  namespace: original
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: leitor
+`)
+	patch := writeTestFile(t, dir, "prod/patch.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cfg\n")
+	a := NewK8sAnalyzer()
+	a.Kustomize = &PlanoKustomize{
+		Patches:    map[string]bool{"prod/patch.yaml": true},
+		Namespaces: map[string][]string{"base/recursos.yaml": {"", "prod", "staging"}},
+		Donos:      map[string][]string{"base/recursos.yaml": {"Kustomization/base"}},
+	}
+	result, err := a.Analyze(dir, []string{recursos, patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ids []string
+	for _, r := range result.Resources {
+		ids = append(ids, r.ID())
+	}
+	// "" mantém o namespace do manifest; o ClusterRole não ganha namespace e
+	// aparece uma vez só; o patch não vira recurso.
+	esperados := "ConfigMap/original/cfg,ConfigMap/prod/cfg,ConfigMap/staging/cfg,ClusterRole/leitor"
+	if strings.Join(ids, ",") != esperados {
+		t.Errorf("recursos: esperado %s, obteve %s", esperados, strings.Join(ids, ","))
+	}
+
+	var includes []string
+	for _, rel := range result.Relations {
+		if rel.Type == "includes" && rel.From == "Kustomization/base" {
+			includes = append(includes, rel.To)
+		}
+	}
+	if strings.Join(includes, ",") != esperados {
+		t.Errorf("includes: esperado %s, obteve %s", esperados, strings.Join(includes, ","))
 	}
 }

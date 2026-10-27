@@ -1,6 +1,9 @@
 package analyzers
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // InfraResource representa um recurso de infraestrutura descoberto.
 type InfraResource struct {
@@ -42,4 +45,14 @@ type Analyzer interface {
 	// Analyze recebe o path raiz do projeto e os arquivos relevantes,
 	// retornando os recursos e relações encontrados.
 	Analyze(rootPath string, files []string) (*AnalyzerResult, error)
+}
+
+// relSlash devolve o caminho de target relativo a base, sempre com '/', para que
+// IDs e caminhos do blueprint não mudem com o sistema operacional.
+func relSlash(base, target string) (string, error) {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }

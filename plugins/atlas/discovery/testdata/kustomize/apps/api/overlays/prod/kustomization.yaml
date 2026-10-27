@@ -1,0 +1,6 @@
+namespace: prod
+resources:
+  - ../../base
+  - ingress.yaml
+patches:
+  - path: patch.yaml

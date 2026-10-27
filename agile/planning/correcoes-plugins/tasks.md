@@ -3,7 +3,7 @@
 > **Fonte da verdade do progresso.** Toda sessão de trabalho começa e termina neste arquivo.
 > **Origem:** revisão de 26/10/2026, com um agente por plugin. Os relatórios citavam arquivo e linha; as linhas abaixo são aproximadas e devem ser conferidas antes de editar. ✓ = conferido no código pela sessão principal; ▶ = reproduzido pelo agente rodando.
 > **Escopo (decisão do usuário, 26/10/2026):** corrigir **tudo o que é erro ou está errado em relação à proposta do plugin**. Ficam de fora **features novas e perfumaria**, que estão na seção "Fora do escopo" no fim deste arquivo. Na dúvida entre "conserto" e "feature", vale a pergunta: o plugin promete isso (ajuda, README, CLAUDE.md, nome da flag) e não entrega? Se sim, é conserto.
-> **Verificação geral:** `go test ./pkg/... ./plugins/bard/... ./plugins/atlas/... ./cmd/...` + `go test -tags k8s ./plugins/sentinel/...` + `(cd plugins/viz && go test ./...)` + `(cd plugins/synapstor && go test ./...)` + lint. Compare com a develop usando `falhas.sh`: só podem falhar os 12 testes que já falham no Windows (lista em `agile/sessoes/estado.md`).
+> **Verificação geral:** `go test ./pkg/... ./plugins/bard/... ./plugins/atlas/... ./cmd/...` + `go test -tags k8s ./plugins/sentinel/...` + `(cd plugins/viz && go test ./...)` + `(cd plugins/synapstor && go test ./...)` + lint. Compare com a develop usando `falhas.sh`: só podem falhar os 11 testes que já falham no Windows (lista em `agile/sessoes/estado.md`).
 
 ## Decisões do usuário (26/10/2026, 2ª sessão)
 
@@ -443,7 +443,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
 
 > **Conferência (26/10):** os analyzers ficam em `plugins/atlas/discovery/analyzers/*.go`, e não em `plugins/atlas/analysis/` (lá estão só `diagram.go`, `cycles.go`, `metrics.go` e `diff.go`). O A12 (ordem determinística e goldens) e o A11 (`ToSlash`, caminhos relativos) vêm primeiro, porque os outros verificam por golden e mexem nos mesmos IDs. O A10 precisa reescrever o prompt `AtlasRefine` para manter os IDs do rascunho, senão quase toda resposta válida seria recusada.
 
-- [ ] **A01 · Relações falsas e duplicadas no blueprint**
+- [x] **A01 · Relações falsas e duplicadas no blueprint**
   - **Problema:**
     - `detectDockerfileRelations` faz `strings.Contains(line, relPath)` (`plugins/atlas/discovery/scanner.go:~235-247`): o `.` casa com qualquer COPY e "api" casa com "apigateway";
     - `detectGoImportRelations` cria uma relação por pacote, sem deduplicar, e casa por `HasPrefix` sem fronteira (`~370-387`), lendo só a pasta raiz e só blocos `import (`.
@@ -454,15 +454,15 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - o módulo mais longo com fronteira `/`;
     - aceitar `import "x"` de linha única.
   - **Verificar:** testes com fixture.
-- [ ] **A02 · `--detail full` não é desfeito pela IA**
+- [x] **A02 · `--detail full` não é desfeito pela IA**
   - **Problema:** o refinamento roda em qualquer nível (`plugins/atlas/main.go:~305-310`) com o prompt "no maximo 15-25 nos" (`pkg/ai/prompts/defaults.go:~181,190`). As estatísticas impressas são do diagrama programático, não do gravado.
   - **Fazer:** pular a IA no `full` (ou usar um prompt que preserve todos os nós); estatísticas do que foi gravado.
   - **Verificar:** teste.
-- [ ] **A03 · Overview sem sumir com o que não tem relação; teto programático**
+- [x] **A03 · Overview sem sumir com o que não tem relação; teto programático**
   - **Problema:** `diagram.go:~326-333` tira todo recurso sem aresta, e Terraform e Compose sem `depends_on` somem. `GetInfraStats` (`~394-403`) não aplica o mesmo filtro. O "max 25 nós" do CLAUDE.md só existe no prompt da IA, e com `--no-ai` não há teto.
   - **Fazer:** manter workloads, charts, módulos e serviços isolados; teto programático (agrupar por kind acima de N); estatísticas dos nós desenhados.
   - **Verificar:** goldens (A12).
-- [ ] **A04 · Kustomize**
+- [x] **A04 · Kustomize**
   - **Problema:**
     - o recurso se chama pelo diretório relativo inteiro (`analysis/kustomize.go:~81-92`), mas a referência usa só o último segmento (`~135-160`): os IDs nunca batem;
     - `resources: [deploy.yaml]` vira `Kustomization/deploy.yaml`;
@@ -474,15 +474,15 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - excluir do analyzer K8s os arquivos de `patches`/`patchesStrategicMerge`;
     - aplicar o `namespace` herdado.
   - **Verificar:** fixture base+overlay e golden.
-- [ ] **A05 · Service seleciona workload**
+- [x] **A05 · Service seleciona workload**
   - **Problema:** `analysis/k8s.go:~204-219` compara o selector com `metadata.labels` de qualquer recurso. O Service "seleciona" ConfigMap e não o Deployment.
   - **Fazer:** só workloads (Deployment, StatefulSet, DaemonSet, Pod, Job), via `spec.template.metadata.labels`, no mesmo namespace.
   - **Verificar:** teste.
-- [ ] **A06 · Compose com sintaxe longa e overrides**
+- [x] **A06 · Compose com sintaxe longa e overrides**
   - **Problema:** `Ports []string`/`Volumes []string` (`analysis/compose.go:~24,26`): a sintaxe longa derruba o arquivo inteiro. Só nomes exatos contam (`scanner.go:~519-527`).
   - **Fazer:** `UnmarshalYAML` tolerante; aceitar `*compose*.y*ml` e `docker-compose.*.yml`.
   - **Verificar:** teste.
-- [ ] **A07 · Helm: nome dos templates**
+- [x] **A07 · Helm: nome dos templates**
   - **Problema:** `nameRe` com `(\S+)` (`analysis/helm.go:~189`) captura `{{` e tudo vira `Deployment/{{`, que o diagrama descarta. `templates/` sem recursão (`~195`). `HelmRepository` duplicado entre charts. O check de `_helpers.tpl`/`NOTES.txt` (`~211`) nunca é alcançado.
   - **Fazer:**
     - nome templado → `<chart>-<kind>` (ou `<chart>/<arquivo>`);
@@ -490,7 +490,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - deduplicar repositórios;
     - limpar o check inalcançável.
   - **Verificar:** fixture de chart real e golden.
-- [ ] **A08 · Terraform**
+- [x] **A08 · Terraform**
   - **Problema:**
     - `module "net" { source = "../../modules/net" }` gera um self-loop (`analysis/terraform.go:~135-141`);
     - o módulo não liga aos recursos do filho;
@@ -503,7 +503,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prefixar o ID com o diretório;
     - extrair referências `tipo.nome.`/`module.x.` por regex.
   - **Verificar:** fixture e golden.
-- [ ] **A09 · Varredura: ignorados, `.gitignore` e caminho relativo**
+- [x] **A09 · Varredura: ignorados, `.gitignore` e caminho relativo**
   - **Problema:**
     - só `node_modules`, `vendor`, `.git`, `.idea` e `.vscode` são ignorados (`main.go:~155`);
     - `ShouldIgnore` testa os segmentos do caminho **absoluto** (`discovery/scanner.go:~18-28`): um projeto dentro de `.../vendor/proj` não acha nada;
@@ -518,7 +518,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - aceitar CRLF;
     - usar ou apagar o cache (A13).
   - **Verificar:** testes.
-- [ ] **A10 · Mermaid da IA validado e com prazo**
+- [x] **A10 · Mermaid da IA validado e com prazo**
   - **Problema:**
     - basta `strings.Contains(refined, "flowchart")` (`main.go:~441`), e `extractMermaidFromResponse` devolve a resposta inteira como fallback (`~477-478`);
     - nada confere os nós contra o inventário;
@@ -531,18 +531,18 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - prazo de ~60 s;
     - inventário resumido quando grande.
   - **Verificar:** testes com respostas falsas.
-- [ ] **A11 · Caminhos no Windows**
+- [x] **A11 · Caminhos no Windows**
   - **Problema:**
     - `filepath.Rel` sem `ToSlash` (`scanner.go`, `kustomize.go:~81`, `helm.go:~65`);
     - `infraNodeID` apaga o `\` (`diagram.go:~199`), e o ID muda com o SO;
     - o blueprint leva caminhos absolutos (`Component.Path`, `Roots`).
   - **Fazer:** `ToSlash` na borda de cada analyzer e no blueprint; caminhos relativos.
   - **Verificar:** testes que rodam igual no Windows e no Linux.
-- [ ] **A12 · Saída ordenada, goldens e testes rápidos**
+- [x] **A12 · Saída ordenada, goldens e testes rápidos**
   - **Problema:** a ordem de mapas (`helm.go:~94`, `terraform.go:~54`, `range cf.Services`) muda o `.mmd` a cada execução. `helperBuildAtlas` faz `go build` em cada teste (`main_test.go:~19-31`), e o pacote leva ~68 s.
   - **Fazer:** ordenar recursos e relações no fim do `ScanInfra`; goldens de `GenerateInfraMermaid` com as fixtures dos itens A04 a A08; compilar uma vez (`TestMain`) ou chamar `executar()` no processo.
   - **Verificar:** dois `diagram` seguidos dão o mesmo arquivo; o pacote abaixo de ~15 s.
-- [ ] **A13 · Código morto**
+- [x] **A13 · Código morto**
   - **Problema:** sem uso fora dos testes:
     - `analysis.GenerateMermaid`, `ValidateDiagram` e `GenerateC4` (`diagram.go:~13-166`);
     - `cycles.go`, `metrics.go` e `diff.go`;
@@ -701,6 +701,19 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 
 | Data | Tarefa | O que foi feito | Commit |
 |---|---|---|---|
+| 26/10/2026 | A12 | ScanInfra e o analyzer de compose ordenam recursos e relações (diagrama determinístico), goldens do GenerateInfraMermaid e o atlas compilado uma só vez nos testes (pacote de ~72 s para ~8 s) | este commit |
+| 26/10/2026 | A11 | `relSlash` (ToSlash) em todos os analyzers e no scanner, Kustomize/Helm com `path`, e o blueprint sai com caminhos relativos (`Component.Path`, `Roots=["."]`, `RootPath="."`) | este commit |
+| 26/10/2026 | A05 | Service passa a selecionar só workloads (Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob) pelos labels do template do pod e no mesmo namespace | este commit |
+| 26/10/2026 | A06 | Compose aceita ports e volumes na sintaxe longa, reconhece docker-compose.*.yml e compose.*.yml e mescla base e override em um nó só por serviço | este commit |
+| 26/10/2026 | A09 | Varredura testa o caminho relativo à raiz, ignora também dist/build/target/.venv/.next/.terraform/coverage/__pycache__, respeita o .gitignore via `git ls-files` (com fallback sem git), lê cada YAML uma vez e reconhece SOPS com CRLF | este commit |
+| 26/10/2026 | A07 | Helm: nome templado vira <chart>-<kind>, templates/ é varrido com subpastas, HelmRepository deduplicado por (repositório, nome) e charts processados em ordem estável | este commit |
+| 26/10/2026 | A01 | Relações do blueprint sem falsos positivos: COPY casa por segmento e nunca a raiz, imports Go pelo módulo mais longo com fronteira `/` (linha única e subpastas via go/parser), relações deduplicadas por (from, to, type) | este commit |
+| 26/10/2026 | A04 | Kustomize: Kustomization identificada pelo diretório relativo (referências resolvidas pelo caminho), ligada aos recursos dos manifests que lista, patches fora do analyzer K8s e namespace herdado aplicado antes das relações (uma cópia por overlay), com fixture base+overlays e golden | este commit |
+| 26/10/2026 | A08 | Terraform: IDs prefixados com o diretório, a chamada `module.x` com source local liga ao nó do diretório resolvido (que liga aos blocos dele, sem o laço de antes) e referências `tipo.nome`/`data.`/`module.` viram relações `references`, sem contar comentários e texto de strings, com fixture envs/dev+prod e golden | este commit |
+| 26/10/2026 | A03 | Overview mantém workloads, charts, apps, módulos e serviços do compose isolados (e tudo, se nada mais sobrar), agrupa por kind acima de 25 nós (`MaxNosOverview`, arestas reapontadas e sem repetir) e o `GetInfraStats` conta os nós e arestas desenhados, com testes e golden do teto | este commit |
+| 26/10/2026 | A02 | O `--detail full` não passa mais pela IA (etapa pulada com o motivo) e as estatísticas de recursos e relações vêm do diagrama gravado, contando nós e arestas do Mermaid da IA (`ContarMermaid`), com testes e goldens | este commit |
+| 26/10/2026 | A10 | O Mermaid da IA só substitui o programático se passar no `analysis.ValidarMermaid` (flowchart/graph, subgraph e end fechados, arestas entre nós declarados, nós só com IDs do rascunho, que o prompt `atlas.refine` agora manda manter), com prazo de 60 s pelo contexto, o programático sempre em `.yby/atlas-diagram.raw.mmd` e o inventário do prompt resumido (10 nomes por kind, sem as relações) | este commit |
+| 26/10/2026 | A13 | Código morto apagado: analysis (GenerateMermaid, ValidateDiagram, GenerateC4, cycles, metrics, diff) e discovery (cache, Scan, Match), com os testes deles; o TestGenerateMermaid_PathsAbsolutos sai junto e a lista de falhas do Windows cai para 11 | este commit |
 
 ### Fase 6 · Viz
 
