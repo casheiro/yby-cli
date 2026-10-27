@@ -83,8 +83,8 @@ func TestKubectlLogs_Parametros(t *testing.T) {
 		t.Fatal("ferramenta kubectl_logs não encontrada")
 	}
 
-	if len(tool.Parameters) != 3 {
-		t.Fatalf("esperava 3 parâmetros, obteve %d", len(tool.Parameters))
+	if len(tool.Parameters) != 5 {
+		t.Fatalf("esperava 5 parâmetros, obteve %d", len(tool.Parameters))
 	}
 
 	if !tool.Parameters[0].Required {
@@ -99,8 +99,8 @@ func TestKubectlEvents_Parametros(t *testing.T) {
 		t.Fatal("ferramenta kubectl_events não encontrada")
 	}
 
-	if len(tool.Parameters) != 1 {
-		t.Fatalf("esperava 1 parâmetro, obteve %d", len(tool.Parameters))
+	if len(tool.Parameters) != 2 {
+		t.Fatalf("esperava 2 parâmetros, obteve %d", len(tool.Parameters))
 	}
 
 	if tool.Parameters[0].Required {
@@ -276,6 +276,37 @@ func TestConferirParams_NomesValidos(t *testing.T) {
 		_, err := executeKubectlGet(context.Background(), map[string]string{"resource": "secrets", "output_format": formato})
 		if err == nil || strings.Contains(err.Error(), "formato") {
 			t.Errorf("-o %q deveria chegar ao kubectl (ausente no teste), veio: %v", formato, err)
+		}
+	}
+}
+
+// kubectl_events com pod filtra pelo objeto; sem pod, o namespace inteiro.
+func TestKubectlEvents_FiltraPeloPod(t *testing.T) {
+	args := strings.Join(argsKubectlEvents(map[string]string{"pod": "api-1", "namespace": "prod"}), " ")
+	if !strings.Contains(args, "--field-selector=involvedObject.name=api-1") || !strings.Contains(args, "-n prod") {
+		t.Errorf("args sem o filtro do pod: %s", args)
+	}
+	if strings.Contains(strings.Join(argsKubectlEvents(map[string]string{}), " "), "field-selector") {
+		t.Error("sem pod não deve filtrar")
+	}
+	if _, err := executeKubectlEvents(context.Background(), map[string]string{"pod": "-A"}); err == nil {
+		t.Error("pod começando com '-' não pode virar flag")
+	}
+}
+
+// kubectl_logs aceita container e previous, e recusa valor com cara de flag.
+func TestKubectlLogs_ContainerEPrevious(t *testing.T) {
+	args := strings.Join(argsKubectlLogs("a", map[string]string{"container": "c", "previous": "true"}), " ")
+	if !strings.Contains(args, "-c c") || !strings.Contains(args, "--previous") {
+		t.Errorf("faltou -c ou --previous: %s", args)
+	}
+	args = strings.Join(argsKubectlLogs("a", map[string]string{"previous": "false"}), " ")
+	if strings.Contains(args, "--previous") || strings.Contains(args, "-c ") {
+		t.Errorf("não pedido, não vai: %s", args)
+	}
+	for _, p := range []map[string]string{{"pod": "a", "container": "--all-containers"}, {"pod": "a", "previous": "-x"}} {
+		if _, err := executeKubectlLogs(context.Background(), p); err == nil {
+			t.Errorf("%v deveria ser recusado", p)
 		}
 	}
 }

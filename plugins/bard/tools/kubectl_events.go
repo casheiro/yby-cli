@@ -14,20 +14,17 @@ func init() {
 		Intents:     []string{"pod_events", "cluster_events", "check_events"},
 		Parameters: []ToolParam{
 			{Name: "namespace", Description: "Namespace alvo. Se vazio, usa o namespace atual", Required: false},
+			{Name: "pod", Description: "Nome do pod: só os eventos dele. Se vazio, os do namespace inteiro", Required: false},
 		},
 		Execute: executeKubectlEvents,
 	})
 }
 
 func executeKubectlEvents(ctx context.Context, params map[string]string) (string, error) {
-	if err := conferirParams(params, "namespace"); err != nil {
+	if err := conferirParams(params, "namespace", "pod"); err != nil {
 		return "", err
 	}
-	args := []string{"get", "events", "--sort-by=.lastTimestamp"}
-
-	if ns := namespaceDe(params); ns != "" {
-		args = append(args, "-n", ns)
-	}
+	args := argsKubectlEvents(params)
 
 	slog.Debug("executando kubectl", "args", strings.Join(args, " "))
 
@@ -38,6 +35,18 @@ func executeKubectlEvents(ctx context.Context, params map[string]string) (string
 	}
 
 	return ultimosEventos(string(output)), nil
+}
+
+// argsKubectlEvents monta os args do kubectl get events: com pod, só os eventos desse objeto.
+func argsKubectlEvents(params map[string]string) []string {
+	args := []string{"get", "events", "--sort-by=.lastTimestamp"}
+	if ns := namespaceDe(params); ns != "" {
+		args = append(args, "-n", ns)
+	}
+	if pod := params["pod"]; pod != "" {
+		args = append(args, "--field-selector=involvedObject.name="+pod)
+	}
+	return args
 }
 
 // maxEventos é quantos eventos o kubectl_events leva à IA: os mais recentes.

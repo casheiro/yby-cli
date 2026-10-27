@@ -85,9 +85,7 @@ func TestContrato_SentinelScan(t *testing.T) {
 }
 
 // O JSON do investigate --no-ai gravado pelo Sentinel (os dados brutos do pod) passa pelo
-// caminho da ferramenta e chega à IA com o estado, os eventos e o fim dos logs. O pedido
-// (contrato-investigate-pedido.json) ainda não é conferido aqui: a ferramenta pede a
-// análise da IA do Sentinel e passa ao --no-ai quando trocar para os dados brutos.
+// caminho da ferramenta e chega à IA com o estado, os eventos e o fim dos logs.
 func TestContrato_SentinelInvestigate(t *testing.T) {
 	resp, err := respostaDoPlugin(lerContratoSentinel(t, "contrato-investigate.json"))
 	if err != nil {
@@ -103,5 +101,24 @@ func TestContrato_SentinelInvestigate(t *testing.T) {
 		if !strings.Contains(texto, trecho) {
 			t.Errorf("o texto para a IA deveria ter %q:\n%s", trecho, texto)
 		}
+	}
+}
+
+// A ferramenta sentinel_investigate manda ao Sentinel o mesmo pedido (com --no-ai) com que o
+// golden foi gravado.
+func TestContrato_SentinelInvestigatePedido(t *testing.T) {
+	DefinirKube("kind-yby", "payments")
+	defer DefinirKube("", "")
+	var esperado plugin.PluginRequest
+	if err := json.Unmarshal(lerContratoSentinel(t, "contrato-investigate-pedido.json"), &esperado); err != nil {
+		t.Fatal(err)
+	}
+	var obtido plugin.PluginRequest
+	dados, _ := json.Marshal(pedidoSentinelInvestigate("worker-5d8b6-q7tvn", map[string]string{}))
+	if err := json.Unmarshal(dados, &obtido); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(obtido, esperado) {
+		t.Errorf("o pedido ao Sentinel mudou: %#v, e o golden foi gravado com %#v", obtido, esperado)
 	}
 }

@@ -11,7 +11,7 @@ import (
 func init() {
 	Register(&Tool{
 		Name:        "sentinel_investigate",
-		Description: "Investiga a segurança de um pod específico via plugin Sentinel",
+		Description: "Coleta o estado, os eventos e o fim dos logs de um pod via plugin Sentinel",
 		Intents:     []string{"investigate_pod", "diagnose_pod", "pod_health"},
 		Parameters: []ToolParam{
 			{Name: "pod", Description: "Nome do pod a investigar", Required: true},
@@ -80,5 +80,6 @@ func pedidoSentinelInvestigate(pod string, params map[string]string) plugin.Plug
 	if ns := namespaceDe(params); ns != "" {
 		args = append(args, "-n", ns)
 	}
-	return pedidoAoPlugin(append(args, "-o", "json"))
+	// --no-ai: o Sentinel só coleta e o Bard analisa com o provider da sessão (/modelo).
+	return pedidoAoPlugin(append(args, "-o", "json", "--no-ai"))
 }

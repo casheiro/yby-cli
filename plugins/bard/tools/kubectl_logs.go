@@ -16,6 +16,8 @@ func init() {
 		Parameters: []ToolParam{
 			{Name: "pod", Description: "Nome do pod", Required: true},
 			{Name: "namespace", Description: "Namespace alvo", Required: false},
+			{Name: "container", Description: "Contêiner do pod. Obrigatório em pod com vários contêineres", Required: false},
+			{Name: "previous", Description: "\"true\" para os logs da instância anterior do contêiner (pod em CrashLoop)", Required: false},
 			{Name: "tail", Description: "Número de linhas do final (até 200). Padrão: 50", Required: false},
 		},
 		Execute: executeKubectlLogs,
@@ -27,7 +29,7 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 	if pod == "" {
 		return "", fmt.Errorf("parâmetro 'pod' é obrigatório")
 	}
-	if err := conferirParams(params, "pod", "namespace", "tail"); err != nil {
+	if err := conferirParams(params, "pod", "namespace", "container", "previous", "tail"); err != nil {
 		return "", err
 	}
 
@@ -38,7 +40,7 @@ func executeKubectlLogs(ctx context.Context, params map[string]string) (string, 
 	cmd := comandoKubectl(ctx, args)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("kubectl logs falhou: %w\n%s", err, string(output))
+		return string(output), fmt.Errorf("kubectl logs falhou: %w\n%s%s", err, string(output), conteineresDoPod(ctx, pod, params, string(output)))
 	}
 
 	return string(output), nil
@@ -62,5 +64,39 @@ func argsKubectlLogs(pod string, params map[string]string) []string {
 	if n, err := strconv.Atoi(tail); err != nil || n > maxLinhasLogs {
 		tail = strconv.Itoa(maxLinhasLogs)
 	}
+	if c := params["container"]; c != "" {
+		args = append(args, "-c", c)
+	}
+	if previousPedido(params["previous"]) {
+		args = append(args, "--previous")
+	}
 	return append(args, "--tail", tail)
+}
+
+// previousPedido diz se a IA pediu os logs da instância anterior.
+func previousPedido(valor string) bool {
+	switch strings.ToLower(strings.TrimSpace(valor)) {
+	case "true", "1", "sim", "yes":
+		return true
+	}
+	return false
+}
+
+// conteineresDoPod devolve a linha "Contêineres do pod: a, b" para o erro do kubectl logs
+// quando a falha é de contêiner (o kubectl já lista os contêineres na mensagem de "escolha
+// um"; o nome inválido ele não lista). Vazio nos outros erros ou se a consulta falha.
+func conteineresDoPod(ctx context.Context, pod string, params map[string]string, saida string) string {
+	if !strings.Contains(saida, "container") || strings.Contains(saida, "choose one of") {
+		return ""
+	}
+	args := []string{"get", "pod", pod, "-o", "jsonpath={.spec.containers[*].name}"}
+	if ns := namespaceDe(params); ns != "" {
+		args = append(args, "-n", ns)
+	}
+	out, err := comandoKubectl(ctx, args).Output()
+	nomes := strings.Fields(string(out))
+	if err != nil || len(nomes) == 0 {
+		return ""
+	}
+	return "\nContêineres do pod: " + strings.Join(nomes, ", ") + "\n"
 }

@@ -195,7 +195,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
     - apagar o parser morto, ou aplicar os guardrails no ponto único de execução das tools, o que for coerente com o código atual;
     - os guardrails que fizerem sentido passam a valer na execução.
   - **Verificar:** testes do prompt e, se ficarem, testes dos guardrails no caminho de execução.
-- [ ] **B12 · Ferramentas que entregam errado**
+- [x] **B12 · Ferramentas que entregam errado**
   - **Problema:**
     - `kubectl_events` não filtra pelo objeto apesar do intent `pod_events`, e devolve o namespace inteiro;
     - `kubectl_logs` sem `container` falha em pod com vários contêineres e não tem `previous` (no CrashLoop, o log atual vem vazio);
@@ -696,6 +696,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | B13 | O cabeçalho do Bard mostra o modelo do config ("claude-cli · opus", `ai.models`/`ai.model`/`YBY_AI_MODEL` via `ai.ConfiguredModel`) e os providers CLI passam a usar esse modelo (`--model`), que antes ignoravam; golden `TestTelaModeloDoConfig`. | este commit |
 | 26/10/2026 | B07 | Orçamento do que vai à IA (`plugins/bard/tui/orcamento.go`: `Cortar` por linhas com "… N linhas omitidas", `Recentes` e os tetos por bloco): saída de ferramenta ≤ 8 KB, notas do Synapstor ≤ 8 KB somadas, histórico ≤ 4 KB (1 KB por mensagem), cluster ≤ 3 KB com 20 pods (os com problema primeiro); scan do Sentinel resumido (contagem por severidade, os 10 mais graves com até 10 recursos, o que não rodou), investigate em JSON compacto com os logs no fim, `kubectl_events` com os 50 últimos e `--tail` até 200; `GetModelMetadata` casa pelo nome base sem a tag do Ollama (`llama3.1:8b`, `qwen2.5:7b`). | este commit |
 | 26/10/2026 | B02 | O `Fluxo` recebe as trocas anteriores da sessão (`tui.Troca`, até 10, redigidas pelo `pkg/redacao` e no novo `TetoConversa` de 3 KB, com o `TetoHistorico` das sessões anteriores baixado a 2 KB) e as põe antes da pergunta na resposta e no classificador; a TUI guarda as trocas da conversa (o `/limpar` e o `/sessões` recomeçam, porque a retomada já vai pelo system prompt; o `/modelo` mantém) e as perguntas do mesmo batch formam uma sessão. | este commit |
+| 26/10/2026 | B12 | `kubectl_events` filtra por `involvedObject.name` quando há pod, `kubectl_logs` ganha `container` e `previous` (e lista os contêineres no erro de contêiner), `sentinel_investigate` pede `--no-ai` e o Bard analisa com o próprio provider; os valores novos passam pela validação do B06. | este commit |
 
 ### Fase 3 · Synapstor
 
