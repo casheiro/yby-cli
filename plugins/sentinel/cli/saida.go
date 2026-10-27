@@ -203,6 +203,33 @@ func reticenciasNoMeio(s string, n int) string {
 	return string(runas[:esq]) + reticencias + string(runas[len(runas)-dir:])
 }
 
+// maxRecursosNaTela é quantos recursos de um achado agrupado a tela lista embaixo da linha
+// do check; os outros viram "e mais K" (o JSON e o relatório trazem a lista inteira).
+const maxRecursosNaTela = 5
+
+// nomeDoAchado é o que a coluna de recursos mostra: o recurso, ou, quando o achado agrupa
+// vários, a contagem deles (a lista vem embaixo, sem cortar os nomes).
+func nomeDoAchado(f checks.SecurityFinding) string {
+	if len(f.Resources) > 1 {
+		return contar(len(f.Resources), "recurso", "recursos")
+	}
+	return f.Resource
+}
+
+// recursosDoAchado escreve embaixo da linha do check os recursos de um achado agrupado
+// (até maxRecursosNaTela, depois "e mais K"), com os nomes inteiros.
+func recursosDoAchado(w io.Writer, f checks.SecurityFinding, tipo ui.TipoCheck) {
+	if len(f.Resources) < 2 {
+		return
+	}
+	linhas := f.Resources
+	if len(linhas) > maxRecursosNaTela {
+		resto := len(linhas) - maxRecursosNaTela
+		linhas = append(append([]string(nil), linhas[:maxRecursosNaTela]...), fmt.Sprintf("e mais %d", resto))
+	}
+	continuarCheck(w, tipo, recuoDoCheck(tipo), linhas)
+}
+
 // escreverScan escreve o resultado do scan: uma seção por categoria com uma linha por
 // achado (glifo e palavra da severidade, recurso e mensagem), a remediação do dry-run, o
 // resumo por severidade, as fontes e o caminho do relatório.
@@ -227,7 +254,7 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 
 	col := ui.Colunas{Nome: 12, Versao: 0}
 	for _, f := range achados {
-		col.Nome = max(col.Nome, min(lipgloss.Width(f.Resource)+2, maxColunaRecurso))
+		col.Nome = max(col.Nome, min(lipgloss.Width(nomeDoAchado(f))+2, maxColunaRecurso))
 		col.Versao = max(col.Versao, lipgloss.Width(severidades[severidadeDe(f)].singular)+2)
 	}
 
@@ -240,7 +267,8 @@ func escreverScan(w io.Writer, report ScanReport, patches []remediation.Remediat
 		}
 		sev := severidadeDe(f)
 		contagem[sev]++
-		checkNaColuna(w, col, severidades[sev].tipo, encurtarRecurso(f.Resource, col.Nome-2), severidades[sev].singular, mensagemNaTela(f))
+		checkNaColuna(w, col, severidades[sev].tipo, encurtarRecurso(nomeDoAchado(f), col.Nome-2), severidades[sev].singular, mensagemNaTela(f))
+		recursosDoAchado(w, f, severidades[sev].tipo)
 	}
 
 	if op.fixDryRun || op.fix {

@@ -33,13 +33,16 @@ const (
 
 // SecurityFinding representa uma vulnerabilidade encontrada por um check.
 type SecurityFinding struct {
-	CheckID        string   `json:"check_id"`
-	Severity       Severity `json:"severity"`
-	Category       Category `json:"category"`
-	Pod            string   `json:"pod,omitempty"`
-	Container      string   `json:"container,omitempty"`
-	Namespace      string   `json:"namespace"`
-	Resource       string   `json:"resource"`
+	CheckID   string   `json:"check_id"`
+	Severity  Severity `json:"severity"`
+	Category  Category `json:"category"`
+	Pod       string   `json:"pod,omitempty"`
+	Container string   `json:"container,omitempty"`
+	Namespace string   `json:"namespace"`
+	Resource  string   `json:"resource"`
+	// Resources lista todos os recursos afetados quando o achado agrupa vários (Resource
+	// é o primeiro); vazio quando é de um recurso só.
+	Resources      []string `json:"resources,omitempty"`
 	Message        string   `json:"message"`
 	Recommendation string   `json:"recommendation,omitempty"`
 	// Type mantém compatibilidade com o formato antigo (mapeia para severity).

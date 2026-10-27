@@ -227,6 +227,7 @@ func coletarScan(ctx context.Context, prog *ui.Progresso, client kubernetes.Inte
 				Category:       checks.Category(f.Category),
 				Namespace:      f.Namespace,
 				Resource:       f.Resource,
+				Resources:      f.Resources,
 				Message:        f.Message,
 				Recommendation: f.Recommendation,
 				Type:           f.Severity,
@@ -339,7 +340,7 @@ func deduplicateFindings(findings []checks.SecurityFinding) []checks.SecurityFin
 	seen := make(map[string]bool)
 	var result []checks.SecurityFinding
 	for _, f := range findings {
-		key := fmt.Sprintf("%s|%s|%s", f.Resource, f.Category, f.Message)
+		key := fmt.Sprintf("%s|%s|%s|%s", f.CheckID, f.Resource, f.Category, f.Message)
 		if seen[key] {
 			continue
 		}
@@ -390,7 +391,7 @@ func exportScanMarkdown(report ScanReport) string {
 
 	for _, f := range report.Findings {
 		icon := glifoDoRelatorio(severidades[severidadeDe(f)].tipo)
-		sb.WriteString(fmt.Sprintf("- %s **[%s]** `%s`: %s\n", icon, f.Category, f.Resource, f.Description))
+		sb.WriteString(fmt.Sprintf("- %s **[%s]** %s: %s\n", icon, f.Category, recursosEmCodigo(f), f.Description))
 	}
 
 	if report.Recommendations != "" {
@@ -399,6 +400,19 @@ func exportScanMarkdown(report ScanReport) string {
 	}
 
 	return sb.String()
+}
+
+// recursosEmCodigo lista no markdown todos os recursos do achado, cada um em código.
+func recursosEmCodigo(f checks.SecurityFinding) string {
+	lista := f.Resources
+	if len(lista) == 0 {
+		lista = []string{f.Resource}
+	}
+	itens := make([]string, len(lista))
+	for i, r := range lista {
+		itens[i] = "`" + r + "`"
+	}
+	return strings.Join(itens, ", ")
 }
 
 // resumoDoRelatorio conta os achados por severidade com o mesmo mapa do terminal

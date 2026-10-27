@@ -117,8 +117,11 @@ func TestMapPolarisResults_SoONamespacePedidoEEmOrdem(t *testing.T) {
 		t.Fatalf("esperava 2 findings (um por check), obtido %d: %+v", len(primeira), primeira)
 	}
 	for _, f := range primeira {
-		if f.Resource != "Deployment/api (+2)" {
-			t.Errorf("%s: o recurso é o primeiro em ordem, com os outros contados, obtido %q", f.ID, f.Resource)
+		if f.Resource != "Deployment/api" {
+			t.Errorf("%s: o recurso é o primeiro em ordem, sem contagem, obtido %q", f.ID, f.Resource)
+		}
+		if want := []string{"Deployment/api", "Deployment/worker", "Job/migrate"}; !reflect.DeepEqual(f.Resources, want) {
+			t.Errorf("%s: Resources = %v, esperado a lista inteira %v", f.ID, f.Resources, want)
 		}
 		if strings.Contains(f.Resource, "coredns") || strings.Contains(f.Resource, "local-path") || f.Namespace != "payments" {
 			t.Errorf("%s: recurso de outro namespace no scan de payments: %+v", f.ID, f)

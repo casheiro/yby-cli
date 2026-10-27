@@ -5,7 +5,10 @@
 
 SEGURANÇA DOS PODS
   x Deployment/api                  crítico  O contêiner não deve poder rodar como root
-  ! Deployment/web (+2)             alto     Defina o limite de memória
+  ! 3 recursos                      alto     Defina o limite de memória
+    Deployment/web
+    Deployment/worker
+    Deployment/local-path-provisioner-com-nome-bem-comprido
 
 RBAC
   x ClusterRoleBinding/ci-deployer  crítico  ServiceAccount payments/ci com cluster-admin

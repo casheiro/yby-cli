@@ -180,17 +180,13 @@ func mapPolarisResults(auditData validator.AuditData, namespace string) []Findin
 		}
 		sort.Strings(resources)
 
-		resourceStr := resources[0]
-		if len(resources) > 1 {
-			resourceStr = fmt.Sprintf("%s (+%d)", resources[0], len(resources)-1)
-		}
-
 		findings = append(findings, Finding{
 			ID:             fmt.Sprintf("polaris/%s", g.id),
 			Source:         "polaris",
 			Severity:       g.severity,
 			Category:       "pod-security",
-			Resource:       resourceStr,
+			Resource:       resources[0],
+			Resources:      resources,
 			Namespace:      namespace,
 			Message:        g.message,
 			Recommendation: g.recommendation,

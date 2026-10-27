@@ -5,7 +5,7 @@
 
 ## Vulnerabilidades
 
-- ▲ **[pod-security]** `Deployment/web (+2)`: Memory limits should be set
+- ▲ **[pod-security]** `Deployment/web`, `Deployment/worker`, `Deployment/local-path-provisioner-com-nome-bem-comprido`: Memory limits should be set
 - ✕ **[rbac]** `ClusterRoleBinding/ci-deployer`: ServiceAccount payments/ci com cluster-admin
 - ✕ **[pod-security]** `Deployment/api`: Should not be allowed to run as root
 - ▲ **[network]** `Namespace/payments`: Namespace sem NetworkPolicy default-deny

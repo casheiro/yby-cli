@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -169,7 +170,7 @@ func backendsDeExemplo() []backends.SecurityBackend {
 	polaris := backendFalso{nome: "polaris"}
 	opa := backendFalso{nome: "opa", ignorados: []string{"ClusterRoleBinding/cluster-admin", "ClusterRole/admin"}}
 	for _, f := range achadosDeExemplo() {
-		bf := backends.Finding{ID: f.CheckID, Severity: string(f.Severity), Category: string(f.Category), Resource: f.Resource, Namespace: f.Namespace, Message: f.Message, Recommendation: f.Recommendation}
+		bf := backends.Finding{ID: f.CheckID, Severity: string(f.Severity), Category: string(f.Category), Resource: f.Resource, Resources: f.Resources, Namespace: f.Namespace, Message: f.Message, Recommendation: f.Recommendation}
 		if strings.HasPrefix(f.CheckID, "opa/") {
 			opa.achados = append(opa.achados, bf)
 		} else {
@@ -263,6 +264,49 @@ func TestScan_JSONNoStdoutSemTituloNemEtapas(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(homeDeTeste, ".yby", "reports")); err == nil {
 		t.Error("com -o json o relatório global não é gravado")
+	}
+}
+
+// TestScan_JSONTrazTodosOsRecursos: o achado agrupado leva a lista inteira, sem "(+N)".
+func TestScan_JSONTrazTodosOsRecursos(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	usarDependencias(t, fake.NewSimpleClientset(), backendsDeExemplo(), nil, nil)
+
+	saida, _, err := rodar(t, "scan", "-n", "payments", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rel ScanReport
+	if err := json.Unmarshal([]byte(saida), &rel); err != nil {
+		t.Fatal(err)
+	}
+	achou := false
+	for _, f := range rel.Findings {
+		if f.CheckID == "polaris/memoryLimitsMissing" {
+			achou = true
+			if f.Resource != "Deployment/web" || len(f.Resources) != 3 || f.Resources[2] != "Deployment/local-path-provisioner-com-nome-bem-comprido" {
+				t.Errorf("recursos do achado agrupado: %q %v", f.Resource, f.Resources)
+			}
+		}
+	}
+	if !achou || strings.Contains(saida, "(+") {
+		t.Errorf("achado agrupado ausente ou com contagem no nome:\n%s", saida)
+	}
+}
+
+// TestRecursosDoAchado_LimitaEDizQuantosFaltam: acima do limite, a tela lista os
+// primeiros e diz "e mais K"; os nomes saem inteiros.
+func TestRecursosDoAchado_LimitaEDizQuantosFaltam(t *testing.T) {
+	usarVisual(t, ui.Opcoes{Tema: ui.TemaEscuro}, termenv.Ascii)
+	var rs []string
+	for i := 1; i <= 8; i++ {
+		rs = append(rs, fmt.Sprintf("Deployment/servico-com-nome-longo-%d", i))
+	}
+	var buf bytes.Buffer
+	recursosDoAchado(&buf, checks.SecurityFinding{Resource: rs[0], Resources: rs}, ui.CheckAviso)
+	out := buf.String()
+	if !strings.Contains(out, "Deployment/servico-com-nome-longo-5") || strings.Contains(out, "longo-6") || !strings.Contains(out, "e mais 3") || strings.Contains(out, "…") {
+		t.Errorf("lista inesperada:\n%s", out)
 	}
 }
 

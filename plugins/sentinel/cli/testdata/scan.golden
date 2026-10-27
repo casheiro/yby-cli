@@ -6,7 +6,10 @@
 
 [38;2;161;147;121mSEGURANÇA DOS PODS[0m
   [38;2;217;131;97m✕[0m [38;2;221;208;181mDeployment/api                  crítico  O contêiner não deve poder rodar como root[0m
-  [38;2;217;174;95m▲[0m [38;2;221;208;181mDeployment/web (+2)             alto     Defina o limite de memória[0m
+  [38;2;217;174;95m▲[0m [38;2;221;208;181m3 recursos                      alto     Defina o limite de memória[0m
+    [38;2;221;208;181mDeployment/web[0m
+    [38;2;221;208;181mDeployment/worker[0m
+    [38;2;221;208;181mDeployment/local-path-provisioner-com-nome-bem-comprido[0m
 
 [38;2;161;147;121mRBAC[0m
   [38;2;217;131;97m✕[0m [38;2;221;208;181mClusterRoleBinding/ci-deployer  crítico  ServiceAccount payments/ci com cluster-admin[0m

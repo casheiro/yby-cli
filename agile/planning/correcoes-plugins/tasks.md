@@ -344,7 +344,7 @@ Use `/retomar` ao abrir a sessão e `/encerrar` ao parar.
   - **Problema:** `backends/polaris.go:~58,81-92` monta o cliente dinâmico com as regras padrão do kubeconfig, ignorando `Infra.KubeContext`/`KubeConfig` e o token cloud que o `sdk.GetKubeClient` respeita (`pkg/plugin/sdk/sdk_k8s.go`). Um mesmo scan mistura dois clusters.
   - **Fazer:** expor `sdk.GetRestConfig()` e montar os dois clientes a partir dele.
   - **Verificar:** teste do SDK; teste de que o backend recebe o config.
-- [ ] **S03 · "(+N)" não apaga os recursos**
+- [x] **S03 · "(+N)" não apaga os recursos**
   - **Problema:**
     - o grupo é por `check|severidade`, com `Resource = "X (+N)"` (`backends/polaris.go:~114,181-184`);
     - mensagem e recomendação vêm do primeiro recurso;
@@ -687,6 +687,7 @@ Uma tabela por fase: cada trilha só escreve na tabela da sua fase, e os merges 
 | 26/10/2026 | S13 | O OPA compila cada política Rego uma vez (PrepareForEval em cache) e lista os ClusterRoles uma só vez por scan, mantendo as falhas em FalhaParcial | este commit |
 | 26/10/2026 | S02 | `sdk.GetRestConfig()` entrega o config do cluster do yby (kubeconfig, contexto, token cloud); o clientset e o cliente dinâmico do Polaris saem dele e o backend recebe o config no construtor | este commit |
 | 26/10/2026 | S09 | Allowlist única no pacote `allowlist` (checks internos em Go, OPA como `data.allowlist`), casando pelo subject (system:masters, SAs de controllers no namespace deles, plano de controle só nos `system:*`; `admin`/`edit`/`view`/`cluster-admin` só por RoleBinding ou, por ClusterRoleBinding, ao plano de controle) e não pelo nome; os ignorados contam uma vez cada e aparecem na tela, no relatório e no JSON (`ignored_by_allowlist`) | este commit |
+| 26/10/2026 | S03 | O achado agrupado do Polaris leva `Resources` (lista inteira, `Resource` é o primeiro, sem "(+N)"); a tela mostra "N recursos" e a lista embaixo (até 5, "e mais K"), o JSON e o relatório trazem todos | este commit |
 
 ### Fase 5 · Atlas
 

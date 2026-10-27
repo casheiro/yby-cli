@@ -12,14 +12,17 @@ import (
 
 // Finding representa um achado de seguranca unificado de qualquer backend.
 type Finding struct {
-	ID             string `json:"id"`       // ex: "polaris/runAsRootAllowed", "opa/rbac_cluster_admin"
-	Source         string `json:"source"`   // "polaris", "opa", "trivy"
-	Severity       string `json:"severity"` // "critical", "high", "medium", "low", "info"
-	Category       string `json:"category"` // "pod-security", "rbac", "network", "image", "config"
-	Resource       string `json:"resource"` // "Deployment/api-server"
-	Namespace      string `json:"namespace"`
-	Message        string `json:"message"`
-	Recommendation string `json:"recommendation"`
+	ID       string `json:"id"`       // ex: "polaris/runAsRootAllowed", "opa/rbac_cluster_admin"
+	Source   string `json:"source"`   // "polaris", "opa", "trivy"
+	Severity string `json:"severity"` // "critical", "high", "medium", "low", "info"
+	Category string `json:"category"` // "pod-security", "rbac", "network", "image", "config"
+	Resource string `json:"resource"` // "Deployment/api-server"; com vários, o primeiro de Resources
+	// Resources lista todos os recursos afetados pelo check, em ordem alfabética; vazio
+	// quando o achado é de um recurso só.
+	Resources      []string `json:"resources,omitempty"`
+	Namespace      string   `json:"namespace"`
+	Message        string   `json:"message"`
+	Recommendation string   `json:"recommendation"`
 }
 
 // SecurityBackend e a interface que cada integracao de seguranca implementa.
