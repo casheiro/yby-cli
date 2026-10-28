@@ -44,8 +44,8 @@ func TestExportMarkdown_SemComandoOpcional(t *testing.T) {
 }
 
 func TestCacheKey_DiferenteParaInputsDiferentes(t *testing.T) {
-	key1 := cacheKey("default", "pod-1", "log A")
-	key2 := cacheKey("default", "pod-2", "log A")
+	key1 := cacheKey(idPod{Namespace: "default", Pod: "pod-1"}, "log A")
+	key2 := cacheKey(idPod{Namespace: "default", Pod: "pod-2"}, "log A")
 	if key1 == key2 {
 		t.Error("cacheKey deveria ser diferente para pods diferentes")
 	}
@@ -62,8 +62,8 @@ func TestSaveAndLoadCache(t *testing.T) {
 		RootCause:  "teste",
 		Confidence: 80,
 	}
-	saveCache("default", "pod-test", "logs here", result)
-	cached, ok := loadCache("default", "pod-test", "logs here")
+	saveCache(idPod{Namespace: "default", Pod: "pod-test"}, "logs here", result)
+	cached, ok := loadCache(idPod{Namespace: "default", Pod: "pod-test"}, "logs here")
 	if !ok {
 		t.Fatal("esperava encontrar cache")
 	}

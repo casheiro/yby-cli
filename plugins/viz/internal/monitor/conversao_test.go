@@ -53,9 +53,9 @@ func TestPodDeK8s(t *testing.T) {
 			},
 		},
 	}
-	got := podDeK8s(p, map[string][2]string{"payments/worker-5d8b6-q7tvn": {"120m", "210Mi"}})
+	got := podDeK8s(p)
 	want := Pod{
-		Name: "worker-5d8b6-q7tvn", Namespace: "payments", Status: "CrashLoopBackOff", CPU: "120m", Memory: "210Mi",
+		Name: "worker-5d8b6-q7tvn", Namespace: "payments", Status: "CrashLoopBackOff",
 		Prontos: 1, Containers: 2, Reinicios: 14, UltimoReinicio: ultimo.Time,
 		No: "ip-10-0-2-17", IP: "10.42.1.23", CriadoEm: criado, Labels: map[string]string{"app": "worker", "pod-template-hash": "5d8b6"},
 		Motivo: "Error · código de saída 1", Imagens: []string{"worker:1.8.2", "envoy:1.30"}, Dono: "Deployment worker",
@@ -65,11 +65,11 @@ func TestPodDeK8s(t *testing.T) {
 		t.Fatalf("pod convertido:\n%+v\nesperado:\n%+v", got, want)
 	}
 
-	// Sem métricas e sem reinícios: N/A e hora zero.
+	// Sem reinícios: hora zero.
 	p.Status.ContainerStatuses[0].RestartCount = 0
-	got = podDeK8s(p, nil)
-	if got.CPU != "N/A" || got.Memory != "N/A" || !got.UltimoReinicio.IsZero() {
-		t.Fatalf("sem métricas nem reinícios: %+v", got)
+	got = podDeK8s(p)
+	if !got.UltimoReinicio.IsZero() {
+		t.Fatalf("sem reinícios: %+v", got)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestK8sClient_ListasComClientsetFalso(t *testing.T) {
 	if err != nil || len(pods) != 1 {
 		t.Fatalf("pods: %v, %v", pods, err)
 	}
-	if p := pods[0]; p.Status != "Pending" || p.Containers != 1 || p.CPU != "N/A" || !p.CriadoEm.Equal(criado) {
+	if p := pods[0]; p.Status != "Pending" || p.Containers != 1 || !p.CriadoEm.Equal(criado) {
 		t.Fatalf("pod: %+v", p)
 	}
 

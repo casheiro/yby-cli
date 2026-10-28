@@ -424,23 +424,40 @@ type ollamaEmbeddingResponse struct {
 	Embedding []float32 `json:"embedding"`
 }
 
+// modeloParaEmbeddings é o modelo que gera os embeddings: o de embeddings do config, o do
+// provider quando configurado ou, sem config, o primeiro baixado.
+func (p *OllamaProvider) modeloParaEmbeddings(ctx context.Context) (string, error) {
+	if embModel := GetEmbeddingModel("ollama"); embModel != "" {
+		return embModel, nil
+	}
+	if p.modelConfigured {
+		return p.Model, nil
+	}
+	return p.modeloDeEmbeddings(ctx)
+}
+
+// IdentidadeDosEmbeddings diz que os embeddings vêm do Ollama e com que modelo; sem config,
+// o modelo é o primeiro baixado e muda com um ollama pull.
+func (p *OllamaProvider) IdentidadeDosEmbeddings(ctx context.Context) (IdentidadeDoIndice, error) {
+	modelo, err := p.modeloParaEmbeddings(ctx)
+	if err != nil {
+		return IdentidadeDoIndice{}, err
+	}
+	return IdentidadeDoIndice{Provider: "ollama", Modelo: modelo}, nil
+}
+
 func (p *OllamaProvider) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
 
-	// Usar modelo de embedding específico se configurado; sem config, o primeiro baixado
 	origModel := p.Model
 	defer func() { p.Model = origModel }()
-	if embModel := GetEmbeddingModel("ollama"); embModel != "" {
-		p.Model = embModel
-	} else if !p.modelConfigured {
-		modelo, err := p.modeloDeEmbeddings(ctx)
-		if err != nil {
-			return nil, err
-		}
-		p.Model = modelo
+	modelo, err := p.modeloParaEmbeddings(ctx)
+	if err != nil {
+		return nil, err
 	}
+	p.Model = modelo
 
 	results, err := p.embedBatch(ctx, texts)
 	if err != nil {

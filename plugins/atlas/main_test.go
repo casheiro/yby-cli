@@ -4,31 +4,52 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/casheiro/yby-cli/pkg/plugin"
 )
 
-// helperBuildAtlas compila o binário do atlas em um diretório temporário.
-// Retorna o caminho do binário compilado.
+// binAtlas guarda o binário compilado uma vez só para todos os testes do pacote.
+var (
+	binAtlasUmaVez sync.Once
+	binAtlas       string
+	binAtlasErro   error
+	binAtlasDir    string
+)
+
+// helperBuildAtlas compila o binário do atlas na primeira chamada e devolve o
+// mesmo caminho nas seguintes (o `go build` por teste levava mais de um minuto).
+// O diretório temporário é removido pelo TestMain.
 func helperBuildAtlas(t *testing.T) string {
 	t.Helper()
-	binPath := filepath.Join(t.TempDir(), "atlas")
-	if runtime.GOOS == "windows" {
-		binPath += ".exe"
+	binAtlasUmaVez.Do(func() {
+		dir, err := os.MkdirTemp("", "atlas-bin-")
+		if err != nil {
+			binAtlasErro = err
+			return
+		}
+		binAtlasDir = dir
+		binAtlas = filepath.Join(dir, "atlas")
+		if runtime.GOOS == "windows" {
+			binAtlas += ".exe"
+		}
+		cmd := exec.Command("go", "build", "-o", binAtlas, ".")
+		cmd.Dir = filepath.Join(projectRoot(t), "plugins", "atlas")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			binAtlasErro = fmt.Errorf("%w\n%s", err, out)
+		}
+	})
+	if binAtlasErro != nil {
+		t.Fatalf("falha ao compilar atlas: %v", binAtlasErro)
 	}
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
-	cmd.Dir = filepath.Join(projectRoot(t), "plugins", "atlas")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("falha ao compilar atlas: %v\n%s", err, out)
-	}
-	return binPath
+	return binAtlas
 }
 
 // projectRoot retorna o diretório raiz do projeto.

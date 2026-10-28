@@ -107,6 +107,7 @@ const (
 // (atualização, busca) até a confirmação, e a ação não pode mudar de alvo.
 type alvoDaAcao struct {
 	nome, namespace, kind string
+	uid                   string     // metadata.uid do objeto escolhido (vazio quando a lista não o traz)
 	replicas              int32      // réplicas pedidas hoje (deployments e statefulsets)
 	pods                  int        // pods do recurso na lista de pods; -1 sem a lista
 	dono                  string     // quem controla o pod ("Deployment worker")
@@ -165,11 +166,19 @@ func (m Model) alvoDaLinha(kind string, it itemLista) alvoDaAcao {
 	seletor := ""
 	switch o := it.obj.(type) {
 	case monitor.Deployment:
-		a.replicas, seletor = o.Replicas, o.Seletor
+		a.replicas, seletor, a.uid = o.Replicas, o.Seletor, o.UID
 	case monitor.StatefulSet:
-		a.replicas, seletor = o.Replicas, o.Seletor
+		a.replicas, seletor, a.uid = o.Replicas, o.Seletor, o.UID
 	case monitor.Pod:
-		a.dono = o.Dono
+		a.dono, a.uid = o.Dono, o.UID
+	case monitor.Service:
+		a.uid = o.UID
+	case monitor.Job:
+		a.uid = o.UID
+	case monitor.Ingress:
+		a.uid = o.UID
+	case monitor.ConfigMap:
+		a.uid = o.UID
 	}
 	if seletor != "" && m.carregada(TabPods) {
 		if sel, err := labels.Parse(seletor); err == nil {
@@ -372,7 +381,7 @@ func fazer(client monitor.Client, tipo tipoAcao, alvo alvoDaAcao, replicas int32
 	sts := alvo.kind == "statefulset"
 	switch tipo {
 	case acaoExcluir:
-		if err := monitor.DeleteResource(cs, alvo.kind, alvo.nome, alvo.namespace); err != nil {
+		if err := monitor.DeleteResource(cs, alvo.kind, alvo.nome, alvo.namespace, alvo.uid); err != nil {
 			return falhou(err)
 		}
 		return resultadoAcaoMsg{texto: rotulo + " excluído", recarregar: true}

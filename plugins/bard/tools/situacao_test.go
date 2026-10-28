@@ -2,7 +2,9 @@ package tools
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -55,6 +57,19 @@ func TestSituacoes_DisponibilidadePorFamilia(t *testing.T) {
 	}
 	if lista[0].Familia != "atlas" || !lista[1].Externa {
 		t.Errorf("família e origem: %+v %+v", lista[0], lista[1])
+	}
+}
+
+// O plugin instalado sem confiança aparece como tal, com o comando que resolve.
+func TestSituacoes_PluginSemConfianca(t *testing.T) {
+	Reset()
+	defer Reset()
+	Register(&Tool{Name: "sentinel_scan"})
+
+	plugin := func(string) (string, error) { return "", fmt.Errorf("%w: /x", errNaoConfiavel) }
+	lista := situacoes(exec.LookPath, plugin)
+	if len(lista) != 1 || lista[0].Disponivel || lista[0].Nota != "plugin sentinel não confiável · rode yby plugin trust sentinel" {
+		t.Errorf("situação do sentinel sem confiança: %+v", lista)
 	}
 }
 

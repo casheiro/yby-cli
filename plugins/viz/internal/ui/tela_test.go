@@ -54,7 +54,7 @@ func (clienteStaging) Contexto() string { return "staging" }
 func podDaPrancha(nome, status string, prontos, reinicios int32, idade, ultimoReinicio time.Duration, no, ip string) monitor.Pod {
 	p := monitor.Pod{
 		Name: nome, Namespace: "payments", Status: status, Prontos: prontos, Containers: 1, Reinicios: reinicios,
-		CriadoEm: horaDaPrancha.Add(-idade), No: no, IP: ip, CPU: "N/A", Memory: "N/A",
+		CriadoEm: horaDaPrancha.Add(-idade), No: no, IP: ip,
 		Labels: map[string]string{"app": strings.SplitN(nome, "-", 2)[0]},
 	}
 	if ultimoReinicio > 0 {

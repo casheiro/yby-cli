@@ -1,0 +1,5 @@
+
+x erro ao remover confiança do arquivo                ERR_PLUGIN
+  causa     o arquivo .yby/tools/backup.yaml não está no registro de confiança
+  faça      confira o caminho: é o mesmo usado no yby plugin trust
+  detalhes  rode de novo com --log-level=debug

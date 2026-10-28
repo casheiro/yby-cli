@@ -10,14 +10,25 @@ import (
 	"github.com/casheiro/yby-cli/pkg/cloud"
 	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// GetKubeClient retorna um clientset Kubernetes.
-// Usa o kubeconfig do contexto do plugin quando disponível,
+// GetKubeClient retorna um clientset Kubernetes montado por GetRestConfig.
+func GetKubeClient() (*kubernetes.Clientset, error) {
+	config, err := GetRestConfig()
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewForConfig(config)
+}
+
+// GetRestConfig retorna o rest.Config do cluster do contexto do plugin.
+// Usa o kubeconfig e o contexto do kubeconfig do yby quando disponíveis,
 // ou o kubeconfig padrão (~/.kube/config / KUBECONFIG) como fallback.
 // Quando há configuração cloud, injeta token generator com auto-refresh.
-func GetKubeClient() (*kubernetes.Clientset, error) {
+// Todo cliente do plugin (tipado, dinâmico) deve sair daqui para falar com o mesmo cluster.
+func GetRestConfig() (*rest.Config, error) {
 	var kubeConfigPath, kubeContext string
 
 	if currentContext != nil {
@@ -64,5 +75,5 @@ func GetKubeClient() (*kubernetes.Clientset, error) {
 		}
 	}
 
-	return kubernetes.NewForConfig(config)
+	return config, nil
 }

@@ -43,12 +43,15 @@ var openAIModelPattern = regexp.MustCompile(`^(gpt-[a-z0-9.-]+|o[0-9][a-z0-9.-]*
 // registerModelSpec.
 var modelSpecs = map[string]modelSpec{
 	"claude-cli": {
-		known:   []string{"sonnet", "opus", "haiku"},
-		accepts: func(model string) bool { return strings.HasPrefix(model, "claude-") },
+		// Sem config o CLI escolhe o modelo (padrão vazio); com ai.model, é ele que roda.
+		defaultModel: func() string { return getConfiguredModel("claude-cli") },
+		known:        []string{"sonnet", "opus", "haiku"},
+		accepts:      func(model string) bool { return strings.HasPrefix(model, "claude-") },
 	},
 	"gemini-cli": {
-		known:   geminiModels,
-		accepts: func(model string) bool { return strings.HasPrefix(model, "gemini-") },
+		defaultModel: func() string { return getConfiguredModel("gemini-cli") },
+		known:        geminiModels,
+		accepts:      func(model string) bool { return strings.HasPrefix(model, "gemini-") },
 	},
 	"gemini": {
 		defaultModel: defaultGeminiModel,

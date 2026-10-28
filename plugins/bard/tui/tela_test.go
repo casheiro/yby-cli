@@ -223,3 +223,14 @@ func TestTelaBoasVindas(t *testing.T) {
 		})
 	}
 }
+
+// O cabeçalho mostra o modelo fixado no config ao lado do provider ("claude-cli · opus").
+func TestTelaModeloDoConfig(t *testing.T) {
+	m := telaDeTeste(t, Config{Cluster: "staging", Namespace: "default", AIModel: "claude-cli", ModeloIA: "opus"}, "11:51")
+	atualizado, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	tela := atualizado.(Model).View()
+	if !strings.Contains(tela, "claude-cli · opus") {
+		t.Errorf("o cabeçalho deveria trazer \"claude-cli · opus\":\n%s", tela)
+	}
+	golden.RequireEqual(t, []byte(tela))
+}

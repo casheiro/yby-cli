@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -31,7 +32,11 @@ type parsedResource struct {
 }
 
 // K8sAnalyzer analisa manifestos Kubernetes e extrai recursos e relações.
-type K8sAnalyzer struct{}
+type K8sAnalyzer struct {
+	// Kustomize, quando presente, tira os patches, aplica o namespace herdado
+	// dos overlays e liga cada kustomization aos recursos que lista.
+	Kustomize *PlanoKustomize
+}
 
 // NewK8sAnalyzer cria uma nova instância do analyzer de manifestos Kubernetes.
 func NewK8sAnalyzer() *K8sAnalyzer {
@@ -68,7 +73,55 @@ func (a *K8sAnalyzer) Analyze(rootPath string, files []string) (*AnalyzerResult,
 	// Segundo passo: extrair relações semânticas entre os recursos
 	result.Relations = a.extractRelations(parsed)
 
+	// Kustomizations que listam o arquivo incluem os recursos dele
+	if a.Kustomize != nil {
+		for _, p := range parsed {
+			for _, dono := range a.Kustomize.Donos[p.Resource.Path] {
+				result.Relations = append(result.Relations, InfraRelation{
+					From: dono,
+					To:   p.Resource.ID(),
+					Type: "includes",
+				})
+			}
+		}
+	}
+
 	return result, nil
+}
+
+// clusterScoped são os kinds sem namespace, que o namespace do Kustomize não muda.
+var clusterScoped = map[string]bool{
+	"Namespace": true, "Node": true, "PersistentVolume": true, "StorageClass": true,
+	"ClusterRole": true, "ClusterRoleBinding": true, "CustomResourceDefinition": true,
+	"ClusterIssuer": true, "PriorityClass": true, "IngressClass": true, "RuntimeClass": true,
+	"MutatingWebhookConfiguration": true, "ValidatingWebhookConfiguration": true,
+	"APIService": true, "CSIDriver": true, "VolumeSnapshotClass": true,
+}
+
+// copiasPorNamespace devolve as cópias do recurso, uma por namespace em que
+// os overlays aplicam o arquivo; sem Kustomize, só o próprio recurso.
+func (a *K8sAnalyzer) copiasPorNamespace(res InfraResource) []InfraResource {
+	if a.Kustomize == nil || clusterScoped[res.Kind] {
+		return []InfraResource{res}
+	}
+	namespaces := a.Kustomize.Namespaces[res.Path]
+	if len(namespaces) == 0 {
+		return []InfraResource{res}
+	}
+	var copias []InfraResource
+	vistos := make(map[string]bool)
+	for _, ns := range namespaces {
+		copia := res
+		if ns != "" {
+			copia.Namespace = ns
+		}
+		if vistos[copia.Namespace] {
+			continue
+		}
+		vistos[copia.Namespace] = true
+		copias = append(copias, copia)
+	}
+	return copias
 }
 
 // parseFile lê e parseia um arquivo YAML, suportando multi-documentos separados por ---.
@@ -83,9 +136,21 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 		return nil, nil
 	}
 
-	relPath, err := filepath.Rel(rootPath, filePath)
+	relPath, err := relSlash(rootPath, filePath)
 	if err != nil {
 		relPath = filePath
+	}
+
+	// Patch de kustomization altera um recurso de outro arquivo, não cria outro.
+	if a.Kustomize != nil && a.Kustomize.Patches[relPath] {
+		slog.Debug("pulando patch do Kustomize", "file", filePath)
+		return nil, nil
+	}
+
+	// Arquivo encriptado por SOPS: não há topologia legível nele.
+	if sopsEncriptado(content) {
+		slog.Debug("pulando arquivo encriptado por SOPS", "file", filePath)
+		return nil, nil
 	}
 
 	docs := splitYAMLDocuments(content)
@@ -97,8 +162,14 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 			continue
 		}
 
+		// Um só parse por documento: o nó alimenta o manifesto e os dados brutos.
+		var no yaml.Node
+		if err := yaml.Unmarshal([]byte(doc), &no); err != nil {
+			slog.Debug("documento YAML inválido, pulando", "file", filePath, "error", err)
+			continue
+		}
 		var manifest k8sManifest
-		if err := yaml.Unmarshal([]byte(doc), &manifest); err != nil {
+		if err := no.Decode(&manifest); err != nil {
 			slog.Debug("documento YAML inválido, pulando", "file", filePath, "error", err)
 			continue
 		}
@@ -126,7 +197,7 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 
 		// Parsear dados brutos para extração de relações
 		var raw map[string]interface{}
-		_ = yaml.Unmarshal([]byte(doc), &raw)
+		_ = no.Decode(&raw)
 
 		resource := InfraResource{
 			Kind:      manifest.Kind,
@@ -137,13 +208,24 @@ func (a *K8sAnalyzer) parseFile(rootPath, filePath string) ([]parsedResource, er
 			Labels:    manifest.Metadata.Labels,
 		}
 
-		resources = append(resources, parsedResource{
-			Resource: resource,
-			Raw:      raw,
-		})
+		for _, copia := range a.copiasPorNamespace(resource) {
+			resources = append(resources, parsedResource{
+				Resource: copia,
+				Raw:      raw,
+			})
+		}
 	}
 
 	return resources, nil
+}
+
+// marcaSops casa o campo sops: de topo que o SOPS acrescenta, com LF ou CRLF.
+var marcaSops = regexp.MustCompile(`(?m)^sops:[ \t]*\r?$`)
+
+// sopsEncriptado diz se o conteúdo é de um arquivo encriptado por SOPS
+// (valores ENC[AES256_GCM,...] ou o campo sops: de metadados).
+func sopsEncriptado(content string) bool {
+	return strings.Contains(content, "ENC[AES256_GCM,") || marcaSops.MatchString(content)
 }
 
 // splitYAMLDocuments divide um conteúdo YAML em documentos individuais,
@@ -167,7 +249,7 @@ func (a *K8sAnalyzer) extractRelations(parsed []parsedResource) []InfraRelation 
 
 		switch p.Resource.Kind {
 		case "Service":
-			relations = append(relations, a.extractServiceRelations(p.Resource, spec, resources)...)
+			relations = append(relations, a.extractServiceRelations(p.Resource, spec, parsed)...)
 		case "Ingress":
 			relations = append(relations, a.extractIngressRelations(p.Resource, spec, resources)...)
 		case "Deployment", "StatefulSet", "DaemonSet":
@@ -183,7 +265,7 @@ func (a *K8sAnalyzer) extractRelations(parsed []parsedResource) []InfraRelation 
 }
 
 // extractServiceRelations extrai relações de seleção de um Service para os recursos com labels correspondentes.
-func (a *K8sAnalyzer) extractServiceRelations(svc InfraResource, spec map[string]interface{}, resources []InfraResource) []InfraRelation {
+func (a *K8sAnalyzer) extractServiceRelations(svc InfraResource, spec map[string]interface{}, parsed []parsedResource) []InfraRelation {
 	if spec == nil {
 		return nil
 	}
@@ -200,16 +282,13 @@ func (a *K8sAnalyzer) extractServiceRelations(svc InfraResource, spec map[string
 
 	var relations []InfraRelation
 
-	// Encontrar recursos cujos labels coincidem com o selector
-	for _, res := range resources {
-		if res.Labels == nil {
+	// Só workloads entram, no mesmo namespace, pelos labels dos pods que criam
+	for _, p := range parsed {
+		res := p.Resource
+		if res.Namespace != svc.Namespace {
 			continue
 		}
-		// Não selecionar a si próprio
-		if res.ID() == svc.ID() {
-			continue
-		}
-		if labelsMatch(selector, res.Labels) {
+		if labelsMatch(selector, podLabels(p)) {
 			relations = append(relations, InfraRelation{
 				From: svc.ID(),
 				To:   res.ID(),
@@ -459,6 +538,20 @@ func getNestedStringMap(m map[string]interface{}, keys ...string) map[string]str
 	}
 
 	return result
+}
+
+// podLabels devolve os labels dos pods que o recurso cria: metadata.labels
+// no Pod, o template do pod nos demais workloads, nil para outros kinds.
+func podLabels(p parsedResource) map[string]string {
+	switch p.Resource.Kind {
+	case "Pod":
+		return p.Resource.Labels
+	case "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job":
+		return getNestedStringMap(p.Raw, "spec", "template", "metadata", "labels")
+	case "CronJob":
+		return getNestedStringMap(p.Raw, "spec", "jobTemplate", "spec", "template", "metadata", "labels")
+	}
+	return nil
 }
 
 // labelsMatch verifica se todos os labels do selector estão presentes nos labels do recurso.

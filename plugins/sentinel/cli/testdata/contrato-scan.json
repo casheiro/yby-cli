@@ -1,0 +1,94 @@
+{
+  "namespace": "payments",
+  "scope": "namespace",
+  "findings": [
+    {
+      "check_id": "polaris/memoryLimitsMissing",
+      "severity": "low",
+      "category": "efficiency",
+      "namespace": "payments",
+      "resource": "Deployment/web",
+      "resources": [
+        "Deployment/web",
+        "Deployment/worker",
+        "Deployment/local-path-provisioner-com-nome-bem-comprido"
+      ],
+      "message": "Defina o limite de memória",
+      "recommendation": "Defina resources.limits.memory",
+      "scope": "namespace",
+      "type": "low",
+      "description": "Defina o limite de memória"
+    },
+    {
+      "check_id": "polaris/runAsRootAllowed",
+      "severity": "critical",
+      "category": "pod-security",
+      "namespace": "payments",
+      "resource": "Deployment/api",
+      "message": "O contêiner não deve poder rodar como root",
+      "scope": "namespace",
+      "type": "critical",
+      "description": "O contêiner não deve poder rodar como root"
+    },
+    {
+      "check_id": "polaris/pullPolicyNotAlways",
+      "severity": "low",
+      "category": "reliability",
+      "namespace": "payments",
+      "resource": "StatefulSet/redis",
+      "message": "A imagePullPolicy deve ser Always",
+      "scope": "namespace",
+      "type": "low",
+      "description": "A imagePullPolicy deve ser Always"
+    },
+    {
+      "check_id": "polaris/hostPathSet",
+      "severity": "high",
+      "category": "pod-security",
+      "namespace": "payments",
+      "resource": "Deployment/web",
+      "message": "Volumes hostPath não são permitidos",
+      "scope": "namespace",
+      "type": "high",
+      "description": "Volumes hostPath não são permitidos"
+    },
+    {
+      "check_id": "opa/rbac-cluster-admin",
+      "severity": "critical",
+      "category": "rbac",
+      "namespace": "payments",
+      "resource": "ClusterRoleBinding/ci-deployer",
+      "message": "ServiceAccount payments/ci com cluster-admin",
+      "recommendation": "Substitua cluster-admin por roles mais restritivos",
+      "scope": "cluster",
+      "type": "critical",
+      "description": "ServiceAccount payments/ci com cluster-admin"
+    },
+    {
+      "check_id": "opa/netpol-default-deny",
+      "severity": "medium",
+      "category": "network",
+      "namespace": "payments",
+      "resource": "Namespace/payments",
+      "message": "Namespace sem NetworkPolicy default-deny",
+      "scope": "namespace",
+      "type": "medium",
+      "description": "Namespace sem NetworkPolicy default-deny"
+    }
+  ],
+  "sources": [
+    "polaris",
+    "opa"
+  ],
+  "ignored_by_allowlist": 2,
+  "nao_rodaram": [
+    {
+      "backend": "opa",
+      "verificacoes": [
+        "rbac-wildcard"
+      ],
+      "motivo": "sem permissão para acessar os clusterroles"
+    }
+  ],
+  "contexto": "kind-yby"
+}

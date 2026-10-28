@@ -1,0 +1,128 @@
+{
+  "data": {
+    "blueprint": {
+      "components": [
+        {
+          "name": "api",
+          "type": "helm",
+          "path": "charts/api"
+        },
+        {
+          "name": "lib",
+          "type": "app",
+          "path": "lib",
+          "language": "go",
+          "metadata": {
+            "module": "example.com/lib"
+          }
+        },
+        {
+          "name": "meu-servico",
+          "type": "infra",
+          "path": "meu-servico"
+        },
+        {
+          "name": "meu-servico",
+          "type": "app",
+          "path": "meu-servico",
+          "language": "go",
+          "framework": "gin",
+          "metadata": {
+            "module": "example.com/meu-servico"
+          }
+        }
+      ],
+      "relations": [
+        {
+          "from": "charts/api",
+          "to": "https://charts.bitnami.com/bitnami",
+          "type": "depends"
+        },
+        {
+          "from": "meu-servico",
+          "to": "lib",
+          "type": "imports"
+        }
+      ],
+      "roots": [
+        "."
+      ]
+    },
+    "infra": {
+      "resources": [
+        {
+          "kind": "ComposeService",
+          "api_group": "compose",
+          "name": "worker",
+          "path": "meu-servico/docker-compose.yml",
+          "metadata": {
+            "image": "loja/worker:2.0.1"
+          }
+        },
+        {
+          "kind": "Deployment",
+          "api_group": "k8s",
+          "name": "api-server",
+          "path": "charts/api/templates/deployment.yaml"
+        },
+        {
+          "kind": "Deployment",
+          "api_group": "apps/v1",
+          "name": "web",
+          "namespace": "loja",
+          "path": "deploy/web.yaml"
+        },
+        {
+          "kind": "HelmChart",
+          "api_group": "helm",
+          "name": "api",
+          "path": "charts/api/Chart.yaml",
+          "metadata": {
+            "apiVersion": "v2",
+            "version": "1.0.0"
+          }
+        },
+        {
+          "kind": "HelmRepository",
+          "api_group": "helm",
+          "name": "redis",
+          "path": "charts/api/Chart.yaml",
+          "metadata": {
+            "repository": "https://charts.bitnami.com/bitnami",
+            "version": "17.0.0"
+          }
+        },
+        {
+          "kind": "Service",
+          "api_group": "v1",
+          "name": "web",
+          "namespace": "loja",
+          "path": "deploy/web.yaml"
+        }
+      ],
+      "relations": [
+        {
+          "from": "HelmChart/api",
+          "to": "Deployment/api-server",
+          "type": "deploys"
+        },
+        {
+          "from": "HelmChart/api",
+          "to": "HelmRepository/redis",
+          "type": "depends_on"
+        },
+        {
+          "from": "Service/loja/web",
+          "to": "Deployment/loja/web",
+          "type": "selects"
+        }
+      ],
+      "analyzers": [
+        "helm",
+        "k8s",
+        "compose"
+      ],
+      "root_path": "."
+    }
+  }
+}

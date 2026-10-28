@@ -126,31 +126,30 @@ func comando(ctx context.Context, raiz string, args []string, saida, erros io.Wr
 	}
 }
 
-// handleContextHook retorna dados de contexto do Synapstor para o sistema de plugins. A
-// resposta vai embrulhada duas vezes (respond embrulha de novo), como sempre foi: os
-// testes e2e e quem lê o contexto contam com isso.
+// handleContextHook retorna dados de contexto do Synapstor para o sistema de plugins, com
+// um só embrulho (o de respond): {"data": {"synapstor_…": …}}.
 func handleContextHook(w io.Writer) {
 	cwd, _ := os.Getwd()
-	manifestPath := filepath.Join(cwd, ".synapstor", ".index_manifest.json")
+	manifestPath := filepath.Join(cwd, ".synapstor", ".index", "manifest.json")
 
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		// Manifest não existe — retornar status "not_indexed"
-		respond(w, plugin.PluginResponse{Data: map[string]interface{}{
+		respond(w, map[string]interface{}{
 			"synapstor_indexed_files": 0,
 			"synapstor_last_indexed":  "",
 			"synapstor_status":        "not_indexed",
-		}})
+		})
 		return
 	}
 
 	var manifest indexer.IndexManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		respond(w, plugin.PluginResponse{Data: map[string]interface{}{
+		respond(w, map[string]interface{}{
 			"synapstor_indexed_files": 0,
 			"synapstor_last_indexed":  "",
 			"synapstor_status":        "not_indexed",
-		}})
+		})
 		return
 	}
 
@@ -167,11 +166,11 @@ func handleContextHook(w io.Writer) {
 		lastDateStr = lastDate.Format(time.RFC3339)
 	}
 
-	respond(w, plugin.PluginResponse{Data: map[string]interface{}{
+	respond(w, map[string]interface{}{
 		"synapstor_indexed_files": total,
 		"synapstor_last_indexed":  lastDateStr,
 		"synapstor_status":        "active",
-	}})
+	})
 }
 
 func respond(w io.Writer, data interface{}) {

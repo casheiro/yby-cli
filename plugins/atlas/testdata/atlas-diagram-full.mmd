@@ -8,5 +8,5 @@ flowchart TD
   subgraph Workloads["Workloads"]
     Deployment_api_server["api-server\n(Deployment)"]
   end
-  HelmChart_api -->|depends_on| HelmRepository_redis
   HelmChart_api -->|deploys| Deployment_api_server
+  HelmChart_api -->|depends_on| HelmRepository_redis

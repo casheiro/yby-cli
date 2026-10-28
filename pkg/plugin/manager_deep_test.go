@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	projectContext "github.com/casheiro/yby-cli/pkg/context"
 	"github.com/casheiro/yby-cli/pkg/scaffold"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -349,7 +348,7 @@ func TestExecuteContextHook_DeepNoPlugins(t *testing.T) {
 		Environment: "local",
 		Data:        make(map[string]interface{}),
 	}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err)
 }
 
@@ -358,28 +357,18 @@ func TestExecuteContextHook_PluginWithoutContextHook(t *testing.T) {
 		LoadedPlugin{Manifest: PluginManifest{Name: "nokook", Hooks: []string{"manifest"}}, Path: "/fake"},
 	)
 	ctx := &scaffold.BlueprintContext{ProjectName: "test", Data: make(map[string]interface{})}
-	err := m.ExecuteContextHook(ctx)
+	err := m.ExecuteContextHook(context.Background(), ctx)
 	assert.NoError(t, err)
 }
 
-// ─── BuildPluginContext ────────────────────────────────────────────────────────
+// ─── contextoDoComando ─────────────────────────────────────────────────────────
 
-func TestBuildPluginContext_UnknownEnv(t *testing.T) {
+func TestContextoDoComando_SemAmbienteNemConsumo(t *testing.T) {
 	m := NewManager()
-	coreCtx := &projectContext.CoreContext{
-		ProjectName: "myproject",
-		Environment: "unknown",
-	}
-	bpCtx := &scaffold.BlueprintContext{
-		ProjectName: "myproject",
-		Environment: "unknown",
-		Data:        make(map[string]interface{}),
-	}
-
-	fullCtx, _, err := m.BuildPluginContext(coreCtx, bpCtx, t.TempDir())
+	alvo := &LoadedPlugin{Manifest: PluginManifest{Name: "viz", Hooks: []string{"command"}}}
+	fullCtx, err := m.contextoDoComando(context.Background(), alvo, t.TempDir())
 	assert.NoError(t, err)
-	assert.Equal(t, "myproject", fullCtx.ProjectName)
-	assert.Equal(t, "unknown", fullCtx.Environment)
+	assert.Nil(t, fullCtx)
 }
 
 // ─── loadManifest com plugin shell script ─────────────────────────────────────

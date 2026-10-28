@@ -121,9 +121,9 @@ func TestMatch_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Match(tt.filename)
+			got := MatchWithRules(tt.filename, DefaultRules)
 			if got != tt.want {
-				t.Errorf("Match(%q) = %q, esperado %q", tt.filename, got, tt.want)
+				t.Errorf("MatchWithRules(%q) = %q, esperado %q", tt.filename, got, tt.want)
 			}
 		})
 	}

@@ -215,6 +215,84 @@ func TestVigia_LeituraDoRelogioNaoTrocaALista(t *testing.T) {
 	}
 }
 
+// TestVigia_RelogioNaoListaAbaVigiada: com a aba no watch, o tique não faz
+// LIST de pods no servidor (só a sonda de conexão); sem o watch, lê a lista.
+func TestVigia_RelogioNaoListaAbaVigiada(t *testing.T) {
+	c := novoCluster(podDe("payments", "web-1"))
+	m, b := abrir(t, vizVigiado(c, "payments"))
+	defer m.Parar()
+	m = b.ate(t, m, contagens(map[ResourceTab]int{TabPods: 1}))
+	c.esperarWatches(t, len(monitor.TiposObservados))
+
+	var listas atomic.Int32
+	c.cs.PrependReactor("list", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		listas.Add(1)
+		return false, nil, nil
+	})
+	tique := func(m Model) Model {
+		t.Helper()
+		m, cmd := atualizar(m, tickMsg(time.Now()))
+		// O Batch com um comando só devolve o próprio comando.
+		msgs := []tea.Msg{}
+		if cmd != nil {
+			msgs = append(msgs, cmd())
+		}
+		if lote, ok := msgs[0].(tea.BatchMsg); ok {
+			msgs = msgs[:0]
+			for _, sub := range lote {
+				if sub != nil {
+					msgs = append(msgs, sub())
+				}
+			}
+		}
+		for _, msg := range msgs {
+			if msg, ok := msg.(leituraMsg); ok {
+				m, _ = atualizar(m, msg)
+			}
+		}
+		return m
+	}
+
+	m.reconnecting, m.retryCount = true, 1
+	m = tique(m)
+	if n := listas.Load(); n != 0 {
+		t.Fatalf("o tique listou pods %d vez(es) com a aba no watch", n)
+	}
+	if m.reconnecting || len(m.pods) != 1 {
+		t.Fatalf("a sonda deveria confirmar a conexão sem trocar a lista: reconectando %v, %d pods", m.reconnecting, len(m.pods))
+	}
+
+	m.vigiadas = 0
+	tique(m)
+	if n := listas.Load(); n != 1 {
+		t.Fatalf("sem watch na aba, o tique deveria listar pods uma vez; foram %d", n)
+	}
+}
+
+// clienteQueCaiu é um client que observa e sonda, e cuja sonda falha.
+type clienteQueCaiu struct{ *MockClient }
+
+func (clienteQueCaiu) Sondar() error { return fmt.Errorf("sem rota para o cluster") }
+
+// TestVigia_SondaQueFalhaReconecta: a queda do cluster com o watch parado
+// ainda aparece, pela sonda do relógio.
+func TestVigia_SondaQueFalhaReconecta(t *testing.T) {
+	m := comJanela(NewModel(clienteQueCaiu{&MockClient{}}))
+	m, _ = atualizar(m, muitosPods(3))
+	m.vigiadas = 1 << uint(TabPods)
+	msg, ok := m.ler(true, TabPods)().(leituraMsg)
+	if !ok || len(msg.respostas) != 1 {
+		t.Fatalf("leitura inesperada: %#v", msg)
+	}
+	if _, ok := msg.respostas[0].(error); !ok {
+		t.Fatalf("a sonda que falha deveria virar erro: %#v", msg.respostas[0])
+	}
+	m, _ = atualizar(m, msg)
+	if !m.reconnecting || len(m.pods) != 3 {
+		t.Fatalf("deveria reconectar sem perder a lista: reconectando %v, %d pods", m.reconnecting, len(m.pods))
+	}
+}
+
 // TestVigia_TrocaDeNamespace: o n para o watch do namespace anterior e abre
 // outro no novo; um lote atrasado do anterior não vale.
 func TestVigia_TrocaDeNamespace(t *testing.T) {

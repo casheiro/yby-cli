@@ -1,15 +1,17 @@
 ◆ YBY  SENTINEL                        scan · namespace payments
 
   ✓ checks internos   1 achado                             1,5 s
+  ✓ plano de correção   1 patch validado no servidor       1,5 s
 
 SEGURANÇA DOS PODS
-  ✕ api-7c9f/app  crítico  Container 'app' no pod 'api-7c9f' roda como root (UID 0)
+  ▲ web-5d8b6-q7tvn/app  médio  Container 'app' no pod 'web-5d8b6-q7tvn' permite escalação de privilégios
 
 REMEDIAÇÃO · DRY-RUN
-  1. Pod payments/api-7c9f · Define runAsNonRoot: true para container 'app' no pod 'api-7c9f' · patch {"spec":{"containers":[{"name":"app","securityContext":{"runAsNonRoot":true}}]}}
+  ✓ Deployment/web  bloqueia a escalação de privilégios
+    contêiner app: allowPrivilegeEscalation (vazio) → false
 
   ○ nada foi aplicado; rode com --fix para aplicar
 
-RESUMO  1 crítico
+RESUMO  1 médio
   fontes     checks internos
-  relatório  ~/.yby/reports/sentinel-scan-payments-2026-10-25.md
+  relatório  ~/.yby/reports/sentinel-scan-payments-kind-yby-2026-10-25-093007.md

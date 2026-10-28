@@ -115,6 +115,9 @@ func NewCachedEmbeddingProvider(inner Provider, maxSize int, ttl time.Duration) 
 }
 
 func (c *CachedEmbeddingProvider) Name() string { return c.inner.Name() }
+
+// Unwrap devolve o provider embrulhado.
+func (c *CachedEmbeddingProvider) Unwrap() Provider { return c.inner }
 func (c *CachedEmbeddingProvider) IsAvailable(ctx context.Context) bool {
 	return c.inner.IsAvailable(ctx)
 }

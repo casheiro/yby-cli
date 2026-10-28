@@ -71,11 +71,12 @@ func writeCommandDocs(f *os.File, cmd *cobra.Command) error {
 	return nil
 }
 
-// subcomandosDocumentados são os subcomandos que ganham seção na referência.
+// subcomandosDocumentados são os subcomandos que ganham seção na referência. Plugin não
+// confiável fica de fora: a descoberta não o executou e só se sabe o nome do arquivo.
 func subcomandosDocumentados(cmd *cobra.Command) []*cobra.Command {
 	var subs []*cobra.Command
 	for _, c := range cmd.Commands() {
-		if c.IsAvailableCommand() && !c.IsAdditionalHelpTopicCommand() {
+		if c.IsAvailableCommand() && !c.IsAdditionalHelpTopicCommand() && c.Annotations[anotacaoNaoConfiavel] == "" {
 			subs = append(subs, c)
 		}
 	}

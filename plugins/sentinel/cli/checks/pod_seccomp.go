@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -22,16 +21,24 @@ func (c *SeccompCheck) Severity() Severity  { return SeverityLow }
 func (c *SeccompCheck) Description() string { return "Detecta pods sem perfil seccomp definido" }
 
 func (c *SeccompCheck) Run(ctx context.Context, client kubernetes.Interface, namespace string) ([]SecurityFinding, error) {
-	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := listarPods(ctx, client, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar pods: %w", err)
 	}
 
 	var findings []SecurityFinding
 	for _, pod := range pods.Items {
-		hasSeccomp := false
-		if pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.SeccompProfile != nil {
+		// O perfil do pod vale para todos os contêineres; sem ele, cada contêiner precisa
+		// ter o seu.
+		hasSeccomp := pod.Spec.SecurityContext != nil && pod.Spec.SecurityContext.SeccompProfile != nil
+		if !hasSeccomp && len(pod.Spec.Containers) > 0 {
 			hasSeccomp = true
+			for _, container := range pod.Spec.Containers {
+				if container.SecurityContext == nil || container.SecurityContext.SeccompProfile == nil {
+					hasSeccomp = false
+					break
+				}
+			}
 		}
 		if !hasSeccomp {
 			findings = append(findings, SecurityFinding{

@@ -38,10 +38,12 @@ type pluginsFalsos struct {
 	errHook       error
 }
 
-func (p *pluginsFalsos) Discover() error                                     { return p.errDescoberta }
-func (p *pluginsFalsos) ListPlugins() []plugin.PluginManifest                { return p.plugins }
-func (p *pluginsFalsos) ExecuteContextHook(*scaffold.BlueprintContext) error { return p.errHook }
-func (p *pluginsFalsos) GetAssets() []string                                 { return nil }
+func (p *pluginsFalsos) Discover() error                      { return p.errDescoberta }
+func (p *pluginsFalsos) ListPlugins() []plugin.PluginManifest { return p.plugins }
+func (p *pluginsFalsos) ExecuteContextHook(context.Context, *scaffold.BlueprintContext) error {
+	return p.errHook
+}
+func (p *pluginsFalsos) GetAssets() []string { return nil }
 
 // validadorFalso implementa validate.Service sem chamar o helm.
 type validadorFalso struct {

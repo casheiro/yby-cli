@@ -5,6 +5,26 @@
 
 ---
 
+## 26/10/2026 · `feat/pedido-grande-por-arquivo` → `feat/bard-relatorio-sentinel` → `feat/correcoes-plugins`
+
+**Feito**
+- v5.8.0 publicada (#209), com as notas da release limpas (#211, #213) e o bump calculado desde a última tag (#215, porque a tag fica fora da develop).
+- PR #216: `plugin list` sem duplicatas quando o yby roda na home.
+- PR #217: o pedido grande vai por arquivo (`YBY_PLUGIN_REQUEST_FILE`). Corrige o "argument list too long" no `yby synapstor --help` do anhumas-nexus. Testado em Linux num contêiner descartável.
+- PR #218: o Bard recebe os achados do Sentinel, que escreve o relatório sem o envelope `{"data":…}`, e o `sentinel_investigate` pede `-o json` (`ed2dfd1`). O `sentinel scan --no-ai` evita a segunda IA quando o Bard chama o scan (`fca00ec`).
+- Revisão dos cinco plugins com um agente por plugin. Os achados graves foram conferidos no código e viraram o plano `agile/planning/correcoes-plugins/tasks.md`, com cerca de 60 tarefas em 8 fases. `scripts/falhas.sh` entrou no repo.
+
+**Decisões**
+- Escopo das correções: tudo o que é erro ou está errado em relação à proposta. Features e perfumaria ficam fora, listadas no fim do plano.
+- Um PR por fase, com push direto, porque são correções.
+- A wiki só ganha a linha do `--no-ai` depois da release.
+
+**Pendente**
+- Merge do #216, do #217 e do #218, nesta ordem, e depois a release v5.8.1.
+
+**Próximo passo**
+- `git merge origin/develop` na `feat/correcoes-plugins` e começar pela C01.
+
 ## 24–25/10/2026 · `feat/tui-viz` → `feat/tui-cloud` → `feat/tui-plugins`
 
 **Feito**
