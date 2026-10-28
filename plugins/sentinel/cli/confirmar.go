@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 )

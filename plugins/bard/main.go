@@ -12,14 +12,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/plugin"
-	"github.com/casheiro/yby-cli/pkg/redacao"
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/bard/tools"
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/redacao"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 	"golang.org/x/term"
 )
 

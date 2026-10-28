@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 )
 
 // Testes de integração que rodam contra APIs reais (NÃO rodam no CI).

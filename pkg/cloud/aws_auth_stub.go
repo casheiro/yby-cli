@@ -9,7 +9,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // MFATokenProvider é uma função que solicita o código MFA ao usuário.

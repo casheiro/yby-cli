@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // Troca de modelo dentro de um provider (o /modelo do Bard): a lista dos modelos de cada

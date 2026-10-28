@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // aksServidor é o id da aplicação do servidor de API do AKS no Entra ID, o público dos

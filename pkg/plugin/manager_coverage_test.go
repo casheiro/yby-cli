@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/scaffold"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/scaffold"
 	"github.com/stretchr/testify/assert"
 )
 

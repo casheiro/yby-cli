@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/config"
+	"github.com/casheiro/yby-cli/v5/pkg/config"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )

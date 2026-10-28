@@ -12,9 +12,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/escopo"
 	"github.com/charmbracelet/lipgloss"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/casheiro/yby-cli/pkg/confianca"
+	"github.com/casheiro/yby-cli/v5/pkg/confianca"
 )
 
 // defaultPrompts mapeia nomes padronizados aos prompts default.

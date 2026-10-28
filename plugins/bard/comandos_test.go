@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 )
 
 // gravarHistorico escreve as entradas no histórico do diretório atual.

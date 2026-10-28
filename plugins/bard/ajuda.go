@@ -1,6 +1,6 @@
 package main
 
-import "github.com/casheiro/yby-cli/pkg/ui"
+import "github.com/casheiro/yby-cli/v5/pkg/ui"
 
 // ajudaBard é a ajuda de yby bard (folha SaidasComandos), escrita com ui.EscreverAjuda
 // como a dos outros plugins.

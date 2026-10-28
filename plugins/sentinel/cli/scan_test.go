@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/checks"
 )
 
 // --- exportScanMarkdown ---

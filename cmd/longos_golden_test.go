@@ -23,14 +23,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/executor"
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
-	"github.com/casheiro/yby-cli/pkg/services/environment"
-	"github.com/casheiro/yby-cli/pkg/services/network"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/executor"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/environment"
+	"github.com/casheiro/yby-cli/v5/pkg/services/network"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // Goldens das saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade

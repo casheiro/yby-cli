@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // Contrato com o Sentinel: os arquivos ficam no testdata do Sentinel, que é quem escreve o

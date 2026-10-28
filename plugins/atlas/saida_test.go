@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/logger"
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/logger"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery/analyzers"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	projectContext "github.com/casheiro/yby-cli/pkg/context"
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/retry"
-	"github.com/casheiro/yby-cli/pkg/scaffold"
+	projectContext "github.com/casheiro/yby-cli/v5/pkg/context"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/scaffold"
 	"sigs.k8s.io/yaml"
 )
 

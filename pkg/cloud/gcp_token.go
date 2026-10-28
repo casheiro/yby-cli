@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 	"golang.org/x/oauth2/google"
 )
 

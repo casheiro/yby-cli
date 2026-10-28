@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

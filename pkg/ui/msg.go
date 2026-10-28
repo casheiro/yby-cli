@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // Largura (em células) das saídas de comando sem TUI e das colunas de Check.

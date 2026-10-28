@@ -2,10 +2,10 @@ module github.com/casheiro/yby-cli/plugins/synapstor
 
 go 1.26.1
 
-replace github.com/casheiro/yby-cli => ../../
+replace github.com/casheiro/yby-cli/v5 => ../../
 
 require (
-	github.com/casheiro/yby-cli v0.0.0-00010101000000-000000000000
+	github.com/casheiro/yby-cli/v5 v5.0.0-00010101000000-000000000000
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/gofrs/flock v0.13.0
 	github.com/muesli/termenv v0.16.0

@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/scanner"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/uki"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // SynapstorResponse é o JSON que a IA devolve. O frontmatter do UKI sai do ID, do tipo e

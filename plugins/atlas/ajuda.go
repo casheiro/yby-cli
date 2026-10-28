@@ -3,7 +3,7 @@ package main
 import (
 	"io"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // flagAjuda é a linha do -h nas seções de flags, como no core.

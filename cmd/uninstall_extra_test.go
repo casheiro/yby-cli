@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // saveUninstallMocks salva e restaura as variáveis mockáveis do uninstall (incluindo o

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/test/e2e/sandbox"
+	"github.com/casheiro/yby-cli/v5/test/e2e/sandbox"
 )
 
 func TestInit_Headless_Complete(t *testing.T) {

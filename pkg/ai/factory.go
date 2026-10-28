@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/config"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
 )
 
 // providerFactory é uma função que cria um provider dado um contexto e um modelo

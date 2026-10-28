@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // APIError representa um erro HTTP de um provider de IA, com status code

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // KubectlInspector implementa ClusterInspector usando kubectl via shared.Runner.

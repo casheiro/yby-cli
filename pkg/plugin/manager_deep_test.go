@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/scaffold"
+	"github.com/casheiro/yby-cli/v5/pkg/scaffold"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

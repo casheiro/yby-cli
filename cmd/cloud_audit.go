@@ -7,9 +7,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/cloud"
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/cloud"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

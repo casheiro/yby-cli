@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // linhasDeDetalhe é quantas linhas finais da saída de um script que falhou aparecem

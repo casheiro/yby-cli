@@ -1,4 +1,4 @@
-module github.com/casheiro/yby-cli
+module github.com/casheiro/yby-cli/v5
 
 go 1.26.1
 

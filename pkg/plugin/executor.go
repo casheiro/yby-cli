@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // execCommandContext is a variable so it can be mocked in tests

@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/escopo"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

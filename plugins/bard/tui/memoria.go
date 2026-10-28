@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/redacao"
+	"github.com/casheiro/yby-cli/v5/pkg/redacao"
 )
 
 // Troca é uma pergunta da conversa atual e a resposta que ela teve. As trocas anteriores

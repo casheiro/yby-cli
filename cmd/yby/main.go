@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/casheiro/yby-cli/cmd"
+import "github.com/casheiro/yby-cli/v5/cmd"
 
 func main() {
 	cmd.Execute()

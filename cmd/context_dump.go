@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
