@@ -5,6 +5,28 @@
 
 ---
 
+## 27/10/2026 · `feat/correcoes-plugins` → trilhas `feat/correcoes-*` → `develop`
+
+**Feito**
+- Plano de correções dos plugins completo (77/77), em ondas por workflow (implementador e revisor adversarial por tarefa, um worktree por trilha): onda 0 (#220, `7f8337c`), onda 1 com Sentinel, Viz, Atlas, Synapstor e Bard (#221–#225), contratos (#226, `fbd0b02`) e fecho (#227, `43b5f36`).
+- Releases v5.8.1, v5.8.2 (CHANGELOG pelo #231, `d81add9`) e v5.8.3.
+- Wiki da v5.8.2 (P02, `6d450f9`): seis páginas conferidas contra o código e a CLI-Reference gerada de novo. A conferência achou a Fase 8, no #233 (`9251014`): P04 (a descoberta rodava o `manifest` de plugin não confiável), P05, S16 (métricas do `investigate` sem ambiente) e S17 (namespace padrão do Sentinel, por decisão do usuário).
+- #235 (`1e6f21d`): seção da v5.8.3 no CHANGELOG e prazo de 30 s no `coletar` dos testes do Bard, que estourava com `-race` no CI.
+- Wiki da v5.8.3 (`9e06685`) e ponteiro do submódulo neste registro. Worktrees e branches locais das ondas removidos.
+
+**Decisões**
+- S17: sem `-n`, o Sentinel usa o namespace do ambiente pedido, depois o do contexto do kubeconfig e por fim `default`.
+- A descoberta confia no carimbo (caminho, tamanho e mtime) do registro; o executor sempre recalcula o hash.
+
+**Pendente**
+- Fechos para a `main`: #228, #232 e #236.
+- Limites da confiança e achados soltos, em Atenção no `estado.md`.
+
+**Próximo passo**
+- O usuário escolhe a próxima frente ("Fora do escopo" do plano ou o `ROADMAP.md`).
+
+---
+
 ## 26/10/2026 · `feat/pedido-grande-por-arquivo` → `feat/bard-relatorio-sentinel` → `feat/correcoes-plugins`
 
 **Feito**
