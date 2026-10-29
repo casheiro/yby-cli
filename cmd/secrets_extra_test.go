@@ -6,9 +6,9 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/secrets"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/services/secrets"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 

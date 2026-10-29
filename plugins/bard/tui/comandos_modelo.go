@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // homeEPastaIsoladas põe HOME (e o USERPROFILE do Windows) e o diretório atual em pastas

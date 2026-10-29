@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/config"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // configurarAjuda troca a ajuda e o uso padrão do cobra (em inglês) pela ajuda da carta.

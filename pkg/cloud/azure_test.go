@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 )
 
 func TestAzureProvider_Name(t *testing.T) {

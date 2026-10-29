@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
 )
 
 // gravadorEtapas registra os eventos de etapa como texto e conta os avanços de cota.

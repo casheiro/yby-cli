@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery/analyzers"
 )
 
 // infraCategory mapeia Kind de recurso para categoria de agrupamento no diagrama.

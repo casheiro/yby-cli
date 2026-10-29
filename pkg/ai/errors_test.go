@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"testing"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

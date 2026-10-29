@@ -12,7 +12,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 	"github.com/gomlx/go-huggingface/tokenizers/hftokenizer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

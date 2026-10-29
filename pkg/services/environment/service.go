@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // validEnvironmentTypes lista todos os tipos de ambiente reconhecidos.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 )
 
 // PodInfo contém informações resumidas de um pod.

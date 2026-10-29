@@ -5,8 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/mirror"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/mirror"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // K3dClusterManager implements ClusterManager for k3d

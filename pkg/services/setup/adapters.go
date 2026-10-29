@@ -4,7 +4,7 @@ import (
 	"context"
 	"runtime"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // SystemToolChecker implementa ToolChecker usando shared.Runner.LookPath.

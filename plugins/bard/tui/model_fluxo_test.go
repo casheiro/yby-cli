@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/bard/tools"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

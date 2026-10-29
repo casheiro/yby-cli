@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	yui "github.com/casheiro/yby-cli/v5/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )

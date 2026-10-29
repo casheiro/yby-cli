@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 )
 
 // runnerPorComando responde cada comando pela chave do mapa que for prefixo dele

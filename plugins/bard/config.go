@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
 	"gopkg.in/yaml.v3"
 )
 

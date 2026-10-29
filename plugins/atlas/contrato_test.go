@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // Contrato com a ferramenta atlas_blueprint do Bard (plugins/bard/tools): o Bard manda o

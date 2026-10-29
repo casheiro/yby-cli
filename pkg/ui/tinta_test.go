@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/muesli/termenv"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // textoSemCor devolve os trechos de texto visível (exceto espaços) que não estão sob uma cor de

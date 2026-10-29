@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // semTerminal simula a entrada padrão fora de um terminal (pipe, CI).

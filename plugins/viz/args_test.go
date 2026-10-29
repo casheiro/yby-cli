@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/plugin"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 	"github.com/charmbracelet/x/ansi"
 )
 

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // TestRespond_GeraJSONValido verifica que a função respond() gera uma

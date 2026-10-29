@@ -1,6 +1,6 @@
 resultado: ok
 d .devcontainer/
-f df42be172f4e772d1f7f76e85f569be3c043d45aa12bbf4492c6253bd6e37306 .devcontainer/devcontainer.json
+f d27a923aacfe0390d49a71fd4fc679a4d4d37fb303ab721b1f78fce95c09587d .devcontainer/devcontainer.json
 d .github/
 f 2f1f3b515a77f529f1e89cd5e2f5fb5f0076e2c254a139f213741aa1f1332f48 .github/labels.yml
 d .synapstor/

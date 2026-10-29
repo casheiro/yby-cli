@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // SecretStrategy define a interface para diferentes estratégias de gestão de secrets.

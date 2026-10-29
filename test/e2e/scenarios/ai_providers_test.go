@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
 )
 
 // TestAIRateLimitRetry verifica que o RetryProvider retenta após receber 429

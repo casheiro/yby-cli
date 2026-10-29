@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 func msgDoctor() string {

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -12,17 +13,21 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -124,8 +129,10 @@ e substitui o binário atual.`,
 				WithHint(dica)
 		}
 
-		emDia := release.TagName == Version
-		ui.Check(w, ui.CheckNeutro, "instalada", Version, "")
+		// a tag vem com "v" (v5.8.3) e o Version do GoReleaser sem (5.8.3)
+		instalada := versaoInstalada().Versao
+		emDia := mesmaVersao(release.TagName, instalada)
+		ui.Check(w, ui.CheckNeutro, "instalada", instalada, "")
 		switch {
 		case emDia:
 			ui.Check(w, ui.CheckOk, "disponível", release.TagName, "já é a mais recente")
@@ -140,7 +147,7 @@ e substitui o binário atual.`,
 		}
 
 		// Determinar o asset correto
-		assetName := fmt.Sprintf("yby_%s_%s_%s.tar.gz", release.TagName, sistemaUpgrade, arquiteturaUpgrade)
+		assetName := nomeDoAsset(release.TagName, sistemaUpgrade, arquiteturaUpgrade)
 		var assetURL string
 		for _, a := range release.Assets {
 			if a.Name == assetName {
@@ -199,7 +206,7 @@ e substitui o binário atual.`,
 
 		// Extrair binário do tar.gz e trocar o executável
 		prog.Iniciar("instalação")
-		binaryData, err := extractBinaryFromTarGz(assetData)
+		binaryData, err := extrairBinario(assetData, sistemaUpgrade)
 		if err != nil {
 			prog.Falhar("")
 			return errors.Wrap(err, errors.ErrCodeIO, "falha ao extrair o binário do pacote").
@@ -219,6 +226,30 @@ e substitui o binário atual.`,
 	},
 }
 
+// pacoteDoUpgrade é o pacote que o upgrade baixa: o da variante em execução, para o
+// yby-cloud não virar o yby padrão (trocada nos testes).
+var pacoteDoUpgrade = varianteDoPacote
+
+// nomeDoAsset devolve o nome do pacote do yby no release: o GoReleaser tira o "v" da tag
+// (yby_5.8.3_linux_amd64.tar.gz, yby-cloud_5.8.3_linux_amd64.tar.gz) e empacota o
+// Windows em zip.
+func nomeDoAsset(tag, sistema, arquitetura string) string {
+	extensao := "tar.gz"
+	if sistema == "windows" {
+		extensao = "zip"
+	}
+	return fmt.Sprintf("%s_%s_%s_%s.%s", pacoteDoUpgrade, versaoSemV(tag), sistema, arquitetura, extensao)
+}
+
+// extrairBinario tira o executável do pacote do release: yby.exe (ou yby-cloud.exe) do
+// zip no Windows, yby (ou yby-cloud) do tar.gz nos outros sistemas.
+func extrairBinario(pacote []byte, sistema string) ([]byte, error) {
+	if sistema == "windows" {
+		return extractBinaryFromZip(pacote, pacoteDoUpgrade+".exe")
+	}
+	return extractBinaryFromTarGz(pacote)
+}
+
 // instalarBinario troca o executável atual por binario, com backup e rollback, e devolve
 // o caminho instalado. Variável para os testes não tocarem no binário de verdade.
 var instalarBinario = func(binario []byte) (string, error) {
@@ -233,26 +264,53 @@ var instalarBinario = func(binario []byte) (string, error) {
 		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao seguir o link do binário atual").
 			WithHint("baixe a versão nova da página de releases e troque o binário à mão")
 	}
+	return execPath, trocarExecutavel(execPath, binario)
+}
 
+// trocarExecutavel põe binario no lugar de execPath. O atual vira execPath+".bak" (o
+// Windows deixa renomear o executável em uso, não apagar nem sobrescrever) e volta se a
+// escrita falhar. No fim o .bak é apagado; no Windows ele é o executável em uso e só sai
+// depois que o yby fechar (removerDepois). Um .bak que tenha ficado de um upgrade anterior
+// é apagado antes.
+func trocarExecutavel(execPath string, binario []byte) error {
 	backupPath := execPath + ".bak"
 
+	if err := osRemove(backupPath); err != nil && !stderrors.Is(err, fs.ErrNotExist) {
+		slog.Debug("backup antigo do yby não foi apagado", "caminho", backupPath, "erro", err)
+	}
+
 	// Renomear binário atual para .bak
-	if err := os.Rename(execPath, backupPath); err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao criar backup do binário atual").
-			WithHint("sem permissão na pasta do executável? rode com sudo ou reinstale pelo instalador")
+	if err := osRename(execPath, backupPath); err != nil {
+		return errors.Wrap(err, errors.ErrCodeIO, "falha ao criar backup do binário atual").
+			WithHint(dicaRemocao(err, dicaPermissaoUpgrade()))
 	}
 
 	// Escrever novo binário
-	if err := os.WriteFile(execPath, binario, 0755); err != nil {
+	if err := osWriteFile(execPath, binario, 0755); err != nil {
 		// Rollback: restaurar backup
-		_ = os.Rename(backupPath, execPath)
-		return "", errors.Wrap(err, errors.ErrCodeIO, "falha ao instalar novo binário").
+		_ = osRename(backupPath, execPath)
+		return errors.Wrap(err, errors.ErrCodeIO, "falha ao instalar novo binário").
 			WithHint("o binário anterior foi restaurado; rode yby upgrade de novo")
 	}
 
-	// Remover backup
-	_ = os.Remove(backupPath)
-	return execPath, nil
+	// Remover backup: no Windows ele é o executável em uso
+	if err := osRemove(backupPath); err != nil && !stderrors.Is(err, fs.ErrNotExist) {
+		if err := removerDepois(backupPath); err != nil {
+			slog.Debug("remoção do backup do yby não foi agendada", "caminho", backupPath, "erro", err)
+		}
+	}
+	return nil
+}
+
+// osWriteFile escreve o binário novo (trocada nos testes).
+var osWriteFile = os.WriteFile
+
+// dicaPermissaoUpgrade é a dica quando falta permissão na pasta do executável.
+func dicaPermissaoUpgrade() string {
+	if sistemaUpgrade == "windows" {
+		return "abra o terminal como administrador e rode yby upgrade de novo"
+	}
+	return "sem permissão na pasta do executável: rode com sudo yby upgrade"
 }
 
 // fetchLatestRelease busca o último release do GitHub
@@ -260,10 +318,20 @@ func fetchLatestRelease() (*releaseInfo, error) {
 	return fetchReleaseFromURL("https://api.github.com/repos/casheiro/yby-cli/releases/latest")
 }
 
-// fetchRelease busca um release específico por tag
+// fetchRelease busca um release específico por tag. A tag do GitHub tem o "v" (v5.8.3);
+// --version 5.8.3 também vale, como no yby plugin install.
 func fetchRelease(tag string) (*releaseInfo, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/casheiro/yby-cli/releases/tags/%s", tag)
+	url := fmt.Sprintf("https://api.github.com/repos/casheiro/yby-cli/releases/tags/%s", tagDoRelease(tag))
 	return fetchReleaseFromURL(url)
+}
+
+// tagDoRelease põe o "v" da tag do GitHub numa versão que começa por dígito.
+func tagDoRelease(versao string) string {
+	versao = strings.TrimSpace(versao)
+	if versao != "" && versao[0] >= '0' && versao[0] <= '9' {
+		return "v" + versao
+	}
+	return versao
 }
 
 // fetchReleaseFromURL busca informações de release de uma URL
@@ -354,11 +422,33 @@ func extractBinaryFromTarGz(data []byte) ([]byte, error) {
 		}
 
 		baseName := filepath.Base(header.Name)
-		if baseName == "yby" && header.Typeflag == tar.TypeReg {
+		if baseName == pacoteDoUpgrade && header.Typeflag == tar.TypeReg {
 			return io.ReadAll(tarReader)
 		}
 	}
-	return nil, fmt.Errorf("binário 'yby' não encontrado no arquivo")
+	return nil, fmt.Errorf("binário '%s' não encontrado no arquivo", pacoteDoUpgrade)
+}
+
+// extractBinaryFromZip extrai o arquivo nome (em qualquer pasta) de um zip, o formato dos
+// pacotes do Windows no release.
+func extractBinaryFromZip(data []byte, nome string) ([]byte, error) {
+	leitor, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("falha ao abrir zip: %w", err)
+	}
+	for _, f := range leitor.File {
+		// os nomes no zip usam "/" em todo sistema
+		if f.FileInfo().IsDir() || path.Base(f.Name) != nome {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("falha ao ler %s do zip: %w", nome, err)
+		}
+		defer r.Close()
+		return io.ReadAll(r)
+	}
+	return nil, fmt.Errorf("binário '%s' não encontrado no arquivo", nome)
 }
 
 func init() {

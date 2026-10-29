@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // binAtlas guarda o binário compilado uma vez só para todos os testes do pacote.

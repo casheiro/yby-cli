@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/cloud"
-	"github.com/casheiro/yby-cli/pkg/testutil"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/cloud"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"

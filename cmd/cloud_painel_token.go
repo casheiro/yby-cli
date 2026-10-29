@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/lipgloss"
 )
 

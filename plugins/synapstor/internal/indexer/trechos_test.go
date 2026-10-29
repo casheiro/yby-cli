@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
 )
 
 func TestDividirEmTrechos_UmPorSecaoH2(t *testing.T) {

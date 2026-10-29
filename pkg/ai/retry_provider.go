@@ -10,7 +10,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
-	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
 )
 
 // DefaultRetryableStatusCodes define quais status HTTP devem ser retentados.

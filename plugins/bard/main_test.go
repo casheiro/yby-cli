@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // TestHandlePluginRequest_Manifest verifica que o hook "manifest" retorna

@@ -6,7 +6,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // AzureAdvancedTokenGenerator gera tokens AKS via CLI `az account get-access-token` (fallback sem SDK).

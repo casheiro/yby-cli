@@ -23,14 +23,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/executor"
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
-	"github.com/casheiro/yby-cli/pkg/services/environment"
-	"github.com/casheiro/yby-cli/pkg/services/network"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/executor"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/environment"
+	"github.com/casheiro/yby-cli/v5/pkg/services/network"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // Goldens das saídas de bootstrap vps/cluster, up, access, destroy, uninstall e upgrade
@@ -667,7 +667,7 @@ func TestUninstallGolden_Falhas(t *testing.T) {
 		nome string
 		err  error
 	}{
-		{"uninstall_falha_permissao", fmt.Errorf("remove /usr/local/bin/yby: permission denied")},
+		{"uninstall_falha_permissao", &fs.PathError{Op: "remove", Path: "/usr/local/bin/yby", Err: fs.ErrPermission}},
 		{"uninstall_falha_outra", fmt.Errorf("remove /usr/local/bin/yby: text file busy")},
 	}
 	for _, c := range casos {
@@ -719,7 +719,8 @@ func prepararUpgrade(t *testing.T, rel *relogioFalso, atual, disponivel string, 
 	sistemaUpgrade, arquiteturaUpgrade = "linux", "amd64"
 
 	pacote := createTestTarGz(t, "yby", []byte("binário novo"))
-	asset := fmt.Sprintf("yby_%s_linux_amd64.tar.gz", disponivel)
+	// o GoReleaser tira o "v" da tag no nome do pacote
+	asset := fmt.Sprintf("yby_%s_linux_amd64.tar.gz", strings.TrimPrefix(disponivel, "v"))
 	somaBytes := sha256.Sum256(pacote)
 	soma := hex.EncodeToString(somaBytes[:])
 	if corromper {

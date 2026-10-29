@@ -42,17 +42,76 @@ O Yby **não substitui** o `kubectl`. Eles trabalham juntos:
 
 ---
 
-## 🚀 Instalação Rápida
+## 🚀 Instalação
+
+Cada [release](https://github.com/casheiro/yby-cli/releases) traz o yby para Linux, macOS e Windows, em amd64 e arm64, com o `checksums.txt` (SHA-256 de cada arquivo).
+
+### Linux e macOS
 
 ```bash
-# Via Script (Linux/Mac)
-curl -sfL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | sh -
-
-# Via Go
-go install github.com/casheiro/yby-cli/cmd/yby@latest
+curl -fsSL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | sh
 ```
 
-> **Verificação:** Rode `yby doctor` para checar se você tem as ferramentas necessárias (Docker, Helm, Kubectl) e validar credenciais cloud.
+O script escolhe o pacote do sistema e da arquitetura (no Mac com Apple Silicon, o arm64), baixa a última versão, confere o SHA-256 e instala em `/usr/local/bin`, com `sudo` se a pasta não for sua. Para outra versão ou outra pasta:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/casheiro/yby-cli/main/install.sh | YBY_VERSION=v5.8.3 YBY_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+### Windows
+
+No PowerShell (o Windows PowerShell 5.1 ou o PowerShell 7), sem administrador:
+
+```powershell
+irm https://raw.githubusercontent.com/casheiro/yby-cli/main/install.ps1 | iex
+```
+
+O script baixa o zip da última versão, confere o SHA-256, instala o `yby.exe` em `%LOCALAPPDATA%\Programs\yby` e põe essa pasta no PATH do usuário. Abra um terminal novo depois: os que já estavam abertos não veem o PATH novo. Para outra versão, outra pasta ou sem mexer no PATH (`-SemPath`):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/casheiro/yby-cli/main/install.ps1))) -Versao v5.8.3 -Destino C:\ferramentas\yby
+```
+
+**À mão:** baixe `yby_<versão>_windows_amd64.zip` (ou `_arm64.zip`) da página de [releases](https://github.com/casheiro/yby-cli/releases), extraia o `yby.exe` numa pasta sua (por exemplo `%LOCALAPPDATA%\Programs\yby`) e ponha a pasta no PATH: no menu Iniciar, procure "Editar as variáveis de ambiente para sua conta", abra `Path`, clique em **Novo**, cole a pasta e confirme. Depois, abra um terminal novo.
+
+> **Instalou pelo `go install` com o caminho antigo?** Sem o `/v5`, ele instalava a v1.12.2, de 2025, em `%USERPROFILE%\go\bin\yby.exe` (no Linux e no macOS, `~/go/bin/yby`). Essa pasta costuma vir antes no PATH: apague esse arquivo, ou reinstale pelo caminho novo abaixo. O `install.sh` e o `install.ps1` avisam quando outro yby vem antes do recém-instalado.
+
+### Com o Go
+
+```bash
+go install github.com/casheiro/yby-cli/v5/cmd/yby@latest
+```
+
+Precisa do Go 1.26 ou mais novo e instala em `$(go env GOPATH)/bin` (`~/go/bin`; no Windows, `%USERPROFILE%\go\bin`), que precisa estar no PATH. O `/v5` no caminho é obrigatório: sem ele, o Go ignora as tags da v2 em diante. Vale para as versões depois da v5.8.3. O `go install` traz só o core; os plugins nativos se instalam depois pelo próprio yby (veja abaixo).
+
+### Variante `yby-cloud`
+
+Cada release traz também `yby-cloud_<versão>_<sistema>_<arquitetura>.tar.gz` (`.zip` no Windows), com os SDKs da AWS, da Azure e do GCP embutidos: o token do EKS, do AKS e do GKE sai sem os CLIs `aws`, `az` e `gcloud`, e o provider de IA Amazon Bedrock fica disponível. O executável se chama `yby-cloud` (`yby-cloud.exe`); instale à mão, como no Windows acima. O `install.sh` e o `install.ps1` instalam só a variante padrão. Depois de instalado, o `yby-cloud upgrade` baixa o pacote `yby-cloud_…`.
+
+### Plugins
+
+O Viz, o Bard, o Sentinel, o Synapstor e o Atlas são executáveis à parte, instalados pelo yby em `~/.yby/plugins`, na mesma versão do core:
+
+```bash
+yby plugin install viz      # ou bard, sentinel, synapstor, atlas
+yby plugin list             # o que está instalado
+yby plugin update           # depois de um yby upgrade, põe os nativos na versão nova do core
+```
+
+Plugins de terceiros e a criação do seu estão no [guia de plugins](https://github.com/casheiro/yby-cli/wiki/Plugins).
+
+### Conferir, atualizar e desinstalar
+
+```bash
+yby version        # versão instalada
+yby doctor         # ferramentas que o yby usa (Docker, kubectl, Helm…) e credenciais cloud
+yby upgrade        # troca o executável pela última release, conferindo o SHA-256 (--check só verifica)
+yby uninstall      # remove o executável; o ~/.yby (configuração e dados) fica
+```
+
+No Windows, o `yby uninstall` tira o `yby.exe` do lugar na hora e o arquivo some do disco quando o yby fecha.
+
+Até a v5.8.3, o `yby upgrade` procura um pacote que não existe e para em "asset não encontrado": saia dessas versões reinstalando pelo script ou pelo pacote da release, como acima. No Windows, o `yby plugin install` dessas versões também falha com os nativos ("unsupported archive format"); extraia o `yby-plugin-<nome>_<versão>_windows_amd64.zip` da release em `%USERPROFILE%\.yby\plugins` e rode `yby plugin trust <nome>`.
 
 ---
 
@@ -139,7 +198,7 @@ O Yby foi desenhado para ser estendido. Não encontrou o que precisa? Crie seu p
 *   **API Simples**: Receba contexto no `STDIN`, devolva ações no `STDOUT`.
 *   **Distribuição Fácil**: Publique no GitHub e instale com `yby plugin install`.
 
-[📖 Guia de Desenvolvimento de Plugins](docs/wiki/Plugins.md)
+[📖 Guia de Desenvolvimento de Plugins](https://github.com/casheiro/yby-cli/wiki/Plugins)
 
 ---
 
@@ -165,7 +224,7 @@ tls:
 yby init --config .yby/overrides.yaml
 ```
 
-Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, namespaces com prefixo, labels de compliance, versoes de charts, resource profiles e mais. [Guia completo](docs/wiki/Enterprise-Overrides.md).
+Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, namespaces com prefixo, labels de compliance, versoes de charts, resource profiles e mais. [Guia completo](https://github.com/casheiro/yby-cli/wiki/Enterprise-Overrides).
 
 ---
 
@@ -173,14 +232,14 @@ Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, n
 
 A documentação completa está na nossa **Wiki**:
 
-- **[Getting Started](docs/wiki/Getting-Started.md)**: Passos iniciais.
-- **[Core Concepts](docs/wiki/Core-Concepts.md)**: Estrutura, Monorepo e Arquivos Gerados.
-- **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
-- **[Enterprise Overrides](docs/wiki/Enterprise-Overrides.md)**: Customizacao para ambientes corporativos.
-- **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
-- **[Plugins](docs/wiki/Plugins.md)**: Bard, Viz, Sentinel, Synapstor e Atlas, com as teclas de cada TUI.
-- **[Operations](docs/wiki/Operations.md)**: Operação do dia a dia, clusters cloud e solução de problemas.
-- **[CLI Reference](docs/wiki/CLI-Reference.md)**: Todos os comandos e flags.
+- **[Getting Started](https://github.com/casheiro/yby-cli/wiki/Getting-Started)**: Passos iniciais.
+- **[Core Concepts](https://github.com/casheiro/yby-cli/wiki/Core-Concepts)**: Estrutura, Monorepo e Arquivos Gerados.
+- **[Architecture](https://github.com/casheiro/yby-cli/wiki/Architecture)**: Diagramas, Componentes e Segurança.
+- **[Enterprise Overrides](https://github.com/casheiro/yby-cli/wiki/Enterprise-Overrides)**: Customizacao para ambientes corporativos.
+- **[Governance](https://github.com/casheiro/yby-cli/wiki/Governance)**: IA, Agentes e DevGovOps.
+- **[Plugins](https://github.com/casheiro/yby-cli/wiki/Plugins)**: Bard, Viz, Sentinel, Synapstor e Atlas, com as teclas de cada TUI.
+- **[Operations](https://github.com/casheiro/yby-cli/wiki/Operations)**: Operação do dia a dia, clusters cloud e solução de problemas.
+- **[CLI Reference](https://github.com/casheiro/yby-cli/wiki/CLI-Reference)**: Todos os comandos e flags.
 - **[CHANGELOG](CHANGELOG.md)**: Teclas e comportamentos que mudaram entre versões.
 
 ---

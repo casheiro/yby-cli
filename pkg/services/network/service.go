@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/casheiro/yby-cli/pkg/retry"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

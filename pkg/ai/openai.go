@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
 	"strings"
 	"time"
 )

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	"github.com/casheiro/yby-cli/pkg/logger"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/config"
+	"github.com/casheiro/yby-cli/v5/pkg/logger"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/lipgloss"
 )
 

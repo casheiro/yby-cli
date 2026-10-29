@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 	"github.com/gofrs/flock"
 )
 

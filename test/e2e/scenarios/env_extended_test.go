@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/test/e2e/sandbox"
+	"github.com/casheiro/yby-cli/v5/test/e2e/sandbox"
 )
 
 func TestEnv_Extended_CreateFlow(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 )
 
 // O token vai para o servidor de API do AKS, e a validade sai do expires_on (UTC).

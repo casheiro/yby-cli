@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 func TestCausaCurta(t *testing.T) {

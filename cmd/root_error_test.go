@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/logger"
-	"github.com/casheiro/yby-cli/pkg/plugin"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/logger"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

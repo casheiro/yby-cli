@@ -10,11 +10,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/redacao"
-	"github.com/casheiro/yby-cli/pkg/retry"
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/bard/tools"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/redacao"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
 	"github.com/cenkalti/backoff/v4"
 	tea "github.com/charmbracelet/bubbletea"
 )

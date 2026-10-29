@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery/analyzers"
 )
 
 // escreverFixtureInfra monta um projeto com um compose de 5 serviços e 2 charts Helm.
