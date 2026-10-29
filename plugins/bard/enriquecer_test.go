@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,7 +74,10 @@ func TestEnriquecer_ContextoSemCurrentContext(t *testing.T) {
 // Um --context que não existe no kubeconfig não passa, mesmo com current-context.
 func TestEnriquecer_ContextoInexistente(t *testing.T) {
 	k := &kubectlFalso{atual: "ctx-a"}
-	assert.Nil(t, enriquecer(k.rodar, "ctx-sumiu", ""))
+	cc := enriquecer(k.rodar, "ctx-sumiu", "")
+	require.NotNil(t, cc)
+	assert.Equal(t, `o contexto "ctx-sumiu" não existe no kubeconfig`, cc.SemCluster)
+	assert.Empty(t, cc.Cluster)
 }
 
 // Sem --context, vale o current-context e o namespace dele; o -n troca o namespace.
@@ -86,7 +91,67 @@ func TestEnriquecer_SemContexto(t *testing.T) {
 	require.NotNil(t, cc)
 	assert.Equal(t, "payments", cc.Namespace)
 
-	assert.Nil(t, enriquecer((&kubectlFalso{}).rodar, "", ""), "sem current-context nem --context, nada")
+	cc = enriquecer((&kubectlFalso{}).rodar, "", "")
+	require.NotNil(t, cc)
+	assert.Equal(t, "o kubeconfig não tem contexto atual (current-context)", cc.SemCluster,
+		"sem current-context nem --context, o motivo vai para o prompt")
+	assert.Empty(t, cc.Cluster)
+	assert.Empty(t, cc.Pods)
+}
+
+// Cluster no kubeconfig que não responde: o cabeçalho mantém o cluster, e o prompt diz que
+// pods e eventos são desconhecidos (antes saía "nenhum pod", como se estivesse vazio).
+func TestEnriquecer_ClusterSemResposta(t *testing.T) {
+	rodar := func(args ...string) (string, error) {
+		switch strings.Join(args, " ") {
+		case "config current-context":
+			return "k3d-yby-local\n", nil
+		case "config view --minify --output=jsonpath={..namespace}":
+			return "", nil
+		}
+		return "", &exec.ExitError{Stderr: []byte("Unable to connect to the server: dial tcp 127.0.0.1:6443: connectex: No connection could be made\n")}
+	}
+	cc := enriquecer(rodar, "", "")
+	require.NotNil(t, cc)
+	assert.Empty(t, cc.SemCluster)
+	assert.Equal(t, "k3d-yby-local", cc.Cluster)
+	assert.Contains(t, cc.SemResposta, "Unable to connect to the server")
+
+	texto := FormatClusterContext(cc)
+	assert.Contains(t, texto, "**Cluster**: k3d-yby-local")
+	assert.Contains(t, texto, "**O cluster não respondeu** ao kubectl: Unable to connect")
+	assert.Contains(t, texto, "não diga que o namespace está vazio")
+
+	var c tui.Config
+	aplicarCluster(&c, cc, opcoesBard{})
+	assert.Equal(t, "k3d-yby-local", c.Cluster)
+}
+
+// O motivo de não haver cluster sai do erro do kubectl.
+func TestMotivoSemCluster(t *testing.T) {
+	assert.Equal(t, "o kubectl não está instalado ou não está no PATH",
+		motivoSemCluster(&exec.Error{Name: "kubectl", Err: exec.ErrNotFound}, ""))
+	assert.Equal(t, `o contexto "x" não existe no kubeconfig`, motivoSemCluster(errors.New("error: context not found"), "x"))
+	assert.Equal(t, "o kubeconfig não tem contexto atual (current-context)",
+		motivoSemCluster(&exec.ExitError{Stderr: []byte("error: current-context is not set\n")}, ""))
+	assert.Equal(t, `o kubeconfig C:\Users\ana\.kube\config não é válido (o kubectl não consegue ler o arquivo)`,
+		motivoSemCluster(&exec.ExitError{Stderr: []byte(`error: error loading config file "C:\Users\ana\.kube\config": couldn't get version/kind; json parse error: json: cannot unmarshal string`)}, ""))
+	assert.Equal(t, "o kubectl não leu o kubeconfig: error: yaml: line 3: mapping values",
+		motivoSemCluster(errors.New("error: yaml: line 3: mapping values\nmais"), ""))
+}
+
+// Sem cluster, o prompt diz o motivo e o que fazer, e o cabeçalho fica sem cluster.
+func TestSemCluster_PromptECabecalho(t *testing.T) {
+	cc := &ClusterContext{SemCluster: "o kubeconfig não tem contexto atual (current-context)"}
+	texto := FormatClusterContext(cc)
+	assert.Contains(t, texto, "Nenhum cluster conectado**: o kubeconfig não tem contexto atual (current-context)")
+	assert.Contains(t, texto, "kubectl config use-context")
+	assert.NotContains(t, texto, "**Cluster**:")
+
+	var c tui.Config
+	aplicarCluster(&c, cc, opcoesBard{})
+	assert.Empty(t, c.Cluster)
+	assert.Empty(t, c.Namespace)
 }
 
 // Com o cluster lento, o kubectl leva --request-timeout e o conjunto respeita o prazo total.
@@ -99,7 +164,8 @@ func TestEnrichContext_PrazoELimiteDeRequisicao(t *testing.T) {
 
 	inicio := time.Now()
 	cc := EnrichContext(context.Background(), "", "")
-	assert.Nil(t, cc)
+	require.NotNil(t, cc)
+	assert.Equal(t, "o kubectl não respondeu em 5s", cc.SemCluster)
 	assert.Less(t, time.Since(inicio), 10*time.Second, "o prazo total tem de cortar o kubectl lento")
 
 	args, err := os.ReadFile(arq)
