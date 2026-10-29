@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 const defaultTopK = 5

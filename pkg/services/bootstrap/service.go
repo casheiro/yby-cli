@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/retry"
-	"github.com/casheiro/yby-cli/pkg/scaffold"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/scaffold"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 	"gopkg.in/yaml.v3"
 )
 

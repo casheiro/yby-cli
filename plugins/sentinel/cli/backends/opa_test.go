@@ -21,8 +21,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/escopo"
 )
 
 // TestOPABackendName verifica que o nome do backend é "opa".

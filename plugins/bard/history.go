@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/redacao"
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	"github.com/casheiro/yby-cli/v5/pkg/redacao"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 )
 
 const maxHistoryEntries = 20

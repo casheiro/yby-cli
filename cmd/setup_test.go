@@ -3,9 +3,9 @@ package cmd
 import (
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/setup"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/services/setup"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // MockProvider implements ai.Provider for testing

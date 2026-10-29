@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 )
 
 // saidaSSOVencido é o que o AWS CLI v2 escreve no stderr com o token do SSO vencido (sai

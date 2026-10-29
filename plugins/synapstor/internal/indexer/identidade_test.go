@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
 )
 
 // embeddingsFalsos gera vetores de dimensão fixa: trocar de provedor falso simula trocar

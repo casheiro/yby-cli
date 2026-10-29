@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // saidaSegura é um buffer que aceita escrita do laço de sync em outra goroutine.

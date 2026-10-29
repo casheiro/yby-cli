@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	yui "github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

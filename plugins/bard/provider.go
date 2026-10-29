@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
 )
 
 // rotulosProvider liga o começo do Name() de cada provider ao nome curto que o

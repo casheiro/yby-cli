@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/muesli/termenv"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // hospedeiro embrulha o Confirmar, registra o desfecho e encerra o programa.

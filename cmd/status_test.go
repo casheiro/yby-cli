@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/services/status"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/status"
 	"github.com/stretchr/testify/assert"
 )
 

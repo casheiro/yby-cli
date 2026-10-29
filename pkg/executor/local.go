@@ -4,7 +4,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // LocalExecutor roda os scripts nesta máquina, via bash -c.

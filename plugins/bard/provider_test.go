@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/retry"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/retry"
 )
 
 // nomeado é um provider que só responde ao Name; os outros métodos não são chamados.

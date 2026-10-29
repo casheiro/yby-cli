@@ -3,7 +3,7 @@ package plugin
 import (
 	"os"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // EnvPedido é a variável com o pedido do core ao plugin interativo.

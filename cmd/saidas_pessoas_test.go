@@ -11,16 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/cloud"
-	"github.com/casheiro/yby-cli/pkg/confianca"
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/plugin"
-	"github.com/casheiro/yby-cli/pkg/services/logs"
-	"github.com/casheiro/yby-cli/pkg/services/secrets"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/cloud"
+	"github.com/casheiro/yby-cli/v5/pkg/confianca"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/services/logs"
+	"github.com/casheiro/yby-cli/v5/pkg/services/secrets"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
@@ -569,11 +569,28 @@ func TestSaidasPlugin_Golden(t *testing.T) {
 	})
 }
 
+// O plugin update pede ao Manager a versão do yby em execução, não uma "latest" que não é
+// tag de release.
+func TestPluginUpdate_PassaAVersaoDoYby(t *testing.T) {
+	anterior := Version
+	Version = "5.8.3"
+	t.Cleanup(func() { Version = anterior })
+	raiz := usarProjeto(t, "")
+	f := &fakePluginManager{plugins: []plugin.LoadedPlugin{binarioDePlugin(t, raiz, "bard")}}
+	usarPluginsFalsos(t, f)
+
+	executar(t, pluginUpdateCmd, raiz)
+
+	assert.Equal(t, []string{"5.8.3"}, f.versoes)
+}
+
 // fakePluginManager implementa gerenciadorPlugins sem executar binário nenhum.
 type fakePluginManager struct {
 	plugins      []plugin.LoadedPlugin
 	instalar     func(origem string) error
 	errAtualizar map[string]error
+	// versoes guarda a versão que cada Update recebeu
+	versoes []string
 }
 
 func (f *fakePluginManager) Discover() error { return nil }
@@ -604,7 +621,8 @@ func (f *fakePluginManager) Remove(nome string) error {
 	}
 	return nil
 }
-func (f *fakePluginManager) Update(nome string) error {
+func (f *fakePluginManager) Update(nome, versao string) error {
+	f.versoes = append(f.versoes, versao)
 	if err := f.errAtualizar[nome]; err != nil {
 		return err
 	}

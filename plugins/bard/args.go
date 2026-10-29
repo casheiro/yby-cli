@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // opcoesBard são os args do hook command (o core passa as flags do yby bard sem ler).

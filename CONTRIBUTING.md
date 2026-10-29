@@ -92,8 +92,10 @@ task test:e2e
 golangci-lint run
 
 # Validar modo Server (Self-Provisioning)
-go run main.go setup --profile=server
+go run ./cmd/yby setup --profile=server
 ```
+
+O módulo é `github.com/casheiro/yby-cli/v5`: imports internos e `-ldflags` (`-X github.com/casheiro/yby-cli/v5/cmd.Version=…`) levam o `/v5`. A major faz parte do caminho; numa v6, o caminho do módulo muda junto com as tags. Para testar a instalação como o usuário faz, `go install ./cmd/yby` instala o core em `$(go env GOPATH)/bin`.
 
 ### Build Tags Cloud
 

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/environment"
+	"github.com/casheiro/yby-cli/v5/pkg/services/environment"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // mockPrompter implementa Prompter para testes

@@ -16,13 +16,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/plugin"
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/atlas/analysis"
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/analysis"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery"
 )
 
 // provedoresDeIA lista os providers de IA para o refinamento, em cascata (trocado por

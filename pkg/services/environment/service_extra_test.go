@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
 )
 
 func TestEnvironmentService_Up_ClusterExistsAndStarts(t *testing.T) {

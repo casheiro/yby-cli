@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // AWSTokenGenerator gera tokens EKS via CLI `aws eks get-token`.

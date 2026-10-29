@@ -3,12 +3,15 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/scaffold"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/scaffold"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -154,15 +157,30 @@ func TestInstall_OrigemNaoSuportada(t *testing.T) {
 // ---- Update ----
 
 func TestUpdate_PluginNativo(t *testing.T) {
+	// Sem servidor falso e sem home de teste, o Update baixaria o release de verdade
+	// para o ~/.yby/plugins de quem roda os testes.
+	saveAndRestoreGlobals(t)
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
+	var caminho string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		caminho = r.URL.Path
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	releaseBaseURL = srv.URL
+
 	m := NewManager()
 	m.plugins = []LoadedPlugin{
 		{Manifest: PluginManifest{Name: "atlas", Version: "0.1.0"}, Path: "/fake/atlas"},
 	}
 
-	// Update de plugin nativo vai chamar Install("atlas", "latest", true)
-	// Vai falhar pois latest não é versão dev, mas vai tentar baixar (falha de rede ok)
-	err := m.Update("atlas")
-	assert.Error(t, err) // Falha de rede/download esperada
+	// Update de plugin nativo chama Install("atlas", "5.8.3", true): baixa do release
+	// v5.8.3, que aqui responde 404
+	err := m.Update("atlas", "5.8.3")
+	assert.Error(t, err)
+	assert.True(t, strings.HasPrefix(caminho, "/v5.8.3/yby-plugin-atlas_5.8.3_"), "baixou de %s", caminho)
 }
 
 // ---- loadValues com YAML inválido ----
@@ -397,7 +415,7 @@ func TestUpdate_ChamaDiscoverQuandoSemPlugins(t *testing.T) {
 
 	m := NewManager()
 	// plugins está vazio, Update vai chamar Discover() automaticamente
-	err := m.Update("inexistente")
+	err := m.Update("inexistente", "5.8.3")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "não encontrado")
 }

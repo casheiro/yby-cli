@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/profiles"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/profiles"
 )
 
 // flagAjuda é a linha do -h nas seções de flags, como no core.

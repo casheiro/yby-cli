@@ -308,6 +308,7 @@ Sistema de customização enterprise via arquivo YAML (`pkg/scaffold/overrides.g
 ## Convenções
 
 - **Versionamento:** ldflags injetam `Version`, `commit`, `date` via GoReleaser
+- **Caminho do módulo:** `github.com/casheiro/yby-cli/v5` (imports, ldflags, `go install github.com/casheiro/yby-cli/v5/cmd/yby@latest` e o SDK de plugins `…/v5/pkg/plugin/sdk`). A major vai no caminho: sem ela o Go ignora as tags v2+; numa v6, o caminho muda junto com as tags
 - **Changelog:** as notas de cada release saem dos commits (GoReleaser); o `CHANGELOG.md` registra só o que pede atenção de quem já usa o yby (teclas que mudaram, códigos de saída, comportamentos novos)
 - **Linting:** golangci-lint com gofmt, govet, ineffassign, revive (exclui vendor, testdata, test/)
 - **Logs:** `log/slog` estruturado — nunca usar `fmt.Println` para output de diagnóstico

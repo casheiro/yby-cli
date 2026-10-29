@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/checks"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stesting "k8s.io/client-go/testing"

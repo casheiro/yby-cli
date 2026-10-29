@@ -11,10 +11,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/confianca"
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/plugin"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/confianca"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +26,7 @@ type gerenciadorPlugins interface {
 	GetPlugin(name string) (*plugin.LoadedPlugin, bool)
 	Install(pluginSource, version string, force bool) error
 	Remove(name string) error
-	Update(name string) error
+	Update(name, versao string) error
 }
 
 // newPluginManager é a factory para criação do gerenciador de plugins (mockável em testes).
@@ -98,8 +98,10 @@ var pluginInstallCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pm := newPluginManager()
-		// Version resolution
-		targetVersion := Version
+		// A versão do próprio yby escolhe o release dos plugins nativos: a do GoReleaser
+		// (5.8.3) ou, no go install, a do build info (v5.8.4). O installNative recusa
+		// "dev" e pseudo-versões, que não têm release.
+		targetVersion := versaoInstalada().Versao
 		if v, _ := cmd.Flags().GetString("version"); v != "" {
 			targetVersion = v
 		}
@@ -198,7 +200,7 @@ var pluginUpdateCmd = &cobra.Command{
 
 		falhas := 0
 		for _, name := range targets {
-			if err := pm.Update(name); err != nil {
+			if err := pm.Update(name, versaoInstalada().Versao); err != nil {
 				linhas = append(linhas, linhaCheck{ui.CheckErro, name, "falhou", mensagemDoErro(err)})
 				falhas++
 			} else {

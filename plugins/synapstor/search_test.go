@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // TestParseSearchArgs_QuerySimples verifica extração de query sem flags.

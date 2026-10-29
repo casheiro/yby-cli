@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/checks"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )

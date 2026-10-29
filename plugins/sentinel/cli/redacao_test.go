@@ -17,7 +17,7 @@ import (
 	"k8s.io/client-go/rest"
 	fakerest "k8s.io/client-go/rest/fake"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/backends"
 )
 
 // clienteComLogs é o cluster falso com os logs que o teste escolhe: o fake do client-go

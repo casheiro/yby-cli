@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/cloud"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/cloud"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 type doctorService struct {

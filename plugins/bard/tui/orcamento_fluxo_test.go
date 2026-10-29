@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
-	"github.com/casheiro/yby-cli/plugins/bard/tools"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
 )
 
 // folgaPrompt é o texto fixo do prompt final em volta dos blocos (a pergunta e as frases

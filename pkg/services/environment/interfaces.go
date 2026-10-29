@@ -3,7 +3,7 @@ package environment
 import (
 	"context"
 
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
 )
 
 // MirrorService abstracts pkg/mirror.Manager

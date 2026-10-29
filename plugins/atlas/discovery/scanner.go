@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
+	"github.com/casheiro/yby-cli/v5/plugins/atlas/discovery/analyzers"
 )
 
 // ShouldIgnore verifica se um caminho deve ser ignorado com base na lista de ignores.

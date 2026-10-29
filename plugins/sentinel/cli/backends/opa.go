@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/escopo"
 	"github.com/open-policy-agent/opa/v1/rego"
 	"github.com/open-policy-agent/opa/v1/storage/inmem"
 	networkingv1 "k8s.io/api/networking/v1"

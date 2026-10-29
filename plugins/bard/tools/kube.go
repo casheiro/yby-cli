@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
 
 // kube é o cluster da sessão (yby bard --context, --namespace): o kubectl das ferramentas

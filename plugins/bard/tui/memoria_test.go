@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/redacao"
-	"github.com/casheiro/yby-cli/plugins/bard/tools"
+	"github.com/casheiro/yby-cli/v5/pkg/redacao"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
 )
 
 func (p *provedorFalso) ultimaClassificacao() string {

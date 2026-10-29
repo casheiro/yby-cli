@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/backends"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/backends"
 	"github.com/muesli/termenv"
 	"k8s.io/client-go/kubernetes/fake"
 )

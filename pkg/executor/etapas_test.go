@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // progressoTexto devolve um ui.Progresso fora do terminal e com relógio que avança 1,5 s

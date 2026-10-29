@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/escopo"
 	polarisconfig "github.com/fairwindsops/polaris/pkg/config"
 	"github.com/fairwindsops/polaris/pkg/kube"
 	"github.com/fairwindsops/polaris/pkg/validator"

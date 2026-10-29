@@ -3,7 +3,7 @@ module github.com/casheiro/yby-cli/plugins/viz
 go 1.26.1
 
 require (
-	github.com/casheiro/yby-cli v0.0.0-00010101000000-000000000000
+	github.com/casheiro/yby-cli/v5 v5.0.0-00010101000000-000000000000
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
@@ -103,4 +103,4 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 )
 
-replace github.com/casheiro/yby-cli => ../../
+replace github.com/casheiro/yby-cli/v5 => ../../
