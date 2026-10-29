@@ -667,7 +667,7 @@ func TestUninstallGolden_Falhas(t *testing.T) {
 		nome string
 		err  error
 	}{
-		{"uninstall_falha_permissao", fmt.Errorf("remove /usr/local/bin/yby: permission denied")},
+		{"uninstall_falha_permissao", &fs.PathError{Op: "remove", Path: "/usr/local/bin/yby", Err: fs.ErrPermission}},
 		{"uninstall_falha_outra", fmt.Errorf("remove /usr/local/bin/yby: text file busy")},
 	}
 	for _, c := range casos {
@@ -719,7 +719,8 @@ func prepararUpgrade(t *testing.T, rel *relogioFalso, atual, disponivel string, 
 	sistemaUpgrade, arquiteturaUpgrade = "linux", "amd64"
 
 	pacote := createTestTarGz(t, "yby", []byte("binário novo"))
-	asset := fmt.Sprintf("yby_%s_linux_amd64.tar.gz", disponivel)
+	// o GoReleaser tira o "v" da tag no nome do pacote
+	asset := fmt.Sprintf("yby_%s_linux_amd64.tar.gz", strings.TrimPrefix(disponivel, "v"))
 	somaBytes := sha256.Sum256(pacote)
 	soma := hex.EncodeToString(somaBytes[:])
 	if corromper {

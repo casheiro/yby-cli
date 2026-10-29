@@ -256,7 +256,7 @@ func TestInstall_LocalFile_Success(t *testing.T) {
 
 func TestUpdate_DeepNotFound(t *testing.T) {
 	m := NewManager()
-	err := m.Update("nonexistent")
+	err := m.Update("nonexistent", "5.8.3")
 	assert.Error(t, err)
 }
 
@@ -264,7 +264,7 @@ func TestUpdate_ThirdPartyPlugin(t *testing.T) {
 	m := newManagerWithPlugins(
 		LoadedPlugin{Manifest: PluginManifest{Name: "third-party"}, Path: "/fake/path"},
 	)
-	err := m.Update("third-party")
+	err := m.Update("third-party", "5.8.3")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "terceiros")
 }

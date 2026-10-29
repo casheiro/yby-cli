@@ -2,7 +2,7 @@ resultado: ok
 d .github/
 f 2f1f3b515a77f529f1e89cd5e2f5fb5f0076e2c254a139f213741aa1f1332f48 .github/labels.yml
 d .github/workflows/
-f 76e3f8b8af1fe06d02b5092fa494f4affbcd7e77fca1535fc73c64fa5db7b321 .github/workflows/feature-pipeline.yaml
+f fe8b13583fc96ad67f0db1156d8a858ab7067f6e9ba95a2e45d7d2fb10dd5ed1 .github/workflows/feature-pipeline.yaml
 f 48caad3d95ca9ec48c585046d389021f6c451152c879933075bcf16ee0eefa10 .github/workflows/ops-create-cluster.yaml
 f cfd3f84918cde8b6dbd61034e150909c6f3e5ae968edf80675a479aee5e12380 .github/workflows/pr-main-checks.yaml
 f fa203380270d11c0b70719d41ee1ac4117fa93223a1e7e06f0b3138b27b332ec .github/workflows/release-automation.yaml

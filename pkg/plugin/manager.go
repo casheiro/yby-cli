@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -11,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -549,8 +552,9 @@ func (m *Manager) Remove(name string) error {
 	return os.Remove(p.Path)
 }
 
-// Update attempts to update a plugin to the latest version.
-func (m *Manager) Update(name string) error {
+// Update atualiza um plugin. Os nativos são baixados de novo do release da versão
+// informada, que é a do yby em execução: os plugins saem no mesmo release do core.
+func (m *Manager) Update(name, versao string) error {
 	// Ensure we have the latest state
 	if len(m.plugins) == 0 {
 		if err := m.Discover(); err != nil {
@@ -564,7 +568,6 @@ func (m *Manager) Update(name string) error {
 	}
 
 	// Update logic depends on source.
-	// For native plugins, we can try to install "latest".
 	nativePlugins := map[string]bool{
 		"atlas":     true,
 		"bard":      true,
@@ -576,7 +579,7 @@ func (m *Manager) Update(name string) error {
 	if nativePlugins[name] {
 		// Native plugin: simple reinstall/upgrade
 		slog.Info("Atualizando plugin nativo", "nome", name, "versão_atual", p.Manifest.Version)
-		return m.Install(name, "latest", true) // Force = true
+		return m.Install(name, versao, true) // Force = true
 	}
 
 	// For generic plugins, we don't track the source URL currently.
@@ -688,34 +691,41 @@ func (m *Manager) Install(pluginSource, version string, force bool) error {
 	return nil
 }
 
+// pseudoVersao reconhece as pseudo-versões do Go (v5.8.4-0.20261028120000-abcdef123456),
+// que apontam para um commit e não para um release.
+var pseudoVersao = regexp.MustCompile(`\d{14}-[0-9a-f]{12}$`)
+
+// versaoSemRelease diz se version não pode ser a tag de um release: "dev" (build sem os
+// -ldflags do GoReleaser), "(devel)", pseudo-versões e versões com metadados de build
+// ("+dirty") do go build dentro do repositório. "latest" também: o nome do pacote leva a
+// versão, e não há tag "vlatest".
+func versaoSemRelease(version string) bool {
+	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	return v == "" || v == "dev" || v == "(devel)" || v == "latest" || strings.Contains(v, "+") || pseudoVersao.MatchString(v)
+}
+
 func (m *Manager) installNative(name, version string) error {
-	if version == "dev" {
-		slog.Warn("Rodando em modo dev, release 'latest' assumido para plugins")
-		// In a real scenario, we might want to fail or look for local builds.
-		// For now, let's warn and fail because we don't know the URL for sure without a tag.
-		return ybyerrors.New(ybyerrors.ErrCodePlugin, "não é possível instalar plugins nativos em modo dev (version=dev)").
-			WithHint("construa o plugin localmente ou informe a versão com --version")
+	if versaoSemRelease(version) {
+		return ybyerrors.New(ybyerrors.ErrCodePlugin,
+			fmt.Sprintf("a versão %s não é de um release, e o plugin %s só é baixado de um release", version, name)).
+			WithHint(fmt.Sprintf("informe a tag de um release com --version (yby plugin install %s --version <tag>); as tags estão em github.com/casheiro/yby-cli/releases", name))
 	}
 
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
-	// Format: yby-plugin-<name>_<version>_<os>_<arch>.tar.gz
-	// Example: yby-plugin-atlas_v0.1.0_linux_amd64.tar.gz
-	// Note: GoReleaser usually removes "v" from version in template {{ .Version }}
-	// BUT checking .goreleaser.yaml: name_template: "yby-plugin-atlas_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-	// And ldflags: cmd.Version={{.Version}}.
-	// Usually tags have 'v', but .Version might strip it or not depending on goreleaser config.
-	// Let's assume the version string passed here matches what's in the filename.
-
-	filename := fmt.Sprintf("yby-plugin-%s_%s_%s_%s.tar.gz", name, version, osName, arch)
+	// Formato do GoReleaser: yby-plugin-<nome>_<versão>_<os>_<arch>.tar.gz (zip no
+	// Windows). O {{ .Version }} do nome não tem o "v" da tag: yby-plugin-atlas_5.8.3_…
+	// no release v5.8.3. A versão chega com "v" do go install (v5.8.4) e do --version, e
+	// sem do GoReleaser (5.8.3).
+	versaoArquivo := strings.TrimPrefix(version, "v")
+	filename := fmt.Sprintf("yby-plugin-%s_%s_%s_%s.tar.gz", name, versaoArquivo, osName, arch)
 	if osName == "windows" {
-		filename = fmt.Sprintf("yby-plugin-%s_%s_%s_%s.zip", name, version, osName, arch)
+		filename = fmt.Sprintf("yby-plugin-%s_%s_%s_%s.zip", name, versaoArquivo, osName, arch)
 	}
 
-	// URL: https://github.com/casheiro/yby-cli/releases/download/<tag>/<filename>
-	// Note: Release tags usually start with 'v', but artifact filenames (from goreleaser) do not always.
-	// We need to ensure the tag component has 'v'.
+	// URL: https://github.com/casheiro/yby-cli/releases/download/<tag>/<filename>; a tag
+	// tem o "v".
 	tag := version
 	if !strings.HasPrefix(tag, "v") {
 		tag = "v" + tag
@@ -754,15 +764,10 @@ func (m *Manager) installNative(name, version string) error {
 		return ybyerrors.New(ybyerrors.ErrCodeNetworkTimeout, fmt.Sprintf("falha ao baixar plugin: status %d", resp.StatusCode))
 	}
 
-	// Extract
-	// Handling tar.gz only for now (as per Linux user environment)
-	// TODO: Handle Zip for windows if needed in future
-	if strings.HasSuffix(filename, ".tar.gz") {
-		if err := extractTarGz(resp.Body, tmpDir); err != nil {
-			return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "falha ao extrair plugin")
-		}
-	} else {
-		return ybyerrors.New(ybyerrors.ErrCodePlugin, fmt.Sprintf("unsupported archive format: %s", filename))
+	// Extrair: o pacote é zip no Windows e tar.gz nos outros sistemas; o formato sai do
+	// conteúdo, não só do nome
+	if err := extrairPacote(resp.Body, filename, tmpDir); err != nil {
+		return err
 	}
 
 	// Find the binary in extraction
@@ -950,6 +955,82 @@ func (m *Manager) installFromURL(url string) error {
 
 	slog.Info("Plugin genérico instalado", "caminho", finalPath)
 	return nil
+}
+
+// extrairPacote extrai o pacote baixado em dest, pelo formato do conteúdo (zip ou gzip);
+// sem assinatura conhecida, vale a extensão de filename.
+func extrairPacote(r io.Reader, filename, dest string) error {
+	dados, err := io.ReadAll(r)
+	if err != nil {
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeNetworkTimeout, "falha ao baixar plugin")
+	}
+	ehZip := bytes.HasPrefix(dados, []byte("PK\x03\x04"))
+	ehGzip := bytes.HasPrefix(dados, []byte{0x1f, 0x8b})
+	if !ehZip && !ehGzip {
+		ehZip = strings.HasSuffix(filename, ".zip")
+		ehGzip = strings.HasSuffix(filename, ".tar.gz")
+	}
+	switch {
+	case ehZip:
+		err = extractZip(dados, dest)
+	case ehGzip:
+		err = extractTarGz(bytes.NewReader(dados), dest)
+	default:
+		return ybyerrors.New(ybyerrors.ErrCodePlugin, fmt.Sprintf("formato de pacote não suportado: %s", filename))
+	}
+	if err != nil {
+		return ybyerrors.Wrap(err, ybyerrors.ErrCodeIO, "falha ao extrair plugin")
+	}
+	return nil
+}
+
+// extractZip extrai os arquivos de um zip em dest, com a mesma proteção contra caminhos
+// fora de dest (Zip Slip) e a mesma máscara de permissões do extractTarGz.
+func extractZip(dados []byte, dest string) error {
+	leitor, err := zip.NewReader(bytes.NewReader(dados), int64(len(dados)))
+	if err != nil {
+		return err
+	}
+	cleanDest := filepath.Clean(dest) + string(os.PathSeparator)
+	for _, f := range leitor.File {
+		target := filepath.Join(dest, filepath.FromSlash(f.Name))
+		if !strings.HasPrefix(filepath.Clean(target)+string(os.PathSeparator), cleanDest) {
+			return ybyerrors.New(ybyerrors.ErrCodeValidation, fmt.Sprintf("entrada inválida no zip: %s", f.Name))
+		}
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+			continue
+		}
+		if !f.Mode().IsRegular() {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		if err := extrairArquivoDoZip(f, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func extrairArquivoDoZip(f *zip.File, target string) error {
+	r, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, f.Mode()&0755|0600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, r); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func extractTarGz(r io.Reader, dest string) error {

@@ -569,11 +569,28 @@ func TestSaidasPlugin_Golden(t *testing.T) {
 	})
 }
 
+// O plugin update pede ao Manager a versão do yby em execução, não uma "latest" que não é
+// tag de release.
+func TestPluginUpdate_PassaAVersaoDoYby(t *testing.T) {
+	anterior := Version
+	Version = "5.8.3"
+	t.Cleanup(func() { Version = anterior })
+	raiz := usarProjeto(t, "")
+	f := &fakePluginManager{plugins: []plugin.LoadedPlugin{binarioDePlugin(t, raiz, "bard")}}
+	usarPluginsFalsos(t, f)
+
+	executar(t, pluginUpdateCmd, raiz)
+
+	assert.Equal(t, []string{"5.8.3"}, f.versoes)
+}
+
 // fakePluginManager implementa gerenciadorPlugins sem executar binário nenhum.
 type fakePluginManager struct {
 	plugins      []plugin.LoadedPlugin
 	instalar     func(origem string) error
 	errAtualizar map[string]error
+	// versoes guarda a versão que cada Update recebeu
+	versoes []string
 }
 
 func (f *fakePluginManager) Discover() error { return nil }
@@ -604,7 +621,8 @@ func (f *fakePluginManager) Remove(nome string) error {
 	}
 	return nil
 }
-func (f *fakePluginManager) Update(nome string) error {
+func (f *fakePluginManager) Update(nome, versao string) error {
+	f.versoes = append(f.versoes, versao)
 	if err := f.errAtualizar[nome]; err != nil {
 		return err
 	}
