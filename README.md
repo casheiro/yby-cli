@@ -98,7 +98,7 @@ yby plugin list             # o que está instalado
 yby plugin update           # depois de um yby upgrade, põe os nativos na versão nova do core
 ```
 
-Plugins de terceiros e a criação do seu estão no [guia de plugins](docs/wiki/Plugins.md).
+Plugins de terceiros e a criação do seu estão no [guia de plugins](https://github.com/casheiro/yby-cli/wiki/Plugins).
 
 ### Conferir, atualizar e desinstalar
 
@@ -198,7 +198,7 @@ O Yby foi desenhado para ser estendido. Não encontrou o que precisa? Crie seu p
 *   **API Simples**: Receba contexto no `STDIN`, devolva ações no `STDOUT`.
 *   **Distribuição Fácil**: Publique no GitHub e instale com `yby plugin install`.
 
-[📖 Guia de Desenvolvimento de Plugins](docs/wiki/Plugins.md)
+[📖 Guia de Desenvolvimento de Plugins](https://github.com/casheiro/yby-cli/wiki/Plugins)
 
 ---
 
@@ -224,7 +224,7 @@ tls:
 yby init --config .yby/overrides.yaml
 ```
 
-Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, namespaces com prefixo, labels de compliance, versoes de charts, resource profiles e mais. [Guia completo](docs/wiki/Enterprise-Overrides.md).
+Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, namespaces com prefixo, labels de compliance, versoes de charts, resource profiles e mais. [Guia completo](https://github.com/casheiro/yby-cli/wiki/Enterprise-Overrides).
 
 ---
 
@@ -232,14 +232,14 @@ Customiza: registry privado, ingress class, TLS/CA corporativa, storage class, n
 
 A documentação completa está na nossa **Wiki**:
 
-- **[Getting Started](docs/wiki/Getting-Started.md)**: Passos iniciais.
-- **[Core Concepts](docs/wiki/Core-Concepts.md)**: Estrutura, Monorepo e Arquivos Gerados.
-- **[Architecture](docs/wiki/Architecture.md)**: Diagramas, Componentes e Segurança.
-- **[Enterprise Overrides](docs/wiki/Enterprise-Overrides.md)**: Customizacao para ambientes corporativos.
-- **[Governance](docs/wiki/Governance.md)**: IA, Agentes e DevGovOps.
-- **[Plugins](docs/wiki/Plugins.md)**: Bard, Viz, Sentinel, Synapstor e Atlas, com as teclas de cada TUI.
-- **[Operations](docs/wiki/Operations.md)**: Operação do dia a dia, clusters cloud e solução de problemas.
-- **[CLI Reference](docs/wiki/CLI-Reference.md)**: Todos os comandos e flags.
+- **[Getting Started](https://github.com/casheiro/yby-cli/wiki/Getting-Started)**: Passos iniciais.
+- **[Core Concepts](https://github.com/casheiro/yby-cli/wiki/Core-Concepts)**: Estrutura, Monorepo e Arquivos Gerados.
+- **[Architecture](https://github.com/casheiro/yby-cli/wiki/Architecture)**: Diagramas, Componentes e Segurança.
+- **[Enterprise Overrides](https://github.com/casheiro/yby-cli/wiki/Enterprise-Overrides)**: Customizacao para ambientes corporativos.
+- **[Governance](https://github.com/casheiro/yby-cli/wiki/Governance)**: IA, Agentes e DevGovOps.
+- **[Plugins](https://github.com/casheiro/yby-cli/wiki/Plugins)**: Bard, Viz, Sentinel, Synapstor e Atlas, com as teclas de cada TUI.
+- **[Operations](https://github.com/casheiro/yby-cli/wiki/Operations)**: Operação do dia a dia, clusters cloud e solução de problemas.
+- **[CLI Reference](https://github.com/casheiro/yby-cli/wiki/CLI-Reference)**: Todos os comandos e flags.
 - **[CHANGELOG](CHANGELOG.md)**: Teclas e comportamentos que mudaram entre versões.
 
 ---
