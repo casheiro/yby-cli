@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/services/network"
+	"github.com/casheiro/yby-cli/v5/pkg/services/network"
 	"github.com/stretchr/testify/assert"
 )
 

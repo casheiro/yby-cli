@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/plugin"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 )
 

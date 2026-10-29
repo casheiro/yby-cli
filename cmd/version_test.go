@@ -30,7 +30,7 @@ func TestVersionCmd_Estrutura(t *testing.T) {
 
 func TestVersionCmd_SaidaContemVersao(t *testing.T) {
 	output := saidaDoVersion(t)
-	assert.Contains(t, output, Version, "Saída deveria conter a versão")
+	assert.Contains(t, output, versaoInstalada().Versao, "Saída deveria conter a versão")
 }
 
 func TestVersionCmd_SaidaContemOSArch(t *testing.T) {
@@ -106,7 +106,7 @@ func TestVersionCmd_JSONOutput(t *testing.T) {
 	err = json.Unmarshal([]byte(strings.TrimSpace(output)), &info)
 	require.NoError(t, err, "output deve ser JSON válido com --log-format json")
 
-	assert.Equal(t, Version, info["version"])
+	assert.Equal(t, versaoInstalada().Versao, info["version"])
 	assert.Equal(t, runtime.GOOS, info["os"])
 	assert.Equal(t, runtime.GOARCH, info["arch"])
 }

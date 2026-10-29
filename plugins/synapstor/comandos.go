@@ -9,14 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	yerrors "github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/agent"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/decay"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/exporter"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/indexer"
 	"github.com/casheiro/yby-cli/plugins/synapstor/internal/quality"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	yerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // Providers de IA, trocados por falsos nos testes (nunca há IA de verdade neles).

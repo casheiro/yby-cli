@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	"github.com/casheiro/yby-cli/pkg/logger"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/config"
+	"github.com/casheiro/yby-cli/v5/pkg/logger"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 )
 
 // configurarModoVisual aplica no processo do plugin o modo visual do core: YBY_THEME,

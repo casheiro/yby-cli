@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/casheiro/yby-cli/pkg/plugin/sdk"
+	"github.com/casheiro/yby-cli/v5/pkg/plugin/sdk"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"

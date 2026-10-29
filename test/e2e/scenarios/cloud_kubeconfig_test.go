@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	ybyctx "github.com/casheiro/yby-cli/pkg/context"
-	"github.com/casheiro/yby-cli/pkg/services/doctor"
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	ybyctx "github.com/casheiro/yby-cli/v5/pkg/context"
+	"github.com/casheiro/yby-cli/v5/pkg/services/doctor"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

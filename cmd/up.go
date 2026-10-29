@@ -8,12 +8,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	ybyctx "github.com/casheiro/yby-cli/pkg/context"
-	"github.com/casheiro/yby-cli/pkg/errors"
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
-	"github.com/casheiro/yby-cli/pkg/services/environment"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/ui"
+	ybyctx "github.com/casheiro/yby-cli/v5/pkg/context"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/environment"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

@@ -1,0 +1,7 @@
+* YBY  UNINSTALL                                   versão v5.6.1
+  o remove o executável  C:\Users\anton\go\bin\yby.exe
+
+  v Yby CLI desinstalado
+  o o arquivo some do disco quando este yby fechar
+  o com outro yby aberto, ele fica; apague à mão  C:\Users\anton\go\bin\.yby.exe.removido-4242
+  o ~/.yby fica no lugar, com a configuração e os dados

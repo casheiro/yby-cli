@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/checks"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/checks"
 )
 
 // atualizarGolden regrava os arquivos golden: go test -tags k8s ./plugins/sentinel/cli/ -run <Teste> -update

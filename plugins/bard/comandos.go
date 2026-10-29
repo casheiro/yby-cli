@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai"
-	ybyctx "github.com/casheiro/yby-cli/pkg/context"
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	"github.com/casheiro/yby-cli/v5/pkg/ai"
+	ybyctx "github.com/casheiro/yby-cli/v5/pkg/context"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 	"gopkg.in/yaml.v3"
 )
 

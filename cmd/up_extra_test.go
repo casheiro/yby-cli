@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/services/bootstrap"
-	"github.com/casheiro/yby-cli/pkg/services/environment"
-	"github.com/casheiro/yby-cli/pkg/services/shared"
-	"github.com/casheiro/yby-cli/pkg/testutil"
+	"github.com/casheiro/yby-cli/v5/pkg/services/bootstrap"
+	"github.com/casheiro/yby-cli/v5/pkg/services/environment"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
 

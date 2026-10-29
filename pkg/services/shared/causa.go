@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	ybyerrors "github.com/casheiro/yby-cli/pkg/errors"
+	ybyerrors "github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // CausaCurta resume err numa nota curta para as pessoas: a mensagem do erro mais interno,

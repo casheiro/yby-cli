@@ -3,7 +3,7 @@ package validate
 import (
 	"context"
 
-	"github.com/casheiro/yby-cli/pkg/services/shared"
+	"github.com/casheiro/yby-cli/v5/pkg/services/shared"
 )
 
 // RealHelmRunner implementa HelmRunner delegando ao shared.Runner.

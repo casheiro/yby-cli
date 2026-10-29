@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/errors"
+	"github.com/casheiro/yby-cli/v5/pkg/errors"
 )
 
 // linhaDoYby devolve os argumentos do yby, sem o nome do binário. Variável para os testes.

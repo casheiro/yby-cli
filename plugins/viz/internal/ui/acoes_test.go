@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	yui "github.com/casheiro/yby-cli/v5/pkg/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"

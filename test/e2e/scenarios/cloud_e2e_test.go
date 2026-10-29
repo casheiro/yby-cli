@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/cloud"
+	"github.com/casheiro/yby-cli/v5/pkg/cloud"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

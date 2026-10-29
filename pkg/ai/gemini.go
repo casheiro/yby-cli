@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
 )
 
 type GeminiProvider struct {

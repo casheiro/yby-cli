@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casheiro/yby-cli/pkg/confianca"
+	"github.com/casheiro/yby-cli/v5/pkg/confianca"
 	"gopkg.in/yaml.v3"
 )
 

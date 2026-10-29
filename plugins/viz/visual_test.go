@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/casheiro/yby-cli/pkg/config"
-	yui "github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/config"
+	yui "github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )

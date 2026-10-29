@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	yui "github.com/casheiro/yby-cli/pkg/ui"
 	"github.com/casheiro/yby-cli/plugins/viz/internal/monitor"
+	yui "github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"k8s.io/apimachinery/pkg/labels"

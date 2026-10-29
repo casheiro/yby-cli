@@ -16,7 +16,7 @@ func raizDoRepositorio(t *testing.T) string {
 		t.Fatal(err)
 	}
 	mod, err := os.ReadFile(filepath.Join(raiz, "go.mod"))
-	if err != nil || !strings.Contains(string(mod), "module github.com/casheiro/yby-cli\n") {
+	if err != nil || !strings.Contains(string(mod), "module github.com/casheiro/yby-cli/v5\n") {
 		t.Fatalf("raiz do repositório não encontrada em %s", raiz)
 	}
 	return raiz

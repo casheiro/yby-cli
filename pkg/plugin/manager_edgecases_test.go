@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,7 +53,9 @@ func TestUpdate_PluginNativo_Sucesso_ComServerHTTP(t *testing.T) {
 	binaryName := "yby-plugin-bard"
 	tarData := makeTarGzWithBinary(t, binaryName, "#!/bin/sh\necho atualizado")
 
+	var caminho string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		caminho = r.URL.Path
 		w.WriteHeader(http.StatusOK)
 		w.Write(tarData)
 	}))
@@ -64,8 +67,10 @@ func TestUpdate_PluginNativo_Sucesso_ComServerHTTP(t *testing.T) {
 		{Manifest: PluginManifest{Name: "bard", Version: "0.1.0"}, Path: "/velho/bard"},
 	}
 
-	err := m.Update("bard")
+	err := m.Update("bard", "5.8.3")
 	require.NoError(t, err)
+	// O nativo vem do release da versão do yby, não de uma tag "latest" que não existe.
+	assert.True(t, strings.HasPrefix(caminho, "/v5.8.3/yby-plugin-bard_5.8.3_"), "baixou de %s", caminho)
 
 	installedPath := filepath.Join(tmp, ".yby", "plugins", binaryName)
 	data, err := os.ReadFile(installedPath)
@@ -81,7 +86,7 @@ func TestUpdate_PluginNaoInstalado_ComDiscoverVazio(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".yby", "plugins"), 0755))
 
 	m := NewManager()
-	err := m.Update("inexistente")
+	err := m.Update("inexistente", "5.8.3")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "não encontrado")
 }
@@ -108,7 +113,7 @@ func TestUpdate_PluginNativo_Sentinel(t *testing.T) {
 		{Manifest: PluginManifest{Name: "sentinel", Version: "0.1.0"}, Path: "/old"},
 	}
 
-	err := m.Update("sentinel")
+	err := m.Update("sentinel", "5.8.3")
 	require.NoError(t, err)
 }
 
@@ -169,9 +174,11 @@ func TestInstall_PluginNativo_VersaoLatest_SemForce_JaExiste(t *testing.T) {
 		{Manifest: PluginManifest{Name: "viz", Version: "0.5.0"}, Path: "/old/viz"},
 	}
 
+	// "latest" não é tag de release (o pacote leva a versão no nome): recusa com a dica
+	// do --version, sem baixar nada
 	err := m.Install("viz", "latest", false)
-	// Deve tentar instalar sem erro (aviso é impresso via fmt)
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "não é de um release")
 }
 
 func TestInstall_PluginNativo_VersaoDiferente_SemForce_JaExiste(t *testing.T) {

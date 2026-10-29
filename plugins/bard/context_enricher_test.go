@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/casheiro/yby-cli/plugins/bard/tui"
+	"github.com/casheiro/yby-cli/v5/plugins/bard/tui"
 )
 
 // TestFormatClusterContext_Nil verifica que nil retorna string vazia.

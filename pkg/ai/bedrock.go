@@ -13,7 +13,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
-	"github.com/casheiro/yby-cli/pkg/ai/prompts"
+	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
 )
 
 // BedrockClient define a interface do cliente Bedrock para facilitar testes com mock.

@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/allowlist"
-	"github.com/casheiro/yby-cli/plugins/sentinel/cli/escopo"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/allowlist"
+	"github.com/casheiro/yby-cli/v5/plugins/sentinel/cli/escopo"
 	"k8s.io/client-go/kubernetes"
 )
 

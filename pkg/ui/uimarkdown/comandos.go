@@ -3,7 +3,7 @@ package uimarkdown
 import (
 	"strings"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/x/ansi"
 )
 

@@ -2,6 +2,18 @@
 
 As notas completas de cada versão, geradas a partir dos commits, ficam nas [releases do GitHub](https://github.com/casheiro/yby-cli/releases). Aqui ficam as mudanças que pedem atenção de quem já usa o yby: teclas que mudaram, códigos de saída e comportamentos novos.
 
+## Próxima versão
+
+- **`go install` muda de caminho:** passa a ser `go install github.com/casheiro/yby-cli/v5/cmd/yby@latest`. O caminho antigo, sem o `/v5`, instalava a v1.12.2. Quem instalou assim deve apagar `%USERPROFILE%\go\bin\yby.exe` (no Linux e no macOS, `~/go/bin/yby`) e reinstalar: essa pasta costuma vir antes no PATH, e o yby antigo continua sendo o que roda.
+- **Plugins de terceiros em Go** importam `github.com/casheiro/yby-cli/v5/pkg/plugin/sdk` (antes, `github.com/casheiro/yby-cli/pkg/plugin/sdk`).
+- **Instalação no Windows pelo `install.ps1`:** `irm https://raw.githubusercontent.com/casheiro/yby-cli/main/install.ps1 | iex` instala em `%LOCALAPPDATA%\Programs\yby`, sem administrador, e põe a pasta no PATH do usuário. O `install.sh` passa a conferir o SHA-256 do download.
+- **`yby uninstall` funciona no Windows:** o `yby.exe` sai do lugar na hora e some do disco quando o yby fecha. Antes, falhava com "Acesso negado".
+- **`yby version` mostra a versão também num yby do `go install`**, em vez de `dev`.
+- **`yby upgrade` volta a funcionar.** Até a v5.8.3 ele procurava o pacote `yby_v<versão>_…` (e `.tar.gz` também no Windows), que não existe, e parava em "asset não encontrado". Quem está na v5.8.3 ou antes chega a esta versão pelo `install.sh`, pelo `install.ps1` ou pelo pacote da release, uma vez; daí em diante o `yby upgrade` atualiza. Ele também diz "em dia" quando já está na última versão, aceita `--version 5.8.3` sem o "v" e, no `yby-cloud`, baixa o pacote `yby-cloud_…`, não o do yby padrão.
+- **`yby plugin install` de plugin nativo funciona no Windows** (o pacote da release é `.zip`, que antes dava "unsupported archive format"). Na v5.8.3 do Windows, instale os plugins à mão: extraia o `yby-plugin-<nome>_5.8.3_windows_amd64.zip` da release em `%USERPROFILE%\.yby\plugins` e rode `yby plugin trust <nome>`.
+- **`yby plugin update` atualiza os plugins nativos** para a versão do yby em execução. Antes, pedia uma tag `vlatest`, que não existe, e falhava. `--version latest` no `yby plugin install` passa a ser recusado com a dica de informar a tag.
+- **Projetos do `yby init`:** o devcontainer e o pipeline de feature gerados instalam o yby pelo `install.sh`; antes, baixavam arquivos que não existem nas releases e falhavam.
+
 ## v5.8.3: plugins não confiáveis e namespace do Sentinel
 
 - **`yby sentinel scan` e `investigate` sem `-n`** examinam o namespace do ambiente pedido (`yby -c <ambiente> sentinel …`) ou, sem ele, o do contexto do kubeconfig, como o kubectl e o Viz; `default` só quando nenhum dos dois diz. Antes, era sempre `default`. Em scripts, passe `-n`.

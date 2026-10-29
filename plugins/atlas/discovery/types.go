@@ -1,6 +1,6 @@
 package discovery
 
-import "github.com/casheiro/yby-cli/plugins/atlas/discovery/analyzers"
+import "github.com/casheiro/yby-cli/v5/plugins/atlas/discovery/analyzers"
 
 // Blueprint representa a estrutura descoberta do projeto (legacy, usado pelo hook "context").
 type Blueprint struct {

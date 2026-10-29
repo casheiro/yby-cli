@@ -18,9 +18,9 @@ builds:
     binary: yby
     ldflags:
       - -s -w
-      - -X github.com/casheiro/yby-cli/cmd.Version={{.Version}}
-      - -X github.com/casheiro/yby-cli/cmd.commit={{.Commit}}
-      - -X github.com/casheiro/yby-cli/cmd.date={{.Date}}
+      - -X github.com/casheiro/yby-cli/v5/cmd.Version={{.Version}}
+      - -X github.com/casheiro/yby-cli/v5/cmd.commit={{.Commit}}
+      - -X github.com/casheiro/yby-cli/v5/cmd.date={{.Date}}
   - id: cloud
     env:
       - CGO_ENABLED=0
@@ -37,9 +37,9 @@ builds:
       - -tags=aws,azure,gcp
     ldflags:
       - -s -w
-      - -X github.com/casheiro/yby-cli/cmd.Version={{.Version}}
-      - -X github.com/casheiro/yby-cli/cmd.commit={{.Commit}}
-      - -X github.com/casheiro/yby-cli/cmd.date={{.Date}}
+      - -X github.com/casheiro/yby-cli/v5/cmd.Version={{.Version}}
+      - -X github.com/casheiro/yby-cli/v5/cmd.commit={{.Commit}}
+      - -X github.com/casheiro/yby-cli/v5/cmd.date={{.Date}}
   - id: atlas
     env:
       - CGO_ENABLED=0

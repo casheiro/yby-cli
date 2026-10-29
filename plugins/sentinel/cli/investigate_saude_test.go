@@ -11,7 +11,7 @@ import (
 	"github.com/muesli/termenv"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/casheiro/yby-cli/pkg/ui"
+	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

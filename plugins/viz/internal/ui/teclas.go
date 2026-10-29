@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	yui "github.com/casheiro/yby-cli/pkg/ui"
+	yui "github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
