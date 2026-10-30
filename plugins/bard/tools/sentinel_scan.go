@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
@@ -56,12 +57,19 @@ func pedidoSentinelScan(params map[string]string) plugin.PluginRequest {
 // namespace estava limpo.
 const msgScanSemRelatorio = "O Sentinel não devolveu o relatório do scan: não dá para dizer se há achados. Sugira rodar yby sentinel scan no terminal e conferir se o yby e os plugins estão na mesma versão (yby plugin update)."
 
-// Tetos do resumo do scan: os bytes da lista de achados, que entram do mais grave para o
-// menos enquanto couberem (o resto do resumo e a saída inteira ficam abaixo do teto de 8 KB
-// da ferramenta no prompt), e os recursos listados em cada achado.
+// Tetos do resumo do scan. O resumo inteiro fica em tetoResumoScan, abaixo dos 8 KB que o
+// Fluxo dá à saída da ferramenta: se passasse, o corte do Fluxo tiraria o meio da lista, e
+// a IA leria menos achados do que o resumo anuncia. A lista fica com o que sobra do
+// cabeçalho, do que não rodou e dos comandos, com um piso; cada achado e cada linha do que
+// não rodou têm teto próprio, e só os primeiros backends que não rodaram são listados.
 const (
-	tetoListaScan     = 6 * 1024
+	tetoResumoScan    = 7 * 1024
+	pisoListaScan     = 2 * 1024
+	tetoLinhaAchado   = 1024
+	tetoLinhaNaoRodou = 300
+	maxNaoRodaram     = 6
 	maxRecursosResumo = 10
+	reservaFechoLista = 200 // o título da lista e o "… e mais N achados (…)"
 )
 
 // ordemSeveridade é a ordem do mais grave para o menos; severidade fora dela vem depois.
@@ -147,13 +155,15 @@ func resumirScan(rel relatorioScan) string {
 	if rel.Ignorados > 0 {
 		fmt.Fprintf(&sb, "Recursos de RBAC ignorados pela allowlist: %d\n", rel.Ignorados)
 	}
+	cauda := naoRodaram(rel.NaoRodaram) + orientacaoScan(rel)
+	tetoLista := max(tetoResumoScan-sb.Len()-len(cauda)-reservaFechoLista, pisoListaScan)
 
 	if len(achados) > 0 {
 		var linhas []string
 		tamanho := 0
 		for _, a := range achados {
 			linha := "\n- " + linhaAchado(a)
-			if len(linhas) > 0 && tamanho+len(linha) > tetoListaScan {
+			if len(linhas) > 0 && tamanho+len(linha) > tetoLista {
 				break
 			}
 			linhas = append(linhas, linha)
@@ -173,20 +183,42 @@ func resumirScan(rel relatorioScan) string {
 		}
 		sb.WriteString("\n")
 	}
-
-	if len(rel.NaoRodaram) > 0 {
-		sb.WriteString("\nNão rodaram:")
-		for _, nr := range rel.NaoRodaram {
-			sb.WriteString("\n- " + nr.Backend)
-			if len(nr.Verificacoes) > 0 {
-				sb.WriteString(" (" + strings.Join(nr.Verificacoes, ", ") + ")")
-			}
-			sb.WriteString(": " + nr.Motivo)
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString(orientacaoScan(rel))
+	sb.WriteString(cauda)
 	return sb.String()
+}
+
+// naoRodaram lista o que o scan não conseguiu verificar: os primeiros maxNaoRodaram, cada
+// um com até tetoLinhaNaoRodou bytes, e quantos ficaram de fora.
+func naoRodaram(lista []naoRodouIA) string {
+	if len(lista) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\nNão rodaram:")
+	for _, nr := range lista[:min(len(lista), maxNaoRodaram)] {
+		linha := nr.Backend
+		if len(nr.Verificacoes) > 0 {
+			linha += " (" + strings.Join(nr.Verificacoes, ", ") + ")"
+		}
+		sb.WriteString("\n- " + cortarTexto(linha+": "+nr.Motivo, tetoLinhaNaoRodou))
+	}
+	if resto := len(lista) - maxNaoRodaram; resto > 0 {
+		fmt.Fprintf(&sb, "\n… e mais %d (o relatório completo traz todos)", resto)
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+// cortarTexto corta s em até n bytes, sem partir um caractere, e marca o corte com "…".
+func cortarTexto(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	corte := n - len("…")
+	for corte > 0 && !utf8.RuneStart(s[corte]) {
+		corte--
+	}
+	return s[:corte] + "…"
 }
 
 // corrigidosPeloSentinel são as verificações que o --fix do Sentinel corrige
@@ -291,7 +323,7 @@ func linhaAchado(a achadoScan) string {
 	if a.Recommendation != "" {
 		linha += " · Recomendação: " + a.Recommendation
 	}
-	return linha
+	return cortarTexto(linha, tetoLinhaAchado)
 }
 
 // plural escreve "1 achado" ou "N achados".

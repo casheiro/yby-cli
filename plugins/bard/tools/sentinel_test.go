@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestSentinelScan_Parametros verifica os parâmetros do sentinel_scan.
@@ -203,5 +204,44 @@ func TestRespostaDoPlugin_Envelope(t *testing.T) {
 	_, err = respostaDoPlugin([]byte(`{"error": "sem cluster"}`))
 	if err == nil || !strings.Contains(err.Error(), "sem cluster") {
 		t.Errorf("esperava o erro do plugin, veio %v", err)
+	}
+}
+
+// O resumo inteiro fica abaixo do teto de 8 KB do Fluxo também no pior caso: muitos
+// achados, nomes longos, o contexto de um EKS e uma dúzia de verificações que não rodaram.
+// Se passasse, o corte do Fluxo tiraria o meio da lista que o resumo diz ter listado. Um
+// achado com uma mensagem enorme sai cortado, sem levar a lista junto.
+func TestFormatScanResults_PiorCasoCabeNoTeto(t *testing.T) {
+	DefinirKube("arn:aws:eks:sa-east-1:123456789012:cluster/producao-pagamentos-principal", "")
+	t.Cleanup(func() { DefinirKube("", "") })
+	dados := scanFalso(200)
+	dados["namespace"] = strings.Repeat("n", 63)
+	var naoRodaram []interface{}
+	for i := 0; i < 12; i++ {
+		naoRodaram = append(naoRodaram, map[string]interface{}{
+			"backend":      "checks-internos",
+			"verificacoes": []interface{}{fmt.Sprintf("CHECK_%02d", i)},
+			"motivo":       strings.Repeat("sem permissão para listar os recursos do namespace ", 4),
+		})
+	}
+	dados["nao_rodaram"] = naoRodaram
+	achados := dados["findings"].([]interface{})
+	achados[0].(map[string]interface{})["message"] = strings.Repeat("ã", 4500)
+
+	texto := formatScanResults(dados)
+	if len(texto) > 7*1024+512 {
+		t.Errorf("o resumo passou do teto: %d bytes", len(texto))
+	}
+	listados := strings.Count(texto, "\n- [")
+	if !strings.Contains(texto, fmt.Sprintf("e mais %d achados", 200-listados)) {
+		t.Errorf("faltou dizer quantos achados ficaram de fora (%d listados):\n%s", listados, texto)
+	}
+	for _, trecho := range []string{"e mais 6 (o relatório completo traz todos)", "…", ": o relatório completo, com todos os achados"} {
+		if !strings.Contains(texto, trecho) {
+			t.Errorf("o resumo deveria ter %q:\n%s", trecho, texto)
+		}
+	}
+	if !utf8.ValidString(texto) {
+		t.Error("o corte partiu um caractere")
 	}
 }

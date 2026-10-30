@@ -181,7 +181,7 @@ func (m Model) mensagemEstado() string {
 		return s.TintaSuave.Render("trocando para " + m.trocando + g.Reticencias)
 	}
 	if m.selecionando {
-		return s.Tinta.Render(textoSelecao)
+		return s.Tinta.Render(textoSelecao + "; " + ui.RotuloTecla("↑") + " " + ui.RotuloTecla("↓") + " rolam")
 	}
 	f := m.ultimoFim
 	switch {
@@ -232,7 +232,7 @@ func (m Model) teclas() []key.Binding {
 		rolar.SetEnabled(false)
 	}
 	editar := k.Texto.EditarUltima
-	editar.SetEnabled(m.podeEditarUltima())
+	editar.SetEnabled(m.podeEditarUltima() && !m.selecionando)
 	comandos, ajuda := k.Texto.Comandos, k.Global.Ajuda
 	comandos.SetEnabled(m.textarea.Value() == "")
 	ajuda.SetEnabled(m.textarea.Value() == "")

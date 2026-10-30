@@ -646,3 +646,37 @@ func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
 		t.Errorf("de volta à roda, a linha de estado não fala de seleção: %q", ansi.Strip(m.mensagemEstado()))
 	}
 }
+
+// Com o mouse solto, a roda chega como ↑ e ↓ no Windows Terminal e no GNOME Terminal: elas
+// rolam a conversa e não trazem a última pergunta para o campo. O ctrl+s não apaga o aviso
+// da linha de estado.
+func TestCtrlS_SetasRolamComOMouseSolto(t *testing.T) {
+	semCores(t)
+	m := conversaLonga(t, nil)
+	m.aviso = &avisoEstado{texto: "comando copiado", ok: true}
+	atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = atualizado.(Model)
+	if m.aviso == nil {
+		t.Error("o ctrl+s não deveria apagar o aviso")
+	}
+	fim := m.viewport.YOffset
+	for i := 0; i < 3; i++ {
+		atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = atualizado.(Model)
+	}
+	if m.viewport.YOffset != fim-3 {
+		t.Errorf("três ↑ deveriam subir três linhas: %d, esperado %d", m.viewport.YOffset, fim-3)
+	}
+	if m.textarea.Value() != "" {
+		t.Errorf("o ↑ não deveria trazer a última pergunta: %q", m.textarea.Value())
+	}
+	atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = atualizado.(Model)
+	if m.viewport.YOffset != fim-2 {
+		t.Errorf("o ↓ deveria descer uma linha: %d, esperado %d", m.viewport.YOffset, fim-2)
+	}
+	legenda := ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
+	if strings.Contains(legenda, "editar última") {
+		t.Errorf("com o mouse solto o ↑ rola: %q", legenda)
+	}
+}
