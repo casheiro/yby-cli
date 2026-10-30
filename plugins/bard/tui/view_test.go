@@ -197,11 +197,11 @@ func TestTeclas(t *testing.T) {
 		return ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
 	}
 	// Sem pergunta feita, ↑ não tem o que editar; / e ? abrem os comandos e a ajuda.
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ? ajuda   ") || strings.Contains(got, "↑") {
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ctrl+s selecionar  ? ajuda   ") || strings.Contains(got, "↑") {
 		t.Errorf("legenda ociosa: %q", got)
 	}
 	m.messages = append(m.messages, chatMessage{role: "user", content: "oi"})
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ↑ editar última  ? ajuda   ") {
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ↑ editar última  ctrl+s selecionar  ? ajuda   ") {
 		t.Errorf("legenda com pergunta para editar: %q", got)
 	}
 	m.textarea.SetValue("rascunho")
@@ -212,7 +212,7 @@ func TestTeclas(t *testing.T) {
 	m.textarea.Reset()
 	m.state = stateStreaming
 	// Durante a resposta, a / é texto e o ? abre a ajuda numa camada, como na prancha.
-	if got := legenda(); !strings.HasPrefix(got, "esc interromper  ? ajuda   ") || strings.Contains(got, "↑") || strings.Contains(got, "/ comandos") {
+	if got := legenda(); !strings.HasPrefix(got, "esc interromper  ctrl+s selecionar  ? ajuda   ") || strings.Contains(got, "↑") || strings.Contains(got, "/ comandos") {
 		t.Errorf("legenda durante a resposta: %q", got)
 	}
 	m.textarea.SetValue("próxima")

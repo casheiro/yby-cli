@@ -276,7 +276,7 @@ func saidaDaConversa(err error) error {
 // aplicarCluster põe no cabeçalho o cluster ▸ namespace lido do kubectl; o --context e o
 // --namespace valem mesmo quando o kubectl não responde (o Viz sabe onde está).
 func aplicarCluster(c *tui.Config, cc *ClusterContext, opcoes opcoesBard) {
-	if cc != nil {
+	if cc != nil && cc.SemCluster == "" {
 		c.Cluster, c.Namespace = cc.Cluster, cc.Namespace
 	}
 	if opcoes.contexto != "" {

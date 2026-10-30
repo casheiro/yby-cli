@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/casheiro/yby-cli/v5/pkg/plugin"
 )
@@ -51,10 +52,24 @@ func pedidoSentinelScan(params map[string]string) plugin.PluginRequest {
 	return pedidoAoPlugin(append(args, "-o", "json", "--no-ai"))
 }
 
-// Teto do resumo do scan: os achados mais graves e, em cada um, os recursos listados.
+// msgScanSemRelatorio é a saída quando o Sentinel não devolve o relatório. Não é "nenhum
+// achado": um Sentinel antigo, que respondia noutro formato, fazia o Bard dizer que o
+// namespace estava limpo.
+const msgScanSemRelatorio = "O Sentinel não devolveu o relatório do scan: não dá para dizer se há achados. Sugira rodar yby sentinel scan no terminal e conferir se o yby e os plugins estão na mesma versão (yby plugin update)."
+
+// Tetos do resumo do scan. O resumo inteiro fica em tetoResumoScan, abaixo dos 8 KB que o
+// Fluxo dá à saída da ferramenta: se passasse, o corte do Fluxo tiraria o meio da lista, e
+// a IA leria menos achados do que o resumo anuncia. A lista fica com o que sobra do
+// cabeçalho, do que não rodou e dos comandos, com um piso; cada achado e cada linha do que
+// não rodou têm teto próprio, e só os primeiros backends que não rodaram são listados.
 const (
-	maxAchadosResumo  = 10
+	tetoResumoScan    = 7 * 1024
+	pisoListaScan     = 2 * 1024
+	tetoLinhaAchado   = 1024
+	tetoLinhaNaoRodou = 300
+	maxNaoRodaram     = 6
 	maxRecursosResumo = 10
+	reservaFechoLista = 200 // o título da lista e o "… e mais N achados (…)"
 )
 
 // ordemSeveridade é a ordem do mais grave para o menos; severidade fora dela vem depois.
@@ -94,7 +109,8 @@ type naoRodouIA struct {
 // cluster grande não cabe no prompt; o relatório completo fica com o Sentinel.
 func formatScanResults(data interface{}) string {
 	if data == nil {
-		return "Nenhum finding reportado."
+		// O scan sempre devolve o relatório, mesmo sem achados: sem ele, nada se sabe.
+		return msgScanSemRelatorio
 	}
 	compacto, err := json.Marshal(data)
 	if err != nil {
@@ -139,34 +155,113 @@ func resumirScan(rel relatorioScan) string {
 	if rel.Ignorados > 0 {
 		fmt.Fprintf(&sb, "Recursos de RBAC ignorados pela allowlist: %d\n", rel.Ignorados)
 	}
+	cauda := naoRodaram(rel.NaoRodaram) + orientacaoScan(rel)
+	tetoLista := max(tetoResumoScan-sb.Len()-len(cauda)-reservaFechoLista, pisoListaScan)
 
 	if len(achados) > 0 {
-		n := min(len(achados), maxAchadosResumo)
+		var linhas []string
+		tamanho := 0
+		for _, a := range achados {
+			linha := "\n- " + linhaAchado(a)
+			if len(linhas) > 0 && tamanho+len(linha) > tetoLista {
+				break
+			}
+			linhas = append(linhas, linha)
+			tamanho += len(linha)
+		}
+		n := len(linhas)
 		if n < len(achados) {
-			fmt.Fprintf(&sb, "\nOs %d mais graves:", n)
+			fmt.Fprintf(&sb, "\nOs %d mais graves (os outros não couberam aqui):", n)
 		} else {
 			sb.WriteString("\nDo mais grave para o menos:")
 		}
-		for _, a := range achados[:n] {
-			sb.WriteString("\n- " + linhaAchado(a))
+		for _, l := range linhas {
+			sb.WriteString(l)
 		}
 		if resto := len(achados) - n; resto > 0 {
 			fmt.Fprintf(&sb, "\n… e mais %s (%s)", plural(resto, "achado", "achados"), contagemPorSeveridade(achados[n:]))
 		}
 		sb.WriteString("\n")
 	}
+	sb.WriteString(cauda)
+	return sb.String()
+}
 
-	if len(rel.NaoRodaram) > 0 {
-		sb.WriteString("\nNão rodaram:")
-		for _, nr := range rel.NaoRodaram {
-			sb.WriteString("\n- " + nr.Backend)
-			if len(nr.Verificacoes) > 0 {
-				sb.WriteString(" (" + strings.Join(nr.Verificacoes, ", ") + ")")
-			}
-			sb.WriteString(": " + nr.Motivo)
-		}
-		sb.WriteString("\n")
+// naoRodaram lista o que o scan não conseguiu verificar: os primeiros maxNaoRodaram, cada
+// um com até tetoLinhaNaoRodou bytes, e quantos ficaram de fora.
+func naoRodaram(lista []naoRodouIA) string {
+	if len(lista) == 0 {
+		return ""
 	}
+	var sb strings.Builder
+	sb.WriteString("\nNão rodaram:")
+	for _, nr := range lista[:min(len(lista), maxNaoRodaram)] {
+		linha := nr.Backend
+		if len(nr.Verificacoes) > 0 {
+			linha += " (" + strings.Join(nr.Verificacoes, ", ") + ")"
+		}
+		sb.WriteString("\n- " + cortarTexto(linha+": "+nr.Motivo, tetoLinhaNaoRodou))
+	}
+	if resto := len(lista) - maxNaoRodaram; resto > 0 {
+		fmt.Fprintf(&sb, "\n… e mais %d (o relatório completo traz todos)", resto)
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+// cortarTexto corta s em até n bytes, sem partir um caractere, e marca o corte com "…".
+func cortarTexto(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	corte := n - len("…")
+	for corte > 0 && !utf8.RuneStart(s[corte]) {
+		corte--
+	}
+	return s[:corte] + "…"
+}
+
+// corrigidosPeloSentinel são as verificações que o --fix do Sentinel corrige
+// (plugins/sentinel/cli/remediation); o POD_CAPABILITIES crítico (SYS_ADMIN) fica de fora.
+var corrigidosPeloSentinel = map[string]bool{
+	"POD_PRIVILEGE_ESCALATION":           true,
+	"polaris/privilegeEscalationAllowed": true,
+	"POD_CAPABILITIES":                   true,
+	"polaris/insecureCapabilities":       true,
+}
+
+// orientacaoScan diz à IA o que o usuário pode rodar a partir do scan: o relatório
+// completo e, quando há achado que o Sentinel corrige, o --fix-dry-run. O Bard não roda
+// nenhum dos dois; a IA os cita na resposta. Fecha com o risco das correções de
+// securityContext, que a IA costuma sugerir sem avisar o que quebra.
+func orientacaoScan(rel relatorioScan) string {
+	comando := "yby sentinel scan"
+	if rel.Namespace != "" {
+		comando += " -n " + rel.Namespace
+	}
+	if rel.Scope == "cluster" {
+		comando += " --scope cluster"
+	}
+	if rel.Perfil != "" {
+		comando += " -p " + rel.Perfil
+	}
+	var sb strings.Builder
+	sb.WriteString("\nComandos do yby para o usuário rodar (cite os que ajudarem; o Bard não os executa):\n")
+	fmt.Fprintf(&sb, "- %s: o relatório completo, com todos os achados e recursos, gravado em ~/.yby/reports\n", comando)
+	corrige := false
+	for _, a := range rel.Findings {
+		if corrigidosPeloSentinel[a.CheckID] && !(a.CheckID == "POD_CAPABILITIES" && a.Severity == "critical") {
+			corrige = true
+			break
+		}
+	}
+	if corrige {
+		fmt.Fprintf(&sb, "- %s --fix-dry-run para ver e --fix para aplicar: o Sentinel corrige a escalada de privilégio e as capabilities no template do dono de cada pod (Deployment, StatefulSet, DaemonSet, CronJob); recurso gerido pelo Argo CD fica de fora e se corrige no Git\n", comando)
+	}
+	if kube.contexto != "" {
+		fmt.Fprintf(&sb, "Esses comandos usam o contexto atual do kubeconfig; o scan foi no contexto %s.\n", kube.contexto)
+	}
+	sb.WriteString("Ao sugerir securityContext, diga o que pode quebrar: runAsNonRoot e runAsUser falham com imagem que roda como root, e readOnlyRootFilesystem pede um emptyDir nos diretórios em que o app escreve (/tmp, cache).\n")
 	return sb.String()
 }
 
@@ -228,7 +323,7 @@ func linhaAchado(a achadoScan) string {
 	if a.Recommendation != "" {
 		linha += " · Recomendação: " + a.Recommendation
 	}
-	return linha
+	return cortarTexto(linha, tetoLinhaAchado)
 }
 
 // plural escreve "1 achado" ou "N achados".

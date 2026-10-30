@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -26,18 +27,54 @@ type ClusterContext struct {
 	Cluster      string    `json:"cluster"`
 	Pods         []PodInfo `json:"pods"`
 	RecentEvents []string  `json:"recent_events"`
+	// SemCluster é o motivo de não haver cluster (kubectl ausente, kubeconfig sem contexto
+	// atual, contexto que não existe); com ele, o resto fica vazio. O prompt diz o motivo,
+	// para a IA não sair procurando o cluster por conta própria.
+	SemCluster string `json:"sem_cluster,omitempty"`
+	// SemResposta é o erro do kubectl quando o cluster do kubeconfig existe mas não
+	// respondeu (fora do ar, credencial vencida); pods e eventos ficam desconhecidos.
+	SemResposta string `json:"sem_resposta,omitempty"`
 }
 
-// EnrichContext coleta informações do cluster Kubernetes atual.
-// Retorna nil graciosamente se kubectl não estiver disponível ou o cluster estiver offline.
-// contexto e namespace, quando dados (yby bard --context, --namespace), trocam o contexto
-// atual do kubeconfig e o namespace dele.
+// EnrichContext coleta informações do cluster Kubernetes atual. Sem cluster, devolve só o
+// motivo em SemCluster. contexto e namespace, quando dados (yby bard --context,
+// --namespace), trocam o contexto atual do kubeconfig e o namespace dele.
 func EnrichContext(ctx context.Context, contexto, namespace string) *ClusterContext {
 	// Cluster fora do ar não pode segurar a abertura: as chamadas são em sequência, então
 	// o prazo vale para o conjunto, além do --request-timeout de cada uma.
 	ctx, cancelar := context.WithTimeout(ctx, prazoEnriquecimento)
 	defer cancelar()
-	return enriquecer(func(args ...string) (string, error) { return runKubectl(ctx, args...) }, contexto, namespace)
+	cc := enriquecer(func(args ...string) (string, error) { return runKubectl(ctx, args...) }, contexto, namespace)
+	if cc.SemCluster != "" && ctx.Err() != nil {
+		cc.SemCluster = fmt.Sprintf("o kubectl não respondeu em %s", prazoEnriquecimento)
+	}
+	return cc
+}
+
+// motivoSemCluster diz, para a IA e para quem usa, por que o kubectl não deu o cluster.
+func motivoSemCluster(err error, contexto string) string {
+	if errors.Is(err, exec.ErrNotFound) {
+		return "o kubectl não está instalado ou não está no PATH"
+	}
+	if contexto != "" {
+		return fmt.Sprintf("o contexto %q não existe no kubeconfig", contexto)
+	}
+	texto := err.Error()
+	var saida *exec.ExitError
+	if errors.As(err, &saida) && len(strings.TrimSpace(string(saida.Stderr))) > 0 {
+		texto = strings.TrimSpace(string(saida.Stderr))
+	}
+	if strings.Contains(texto, "current-context is not set") {
+		return "o kubeconfig não tem contexto atual (current-context)"
+	}
+	// error loading config file "C:\Users\…\.kube\config": couldn't get version/kind; …
+	if _, resto, ok := strings.Cut(texto, `error loading config file "`); ok {
+		if arquivo, _, ok := strings.Cut(resto, `"`); ok {
+			return fmt.Sprintf("o kubeconfig %s não é válido (o kubectl não consegue ler o arquivo)", arquivo)
+		}
+	}
+	linha, _, _ := strings.Cut(texto, "\n")
+	return "o kubectl não leu o kubeconfig: " + tui.CortarLinha(linha, maxEventoContexto)
 }
 
 // enriquecer é o EnrichContext com o kubectl dado (os testes trocam o kubectl).
@@ -57,14 +94,14 @@ func enriquecer(rodar rodarKubectl, contexto, namespace string) *ClusterContext 
 	if contexto != "" {
 		if _, err := rodar("config", "get-contexts", contexto, "-o", "name"); err != nil {
 			slog.Debug("contexto do kubeconfig indisponível para context awareness", "contexto", contexto, "erro", err)
-			return nil
+			return &ClusterContext{SemCluster: motivoSemCluster(err, contexto)}
 		}
 		cc.Cluster = contexto
 	} else {
 		cluster, err := rodar("config", "current-context")
 		if err != nil {
 			slog.Debug("kubectl indisponível para context awareness", "erro", err)
-			return nil
+			return &ClusterContext{SemCluster: motivoSemCluster(err, "")}
 		}
 		cc.Cluster = strings.TrimSpace(cluster)
 	}
@@ -80,8 +117,14 @@ func enriquecer(rodar rodarKubectl, contexto, namespace string) *ClusterContext 
 		cc.Namespace = "default"
 	}
 
-	// Listar pods no namespace atual
-	cc.Pods = fetchPods(kubectl, cc.Namespace)
+	// Listar pods no namespace atual; sem resposta do cluster, nem tenta os eventos
+	pods, err := fetchPods(kubectl, cc.Namespace)
+	if err != nil {
+		slog.Debug("cluster sem resposta para context awareness", "cluster", cc.Cluster, "erro", err)
+		cc.SemResposta = motivoSemResposta(err)
+		return cc
+	}
+	cc.Pods = pods
 
 	// Obter eventos recentes
 	cc.RecentEvents = fetchRecentEvents(kubectl, cc.Namespace)
@@ -89,14 +132,26 @@ func enriquecer(rodar rodarKubectl, contexto, namespace string) *ClusterContext 
 	return cc
 }
 
+// motivoSemResposta resume por que o cluster do kubeconfig não respondeu ao kubectl.
+func motivoSemResposta(err error) string {
+	texto := err.Error()
+	var saida *exec.ExitError
+	if errors.As(err, &saida) && len(strings.TrimSpace(string(saida.Stderr))) > 0 {
+		texto = strings.TrimSpace(string(saida.Stderr))
+	}
+	linha, _, _ := strings.Cut(texto, "\n")
+	return tui.CortarLinha(linha, maxEventoContexto)
+}
+
 // rodarKubectl roda o kubectl no contexto da sessão.
 type rodarKubectl func(args ...string) (string, error)
 
-// fetchPods obtém a lista de pods do namespace especificado.
-func fetchPods(kubectl rodarKubectl, namespace string) []PodInfo {
+// fetchPods obtém a lista de pods do namespace especificado; o erro é o do kubectl (o
+// cluster não respondeu), e uma saída que não se lê dá lista vazia.
+func fetchPods(kubectl rodarKubectl, namespace string) ([]PodInfo, error) {
 	output, err := kubectl("get", "pods", "-n", namespace, "-o", "json")
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	var podList struct {
@@ -115,7 +170,7 @@ func fetchPods(kubectl rodarKubectl, namespace string) []PodInfo {
 
 	if err := json.Unmarshal([]byte(output), &podList); err != nil {
 		slog.Debug("erro ao parsear lista de pods", "erro", err)
-		return nil
+		return nil, nil
 	}
 
 	var pods []PodInfo
@@ -134,7 +189,7 @@ func fetchPods(kubectl rodarKubectl, namespace string) []PodInfo {
 		})
 	}
 
-	return pods
+	return pods, nil
 }
 
 // fetchRecentEvents obtém os 5 eventos mais recentes do namespace.
@@ -203,8 +258,24 @@ func FormatClusterContext(cc *ClusterContext) string {
 
 	var sb strings.Builder
 	sb.WriteString("## Estado Atual do Cluster\n\n")
+	if cc.SemCluster != "" {
+		// Sem isso, a pergunta "qual é o meu cluster?" fazia a IA tentar o kubectl pelas
+		// ferramentas do provider e responder que não conseguiu, sem dizer por quê.
+		fmt.Fprintf(&sb, "**Nenhum cluster conectado**: %s. O Yby não leu pods nem eventos.\n", cc.SemCluster)
+		sb.WriteString("Se a pergunta depende do cluster, comece dizendo isso e o motivo, e mostre como resolver conforme o motivo: " +
+			"kubeconfig inválido precisa ser corrigido ou refeito (o kubectl não roda nada com ele); sem contexto atual, " +
+			"`kubectl config get-contexts` lista os contextos e `kubectl config use-context <nome>` escolhe um; sem kubectl, " +
+			"instale-o; num projeto do yby, `yby up` sobe o cluster local. Não tente descobrir o cluster pelas ferramentas do provider.\n")
+		return sb.String()
+	}
 	sb.WriteString(fmt.Sprintf("**Cluster**: %s\n", cc.Cluster))
 	sb.WriteString(fmt.Sprintf("**Namespace**: %s\n\n", cc.Namespace))
+	if cc.SemResposta != "" {
+		fmt.Fprintf(&sb, "**O cluster não respondeu** ao kubectl: %s.\n", cc.SemResposta)
+		sb.WriteString("Pods e eventos são desconhecidos: não diga que o namespace está vazio. Se a pergunta depende " +
+			"do cluster, comece dizendo que ele não respondeu, com o motivo, e sugira `yby doctor` e `kubectl cluster-info`.\n")
+		return sb.String()
+	}
 
 	if len(cc.Pods) > 0 {
 		pods := cc.Pods
