@@ -2,12 +2,12 @@
 
 As notas completas de cada versão, geradas a partir dos commits, ficam nas [releases do GitHub](https://github.com/casheiro/yby-cli/releases). Aqui ficam as mudanças que pedem atenção de quem já usa o yby: teclas que mudaram, códigos de saída e comportamentos novos.
 
-## Próxima versão
+## v5.9.0: Bard com o scan inteiro e seleção de texto
 
 - **Bard: `ctrl+s` seleciona texto com o mouse.** O Bard pega o mouse para a roda rolar a conversa, e com isso o arraste não selecionava nada. O `ctrl+s` solta o mouse para o terminal (arraste e copie como sempre); outro `ctrl+s` devolve a roda.
 - **Bard: a conversa rolada para cima avisa "↓ N linhas abaixo"**, também no meio de uma resposta longa. Antes, o resto da resposta ficava fora da tela sem aviso nenhum.
 - **Bard: o scan do Sentinel vai inteiro à IA** (antes, só os 10 achados mais graves), com os comandos `yby sentinel scan` para o relatório completo e `--fix-dry-run` quando o Sentinel corrige algum achado.
-- **`yby upgrade` atualiza só o yby.** Depois dele, rode `yby plugin update`: plugins de uma versão anterior continuam rodando, com os defeitos já corrigidos (um Bard da v5.8.0 com o yby da v5.8.5 dizia que o scan não tinha achados).
+- **`yby upgrade` atualiza só o yby.** Depois dele, rode `yby plugin update`: plugins de uma versão anterior continuam rodando, com os defeitos já corrigidos (um Bard da v5.8.0 com o yby da v5.8.5 dizia que o scan não tinha achados). O caminho da v5.8.5 para a v5.9.0 (`yby upgrade` e depois `yby plugin update`) foi conferido num Linux limpo.
 
 ## v5.8.4: instalação e o módulo /v5
 
