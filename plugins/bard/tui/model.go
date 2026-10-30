@@ -172,6 +172,9 @@ type Model struct {
 	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
 	// da rodada; fora dela o ? põe o quadro na conversa, como o /ajuda.
 	ajuda bool
+	// selecionando diz que o ctrl+s soltou o mouse para o terminal: o arraste seleciona
+	// texto, e a roda só chega ao Bard nos terminais que a mandam como ↑ e ↓, que rolam.
+	selecionando bool
 	// rascunhoIntocado diz que o campo ainda tem o rascunho como abriu, sem tecla
 	// nenhuma: a cada largura nova ele volta a mostrar o começo da pergunta.
 	rascunhoIntocado bool
@@ -397,6 +400,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // pergunta, mas ↵ só envia quando a rodada termina.
 func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := ui.DefaultKeys()
+	if key.Matches(msg, teclaSelecionar(m.selecionando)) {
+		// ctrl+s vale em qualquer camada, também durante a resposta, e não apaga o aviso
+		// da linha de estado nem o rascunho, como a roda.
+		m.selecionando = !m.selecionando
+		if m.selecionando {
+			return m, tea.DisableMouse
+		}
+		return m, tea.EnableMouseCellMotion
+	}
+	if m.selecionando && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) && m.seletor == nil && len(m.comandosVisiveis()) == 0 {
+		// Com o mouse solto, o Windows Terminal e o GNOME Terminal mandam a roda como ↑ e ↓:
+		// elas rolam a conversa (ou a saída aberta), em vez de trazer a última pergunta.
+		passo := 1
+		if msg.Type == tea.KeyUp {
+			passo = -1
+		}
+		if m.saida != nil {
+			m.rolarSaida(passo)
+			return m, nil
+		}
+		if passo < 0 {
+			m.viewport.ScrollUp(1)
+		} else {
+			m.viewport.ScrollDown(1)
+		}
+		m.marcarLidas()
+		return m, nil
+	}
 	m.aviso = nil
 	m.rascunhoIntocado = false
 	if msg.Type == tea.KeyCtrlC {
@@ -900,6 +931,16 @@ func (m Model) mensagensAnteriores() int {
 	return n
 }
 
+// linhasAbaixo conta as linhas da conversa abaixo da janela, mais as que o aviso do pé
+// cobre: o resto de uma resposta longa que a pessoa rolou para ler do começo. No fim da
+// conversa, zero.
+func (m Model) linhasAbaixo() int {
+	if m.viewport.AtBottom() {
+		return 0
+	}
+	return max(m.viewport.TotalLineCount()-(m.viewport.YOffset+m.viewport.Height-m.linhasAviso()), 0)
+}
+
 // cabemDoisAvisos diz se a janela tem lugar para o aviso do topo e o do pé com ao menos
 // uma linha da conversa entre eles.
 func (m Model) cabemDoisAvisos() bool {
@@ -911,15 +952,17 @@ func (m Model) cabemDoisAvisos() bool {
 // conversa deixa de passar pela tela.
 func (m *Model) rolarPagina(acima bool) {
 	passo := m.viewport.Height
-	if m.mensagensNovas() > 0 {
-		passo -= m.linhasAviso()
-	}
 	if acima {
+		// Subindo, o pé da página nova fica sob o aviso do que está abaixo.
+		passo -= m.linhasAviso()
 		if m.mensagensAnteriores() > 0 {
 			passo -= m.linhasAviso()
 		}
 		m.viewport.ScrollUp(max(passo, 1))
 	} else {
+		if m.mensagensNovas() > 0 || m.linhasAbaixo() > 0 {
+			passo -= m.linhasAviso()
+		}
 		// Descendo, o topo da página nova fica sob o aviso das anteriores.
 		if m.cabemDoisAvisos() {
 			passo -= m.linhasAviso()
@@ -961,7 +1004,7 @@ var ErrInterrompido = errors.New("conversa interrompida")
 func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error {
 	model := New(provider, vectorStore, config)
 	// O mouse vem para o Bard por causa da roda; com isso o arraste simples deixa de
-	// selecionar texto, e copiar um trecho pede shift+arraste (Windows Terminal, xterm).
+	// selecionar texto até o ctrl+s soltá-lo (teclaSelecionar).
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	return desfecho(p.Run())
 }

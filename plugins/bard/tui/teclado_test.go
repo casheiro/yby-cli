@@ -76,9 +76,9 @@ func fundo(m Model) int {
 }
 
 // pagina é quanto o pgup anda com a conversa rolada: a altura menos as linhas que o
-// aviso das mensagens anteriores cobre no topo.
+// aviso das mensagens anteriores cobre no topo e as que o das linhas abaixo cobre no pé.
 func pagina(m Model) int {
-	return m.viewport.Height - m.linhasAviso()
+	return m.viewport.Height - 2*m.linhasAviso()
 }
 
 func TestTeclado_LetrasNaoRolam(t *testing.T) {
@@ -550,6 +550,45 @@ func TestMensagensAnteriores(t *testing.T) {
 }
 
 // Subindo página por página com o aviso no topo, toda linha da conversa passa pela tela.
+// Lida do começo, uma conversa longa avisa quantas linhas faltam embaixo, mesmo sem
+// mensagem nova (o resto da resposta não ficava escondido sem aviso), e o pgdn passa por
+// todas até o fim, onde o aviso some.
+func TestLinhasAbaixo_PaginarParaBaixoMostraTudo(t *testing.T) {
+	semCores(t)
+	m := conversaLonga(t, nil)
+	m.viewport.GotoTop()
+	m.marcarLidas()
+	if m.mensagensNovas() != 0 {
+		t.Fatalf("nada é novo: %d", m.mensagensNovas())
+	}
+	esperado := m.viewport.TotalLineCount() - m.viewport.Height + m.linhasAviso()
+	if corpo := ansi.Strip(m.corpo()); !strings.Contains(corpo, fmt.Sprintf("↓ %d linhas abaixo", esperado)) {
+		t.Fatalf("faltou o aviso das %d linhas abaixo:\n%s", esperado, corpo)
+	}
+	vistas := map[string]bool{}
+	for passo := 0; ; passo++ {
+		for _, l := range strings.Split(ansi.Strip(m.corpo()), "\n") {
+			vistas[strings.TrimSpace(l)] = true
+		}
+		if m.viewport.AtBottom() {
+			break
+		}
+		if passo > 50 {
+			t.Fatal("o pgdn não chegou ao fim")
+		}
+		atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		m = atualizado.(Model)
+	}
+	if strings.Contains(ansi.Strip(m.corpo()), "abaixo") {
+		t.Errorf("no fim não há aviso de linhas abaixo:\n%s", ansi.Strip(m.corpo()))
+	}
+	for i, l := range strings.Split(ansi.Strip(strings.TrimRight(m.historico, "\n")), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !vistas[l] {
+			t.Errorf("a linha %d nunca apareceu na tela: %q", i, l)
+		}
+	}
+}
+
 func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
 	semCores(t)
 	m := conversaLonga(t, nil)
@@ -570,5 +609,74 @@ func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
 		if l = strings.TrimSpace(l); l != "" && !vistas[l] {
 			t.Errorf("a linha %d nunca apareceu na tela: %q", i, l)
 		}
+	}
+}
+
+// O ctrl+s solta o mouse para o terminal (o arraste volta a selecionar texto), diz isso
+// na linha de estado e na legenda, e o segundo ctrl+s o traz de volta para a roda. Vale
+// também com a saída da ferramenta aberta, sem fechá-la.
+func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	ctrlS := tea.KeyMsg{Type: tea.KeyCtrlS}
+
+	atualizado, cmd := m.Update(ctrlS)
+	m = atualizado.(Model)
+	if cmd == nil || fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.DisableMouse()) {
+		t.Fatal("o ctrl+s deveria soltar o mouse")
+	}
+	if !strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste com o mouse para selecionar") {
+		t.Errorf("a linha de estado deveria explicar a seleção: %q", ansi.Strip(m.mensagemEstado()))
+	}
+	legenda := ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
+	if !strings.Contains(legenda, "ctrl+s rolar com o mouse") {
+		t.Errorf("a legenda deveria mostrar como voltar: %q", legenda)
+	}
+
+	m.saida = &vistaSaida{}
+	atualizado, cmd = m.Update(ctrlS)
+	m = atualizado.(Model)
+	if cmd == nil || fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.EnableMouseCellMotion()) {
+		t.Fatal("o segundo ctrl+s deveria devolver o mouse para a roda")
+	}
+	if m.saida == nil {
+		t.Error("o ctrl+s não fecha a saída aberta")
+	}
+	if strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste") {
+		t.Errorf("de volta à roda, a linha de estado não fala de seleção: %q", ansi.Strip(m.mensagemEstado()))
+	}
+}
+
+// Com o mouse solto, a roda chega como ↑ e ↓ no Windows Terminal e no GNOME Terminal: elas
+// rolam a conversa e não trazem a última pergunta para o campo. O ctrl+s não apaga o aviso
+// da linha de estado.
+func TestCtrlS_SetasRolamComOMouseSolto(t *testing.T) {
+	semCores(t)
+	m := conversaLonga(t, nil)
+	m.aviso = &avisoEstado{texto: "comando copiado", ok: true}
+	atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = atualizado.(Model)
+	if m.aviso == nil {
+		t.Error("o ctrl+s não deveria apagar o aviso")
+	}
+	fim := m.viewport.YOffset
+	for i := 0; i < 3; i++ {
+		atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = atualizado.(Model)
+	}
+	if m.viewport.YOffset != fim-3 {
+		t.Errorf("três ↑ deveriam subir três linhas: %d, esperado %d", m.viewport.YOffset, fim-3)
+	}
+	if m.textarea.Value() != "" {
+		t.Errorf("o ↑ não deveria trazer a última pergunta: %q", m.textarea.Value())
+	}
+	atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = atualizado.(Model)
+	if m.viewport.YOffset != fim-2 {
+		t.Errorf("o ↓ deveria descer uma linha: %d, esperado %d", m.viewport.YOffset, fim-2)
+	}
+	legenda := ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
+	if strings.Contains(legenda, "editar última") {
+		t.Errorf("com o mouse solto o ↑ rola: %q", legenda)
 	}
 }
