@@ -7,6 +7,7 @@
 package uimarkdown
 
 import (
+	"cmp"
 	"regexp"
 	"strings"
 
@@ -29,6 +30,9 @@ type Renderizador struct {
 	// semEstilo tira todo ANSI da saída no perfil Ascii, como faz o lipgloss: o glamour
 	// só descarta as cores e manteria negrito e sublinhado.
 	semEstilo bool
+	// aberto desenha os blocos de código sem as bordas dos lados (ui.QuadroAberto), para a
+	// seleção com o mouse copiar só o código.
+	aberto bool
 }
 
 // Novo cria um renderizador para a largura dada, com o tema, o perfil de cor e o modo
@@ -56,6 +60,10 @@ func Novo(largura int) (*Renderizador, error) {
 // Largura devolve a largura, em células, para a qual o renderizador foi criado.
 func (r *Renderizador) Largura() int { return r.largura }
 
+// AbrirQuadros troca o desenho dos blocos de código: aberto, sem as bordas dos lados
+// (ui.QuadroAberto), para a seleção com o mouse copiar só o código; fechado, o ui.Quadro.
+func (r *Renderizador) AbrirQuadros(aberto bool) { r.aberto = aberto }
+
 // Renderizar converte md. Tabelas no nível de cima viram ui.Tabela (ou registros, quando
 // não cabem na largura); blocos de código cercados viram ui.Quadro, com o rótulo
 // "COMANDO · ctrl+y copia" para shell. O resto passa pelo glamour. Os blocos ficam separados
@@ -68,7 +76,7 @@ func (r *Renderizador) Renderizar(md string) (string, error) {
 		case blocoTabela:
 			texto = renderizarTabela(b.linhas, r.largura)
 		case blocoCodigo:
-			texto = renderizarCodigo(b.linguagem, b.linhas, r.largura)
+			texto = renderizarCodigo(b.linguagem, b.linhas, r.largura, r.aberto)
 		default:
 			t, err := r.glamour.Render(strings.Join(b.linhas, "\n"))
 			if err != nil {
@@ -336,8 +344,8 @@ var linguagensShell = map[string]bool{
 // renderizarCodigo desenha o bloco de código num ui.Quadro na largura toda. Shell vira o
 // quadro "COMANDO · c copia"; as outras linguagens levam o nome da linguagem. Linha mais
 // larga que o quadro quebra (entre palavras ou no meio da palavra), sem perder nada: o
-// Quadro cortaria o fim com reticências.
-func renderizarCodigo(linguagem string, linhas []string, largura int) string {
+// Quadro cortaria o fim com reticências. Aberto, o quadro sai sem as bordas dos lados.
+func renderizarCodigo(linguagem string, linhas []string, largura int, aberto bool) string {
 	for len(linhas) > 0 && strings.TrimSpace(linhas[len(linhas)-1]) == "" {
 		linhas = linhas[:len(linhas)-1]
 	}
@@ -348,6 +356,10 @@ func renderizarCodigo(linguagem string, linhas []string, largura int) string {
 	}
 	corpo := strings.Join(quebradas, "\n")
 	switch {
+	case aberto && linguagensShell[linguagem]:
+		return ui.QuadroAberto("comando", "c", "copia", corpo, largura)
+	case aberto:
+		return ui.QuadroAberto(cmp.Or(linguagem, "código"), "", "", corpo, largura)
 	case linguagensShell[linguagem]:
 		return ui.QuadroComTecla("comando", "c", "copia", corpo, largura, ui.QuadroNormal)
 	case linguagem == "":

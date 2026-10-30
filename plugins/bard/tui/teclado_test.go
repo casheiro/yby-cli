@@ -680,3 +680,45 @@ func TestCtrlS_SetasRolamComOMouseSolto(t *testing.T) {
 		t.Errorf("com o mouse solto o ↑ rola: %q", legenda)
 	}
 }
+
+// Com o mouse solto, os blocos de código saem sem as bordas dos lados: a linha selecionada
+// com o mouse é só o código. O número de linhas não muda, e o segundo ctrl+s traz as bordas.
+func TestCtrlS_CodigoSemBordas(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{SessionID: "20261030-100000"}, "10:00")
+	resposta := "Confira:\n\n```bash\nkubectl get pods -n web\n```\n\n```yaml\nsecurityContext:\n  runAsNonRoot: true\n```\n"
+	m = conversar(t, m, "como confiro?", resposta, time.Second)
+	linhaCom := func(m Model, texto string) string {
+		for _, l := range strings.Split(ansi.Strip(m.viewport.View()), "\n") {
+			if strings.Contains(l, texto) {
+				return strings.TrimRight(l, " ")
+			}
+		}
+		t.Fatalf("a conversa não mostra %q:\n%s", texto, ansi.Strip(m.viewport.View()))
+		return ""
+	}
+	if l := linhaCom(m, "kubectl get pods"); !strings.HasSuffix(l, "│") {
+		t.Fatalf("com o mouse preso, o comando fica no quadro com bordas: %q", l)
+	}
+	antes := m.viewport.TotalLineCount()
+
+	atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = atualizado.(Model)
+	for _, texto := range []string{"kubectl get pods -n web", "runAsNonRoot: true"} {
+		if l := linhaCom(m, texto); strings.Contains(l, "│") || !strings.HasSuffix(l, texto) {
+			t.Errorf("com o mouse solto, a linha do código sai sem bordas: %q", l)
+		}
+	}
+	if l := linhaCom(m, "COMANDO"); !strings.Contains(l, "ctrl+y copia") {
+		t.Errorf("o quadro aberto mantém a tecla da cópia: %q", l)
+	}
+	if depois := m.viewport.TotalLineCount(); depois != antes {
+		t.Errorf("o ctrl+s não muda o número de linhas: %d, antes %d", depois, antes)
+	}
+
+	atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = atualizado.(Model)
+	if l := linhaCom(m, "kubectl get pods"); !strings.HasSuffix(l, "│") {
+		t.Errorf("o segundo ctrl+s traz as bordas de volta: %q", l)
+	}
+}

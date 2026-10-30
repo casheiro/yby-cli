@@ -93,17 +93,20 @@ type Model struct {
 	width       int
 	height      int
 	// markdown renderiza a resposta na largura dada, com a tecla da cópia no comando de
-	// índice comando (-1 nenhum); nil mostra o texto cru.
-	markdown func(texto string, largura, comando int) (string, error)
+	// índice comando (-1 nenhum) e, com aberto, os blocos de código sem as bordas dos lados;
+	// nil mostra o texto cru.
+	markdown func(texto string, largura, comando int, aberto bool) (string, error)
 	agora    func() time.Time
 	err      error
 
 	// Histórico já renderizado: as mensagens só crescem, então cada uma passa
 	// pelo glamour uma vez; a largura nova refaz tudo. Assim um trecho da
-	// resposta não paga a renderização da conversa inteira.
+	// resposta não paga a renderização da conversa inteira. O ctrl+s também refaz tudo:
+	// os blocos de código mudam de desenho (historicoAberto).
 	historico        string
 	historicoN       int
 	historicoLargura int
+	historicoAberto  bool
 	historicoLinhas  int      // linhas do histórico renderizado
 	inicios          []int    // linha em que começa cada mensagem do histórico
 	blocosHistorico  []string // bloco renderizado de cada mensagem
@@ -403,7 +406,10 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, teclaSelecionar(m.selecionando)) {
 		// ctrl+s vale em qualquer camada, também durante a resposta, e não apaga o aviso
 		// da linha de estado nem o rascunho, como a roda.
+		// Os blocos de código perdem as bordas dos lados enquanto o mouse está solto, para
+		// a linha selecionada sair sem o "│"; o número de linhas não muda, nem a rolagem.
 		m.selecionando = !m.selecionando
+		m.updateViewport()
 		if m.selecionando {
 			return m, tea.DisableMouse
 		}
@@ -812,9 +818,9 @@ func contarLinhas(s string) int {
 // mensagem que ganha ou perde a dica "↵ ver saída" ou o "ctrl+y copia" é renderizada de
 // novo, com as seguintes.
 func (m *Model) renderizarHistorico() {
-	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) {
+	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) || m.historicoAberto != m.selecionando {
 		m.cortarHistorico(0)
-		m.historicoLargura = m.viewport.Width
+		m.historicoLargura, m.historicoAberto = m.viewport.Width, m.selecionando
 	}
 	dica, copia := m.mensagemComDica(), m.mensagemComCopia()
 	for _, par := range [][2]int{{dica, m.dicaEm}, {copia, m.copiaEm}} {

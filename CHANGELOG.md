@@ -2,6 +2,11 @@
 
 As notas completas de cada versão, geradas a partir dos commits, ficam nas [releases do GitHub](https://github.com/casheiro/yby-cli/releases). Aqui ficam as mudanças que pedem atenção de quem já usa o yby: teclas que mudaram, códigos de saída e comportamentos novos.
 
+## Próxima versão
+
+- **Bard: com o `ctrl+s`, os blocos de código saem sem as bordas dos lados.** A linha selecionada com o mouse vem só com o código, sem o `│` do quadro e sem os espaços até a borda. Outro `ctrl+s` traz as bordas de volta.
+- **Bard: o histórico, o `/exportar` e a conversa retomada não trocam mais `true`, `false`, `null` e `"*"` por `[REDIGIDO]`** depois de nomes como `automountServiceAccountToken` ou `secrets`. A resposta exportada perdia o valor e o resto da frase.
+
 ## v5.9.0: Bard com o scan inteiro e seleção de texto
 
 - **Bard: `ctrl+s` seleciona texto com o mouse.** O Bard pega o mouse para a roda rolar a conversa, e com isso o arraste não selecionava nada. O `ctrl+s` solta o mouse para o terminal (arraste e copie como sempre); outro `ctrl+s` devolve a roda.

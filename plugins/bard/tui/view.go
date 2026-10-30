@@ -327,7 +327,7 @@ func (m Model) corpoResposta(texto string, largura, comando int) string {
 func (m Model) linhasResposta(texto string, largura, comando int) []string {
 	var linhas []string
 	if m.markdown != nil {
-		if r, err := m.markdown(texto, largura, comando); err == nil {
+		if r, err := m.markdown(texto, largura, comando, m.selecionando); err == nil {
 			linhas = strings.Split(strings.TrimRight(r, "\n"), "\n")
 		}
 	}
@@ -419,7 +419,7 @@ type markdownCache struct {
 	r       *uimarkdown.Renderizador
 }
 
-func (c *markdownCache) renderizar(texto string, largura, comando int) (string, error) {
+func (c *markdownCache) renderizar(texto string, largura, comando int, aberto bool) (string, error) {
 	if c.r == nil || c.largura != largura {
 		r, err := uimarkdown.Novo(largura)
 		if err != nil {
@@ -427,5 +427,6 @@ func (c *markdownCache) renderizar(texto string, largura, comando int) (string, 
 		}
 		c.r, c.largura = r, largura
 	}
+	c.r.AbrirQuadros(aberto)
 	return c.r.RenderizarComTecla(texto, comando, rotuloCopiar, "copia")
 }

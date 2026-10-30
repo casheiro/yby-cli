@@ -247,7 +247,7 @@ func TestRenderizarMensagem_ErroENota(t *testing.T) {
 func TestCorpoResposta_MarkdownFalhaMostraTextoCru(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{}, "10:00")
-	m.markdown = func(string, int, int) (string, error) { return "", errors.New("quebrou") }
+	m.markdown = func(string, int, int, bool) (string, error) { return "", errors.New("quebrou") }
 	if got := m.corpoResposta("**oi**\n\ntchau", 40, -1); got != "  **oi**\n\n  tchau\n" {
 		t.Errorf("texto cru: %q", got)
 	}
@@ -268,15 +268,15 @@ func TestParcialAparecePorBaixo(t *testing.T) {
 func TestMarkdownCache(t *testing.T) {
 	semCores(t)
 	c := &markdownCache{}
-	a, err := c.renderizar("**oi**", 40, -1)
+	a, err := c.renderizar("**oi**", 40, -1, false)
 	if err != nil || a != "oi" {
 		t.Fatalf("render: %q %v", a, err)
 	}
 	r := c.r
-	if _, _ = c.renderizar("x", 40, -1); c.r != r {
+	if _, _ = c.renderizar("x", 40, -1, false); c.r != r {
 		t.Error("a mesma largura reaproveita o renderizador")
 	}
-	if _, _ = c.renderizar("x", 60, -1); c.r == r || c.largura != 60 {
+	if _, _ = c.renderizar("x", 60, -1, false); c.r == r || c.largura != 60 {
 		t.Error("largura nova pede outro renderizador")
 	}
 }
