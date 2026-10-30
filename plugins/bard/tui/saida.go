@@ -34,6 +34,21 @@ func teclaVerEtapa() key.Binding {
 	return key.NewBinding(key.WithKeys("enter"), key.WithHelp(ui.RotuloTecla("↵"), "ver etapa"))
 }
 
+// teclaSelecionar é o ctrl+s que solta o mouse para o terminal (selecionado) ou o traz
+// de volta. O Bard pega o mouse por causa da roda, e com ele o arraste deixa de
+// selecionar texto; o atalho do terminal para isso (shift+arraste no Windows Terminal,
+// option no iTerm2) muda de um para outro e ninguém o adivinha.
+func teclaSelecionar(selecionando bool) key.Binding {
+	desc := "selecionar"
+	if selecionando {
+		desc = "rolar com o mouse"
+	}
+	return key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", desc))
+}
+
+// textoSelecao é a linha de estado com o mouse solto para o terminal.
+const textoSelecao = "arraste com o mouse para selecionar texto e copie pelo terminal"
+
 // teclaCopiarSaida é o ctrl+y da legenda da saída aberta.
 func teclaCopiarSaida() key.Binding {
 	return key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp(rotuloCopiar, "copiar"))
@@ -276,5 +291,5 @@ func (m Model) teclasSaida() []key.Binding {
 	rolar := k.Texto.RolarCima
 	rolar.SetHelp(rolar.Help().Key, "rolar")
 	rolar.SetEnabled(len(m.saida.linhas) > m.alturaSaida())
-	return []key.Binding{k.Global.Voltar, rolar, teclaCopiarSaida()}
+	return []key.Binding{k.Global.Voltar, rolar, teclaCopiarSaida(), teclaSelecionar(m.selecionando)}
 }

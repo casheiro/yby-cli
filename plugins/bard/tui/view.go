@@ -78,7 +78,8 @@ func (m Model) contexto() string {
 // corpo é a conversa na janela. Com a conversa rolada, as duas primeiras linhas dão
 // lugar ao aviso "↑ 2 mensagens anteriores" e a uma linha em branco, como na prancha
 // "trabalhando"; com mensagens novas abaixo, as duas últimas dão lugar a uma linha em
-// branco e ao aviso "↓ 2 mensagens novas". Nada se perde: pgup e pgdn andam só as
+// branco e ao aviso "↓ 2 mensagens novas" e, sem elas, fora do fim da conversa, ao
+// "↓ 34 linhas abaixo" (o resto de uma resposta longa). Nada se perde: pgup e pgdn andam só as
 // linhas que apareceram (ver rolarPagina), e os avisos contam também o que começa nas
 // linhas cobertas.
 func (m Model) corpo() string {
@@ -86,8 +87,11 @@ func (m Model) corpo() string {
 		return m.boasVindas()
 	}
 	vista := m.viewport.View()
-	acima, abaixo := m.mensagensAnteriores(), m.mensagensNovas()
-	if acima == 0 && abaixo == 0 {
+	acima, abaixo, resto := m.mensagensAnteriores(), m.mensagensNovas(), 0
+	if abaixo == 0 {
+		resto = m.linhasAbaixo()
+	}
+	if acima == 0 && abaixo == 0 && resto == 0 {
 		return vista
 	}
 	linhas := strings.Split(vista, "\n")
@@ -98,8 +102,12 @@ func (m Model) corpo() string {
 			linhas[1] = ""
 		}
 	}
-	if abaixo > 0 {
-		linhas[len(linhas)-1] = ui.AvisoRolagem(ui.SetaAbaixo, plural(abaixo, "mensagem nova", "mensagens novas"))
+	if abaixo > 0 || resto > 0 {
+		aviso := plural(abaixo, "mensagem nova", "mensagens novas")
+		if abaixo == 0 {
+			aviso = plural(resto, "linha abaixo", "linhas abaixo")
+		}
+		linhas[len(linhas)-1] = ui.AvisoRolagem(ui.SetaAbaixo, aviso)
 		if dupla {
 			linhas[len(linhas)-2] = ""
 		}
@@ -172,6 +180,9 @@ func (m Model) mensagemEstado() string {
 	if m.trocando != "" {
 		return s.TintaSuave.Render("trocando para " + m.trocando + g.Reticencias)
 	}
+	if m.selecionando {
+		return s.Tinta.Render(textoSelecao + "; " + ui.RotuloTecla("↑") + " " + ui.RotuloTecla("↓") + " rolam")
+	}
 	f := m.ultimoFim
 	switch {
 	case f == nil:
@@ -211,7 +222,7 @@ func (m Model) resumoSessao() string {
 // teclas devolve a legenda da tela, na ordem da prancha. Só aparecem as teclas que
 // funcionam: pgup quando a conversa passa da altura do histórico, ↑ quando há uma
 // pergunta para editar e o campo está vazio, ↵ ver etapa quando há uma saída de
-// ferramenta para abrir. / e ? só valem no campo vazio (com texto, viram letras); a / só
+// ferramenta para abrir. O ctrl+s solta o mouse ou o traz de volta. / e ? só valem no campo vazio (com texto, viram letras); a / só
 // fora da resposta, e o ? também durante ela, quando abre a ajuda numa camada.
 func (m Model) teclas() []key.Binding {
 	k := ui.DefaultKeys()
@@ -221,7 +232,7 @@ func (m Model) teclas() []key.Binding {
 		rolar.SetEnabled(false)
 	}
 	editar := k.Texto.EditarUltima
-	editar.SetEnabled(m.podeEditarUltima())
+	editar.SetEnabled(m.podeEditarUltima() && !m.selecionando)
 	comandos, ajuda := k.Texto.Comandos, k.Global.Ajuda
 	comandos.SetEnabled(m.textarea.Value() == "")
 	ajuda.SetEnabled(m.textarea.Value() == "")
@@ -229,13 +240,13 @@ func (m Model) teclas() []key.Binding {
 		ver := teclaVerEtapa()
 		_, ok := m.saidaDisponivel()
 		ver.SetEnabled(ok)
-		return []key.Binding{k.Texto.Interromper, rolar, ver, ajuda}
+		return []key.Binding{k.Texto.Interromper, rolar, ver, teclaSelecionar(m.selecionando), ajuda}
 	}
 	// A prancha mostra ⇧↵, mas o Bubble Tea v1 recebe o shift+enter como ↵ e a
 	// pergunta iria pela metade; a legenda mostra a tecla que chega (ver novaLinha).
 	quebra := k.Texto.NovaLinha
 	quebra.SetHelp(ui.RotuloTecla("ctrl+j"), quebra.Help().Desc)
-	return []key.Binding{k.Texto.Enviar, m.teclaVoltar(), quebra, comandos, editar, rolar, ajuda}
+	return []key.Binding{k.Texto.Enviar, m.teclaVoltar(), quebra, comandos, editar, rolar, teclaSelecionar(m.selecionando), ajuda}
 }
 
 // teclaVoltar é o "esc voltar ao Viz" do Bard aberto por outro instrumento; sem ele, a
