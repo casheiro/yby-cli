@@ -900,6 +900,16 @@ func (m Model) mensagensAnteriores() int {
 	return n
 }
 
+// linhasAbaixo conta as linhas da conversa abaixo da janela, mais as que o aviso do pé
+// cobre: o resto de uma resposta longa que a pessoa rolou para ler do começo. No fim da
+// conversa, zero.
+func (m Model) linhasAbaixo() int {
+	if m.viewport.AtBottom() {
+		return 0
+	}
+	return max(m.viewport.TotalLineCount()-(m.viewport.YOffset+m.viewport.Height-m.linhasAviso()), 0)
+}
+
 // cabemDoisAvisos diz se a janela tem lugar para o aviso do topo e o do pé com ao menos
 // uma linha da conversa entre eles.
 func (m Model) cabemDoisAvisos() bool {
@@ -911,15 +921,17 @@ func (m Model) cabemDoisAvisos() bool {
 // conversa deixa de passar pela tela.
 func (m *Model) rolarPagina(acima bool) {
 	passo := m.viewport.Height
-	if m.mensagensNovas() > 0 {
-		passo -= m.linhasAviso()
-	}
 	if acima {
+		// Subindo, o pé da página nova fica sob o aviso do que está abaixo.
+		passo -= m.linhasAviso()
 		if m.mensagensAnteriores() > 0 {
 			passo -= m.linhasAviso()
 		}
 		m.viewport.ScrollUp(max(passo, 1))
 	} else {
+		if m.mensagensNovas() > 0 || m.linhasAbaixo() > 0 {
+			passo -= m.linhasAviso()
+		}
 		// Descendo, o topo da página nova fica sob o aviso das anteriores.
 		if m.cabemDoisAvisos() {
 			passo -= m.linhasAviso()

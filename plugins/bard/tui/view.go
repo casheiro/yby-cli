@@ -78,7 +78,8 @@ func (m Model) contexto() string {
 // corpo é a conversa na janela. Com a conversa rolada, as duas primeiras linhas dão
 // lugar ao aviso "↑ 2 mensagens anteriores" e a uma linha em branco, como na prancha
 // "trabalhando"; com mensagens novas abaixo, as duas últimas dão lugar a uma linha em
-// branco e ao aviso "↓ 2 mensagens novas". Nada se perde: pgup e pgdn andam só as
+// branco e ao aviso "↓ 2 mensagens novas" e, sem elas, fora do fim da conversa, ao
+// "↓ 34 linhas abaixo" (o resto de uma resposta longa). Nada se perde: pgup e pgdn andam só as
 // linhas que apareceram (ver rolarPagina), e os avisos contam também o que começa nas
 // linhas cobertas.
 func (m Model) corpo() string {
@@ -86,8 +87,11 @@ func (m Model) corpo() string {
 		return m.boasVindas()
 	}
 	vista := m.viewport.View()
-	acima, abaixo := m.mensagensAnteriores(), m.mensagensNovas()
-	if acima == 0 && abaixo == 0 {
+	acima, abaixo, resto := m.mensagensAnteriores(), m.mensagensNovas(), 0
+	if abaixo == 0 {
+		resto = m.linhasAbaixo()
+	}
+	if acima == 0 && abaixo == 0 && resto == 0 {
 		return vista
 	}
 	linhas := strings.Split(vista, "\n")
@@ -98,8 +102,12 @@ func (m Model) corpo() string {
 			linhas[1] = ""
 		}
 	}
-	if abaixo > 0 {
-		linhas[len(linhas)-1] = ui.AvisoRolagem(ui.SetaAbaixo, plural(abaixo, "mensagem nova", "mensagens novas"))
+	if abaixo > 0 || resto > 0 {
+		aviso := plural(abaixo, "mensagem nova", "mensagens novas")
+		if abaixo == 0 {
+			aviso = plural(resto, "linha abaixo", "linhas abaixo")
+		}
+		linhas[len(linhas)-1] = ui.AvisoRolagem(ui.SetaAbaixo, aviso)
 		if dupla {
 			linhas[len(linhas)-2] = ""
 		}

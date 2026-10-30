@@ -76,9 +76,9 @@ func fundo(m Model) int {
 }
 
 // pagina é quanto o pgup anda com a conversa rolada: a altura menos as linhas que o
-// aviso das mensagens anteriores cobre no topo.
+// aviso das mensagens anteriores cobre no topo e as que o das linhas abaixo cobre no pé.
 func pagina(m Model) int {
-	return m.viewport.Height - m.linhasAviso()
+	return m.viewport.Height - 2*m.linhasAviso()
 }
 
 func TestTeclado_LetrasNaoRolam(t *testing.T) {
@@ -550,6 +550,45 @@ func TestMensagensAnteriores(t *testing.T) {
 }
 
 // Subindo página por página com o aviso no topo, toda linha da conversa passa pela tela.
+// Lida do começo, uma conversa longa avisa quantas linhas faltam embaixo, mesmo sem
+// mensagem nova (o resto da resposta não ficava escondido sem aviso), e o pgdn passa por
+// todas até o fim, onde o aviso some.
+func TestLinhasAbaixo_PaginarParaBaixoMostraTudo(t *testing.T) {
+	semCores(t)
+	m := conversaLonga(t, nil)
+	m.viewport.GotoTop()
+	m.marcarLidas()
+	if m.mensagensNovas() != 0 {
+		t.Fatalf("nada é novo: %d", m.mensagensNovas())
+	}
+	esperado := m.viewport.TotalLineCount() - m.viewport.Height + m.linhasAviso()
+	if corpo := ansi.Strip(m.corpo()); !strings.Contains(corpo, fmt.Sprintf("↓ %d linhas abaixo", esperado)) {
+		t.Fatalf("faltou o aviso das %d linhas abaixo:\n%s", esperado, corpo)
+	}
+	vistas := map[string]bool{}
+	for passo := 0; ; passo++ {
+		for _, l := range strings.Split(ansi.Strip(m.corpo()), "\n") {
+			vistas[strings.TrimSpace(l)] = true
+		}
+		if m.viewport.AtBottom() {
+			break
+		}
+		if passo > 50 {
+			t.Fatal("o pgdn não chegou ao fim")
+		}
+		atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		m = atualizado.(Model)
+	}
+	if strings.Contains(ansi.Strip(m.corpo()), "abaixo") {
+		t.Errorf("no fim não há aviso de linhas abaixo:\n%s", ansi.Strip(m.corpo()))
+	}
+	for i, l := range strings.Split(ansi.Strip(strings.TrimRight(m.historico, "\n")), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !vistas[l] {
+			t.Errorf("a linha %d nunca apareceu na tela: %q", i, l)
+		}
+	}
+}
+
 func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
 	semCores(t)
 	m := conversaLonga(t, nil)
