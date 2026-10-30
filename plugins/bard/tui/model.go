@@ -172,6 +172,9 @@ type Model struct {
 	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
 	// da rodada; fora dela o ? põe o quadro na conversa, como o /ajuda.
 	ajuda bool
+	// selecionando diz que o ctrl+s soltou o mouse para o terminal: o arraste seleciona
+	// texto e a roda não chega ao Bard.
+	selecionando bool
 	// rascunhoIntocado diz que o campo ainda tem o rascunho como abriu, sem tecla
 	// nenhuma: a cada largura nova ele volta a mostrar o começo da pergunta.
 	rascunhoIntocado bool
@@ -407,6 +410,14 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.interrompido = true
 		return m, tea.Quit
+	}
+	if key.Matches(msg, teclaSelecionar(m.selecionando)) {
+		// ctrl+s vale em qualquer camada, também durante a resposta.
+		m.selecionando = !m.selecionando
+		if m.selecionando {
+			return m, tea.DisableMouse
+		}
+		return m, tea.EnableMouseCellMotion
 	}
 	if m.saida != nil {
 		return m.teclarSaida(msg)
@@ -973,7 +984,7 @@ var ErrInterrompido = errors.New("conversa interrompida")
 func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error {
 	model := New(provider, vectorStore, config)
 	// O mouse vem para o Bard por causa da roda; com isso o arraste simples deixa de
-	// selecionar texto, e copiar um trecho pede shift+arraste (Windows Terminal, xterm).
+	// selecionar texto até o ctrl+s soltá-lo (teclaSelecionar).
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	return desfecho(p.Run())
 }

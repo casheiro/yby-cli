@@ -611,3 +611,38 @@ func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
 		}
 	}
 }
+
+// O ctrl+s solta o mouse para o terminal (o arraste volta a selecionar texto), diz isso
+// na linha de estado e na legenda, e o segundo ctrl+s o traz de volta para a roda. Vale
+// também com a saída da ferramenta aberta, sem fechá-la.
+func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
+	semCores(t)
+	m := telaDeTeste(t, Config{}, "10:00")
+	ctrlS := tea.KeyMsg{Type: tea.KeyCtrlS}
+
+	atualizado, cmd := m.Update(ctrlS)
+	m = atualizado.(Model)
+	if cmd == nil || fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.DisableMouse()) {
+		t.Fatal("o ctrl+s deveria soltar o mouse")
+	}
+	if !strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste com o mouse para selecionar") {
+		t.Errorf("a linha de estado deveria explicar a seleção: %q", ansi.Strip(m.mensagemEstado()))
+	}
+	legenda := ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
+	if !strings.Contains(legenda, "ctrl+s rolar com o mouse") {
+		t.Errorf("a legenda deveria mostrar como voltar: %q", legenda)
+	}
+
+	m.saida = &vistaSaida{}
+	atualizado, cmd = m.Update(ctrlS)
+	m = atualizado.(Model)
+	if cmd == nil || fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.EnableMouseCellMotion()) {
+		t.Fatal("o segundo ctrl+s deveria devolver o mouse para a roda")
+	}
+	if m.saida == nil {
+		t.Error("o ctrl+s não fecha a saída aberta")
+	}
+	if strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste") {
+		t.Errorf("de volta à roda, a linha de estado não fala de seleção: %q", ansi.Strip(m.mensagemEstado()))
+	}
+}

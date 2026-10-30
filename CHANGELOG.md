@@ -4,6 +4,13 @@ As notas completas de cada versão, geradas a partir dos commits, ficam nas [rel
 
 ## Próxima versão
 
+- **Bard: `ctrl+s` seleciona texto com o mouse.** O Bard pega o mouse para a roda rolar a conversa, e com isso o arraste não selecionava nada. O `ctrl+s` solta o mouse para o terminal (arraste e copie como sempre); outro `ctrl+s` devolve a roda.
+- **Bard: a conversa rolada para cima avisa "↓ N linhas abaixo"**, também no meio de uma resposta longa. Antes, o resto da resposta ficava fora da tela sem aviso nenhum.
+- **Bard: o scan do Sentinel vai inteiro à IA** (antes, só os 10 achados mais graves), com os comandos `yby sentinel scan` para o relatório completo e `--fix-dry-run` quando o Sentinel corrige algum achado.
+- **`yby upgrade` atualiza só o yby.** Depois dele, rode `yby plugin update`: plugins de uma versão anterior continuam rodando, com os defeitos já corrigidos (um Bard da v5.8.0 com o yby da v5.8.5 dizia que o scan não tinha achados).
+
+## v5.8.4: instalação e o módulo /v5
+
 - **`go install` muda de caminho:** passa a ser `go install github.com/casheiro/yby-cli/v5/cmd/yby@latest`. O caminho antigo, sem o `/v5`, instalava a v1.12.2. Quem instalou assim deve apagar `%USERPROFILE%\go\bin\yby.exe` (no Linux e no macOS, `~/go/bin/yby`) e reinstalar: essa pasta costuma vir antes no PATH, e o yby antigo continua sendo o que roda.
 - **Plugins de terceiros em Go** importam `github.com/casheiro/yby-cli/v5/pkg/plugin/sdk` (antes, `github.com/casheiro/yby-cli/pkg/plugin/sdk`).
 - **Instalação no Windows pelo `install.ps1`:** `irm https://raw.githubusercontent.com/casheiro/yby-cli/main/install.ps1 | iex` instala em `%LOCALAPPDATA%\Programs\yby`, sem administrador, e põe a pasta no PATH do usuário. O `install.sh` passa a conferir o SHA-256 do download.
