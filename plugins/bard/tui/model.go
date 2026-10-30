@@ -13,6 +13,7 @@ import (
 	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -408,12 +409,14 @@ func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// da linha de estado nem o rascunho, como a roda.
 		// Os blocos de código perdem as bordas dos lados enquanto o mouse está solto, para
 		// a linha selecionada sair sem o "│"; o número de linhas não muda, nem a rolagem.
+		// O cursor do campo para de piscar: sem nada mudando na tela, o terminal não tem
+		// por que desfazer a seleção.
 		m.selecionando = !m.selecionando
 		m.updateViewport()
 		if m.selecionando {
-			return m, tea.DisableMouse
+			return m, tea.Batch(tea.DisableMouse, m.textarea.Cursor.SetMode(cursor.CursorStatic))
 		}
-		return m, tea.EnableMouseCellMotion
+		return m, tea.Batch(tea.EnableMouseCellMotion, m.textarea.Cursor.SetMode(cursor.CursorBlink))
 	}
 	if m.selecionando && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) && m.seletor == nil && len(m.comandosVisiveis()) == 0 {
 		// Com o mouse solto, o Windows Terminal e o GNOME Terminal mandam a roda como ↑ e ↓:

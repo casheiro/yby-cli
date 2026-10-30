@@ -4,6 +4,8 @@ As notas completas de cada versão, geradas a partir dos commits, ficam nas [rel
 
 ## Próxima versão
 
+- **Bard: o scan vai mesmo inteiro à IA.** Na v5.9.0, num namespace com 23 achados de recomendação longa, só os 10 primeiros cabiam no resumo, e a IA dizia que não sabia quais eram os outros. Agora todos entram: os mais graves com mensagem e recomendação, os menos graves resumidos.
+- **Bard: com o `ctrl+s`, nada repinta a tela.** O cursor do campo piscava e o Bard redesenhava a tela duas vezes por segundo, o que pode desfazer a seleção em andamento. Agora o cursor fica parado enquanto o mouse está solto.
 - **Bard: com o `ctrl+s`, os blocos de código saem sem as bordas dos lados.** A linha selecionada com o mouse vem só com o código, sem o `│` do quadro e sem os espaços até a borda. Outro `ctrl+s` traz as bordas de volta.
 - **Bard: o histórico, o `/exportar` e a conversa retomada não trocam mais `true`, `false`, `null` e `"*"` por `[REDIGIDO]`** depois de nomes como `automountServiceAccountToken` ou `secrets`. A resposta exportada perdia o valor e o resto da frase.
 

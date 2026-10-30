@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/v5/pkg/ui"
+	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest"
@@ -615,6 +616,24 @@ func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
 // O ctrl+s solta o mouse para o terminal (o arraste volta a selecionar texto), diz isso
 // na linha de estado e na legenda, e o segundo ctrl+s o traz de volta para a roda. Vale
 // também com a saída da ferramenta aberta, sem fechá-la.
+// temMsg diz se o comando (ou um dos comandos do lote) devolve uma mensagem do tipo de
+// quer.
+func temMsg(cmd tea.Cmd, quer tea.Msg) bool {
+	if cmd == nil {
+		return false
+	}
+	msg := cmd()
+	if lote, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range lote {
+			if temMsg(c, quer) {
+				return true
+			}
+		}
+		return false
+	}
+	return fmt.Sprintf("%T", msg) == fmt.Sprintf("%T", quer)
+}
+
 func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{}, "10:00")
@@ -622,8 +641,11 @@ func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
 
 	atualizado, cmd := m.Update(ctrlS)
 	m = atualizado.(Model)
-	if cmd == nil || fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.DisableMouse()) {
+	if !temMsg(cmd, tea.DisableMouse()) {
 		t.Fatal("o ctrl+s deveria soltar o mouse")
+	}
+	if m.textarea.Cursor.Mode() != cursor.CursorStatic {
+		t.Error("com o mouse solto, o cursor do campo não pisca: nada muda na tela durante a seleção")
 	}
 	if !strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste com o mouse para selecionar") {
 		t.Errorf("a linha de estado deveria explicar a seleção: %q", ansi.Strip(m.mensagemEstado()))
@@ -636,8 +658,11 @@ func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
 	m.saida = &vistaSaida{}
 	atualizado, cmd = m.Update(ctrlS)
 	m = atualizado.(Model)
-	if cmd == nil || fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.EnableMouseCellMotion()) {
+	if !temMsg(cmd, tea.EnableMouseCellMotion()) {
 		t.Fatal("o segundo ctrl+s deveria devolver o mouse para a roda")
+	}
+	if m.textarea.Cursor.Mode() != cursor.CursorBlink {
+		t.Error("de volta à roda, o cursor do campo volta a piscar")
 	}
 	if m.saida == nil {
 		t.Error("o ctrl+s não fecha a saída aberta")

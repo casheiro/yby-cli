@@ -245,3 +245,49 @@ func TestFormatScanResults_PiorCasoCabeNoTeto(t *testing.T) {
 		t.Error("o corte partiu um caractere")
 	}
 }
+
+// Um namespace como o nexus-core, com 23 achados de mensagem e recomendação longas em três
+// workloads: todos chegam à IA. Os mais graves vão inteiros e os menos graves, resumidos.
+// Antes, só os 10 primeiros cabiam e a IA dizia que não sabia quais eram os outros.
+func TestFormatScanResults_NamespaceComumVaiTodo(t *testing.T) {
+	severidades := []string{"critical", "critical", "high", "high", "high", "high"}
+	for len(severidades) < 15 {
+		severidades = append(severidades, "medium")
+	}
+	for len(severidades) < 23 {
+		severidades = append(severidades, "low")
+	}
+	var achados []interface{}
+	for i, sev := range severidades {
+		achados = append(achados, map[string]interface{}{
+			"check_id":       fmt.Sprintf("polaris/check-%02d", i),
+			"severity":       sev,
+			"resources":      []interface{}{"Deployment/nexus-core-api", "Deployment/nexus-core-disparador-tempo", "CronJob/credential-sync"},
+			"message":        strings.Repeat(fmt.Sprintf("mensagem longa do achado %02d ", i), 8),
+			"recommendation": strings.Repeat(fmt.Sprintf("recomendação longa do achado %02d ", i), 12),
+			"scope":          "namespace",
+		})
+	}
+	texto := formatScanResults(map[string]interface{}{"namespace": "nexus-core", "scope": "namespace", "findings": achados})
+
+	if len(texto) > tetoResumoScan {
+		t.Errorf("o resumo passa do teto: %d bytes", len(texto))
+	}
+	for i := range severidades {
+		if !strings.Contains(texto, fmt.Sprintf("polaris/check-%02d", i)) {
+			t.Errorf("o achado %02d ficou de fora:\n%s", i, texto)
+		}
+	}
+	for _, trecho := range []string{
+		"23 achados",
+		"os menos graves resumidos",
+		"recomendação longa do achado 00",
+	} {
+		if !strings.Contains(texto, trecho) {
+			t.Errorf("o resumo deveria ter %q:\n%s", trecho, texto)
+		}
+	}
+	if strings.Contains(texto, "não couberam") || strings.Contains(texto, "e mais 1") {
+		t.Errorf("nenhum achado deveria ficar de fora:\n%s", texto)
+	}
+}
