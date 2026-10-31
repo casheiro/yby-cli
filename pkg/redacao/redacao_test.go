@@ -357,6 +357,13 @@ func TestRedigir_NaoRedige(t *testing.T) {
 		// Nome de recurso com "sk-" no meio de palavra.
 		"pod task-runner-deployment-7d9f8b-abcde",
 		"desk-booking-service-deployment-abc",
+		// Booleano, nulo e curinga não são segredo: a resposta da IA cita esses campos.
+		"automountServiceAccountToken: false",
+		"- **`automountServiceAccountToken: false`:** só use em workload que não chama a API.",
+		"Confirme que ela não tem `secrets: [\"*\"]`.",
+		"requirePassword: \"true\"",
+		"token: null",
+		"secrets: *",
 	} {
 		if got := Redigir(s); got != s {
 			t.Errorf("Redigir(%q) = %q, queria igual", s, got)

@@ -4,10 +4,17 @@ As notas completas de cada versão, geradas a partir dos commits, ficam nas [rel
 
 ## Próxima versão
 
+- **Bard: o scan vai mesmo inteiro à IA.** Na v5.9.0, num namespace com 23 achados de recomendação longa, só os 10 primeiros cabiam no resumo, e a IA dizia que não sabia quais eram os outros. Agora todos entram: os mais graves com mensagem e recomendação, os menos graves resumidos.
+- **Bard: o `ctrl+s` sai; texto se seleciona com shift+arraste.** O `ctrl+s` da v5.9.0 não chegava ao Bard em todo terminal (no Windows Terminal com WSL, por exemplo, não fazia nada). O shift+arraste é do próprio terminal e seleciona mesmo com o mouse preso pelo Bard; no iTerm2 do Mac, é option+arraste. A legenda e o `?` mostram a tecla.
+- **Bard: os blocos de código saem sem as bordas dos lados**, com um fio em cima (o rótulo e a tecla da cópia) e outro embaixo. A linha selecionada vem só com o código, sem o `│` do quadro.
+- **Bard: o histórico, o `/exportar` e a conversa retomada não trocam mais `true`, `false`, `null` e `"*"` por `[REDIGIDO]`** depois de nomes como `automountServiceAccountToken` ou `secrets`. A resposta exportada perdia o valor e o resto da frase.
+
+## v5.9.0: Bard com o scan inteiro e seleção de texto
+
 - **Bard: `ctrl+s` seleciona texto com o mouse.** O Bard pega o mouse para a roda rolar a conversa, e com isso o arraste não selecionava nada. O `ctrl+s` solta o mouse para o terminal (arraste e copie como sempre); outro `ctrl+s` devolve a roda.
 - **Bard: a conversa rolada para cima avisa "↓ N linhas abaixo"**, também no meio de uma resposta longa. Antes, o resto da resposta ficava fora da tela sem aviso nenhum.
 - **Bard: o scan do Sentinel vai inteiro à IA** (antes, só os 10 achados mais graves), com os comandos `yby sentinel scan` para o relatório completo e `--fix-dry-run` quando o Sentinel corrige algum achado.
-- **`yby upgrade` atualiza só o yby.** Depois dele, rode `yby plugin update`: plugins de uma versão anterior continuam rodando, com os defeitos já corrigidos (um Bard da v5.8.0 com o yby da v5.8.5 dizia que o scan não tinha achados).
+- **`yby upgrade` atualiza só o yby.** Depois dele, rode `yby plugin update`: plugins de uma versão anterior continuam rodando, com os defeitos já corrigidos (um Bard da v5.8.0 com o yby da v5.8.5 dizia que o scan não tinha achados). O caminho da v5.8.5 para a v5.9.0 (`yby upgrade` e depois `yby plugin update`) foi conferido num Linux limpo.
 
 ## v5.8.4: instalação e o módulo /v5
 
