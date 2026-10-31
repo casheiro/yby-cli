@@ -295,6 +295,9 @@ func redigirValor(texto string, i, col int, autorizacao bool) []intervalo {
 	if indicadorBloco.MatchString(linha) {
 		return bloco(texto, fimLinha, col)
 	}
+	if tok := texto[i : i+indiceEspaco(texto[i:])]; !marcacao.MatchString(tok) && inofensivo.MatchString(tok) {
+		return nil
+	}
 	switch {
 	case strings.HasPrefix(linha, Marca):
 		// Já redigido (Redigir é idempotente): a marca não é lida como lista.
@@ -327,6 +330,11 @@ func redigirValor(texto string, i, col int, autorizacao bool) []intervalo {
 	}
 	return []intervalo{{i, tok}}
 }
+
+// inofensivo casa um valor que não pode ser segredo: booleano, nulo ou o curinga "*",
+// sozinho ou numa lista, com aspas e com a pontuação ou a marcação de markdown que a
+// prosa põe depois (automountServiceAccountToken: false`:**, secrets: ["*"]`).
+var inofensivo = regexp.MustCompile("^(?:[\"']?(?i:true|false|null|~)[\"']?|\\[[\"']?\\*[\"']?\\]|[\"']?\\*[\"']?)[`*_:,.;)]*$")
 
 // marcacao casa um valor que é só marcação de markdown (**, __, `).
 var marcacao = regexp.MustCompile("^[*_`]{1,3}$")

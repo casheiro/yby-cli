@@ -7,6 +7,7 @@
 package uimarkdown
 
 import (
+	"cmp"
 	"regexp"
 	"strings"
 
@@ -57,7 +58,7 @@ func Novo(largura int) (*Renderizador, error) {
 func (r *Renderizador) Largura() int { return r.largura }
 
 // Renderizar converte md. Tabelas no nível de cima viram ui.Tabela (ou registros, quando
-// não cabem na largura); blocos de código cercados viram ui.Quadro, com o rótulo
+// não cabem na largura); blocos de código cercados viram ui.QuadroAberto, com o rótulo
 // "COMANDO · ctrl+y copia" para shell. O resto passa pelo glamour. Os blocos ficam separados
 // por uma linha em branco. Nada é cortado: o que não cabe quebra.
 func (r *Renderizador) Renderizar(md string) (string, error) {
@@ -333,10 +334,10 @@ var linguagensShell = map[string]bool{
 	"powershell": true, "pwsh": true, "ps1": true, "cmd": true, "bat": true,
 }
 
-// renderizarCodigo desenha o bloco de código num ui.Quadro na largura toda. Shell vira o
+// renderizarCodigo desenha o bloco de código num ui.QuadroAberto na largura toda: sem as
+// bordas dos lados, para o shift+arraste do terminal copiar só o código. Shell vira o
 // quadro "COMANDO · c copia"; as outras linguagens levam o nome da linguagem. Linha mais
-// larga que o quadro quebra (entre palavras ou no meio da palavra), sem perder nada: o
-// Quadro cortaria o fim com reticências.
+// larga que o quadro quebra (entre palavras ou no meio da palavra), sem perder nada.
 func renderizarCodigo(linguagem string, linhas []string, largura int) string {
 	for len(linhas) > 0 && strings.TrimSpace(linhas[len(linhas)-1]) == "" {
 		linhas = linhas[:len(linhas)-1]
@@ -347,14 +348,10 @@ func renderizarCodigo(linguagem string, linhas []string, largura int) string {
 		quebradas = append(quebradas, quebrarCodigo(strings.ReplaceAll(l, "\t", "    "), interno)...)
 	}
 	corpo := strings.Join(quebradas, "\n")
-	switch {
-	case linguagensShell[linguagem]:
-		return ui.QuadroComTecla("comando", "c", "copia", corpo, largura, ui.QuadroNormal)
-	case linguagem == "":
-		return ui.Quadro("código", corpo, largura, ui.QuadroNormal)
-	default:
-		return ui.Quadro(linguagem, corpo, largura, ui.QuadroNormal)
+	if linguagensShell[linguagem] {
+		return ui.QuadroAberto("comando", "c", "copia", corpo, largura)
 	}
+	return ui.QuadroAberto(cmp.Or(linguagem, "código"), "", "", corpo, largura)
 }
 
 // quebrarCodigo quebra uma linha de código (sem ANSI) em pedaços de até w células: no

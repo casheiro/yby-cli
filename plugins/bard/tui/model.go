@@ -172,9 +172,6 @@ type Model struct {
 	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
 	// da rodada; fora dela o ? põe o quadro na conversa, como o /ajuda.
 	ajuda bool
-	// selecionando diz que o ctrl+s soltou o mouse para o terminal: o arraste seleciona
-	// texto, e a roda só chega ao Bard nos terminais que a mandam como ↑ e ↓, que rolam.
-	selecionando bool
 	// rascunhoIntocado diz que o campo ainda tem o rascunho como abriu, sem tecla
 	// nenhuma: a cada largura nova ele volta a mostrar o começo da pergunta.
 	rascunhoIntocado bool
@@ -400,34 +397,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // pergunta, mas ↵ só envia quando a rodada termina.
 func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := ui.DefaultKeys()
-	if key.Matches(msg, teclaSelecionar(m.selecionando)) {
-		// ctrl+s vale em qualquer camada, também durante a resposta, e não apaga o aviso
-		// da linha de estado nem o rascunho, como a roda.
-		m.selecionando = !m.selecionando
-		if m.selecionando {
-			return m, tea.DisableMouse
-		}
-		return m, tea.EnableMouseCellMotion
-	}
-	if m.selecionando && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) && m.seletor == nil && len(m.comandosVisiveis()) == 0 {
-		// Com o mouse solto, o Windows Terminal e o GNOME Terminal mandam a roda como ↑ e ↓:
-		// elas rolam a conversa (ou a saída aberta), em vez de trazer a última pergunta.
-		passo := 1
-		if msg.Type == tea.KeyUp {
-			passo = -1
-		}
-		if m.saida != nil {
-			m.rolarSaida(passo)
-			return m, nil
-		}
-		if passo < 0 {
-			m.viewport.ScrollUp(1)
-		} else {
-			m.viewport.ScrollDown(1)
-		}
-		m.marcarLidas()
-		return m, nil
-	}
 	m.aviso = nil
 	m.rascunhoIntocado = false
 	if msg.Type == tea.KeyCtrlC {
@@ -1004,7 +973,7 @@ var ErrInterrompido = errors.New("conversa interrompida")
 func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error {
 	model := New(provider, vectorStore, config)
 	// O mouse vem para o Bard por causa da roda; com isso o arraste simples deixa de
-	// selecionar texto até o ctrl+s soltá-lo (teclaSelecionar).
+	// selecionar texto, e o shift+arraste do terminal seleciona (teclaSelecionar).
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	return desfecho(p.Run())
 }
