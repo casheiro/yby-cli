@@ -180,9 +180,6 @@ func (m Model) mensagemEstado() string {
 	if m.trocando != "" {
 		return s.TintaSuave.Render("trocando para " + m.trocando + g.Reticencias)
 	}
-	if m.selecionando {
-		return s.Tinta.Render(textoSelecao + "; " + ui.RotuloTecla("↑") + " " + ui.RotuloTecla("↓") + " rolam")
-	}
 	f := m.ultimoFim
 	switch {
 	case f == nil:
@@ -222,7 +219,7 @@ func (m Model) resumoSessao() string {
 // teclas devolve a legenda da tela, na ordem da prancha. Só aparecem as teclas que
 // funcionam: pgup quando a conversa passa da altura do histórico, ↑ quando há uma
 // pergunta para editar e o campo está vazio, ↵ ver etapa quando há uma saída de
-// ferramenta para abrir. O ctrl+s solta o mouse ou o traz de volta. / e ? só valem no campo vazio (com texto, viram letras); a / só
+// ferramenta para abrir. O shift+arraste é do terminal e vale sempre. / e ? só valem no campo vazio (com texto, viram letras); a / só
 // fora da resposta, e o ? também durante ela, quando abre a ajuda numa camada.
 func (m Model) teclas() []key.Binding {
 	k := ui.DefaultKeys()
@@ -232,7 +229,7 @@ func (m Model) teclas() []key.Binding {
 		rolar.SetEnabled(false)
 	}
 	editar := k.Texto.EditarUltima
-	editar.SetEnabled(m.podeEditarUltima() && !m.selecionando)
+	editar.SetEnabled(m.podeEditarUltima())
 	comandos, ajuda := k.Texto.Comandos, k.Global.Ajuda
 	comandos.SetEnabled(m.textarea.Value() == "")
 	ajuda.SetEnabled(m.textarea.Value() == "")
@@ -240,13 +237,13 @@ func (m Model) teclas() []key.Binding {
 		ver := teclaVerEtapa()
 		_, ok := m.saidaDisponivel()
 		ver.SetEnabled(ok)
-		return []key.Binding{k.Texto.Interromper, rolar, ver, teclaSelecionar(m.selecionando), ajuda}
+		return []key.Binding{k.Texto.Interromper, rolar, ver, teclaSelecionar(), ajuda}
 	}
 	// A prancha mostra ⇧↵, mas o Bubble Tea v1 recebe o shift+enter como ↵ e a
 	// pergunta iria pela metade; a legenda mostra a tecla que chega (ver novaLinha).
 	quebra := k.Texto.NovaLinha
 	quebra.SetHelp(ui.RotuloTecla("ctrl+j"), quebra.Help().Desc)
-	return []key.Binding{k.Texto.Enviar, m.teclaVoltar(), quebra, comandos, editar, rolar, teclaSelecionar(m.selecionando), ajuda}
+	return []key.Binding{k.Texto.Enviar, m.teclaVoltar(), quebra, comandos, editar, rolar, teclaSelecionar(), ajuda}
 }
 
 // teclaVoltar é o "esc voltar ao Viz" do Bard aberto por outro instrumento; sem ele, a
