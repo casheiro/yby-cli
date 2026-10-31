@@ -89,14 +89,15 @@ func (r *Renderizador) RenderizarComTecla(md string, indice int, tecla, acao str
 		switch {
 		case b.tipo == blocoCodigo && linguagensShell[b.linguagem]:
 			corpo := corpoCodigo(b.linhas, r.largura)
+			comTecla := false
 			if _, ok := comandoDoBloco(b); ok {
-				if n == indice {
-					texto = ui.QuadroComTecla("comando", tecla, acao, corpo, r.largura, ui.QuadroNormal)
-				}
+				comTecla = n == indice
 				n++
 			}
-			if texto == "" {
-				texto = ui.Quadro("comando", corpo, r.largura, ui.QuadroNormal)
+			if comTecla {
+				texto = ui.QuadroAberto("comando", tecla, acao, corpo, r.largura)
+			} else {
+				texto = ui.QuadroAberto("comando", "", "", corpo, r.largura)
 			}
 		case b.tipo == blocoTabela:
 			texto = renderizarTabela(b.linhas, r.largura)

@@ -271,7 +271,7 @@ func teclasAjuda() []teclaAjuda {
 		{[]key.Binding{teclaVerEtapa()}, "no campo vazio, abre a saída da ferramenta"},
 		{[]key.Binding{k.Texto.Interromper}, "durante a resposta"},
 		{[]key.Binding{teclaCopiarSaida()}, "o último comando, ou a saída aberta"},
-		{[]key.Binding{teclaSelecionar(false)}, "solta o mouse para o terminal; de novo, volta a rolar"},
+		{[]key.Binding{teclaSelecionar()}, "seleciona texto pelo terminal; no iTerm2 do Mac, option+arraste"},
 	}
 }
 

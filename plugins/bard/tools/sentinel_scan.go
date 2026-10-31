@@ -69,6 +69,8 @@ const (
 	tetoLinhaNaoRodou = 300
 	maxNaoRodaram     = 6
 	maxRecursosResumo = 10
+	maxRecursosCurto  = 3
+	tetoLinhaCurta    = 240
 	reservaFechoLista = 200 // o título da lista e o "… e mais N achados (…)"
 )
 
@@ -159,20 +161,14 @@ func resumirScan(rel relatorioScan) string {
 	tetoLista := max(tetoResumoScan-sb.Len()-len(cauda)-reservaFechoLista, pisoListaScan)
 
 	if len(achados) > 0 {
-		var linhas []string
-		tamanho := 0
-		for _, a := range achados {
-			linha := "\n- " + linhaAchado(a)
-			if len(linhas) > 0 && tamanho+len(linha) > tetoLista {
-				break
-			}
-			linhas = append(linhas, linha)
-			tamanho += len(linha)
-		}
+		linhas, resumidos := linhasAchados(achados, tetoLista)
 		n := len(linhas)
-		if n < len(achados) {
+		switch {
+		case n < len(achados):
 			fmt.Fprintf(&sb, "\nOs %d mais graves (os outros não couberam aqui):", n)
-		} else {
+		case resumidos:
+			sb.WriteString("\nDo mais grave para o menos (os menos graves resumidos; o relatório completo traz os detalhes):")
+		default:
 			sb.WriteString("\nDo mais grave para o menos:")
 		}
 		for _, l := range linhas {
@@ -307,10 +303,7 @@ func contagemPorSeveridade(achados []achadoScan) string {
 // linhaAchado escreve um achado numa linha: severidade, verificação, recursos (até o
 // teto), escopo de cluster, mensagem e recomendação.
 func linhaAchado(a achadoScan) string {
-	recursos := a.Resources
-	if len(recursos) == 0 && a.Resource != "" {
-		recursos = []string{a.Resource}
-	}
+	recursos := recursosDe(a)
 	texto := strings.Join(recursos[:min(len(recursos), maxRecursosResumo)], ", ")
 	if resto := len(recursos) - maxRecursosResumo; resto > 0 {
 		texto += " e mais " + plural(resto, "recurso", "recursos")
@@ -324,6 +317,75 @@ func linhaAchado(a achadoScan) string {
 		linha += " · Recomendação: " + a.Recommendation
 	}
 	return cortarTexto(linha, tetoLinhaAchado)
+}
+
+// Níveis de detalhe de um achado no resumo: inteiro (com a mensagem e a recomendação),
+// curto (até maxRecursosCurto recursos e a mensagem cortada) e só o nome (o check e
+// quantos recursos).
+const (
+	nivelInteiro = iota
+	nivelCurto
+	nivelNome
+)
+
+// linhasAchados monta as linhas da lista dentro de teto bytes, do mais grave para o menos.
+// Cada achado sai no nível mais detalhado que ainda deixa espaço para os de baixo saírem
+// ao menos com o nome: os mais graves vão inteiros e os menos graves, curtos ou só com o
+// nome. Assim os achados de um namespace comum chegam todos à IA. Num scan grande, em
+// que nem os nomes cabem, só entram os primeiros cujos nomes ocupam metade do teto, e a
+// outra metade fica para o detalhe dos mais graves. resumidos diz se algum perdeu detalhe.
+func linhasAchados(achados []achadoScan, teto int) (linhas []string, resumidos bool) {
+	nomes := make([]int, len(achados))
+	soma := 0
+	for i, a := range achados {
+		nomes[i] = len("\n- " + linhaAchadoNivel(a, nivelNome))
+		soma += nomes[i]
+	}
+	if soma > teto {
+		for len(achados) > 1 && soma > teto/2 {
+			soma -= nomes[len(achados)-1]
+			achados = achados[:len(achados)-1]
+		}
+	}
+	usado := 0
+	for i, a := range achados {
+		soma -= nomes[i] // soma passa a ser o mínimo dos que vêm depois deste
+		var l string
+		for nivel := nivelInteiro; nivel <= nivelNome; nivel++ {
+			l = "\n- " + linhaAchadoNivel(a, nivel)
+			if usado+len(l)+soma <= teto || nivel == nivelNome {
+				resumidos = resumidos || nivel != nivelInteiro
+				break
+			}
+		}
+		linhas = append(linhas, l)
+		usado += len(l)
+	}
+	return linhas, resumidos
+}
+
+// linhaAchadoNivel escreve o achado no nível de detalhe dado.
+func linhaAchadoNivel(a achadoScan, nivel int) string {
+	switch nivel {
+	case nivelCurto:
+		recursos := recursosDe(a)
+		texto := strings.Join(recursos[:min(len(recursos), maxRecursosCurto)], ", ")
+		if resto := len(recursos) - maxRecursosCurto; resto > 0 {
+			texto += " e mais " + plural(resto, "recurso", "recursos")
+		}
+		return cortarTexto(fmt.Sprintf("[%s] %s · %s · %s", a.Severity, a.CheckID, texto, a.Message), tetoLinhaCurta)
+	case nivelNome:
+		return fmt.Sprintf("[%s] %s · %s", a.Severity, a.CheckID, plural(len(recursosDe(a)), "recurso", "recursos"))
+	}
+	return linhaAchado(a)
+}
+
+// recursosDe devolve os recursos do achado: a lista agrupada ou, sem ela, o recurso solto.
+func recursosDe(a achadoScan) []string {
+	if len(a.Resources) == 0 && a.Resource != "" {
+		return []string{a.Resource}
+	}
+	return a.Resources
 }
 
 // plural escreve "1 achado" ou "N achados".
