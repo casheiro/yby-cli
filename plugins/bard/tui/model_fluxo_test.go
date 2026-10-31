@@ -269,7 +269,7 @@ func TestModel_TrechoNaoRenderizaOHistoricoDeNovo(t *testing.T) {
 	m := modeloComFluxo(t, &provedorFalso{}, nil)
 	// chamadas conta o histórico; parciais, a resposta em andamento.
 	chamadas, parciais := 0, 0
-	m.markdown = func(s string, _, _ int, _ bool) (string, error) {
+	m.markdown = func(s string, _, _ int) (string, error) {
 		if strings.HasPrefix(s, "tok") {
 			parciais++
 		} else {

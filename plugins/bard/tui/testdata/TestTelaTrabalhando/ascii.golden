@@ -15,9 +15,9 @@ VOCÊ · 12:07
   O pod worker-5d8b6-q7tvn está em CrashLoopBackOff: sai com código 1 logo depois de iniciar, porque não      
   consegue falar com o Postgres. O último log mostra:                                                         
                                                                                                               
-  + LOG -----------------------------------------------------------------------------------------------------+
-  | panic: dial tcp 10.43.12.8:5432: connect: connection refused                                             |
-  +----------------------------------------------------------------------------------------------------------+
+  - LOG ------------------------------------------------------------------------------------------------------
+    panic: dial tcp 10.43.12.8:5432: connect: connection refused                                              
+  ------------------------------------------------------------------------------------------------------------
                                                                                                               
   O Service postgres em payments encaminha para a porta 5433, mas o container escuta na 5432. Isso começou no 
   deploy de ontem às 18:40                                                                                    
@@ -26,4 +26,4 @@ VOCÊ · 12:07
                                                                                                               
 --------------------------------------------------------------------------------------------------------------
 + gerando resposta · 9 s                                                                          1 ferramenta
-esc interromper  pgup rolar  enter ver etapa  ctrl+s selecionar  ? ajuda                           ctrl+c sair
+esc interromper  pgup rolar  enter ver etapa  shift+arraste selecionar  ? ajuda                    ctrl+c sair

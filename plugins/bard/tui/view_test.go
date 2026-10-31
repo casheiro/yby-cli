@@ -197,11 +197,11 @@ func TestTeclas(t *testing.T) {
 		return ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
 	}
 	// Sem pergunta feita, ↑ não tem o que editar; / e ? abrem os comandos e a ajuda.
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ctrl+s selecionar  ? ajuda   ") || strings.Contains(got, "↑") {
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  shift+arraste selecionar  ? ajuda   ") || strings.Contains(got, "↑") {
 		t.Errorf("legenda ociosa: %q", got)
 	}
 	m.messages = append(m.messages, chatMessage{role: "user", content: "oi"})
-	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ↑ editar última  ctrl+s selecionar  ? ajuda   ") {
+	if got := legenda(); !strings.HasPrefix(got, "↵ enviar  ctrl+j nova linha  / comandos  ↑ editar última  shift+arraste selecionar  ? ajuda   ") {
 		t.Errorf("legenda com pergunta para editar: %q", got)
 	}
 	m.textarea.SetValue("rascunho")
@@ -212,7 +212,7 @@ func TestTeclas(t *testing.T) {
 	m.textarea.Reset()
 	m.state = stateStreaming
 	// Durante a resposta, a / é texto e o ? abre a ajuda numa camada, como na prancha.
-	if got := legenda(); !strings.HasPrefix(got, "esc interromper  ctrl+s selecionar  ? ajuda   ") || strings.Contains(got, "↑") || strings.Contains(got, "/ comandos") {
+	if got := legenda(); !strings.HasPrefix(got, "esc interromper  shift+arraste selecionar  ? ajuda   ") || strings.Contains(got, "↑") || strings.Contains(got, "/ comandos") {
 		t.Errorf("legenda durante a resposta: %q", got)
 	}
 	m.textarea.SetValue("próxima")
@@ -247,7 +247,7 @@ func TestRenderizarMensagem_ErroENota(t *testing.T) {
 func TestCorpoResposta_MarkdownFalhaMostraTextoCru(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{}, "10:00")
-	m.markdown = func(string, int, int, bool) (string, error) { return "", errors.New("quebrou") }
+	m.markdown = func(string, int, int) (string, error) { return "", errors.New("quebrou") }
 	if got := m.corpoResposta("**oi**\n\ntchau", 40, -1); got != "  **oi**\n\n  tchau\n" {
 		t.Errorf("texto cru: %q", got)
 	}
@@ -268,15 +268,15 @@ func TestParcialAparecePorBaixo(t *testing.T) {
 func TestMarkdownCache(t *testing.T) {
 	semCores(t)
 	c := &markdownCache{}
-	a, err := c.renderizar("**oi**", 40, -1, false)
+	a, err := c.renderizar("**oi**", 40, -1)
 	if err != nil || a != "oi" {
 		t.Fatalf("render: %q %v", a, err)
 	}
 	r := c.r
-	if _, _ = c.renderizar("x", 40, -1, false); c.r != r {
+	if _, _ = c.renderizar("x", 40, -1); c.r != r {
 		t.Error("a mesma largura reaproveita o renderizador")
 	}
-	if _, _ = c.renderizar("x", 60, -1, false); c.r == r || c.largura != 60 {
+	if _, _ = c.renderizar("x", 60, -1); c.r == r || c.largura != 60 {
 		t.Error("largura nova pede outro renderizador")
 	}
 }

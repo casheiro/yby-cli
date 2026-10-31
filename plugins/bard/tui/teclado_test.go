@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/casheiro/yby-cli/v5/pkg/ui"
-	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest"
@@ -613,107 +612,14 @@ func TestMensagensAnteriores_PaginarMostraTudo(t *testing.T) {
 	}
 }
 
-// O ctrl+s solta o mouse para o terminal (o arraste volta a selecionar texto), diz isso
-// na linha de estado e na legenda, e o segundo ctrl+s o traz de volta para a roda. Vale
-// também com a saída da ferramenta aberta, sem fechá-la.
-// temMsg diz se o comando (ou um dos comandos do lote) devolve uma mensagem do tipo de
-// quer.
-func temMsg(cmd tea.Cmd, quer tea.Msg) bool {
-	if cmd == nil {
-		return false
-	}
-	msg := cmd()
-	if lote, ok := msg.(tea.BatchMsg); ok {
-		for _, c := range lote {
-			if temMsg(c, quer) {
-				return true
-			}
-		}
-		return false
-	}
-	return fmt.Sprintf("%T", msg) == fmt.Sprintf("%T", quer)
-}
-
-func TestCtrlS_SoltaEDevolveOMouse(t *testing.T) {
-	semCores(t)
-	m := telaDeTeste(t, Config{}, "10:00")
-	ctrlS := tea.KeyMsg{Type: tea.KeyCtrlS}
-
-	atualizado, cmd := m.Update(ctrlS)
-	m = atualizado.(Model)
-	if !temMsg(cmd, tea.DisableMouse()) {
-		t.Fatal("o ctrl+s deveria soltar o mouse")
-	}
-	if m.textarea.Cursor.Mode() != cursor.CursorStatic {
-		t.Error("com o mouse solto, o cursor do campo não pisca: nada muda na tela durante a seleção")
-	}
-	if !strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste com o mouse para selecionar") {
-		t.Errorf("a linha de estado deveria explicar a seleção: %q", ansi.Strip(m.mensagemEstado()))
-	}
-	legenda := ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
-	if !strings.Contains(legenda, "ctrl+s rolar com o mouse") {
-		t.Errorf("a legenda deveria mostrar como voltar: %q", legenda)
-	}
-
-	m.saida = &vistaSaida{}
-	atualizado, cmd = m.Update(ctrlS)
-	m = atualizado.(Model)
-	if !temMsg(cmd, tea.EnableMouseCellMotion()) {
-		t.Fatal("o segundo ctrl+s deveria devolver o mouse para a roda")
-	}
-	if m.textarea.Cursor.Mode() != cursor.CursorBlink {
-		t.Error("de volta à roda, o cursor do campo volta a piscar")
-	}
-	if m.saida == nil {
-		t.Error("o ctrl+s não fecha a saída aberta")
-	}
-	if strings.Contains(ansi.Strip(m.mensagemEstado()), "arraste") {
-		t.Errorf("de volta à roda, a linha de estado não fala de seleção: %q", ansi.Strip(m.mensagemEstado()))
-	}
-}
-
-// Com o mouse solto, a roda chega como ↑ e ↓ no Windows Terminal e no GNOME Terminal: elas
-// rolam a conversa e não trazem a última pergunta para o campo. O ctrl+s não apaga o aviso
-// da linha de estado.
-func TestCtrlS_SetasRolamComOMouseSolto(t *testing.T) {
-	semCores(t)
-	m := conversaLonga(t, nil)
-	m.aviso = &avisoEstado{texto: "comando copiado", ok: true}
-	atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m = atualizado.(Model)
-	if m.aviso == nil {
-		t.Error("o ctrl+s não deveria apagar o aviso")
-	}
-	fim := m.viewport.YOffset
-	for i := 0; i < 3; i++ {
-		atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-		m = atualizado.(Model)
-	}
-	if m.viewport.YOffset != fim-3 {
-		t.Errorf("três ↑ deveriam subir três linhas: %d, esperado %d", m.viewport.YOffset, fim-3)
-	}
-	if m.textarea.Value() != "" {
-		t.Errorf("o ↑ não deveria trazer a última pergunta: %q", m.textarea.Value())
-	}
-	atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m = atualizado.(Model)
-	if m.viewport.YOffset != fim-2 {
-		t.Errorf("o ↓ deveria descer uma linha: %d, esperado %d", m.viewport.YOffset, fim-2)
-	}
-	legenda := ui.KeyHintsCom(200, ui.DefaultKeys().Global.SairForcado, m.teclas()...)
-	if strings.Contains(legenda, "editar última") {
-		t.Errorf("com o mouse solto o ↑ rola: %q", legenda)
-	}
-}
-
-// Com o mouse solto, os blocos de código saem sem as bordas dos lados: a linha selecionada
-// com o mouse é só o código. O número de linhas não muda, e o segundo ctrl+s traz as bordas.
-func TestCtrlS_CodigoSemBordas(t *testing.T) {
+// Os blocos de código saem sem as bordas dos lados: a linha selecionada com o
+// shift+arraste do terminal é só o código. O quadro do comando mantém a tecla da cópia.
+func TestCodigoSemBordas(t *testing.T) {
 	semCores(t)
 	m := telaDeTeste(t, Config{SessionID: "20261030-100000"}, "10:00")
 	resposta := "Confira:\n\n```bash\nkubectl get pods -n web\n```\n\n```yaml\nsecurityContext:\n  runAsNonRoot: true\n```\n"
 	m = conversar(t, m, "como confiro?", resposta, time.Second)
-	linhaCom := func(m Model, texto string) string {
+	linhaCom := func(texto string) string {
 		for _, l := range strings.Split(ansi.Strip(m.viewport.View()), "\n") {
 			if strings.Contains(l, texto) {
 				return strings.TrimRight(l, " ")
@@ -722,28 +628,12 @@ func TestCtrlS_CodigoSemBordas(t *testing.T) {
 		t.Fatalf("a conversa não mostra %q:\n%s", texto, ansi.Strip(m.viewport.View()))
 		return ""
 	}
-	if l := linhaCom(m, "kubectl get pods"); !strings.HasSuffix(l, "│") {
-		t.Fatalf("com o mouse preso, o comando fica no quadro com bordas: %q", l)
-	}
-	antes := m.viewport.TotalLineCount()
-
-	atualizado, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m = atualizado.(Model)
 	for _, texto := range []string{"kubectl get pods -n web", "runAsNonRoot: true"} {
-		if l := linhaCom(m, texto); strings.Contains(l, "│") || !strings.HasSuffix(l, texto) {
-			t.Errorf("com o mouse solto, a linha do código sai sem bordas: %q", l)
+		if l := linhaCom(texto); strings.Contains(l, "│") || !strings.HasSuffix(l, texto) {
+			t.Errorf("a linha do código sai sem bordas: %q", l)
 		}
 	}
-	if l := linhaCom(m, "COMANDO"); !strings.Contains(l, "ctrl+y copia") {
-		t.Errorf("o quadro aberto mantém a tecla da cópia: %q", l)
-	}
-	if depois := m.viewport.TotalLineCount(); depois != antes {
-		t.Errorf("o ctrl+s não muda o número de linhas: %d, antes %d", depois, antes)
-	}
-
-	atualizado, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m = atualizado.(Model)
-	if l := linhaCom(m, "kubectl get pods"); !strings.HasSuffix(l, "│") {
-		t.Errorf("o segundo ctrl+s traz as bordas de volta: %q", l)
+	if l := linhaCom("COMANDO"); !strings.Contains(l, "ctrl+y copia") {
+		t.Errorf("o quadro do comando mantém a tecla da cópia: %q", l)
 	}
 }

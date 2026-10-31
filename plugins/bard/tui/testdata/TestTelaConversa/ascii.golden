@@ -18,12 +18,12 @@ VOCÊ · 11:51
                                                                                                               
   Os dois volumes Released ainda ocupam 16Gi no nó. Se não precisar dos dados:                                
                                                                                                               
-  + COMANDO · ctrl+y copia ----------------------------------------------------------------------------------+
-  | kubectl delete pv pvc-3f1a9c2e pvc-91cd04b7                                                              |
-  +----------------------------------------------------------------------------------------------------------+
+  - COMANDO · ctrl+y copia -----------------------------------------------------------------------------------
+    kubectl delete pv pvc-3f1a9c2e pvc-91cd04b7                                                               
+  ------------------------------------------------------------------------------------------------------------
 --------------------------------------------------------------------------------------------------------------
 >  Pergunte sobre o cluster, ou / para comandos                                                               
                                                                                                               
 --------------------------------------------------------------------------------------------------------------
 v resposta em 21 s                                                                sessão de hoje · 2 mensagens
-enter enviar  ctrl+j nova linha  / comandos  up editar última  ctrl+s selecionar  ? ajuda          ctrl+c sair
+enter enviar  ctrl+j nova linha  / comandos  up editar última  shift+arraste selecionar  ? ajuda   ctrl+c sair

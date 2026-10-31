@@ -13,7 +13,6 @@ import (
 	"github.com/casheiro/yby-cli/v5/pkg/ai/prompts"
 	"github.com/casheiro/yby-cli/v5/pkg/ui"
 	"github.com/casheiro/yby-cli/v5/plugins/bard/tools"
-	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -94,20 +93,17 @@ type Model struct {
 	width       int
 	height      int
 	// markdown renderiza a resposta na largura dada, com a tecla da cópia no comando de
-	// índice comando (-1 nenhum) e, com aberto, os blocos de código sem as bordas dos lados;
-	// nil mostra o texto cru.
-	markdown func(texto string, largura, comando int, aberto bool) (string, error)
+	// índice comando (-1 nenhum); nil mostra o texto cru.
+	markdown func(texto string, largura, comando int) (string, error)
 	agora    func() time.Time
 	err      error
 
 	// Histórico já renderizado: as mensagens só crescem, então cada uma passa
 	// pelo glamour uma vez; a largura nova refaz tudo. Assim um trecho da
-	// resposta não paga a renderização da conversa inteira. O ctrl+s também refaz tudo:
-	// os blocos de código mudam de desenho (historicoAberto).
+	// resposta não paga a renderização da conversa inteira.
 	historico        string
 	historicoN       int
 	historicoLargura int
-	historicoAberto  bool
 	historicoLinhas  int      // linhas do histórico renderizado
 	inicios          []int    // linha em que começa cada mensagem do histórico
 	blocosHistorico  []string // bloco renderizado de cada mensagem
@@ -176,9 +172,6 @@ type Model struct {
 	// ajuda é a camada com as teclas que o ? abre durante a resposta, sem entrar no meio
 	// da rodada; fora dela o ? põe o quadro na conversa, como o /ajuda.
 	ajuda bool
-	// selecionando diz que o ctrl+s soltou o mouse para o terminal: o arraste seleciona
-	// texto, e a roda só chega ao Bard nos terminais que a mandam como ↑ e ↓, que rolam.
-	selecionando bool
 	// rascunhoIntocado diz que o campo ainda tem o rascunho como abriu, sem tecla
 	// nenhuma: a cada largura nova ele volta a mostrar o começo da pergunta.
 	rascunhoIntocado bool
@@ -404,39 +397,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // pergunta, mas ↵ só envia quando a rodada termina.
 func (m Model) teclar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := ui.DefaultKeys()
-	if key.Matches(msg, teclaSelecionar(m.selecionando)) {
-		// ctrl+s vale em qualquer camada, também durante a resposta, e não apaga o aviso
-		// da linha de estado nem o rascunho, como a roda.
-		// Os blocos de código perdem as bordas dos lados enquanto o mouse está solto, para
-		// a linha selecionada sair sem o "│"; o número de linhas não muda, nem a rolagem.
-		// O cursor do campo para de piscar: sem nada mudando na tela, o terminal não tem
-		// por que desfazer a seleção.
-		m.selecionando = !m.selecionando
-		m.updateViewport()
-		if m.selecionando {
-			return m, tea.Batch(tea.DisableMouse, m.textarea.Cursor.SetMode(cursor.CursorStatic))
-		}
-		return m, tea.Batch(tea.EnableMouseCellMotion, m.textarea.Cursor.SetMode(cursor.CursorBlink))
-	}
-	if m.selecionando && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) && m.seletor == nil && len(m.comandosVisiveis()) == 0 {
-		// Com o mouse solto, o Windows Terminal e o GNOME Terminal mandam a roda como ↑ e ↓:
-		// elas rolam a conversa (ou a saída aberta), em vez de trazer a última pergunta.
-		passo := 1
-		if msg.Type == tea.KeyUp {
-			passo = -1
-		}
-		if m.saida != nil {
-			m.rolarSaida(passo)
-			return m, nil
-		}
-		if passo < 0 {
-			m.viewport.ScrollUp(1)
-		} else {
-			m.viewport.ScrollDown(1)
-		}
-		m.marcarLidas()
-		return m, nil
-	}
 	m.aviso = nil
 	m.rascunhoIntocado = false
 	if msg.Type == tea.KeyCtrlC {
@@ -821,9 +781,9 @@ func contarLinhas(s string) int {
 // mensagem que ganha ou perde a dica "↵ ver saída" ou o "ctrl+y copia" é renderizada de
 // novo, com as seguintes.
 func (m *Model) renderizarHistorico() {
-	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) || m.historicoAberto != m.selecionando {
+	if m.historicoLargura != m.viewport.Width || m.historicoN > len(m.messages) {
 		m.cortarHistorico(0)
-		m.historicoLargura, m.historicoAberto = m.viewport.Width, m.selecionando
+		m.historicoLargura = m.viewport.Width
 	}
 	dica, copia := m.mensagemComDica(), m.mensagemComCopia()
 	for _, par := range [][2]int{{dica, m.dicaEm}, {copia, m.copiaEm}} {
@@ -1013,7 +973,7 @@ var ErrInterrompido = errors.New("conversa interrompida")
 func Run(provider ai.Provider, vectorStore *ai.VectorStore, config Config) error {
 	model := New(provider, vectorStore, config)
 	// O mouse vem para o Bard por causa da roda; com isso o arraste simples deixa de
-	// selecionar texto até o ctrl+s soltá-lo (teclaSelecionar).
+	// selecionar texto, e o shift+arraste do terminal seleciona (teclaSelecionar).
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	return desfecho(p.Run())
 }
